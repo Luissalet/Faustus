@@ -697,8 +697,13 @@ def git_mutation_routed_to_tools(command: str) -> Optional[dict]:
         return None
     sub = m.group("sub").lower()
     tool = _GIT_TOOL_FOR_SUBCOMMAND.get(sub)
-    hint = (f"use the {tool} tool" if tool
-            else "that operation is not offered as a git_* tool; ask the user to do it from the Source control panel")
+    if not tool:
+        # No git_* tool does this (`clone`, `apply`, `stash`, `tag`, `clean`...):
+        # refusing it left the agent with no way at all to, say, clone the
+        # repository a task names. It runs like any other shell command, under
+        # the same approval gate as the rest of bash.
+        return None
+    hint = f"use the {tool} tool"
     return {
         "error": (f"bash: `git {sub}` is not run from the shell here -- {hint}. The git_* tools "
                   "respect the user's repository policy (separate branch / commits / push) and their "

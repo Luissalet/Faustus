@@ -91,7 +91,9 @@ Acciones físicas o de cuentas que sólo puede hacer Luis (micrófono, móvil, W
 
 ## B. Código por hacer
 
-Cerrado el 15-10: «Di solo: hola A» se leía como italiano (701546e6), `desktop_focus_window` con título ambiguo prefiere la ventana de la app frente a pestañas del navegador o Faustus (509ebdd1), y las dos pruebas rojas (guías públicas movidas a `website/`, b7f3a78c; aviso en vez de rechazo en la reanudación, f8255848).
+Nada abierto a 16-10. Cerrado el 16-10 (OBJ-61): «0 tests ejecutados» ya no pasa por verificado: la regla de ficheros lo dice y el resultado de un comando de tests que no corrió ninguno (Gradle `:test NO-SOURCE`, `collected 0 items`, `Ran 0 tests`, `running 0 tests` sin otros tests antes…) llega al modelo con el aviso «this test command ran no tests» (`command_output_filters.zero_tests_note`).
+
+Cerrado el 15-10: el modo desatendido ya se activa (`faustus_run --unattended`, campo `unattended` de `/api/chat_stream`, sin `ask_user` en ese turno; el contenedor de benchmarks lo pasa siempre) y las herramientas de administración ya no entran en turnos de código por palabras sueltas del enunciado (OBJ-61); las herramientas de escritorio en contenedores sin pantalla resultaron no llegar al modelo (`host_tools` las quita después del «floor»: aparecen en `relevant_not_sent`), «Di solo: hola A» se leía como italiano (701546e6), `desktop_focus_window` con título ambiguo prefiere la ventana de la app frente a pestañas del navegador o Faustus (509ebdd1), y las dos pruebas rojas (guías públicas movidas a `website/`, b7f3a78c; aviso en vez de rechazo en la reanudación, f8255848).
 
 Nada abierto a 09-10. Cerrado el 09-10: la prueba `test_loop_call_that_cannot_get_its_claims_is_refused_not_started` (mantenía la reserva 3 s fijos y en Windows el turno tardaba más en llegar a la llamada; ahora la suelta al acabar el bucle, `f0f16648`), `extract_to_schema` sin ejemplos en el índice de herramientas (`604f046d`), el endpoint de pruebas `capture-8090` del 7000 sin servidor detrás (desactivado, no borrado) y la recarga del Hub para la revisión ligada a entregas (el Hub corre desde las 21:14 del 08-10 con `2886aef` dentro).
 

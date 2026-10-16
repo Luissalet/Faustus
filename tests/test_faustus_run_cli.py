@@ -144,6 +144,16 @@ def test_a_run_without_model_opens_the_chat_on_the_default_model(capsys):
     assert _H.forms[0]["model"] == "big-27b"
 
 
+def test_unattended_marks_every_leg_of_the_turn():
+    srv, url = _serve([LEG_DONE])
+    try:
+        code = fr.main(["-p", "hola", "--url", url, "--model", "m", "--unattended"])
+    finally:
+        srv.shutdown()
+    assert code == 0
+    assert _H.forms[0]["unattended"] == "true"
+
+
 def test_a_refused_turn_says_why(capsys):
     srv, url = _serve([], refuse="No model selected for this chat.")
     try:
@@ -227,3 +237,23 @@ def test_resumed_automatic_actor_is_not_rebound(capsys):
     try:code=fr.main(['-p','continue','--url',url,'--session','old','--agent-id','faustus'])
     finally:srv.shutdown()
     assert code==fr.EXIT_ERROR and not _H.puts and not _H.forms
+
+
+def test_mcp_servers_are_registered_before_the_turn(tmp_path):
+    calls = []
+
+    class _C:
+        def post_form(self, path, form, timeout=30):
+            calls.append((path, form))
+            return {"id": "x"}
+
+    spec = tmp_path / "mcp.json"
+    spec.write_text(json.dumps([
+        {"name": "shop", "transport": "streamable-http", "url": "http://svc:8000/mcp"},
+        {"name": "local", "transport": "stdio", "command": "tool", "args": ["--x", 1]},
+        {"transport": "sse", "url": "http://nameless"},
+    ]), encoding="utf-8")
+    assert fr.register_mcp_servers(_C(), "@" + str(spec)) == ["shop", "local"]
+    assert calls[0] == ("/api/mcp/servers", {"name": "shop", "transport": "http", "url": "http://svc:8000/mcp", "args": "[]"})
+    assert calls[1][1]["command"] == "tool" and json.loads(calls[1][1]["args"]) == ["--x", "1"]
+    assert fr.register_mcp_servers(_C(), "") == []

@@ -655,3 +655,44 @@ def compress(
         f"{original_lines} lines; full output: {how}]"
     )
     return compressed + note, meta
+
+
+# ---------------------------------------------------------------------------
+# A test command that ran no tests
+# ---------------------------------------------------------------------------
+
+_TEST_COMMAND_RE = re.compile(
+    r"(?:\bpytest\b|\bunittest\b|\bgradlew?\b[^|;&\n]*\btest|\bmvnw?\b[^|;&\n]*\btest|\bcargo\s+test\b"
+    r"|\bgo\s+test\b|\bctest\b|\b(?:npm|pnpm|yarn)\s+(?:run\s+)?test\b|\bjest\b|\bvitest\b|\bmix\s+test\b"
+    r"|\bdotnet\s+test\b|\bmake\s+(?:check|test)\b|\bphpunit\b|\brspec\b)",
+    re.IGNORECASE,
+)
+_ZERO_TESTS_RE = re.compile(
+    r"collected 0 items|no tests ran|\bRan 0 tests?\b|running 0 tests?\b|Task :\S*test\S* NO-SOURCE"
+    r"|no test files|no tests to run|No tests found|Tests run: 0\b|No tests were found|0 examples, 0 failures"
+    r"|Total tests: 0\b",
+    re.IGNORECASE,
+)
+_SOME_TESTS_RE = re.compile(
+    r"\b[1-9]\d* (?:passed|failed|tests? (?:passed|completed))|\bRan [1-9]\d* tests?|running [1-9]\d* tests?"
+    r"|Tests run: [1-9]|\b[1-9]\d* examples?,|Total tests: [1-9]|\bok\s+\S+\s+[\d.]+s\b|tests? completed",
+    re.IGNORECASE,
+)
+
+
+def zero_tests_note(command: str, output: str) -> Optional[str]:
+    """A warning when `command` runs a test suite and its output shows that no
+    test ran (Gradle `NO-SOURCE`, `collected 0 items`, `running 0 tests`...).
+
+    Seen on the benchmarks: `./gradlew test` with no test sources ends in
+    BUILD SUCCESSFUL and the agent took it as verified. A count of tests that
+    did run anywhere in the output (a crate's unit tests before its empty
+    doc-tests, say) means the command verified something, and no note is
+    given.
+    """
+    if not command or not output or not _TEST_COMMAND_RE.search(command):
+        return None
+    if not _ZERO_TESTS_RE.search(output) or _SOME_TESTS_RE.search(output):
+        return None
+    return ("[harness: this test command ran no tests, so it verified nothing. Put tests where the "
+            "runner looks for them (or run the right target) and run them again before relying on it.]")

@@ -371,8 +371,9 @@ DEFAULT_SETTINGS = {
     "agent_project_todos": True,
     # Desktop input tools (desktop_click/type/key/scroll/focus_window):
     # "ask_each" = approval card on EVERY call, "ask_task" = the normal
-    # scoped approval gate, "off" = not offered at all.
-    "desktop_control_mode": "ask_each",
+    # scoped approval gate, "off" = not offered at all. Only read in the
+    # asking approval modes: with full access (the default) nothing asks.
+    "desktop_control_mode": "ask_task",
     # CMP-06: connection to an externally configured, READ-ONLY Herdr
     # runtime (src/external_runtimes/herdr.py). `token` is stored
     # `secret_storage`-encrypted (`enc:` prefix), never plaintext, even
@@ -380,7 +381,10 @@ DEFAULT_SETTINGS = {
     # "not connected" (routes/external_runtimes_routes.py reports that
     # plainly rather than trying an empty URL).
     "external_runtimes_herdr": {"base_url": "", "token": ""},
-    "tool_approval_mode": "ask",
+    # "full" (the default, the owner's decision of 15-10-2026): Faustus works
+    # without approval cards. "ask" and "auto" stay available for whoever
+    # wants to be asked.
+    "tool_approval_mode": "full",
     # Destructive command guard (src/command_guard.py): classifies bash/python
     # commands into SAFE/CAUTION/DANGEROUS/CRITICAL. "enforce" = the two
     # destructive tiers need a sealed exact approval before running,

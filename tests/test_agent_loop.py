@@ -181,6 +181,16 @@ class TestDetectAdminIntent:
     def test_general_question(self):
         assert _detect_admin_intent(self._msgs("what is the capital of France?")) is False
 
+    def test_coding_brief_words_are_not_admin(self):
+        brief = ("Your task is to implement the evaluator. Note: delete the node when the tree "
+                 "is empty, keep the server setup and the parser tokens. Read "
+                 "https://docs.python.org/3/library/exceptions.html for the error types.")
+        assert _detect_admin_intent(self._msgs(brief)) is False
+
+    def test_notes_and_tokens_still_admin_when_meant(self):
+        assert _detect_admin_intent(self._msgs("show me my notes")) is True
+        assert _detect_admin_intent(self._msgs("rotate the API token")) is True
+
     # --- Edge cases ---
 
     def test_empty_messages(self):
@@ -513,3 +523,28 @@ class TestWebSearchSourcesKeyLookup:
         src_text = result.get("output") or result.get("results") or result.get("stdout") or ""
         assert src_text != ""
         assert "SOURCES" in src_text
+
+
+def test_unattended_prompt_drops_whole_sections_only():
+    from src.agent_loop import _strip_prompt_sections
+    body = ("## Base rules\n- keep\n\n## Answer quality and presentation\n- charts\n- choices\n\n"
+            "## File rules\n- keep too\n\n## Desktop rules\n- screenshots\n")
+    msgs = [{"role": "system", "content": body, "_agent_injected": "merged_prompt"},
+            {"role": "user", "content": "## Answer quality and presentation\nuser text stays"}]
+    _strip_prompt_sections(msgs, ("## Answer quality and presentation", "## Desktop rules"))
+    assert "charts" not in msgs[0]["content"] and "screenshots" not in msgs[0]["content"]
+    assert "## Base rules\n- keep" in msgs[0]["content"] and "## File rules\n- keep too" in msgs[0]["content"]
+    assert msgs[1]["content"].startswith("## Answer quality")
+
+def test_unattended_rule_lines_drop_only_unusable_instructions():
+    from src.agent_loop import _strip_prompt_rule_lines
+    body = ("## Base rules\n- Keep answers concise.\n"
+            "- If ambiguous, call ask_user with the question.\n"
+            "8. Use a ```chart``` block for comparisons.\n"
+            "- Change repo files with `apply_patch`. Do not use `create_document` for repo files.\n"
+            "Plain prose mentioning ask_user stays.\n")
+    msgs = [{"role": "system", "content": body, "_agent_injected": "prompt"}]
+    _strip_prompt_rule_lines(msgs)
+    out = msgs[0]["content"]
+    assert "Keep answers concise" in out and "apply_patch" in out and "Plain prose" in out
+    assert "call ask_user" not in out and "```chart```" not in out

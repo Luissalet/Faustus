@@ -539,7 +539,7 @@ _AGENT_RULES = """\
 - A tool catalogue can expose only part of a service. Absence from that catalogue, or a historical note, does not prove that the current API lacks a feature; report the observed scope and leave unverified capabilities unknown.
 - Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
-- A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
+- DO THE WORK, DO NOT STOP TO ASK. "Implement X" / "add auth" / "make me a system for Y" with several reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: pick the design you would recommend, build it, and say in one line which one you picked so the user can redirect. `ask_user` is only for what you cannot find out or infer yourself (a credential, a fact only the user knows).
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 - When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
@@ -566,7 +566,7 @@ _API_AGENT_RULES = """\
 - A tool catalogue can expose only part of a service. Absence from that catalogue, or a historical note, does not prove that the current API lacks a feature; report the observed scope and leave unverified capabilities unknown.
 - Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
-- A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
+- DO THE WORK, DO NOT STOP TO ASK. "Implement X" / "add auth" / "make me a system for Y" with several reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: pick the design you would recommend, build it, and say in one line which one you picked so the user can redirect. `ask_user` is only for what you cannot find out or infer yourself (a credential, a fact only the user knows).
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 - When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
@@ -641,7 +641,8 @@ _DOMAIN_RULES = {
 - Prefer `grep`, `glob`, and `ls` over shell equivalents when available.
 - Use `edit_file`/`write_file` for writes; avoid shell redirection/heredocs for editing files.
 - Run a project's tests with the shell tool calling the runner directly (`python -m pytest -q`, `npm test`), not through `python` + subprocess: a plain runner is what "run/fix the tests" already covers, anything else waits for approval.
-- To see whether a package is installed, run the check on its own (`python -c "import pandas"`); never chain an install after it (`|| pip install ...`). Installing downloads code and needs the user's approval: if the check fails, say what is missing and ask.
+- To see whether a package is installed, run the check on its own (`python -c "import pandas"`); never chain an install after it (`|| pip install ...`). If the check fails and the task needs it (a missing toolchain or build dependency to compile and run the tests), install it with its own command: the runtime applies the user's approval mode to that call, so do not ask for permission in prose.
+- When hidden tests will judge the work (a known exercise, kata or spec, "the tests will check..."), match the canonical version's contract, not your own guesses: the exact exception types and messages it names, what "no result" returns (`None`/`null`, not `False`), argument order. Write your local tests from that canonical suite as you remember it, run them, and fix what fails before finishing. Keep the shape of any supplied stub exactly: a getter stays a getter and a method a method, with the same parameters, static or instance, sync or async. A test command that ran no tests (Gradle `NO-SOURCE` or a BUILD SUCCESSFUL with no test report, `collected 0 items`, `running 0 tests`) verified nothing.
 - `read_file` on an image just shows you the picture (or, on a text-only model, a generic caption). For a small detail — which object a hand-drawn circle marks, a tilted symbol in a corner, faint handwriting, a specific region of a PDF page — call `inspect_image` instead: it can crop/zoom/rotate/enhance a region, overlay a labelled grid, ask a SPECIFIC question, detect circles/rectangles/lines with no model at all, or compare two images. Never settle for the generic caption when the user's question needs a targeted look. When a transcription of the image already exists, do not re-transcribe it: call `inspect_image` with action=\"unlisted\" and that text (`text_path`) to get only what the image shows and the transcription misses.""",
     "settings": """\
 ## Settings/API rules
@@ -1328,7 +1329,7 @@ If the user asks for a reminder/alarm before the event, pass `reminder_minutes` 
     "search_chats": "- ```search_chats``` — Search past session transcripts for direct conversation evidence. Use when user asks 'did we discuss X?', 'find the conversation about Y', or when prior chat context is more appropriate than persistent memory.",
     "pipeline": "- ```pipeline``` — Run a multi-step AI pipeline. Args (JSON) with ordered steps, each specifying a model and prompt. Use for complex workflows.",
     "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, email, sessions, notes, memories/brain, skills, settings, cookbook), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, paper, cyberpunk, retrowave, forest, ocean, ume, copper, terminal, organs, lavender, graphite, terracotta, cute. For any other vibe/name, use create_theme.",
-    "ask_user": "- ```ask_user``` — Ask the user to DECIDE when the task is ambiguous and the answer changes what you build next: which approach, which library or storage, which files or behaviour they meant, which scope (a request like \"add auth\" or \"implement X\" with several sensible designs is exactly this). Args (JSON): {\"question\": \"one clear question\", \"options\": [{\"label\": \"short choice\", \"description\": \"one line: what happens if they pick it\"}, ...], \"multi\": false?, \"allow_free_text\": true?}. 2-4 options, the recommended one FIRST with \"(recommended)\" in its label; set \"multi\": true for a checklist when several may apply. The user gets one button per option (each carries a stable `id` in the response so their pick is unambiguous), a checklist when multi, and — unless you pass \"allow_free_text\": false — always a free-text line to answer in their own words, so never add an \"Other\" option yourself. The question itself gets a stable `question_id`. Calling this ENDS your turn and their answer comes back as your next message. Do not ask what has an obvious default or what you can check yourself; ask once, with all the decisions you need in that one question when they are related.",
+    "ask_user": "- ```ask_user``` — Ask the user for something you cannot find out or infer yourself (a credential, a fact only they know). For a choice between reasonable designs, pick the one you would recommend and build it instead of asking; say which one you picked. Args (JSON): {\"question\": \"one clear question\", \"options\": [{\"label\": \"short choice\", \"description\": \"one line: what happens if they pick it\"}, ...], \"multi\": false?, \"allow_free_text\": true?}. 2-4 options, the recommended one FIRST with \"(recommended)\" in its label; set \"multi\": true for a checklist when several may apply. The user gets one button per option (each carries a stable `id` in the response so their pick is unambiguous), a checklist when multi, and — unless you pass \"allow_free_text\": false — always a free-text line to answer in their own words, so never add an \"Other\" option yourself. The question itself gets a stable `question_id`. Calling this ENDS your turn and their answer comes back as your next message. Do not ask what has an obvious default or what you can check yourself; ask once, with all the decisions you need in that one question when they are related.",
     "lookup_tools": "- ```lookup_tools``` — Search the tool catalog and load schemas on demand. Use when a needed tool is not in this turn's native schema list, or before saying a tool is unavailable. Args (JSON): {\"query\": \"send email\"} and/or {\"names\": [\"git_commit\"]}; {} lists the tool categories and {\"category\": \"email\"} lists one. Optional `detail`: `catalog` (one-liners) or `schema` (full JSON). Returned tools use the conversation's tool-call format; native function schemas load on the next round.",
     "update_plan": "- ```update_plan``` — While executing an approved plan, write the plan back: tick steps done or revise them. Args (JSON): {\"plan\": \"- [x] done step\\n- [ ] next step\"} — or, instead of markdown, {\"steps\": [{\"title\": \"...\", \"status\": \"pending|done|blocked\"}, ...]}. Always pass the COMPLETE checklist, not a diff; there is no length limit. Call it after finishing each step (mark it `- [x]`) and whenever the user asks to change the plan. The user's docked plan window updates live. Does nothing if there's no active plan.",
     # Desktop control (FAUSTUS): the model sees the screen and drives it.
@@ -2025,6 +2026,24 @@ _ADMIN_KEYWORDS = [
     "document", "documents", "doc", "docs", "library", "tidy",
     "note", "notes", "todo", "todos", "reminder", "reminders",
 ]
+# Whole words only, and without the words every coding brief uses ("your task
+# is...", "delete the node", "an HTTP server", "setup()", "tokens" of a
+# parser): matched as substrings they put 13 admin schemas (sessions,
+# webhooks, endpoints, tokens...) into almost every workspace turn, and a
+# small model pays for every one of them on every round.
+_ADMIN_KEYWORDS_AMBIGUOUS = frozenset({
+    "task", "tasks", "delete", "server", "setup", "config", "manage",
+    "token", "tokens", "truncate", "note", "notes",
+})
+_ADMIN_KEYWORDS_RE = re.compile(
+    r"(?<![\w-])(?:"
+    + "|".join(sorted((re.escape(k) for k in _ADMIN_KEYWORDS if k not in _ADMIN_KEYWORDS_AMBIGUOUS),
+                      key=len, reverse=True))
+    + r"|scheduled tasks?|recurring tasks?|manage (?:my|the) \w+|api tokens?|access tokens?|mcp servers?"
+    + r"|(?:my|a|the|new) notes?|notes? (?:file|app)|take (?:a )?notes?"
+    + r")(?![\w-])"
+)
+_URL_RE = re.compile(r"\bhttps?://\S+")
 
 _ATTACHED_FILE_ENVELOPE_RE = re.compile(r"(?m)^=== File: .+? ===\s*$")
 
@@ -2052,7 +2071,7 @@ def _detect_admin_intent(messages: List[Dict]) -> bool:
             if isinstance(content, list):
                 content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
             content_lower = _request_text_without_attached_files(content).lower()
-            return any(kw in content_lower for kw in _ADMIN_KEYWORDS)
+            return bool(_ADMIN_KEYWORDS_RE.search(_URL_RE.sub(" ", content_lower)))
     return False
 
 
@@ -2860,7 +2879,7 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
         "- This mode is for coding, debugging, shell, file, build, benchmark, and repo tasks. Do not use personal-assistant tools like email, calendar, notes, memory, documents, gallery, or UI panels for workspace work.\n"
         "- Work from the real filesystem and command output. Inspect before editing.\n"
         "- Start by orienting with `get_workspace` plus `grep`/`glob`/`ls`/`read_file`; prefer targeted reads over dumping whole files. Several searches beat one guess from memory.\n"
-        "- A new system is decided with the user first: when the request (\"implement X\", \"add Y\") admits several reasonable designs (storage, framework or language, location, scope) and neither the request nor the code settles it, call `ask_user` with 2-4 options (recommended first, one line each) BEFORE writing any file. Small edits have one obvious reading: just do them.\n"
+        "- Do the work, do not stop to ask: when the request (\"implement X\", \"add Y\") admits several reasonable designs (storage, framework or language, location, scope) and neither the request nor the code settles it, pick the one you would recommend, build it, and say in one line which you picked so the user can redirect. Use `ask_user` only for something you cannot find out or infer (a credential, a fact only the user knows).\n"
         "- For multi-step coding work, call `todowrite` and keep the task list current.\n"
         "- Before writing new code, check whether it needs to exist at all and whether the codebase, the standard library or an installed dependency already does it; the smallest change that does the job wins.\n"
         "- Change repo files with `apply_patch` for related source edits, `edit_file` for one exact replacement, or `write_file` for new/full files. Do not use `create_document`, shell redirects, heredocs, or `sed -i` to modify repo files.\n"
@@ -5312,6 +5331,81 @@ def _prepend_agent_directive(messages: List[Dict], directive: str) -> List[Dict]
         "content": directive,
         "_agent_injected": "prompt",
     })
+    return messages
+
+
+def _degenerate_retry_limit(round_num: int, unattended: bool = False) -> int:
+    """How many repeated-output retries a turn gets by `round_num`.
+
+    Three, plus one per ten rounds. An unattended run has nobody to rephrase
+    the request after the turn errors out, and a looping model mostly
+    recovers on the next try, so it gets more: six, plus one per four rounds.
+    """
+    base = 3 + round_num // 10
+    return max(base, 6 + round_num // 4) if unattended else base
+
+
+def _unattended_dropped_sections() -> tuple:
+    """Prompt sections an unattended run has no use for.
+
+    How Studio renders charts, choice buttons and inline HTML is for a person
+    reading the reply; nobody reads it here, and a small model treats every
+    rule it is given as something to act on. The desktop rules go too when
+    this host has no screen (the desktop tools are never offered there).
+    """
+    drop = ["## Answer quality and presentation"]
+    try:
+        from src.host_tools import unavailable_tools
+        if "desktop_screenshot" in unavailable_tools():
+            drop.append("## Desktop rules")
+    except Exception:  # noqa: BLE001 - keep the rules when unsure
+        pass
+    return tuple(drop)
+
+
+#: Rule lines that only apply when a person reads the reply in Studio, or that
+#: point at tools an unattended turn is never given (it has no ask_user, no
+#: desktop, no board, git or memory tools there). Left in, they are
+#: instructions the model cannot follow — "call ask_user with the specific
+#: question" in a run that cannot ask.
+_UNATTENDED_DROP_LINE_MARKERS = (
+    "ask_user", "```chart```", "```choices```", "```html```", "desktop_screenshot",
+    "board_*", "git_*", "manage_memory", "/workspace pick", "use `create_document` only when",
+    "cost or measurement incomplete", "A tool catalogue can expose",
+    "For casual messages like",
+)
+_RULE_LINE_RE = re.compile(r"^(?:- |\d+\. )")
+
+
+def _strip_prompt_rule_lines(messages: List[Dict], markers=_UNATTENDED_DROP_LINE_MARKERS) -> List[Dict]:
+    """Drop single rule lines (``- …`` / ``N. …``) that mention any marker."""
+    for message in messages:
+        if message.get("_agent_injected") not in {"prompt", "merged_prompt"}:
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        kept = [line for line in content.split("\n")
+                if not (_RULE_LINE_RE.match(line) and any(m in line for m in markers))]
+        message["content"] = "\n".join(kept)
+    return messages
+
+
+def _strip_prompt_sections(messages: List[Dict], headers) -> List[Dict]:
+    """Remove whole ``## `` sections, by exact heading, from the generated prompt."""
+    for message in messages:
+        if message.get("_agent_injected") not in {"prompt", "merged_prompt"}:
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        for header in headers:
+            start = content.find(header + "\n")
+            if start < 0:
+                continue
+            nxt = content.find("\n## ", start + len(header))
+            content = content[:start].rstrip("\n") + ("\n\n" + content[nxt + 1:] if nxt >= 0 else "\n")
+        message["content"] = content
     return messages
 
 
@@ -7882,6 +7976,84 @@ def _empty_response_fallback(
     return _error_msg, f'data: {json.dumps({"delta": _error_msg})}\n\n'
 
 
+#: An unattended run (`faustus_run --unattended`, a scheduled job, CI, a task
+#: container): nobody reads questions or approves anything until it ends, so
+#: a question is a stopped run. The rules above that say "ask the user first"
+#: do not apply; this one does.
+#: Tools that carry the agent's words to the other party of a headless
+#: conversation task (a simulated customer behind an MCP server, say). In
+#: such a run plain text reaches nobody: the first prose answer ends the run
+#: mid-conversation.
+_RELAY_TOOL_RE = re.compile(
+    r"(?:^|__)(?:send_message_to_(?:user|customer)|(?:send|reply|respond|say|talk)_to_(?:user|customer)"
+    r"|message_(?:the_)?(?:user|customer))$"
+)
+_CONVERSATION_END_RE = re.compile(r"(?:^|__)(?:end_conversation|end_chat|close_conversation)$")
+_UNATTENDED_RELAY_NUDGE_LIMIT = 25
+#: Status codes and error classes that mean "the model server hiccuped", not
+#: "the request is wrong". An unattended run waits them out instead of ending.
+_TRANSIENT_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524, 529})
+_UNATTENDED_TRANSPORT_RETRIES = 8
+
+
+def _unattended_relay_tool(tool_names, ledger_events) -> Optional[str]:
+    """The tool that delivers messages to the user in a headless conversation
+    task, or None when there is none or the conversation was already ended."""
+    relay = next((n for n in (tool_names or ()) if n and _RELAY_TOOL_RE.search(str(n))), None)
+    if not relay:
+        return None
+    for ev in ledger_events or ():
+        if isinstance(ev, dict) and _CONVERSATION_END_RE.search(str(ev.get("tool") or "")):
+            return None
+    return relay
+
+
+def _unattended_transport_retryable(error_data, status) -> bool:
+    """A model-server failure worth waiting out in a run nobody is watching."""
+    error_class = str((error_data or {}).get("error_class") or "")
+    if error_class.startswith("transport.") or error_class in {"rate_limited", "overloaded", "timeout"}:
+        return True
+    try:
+        return int(status) in _TRANSIENT_STATUSES
+    except (TypeError, ValueError):
+        return False
+
+
+def _unattended_transport_wait(attempt: int) -> float:
+    return float(min(15 * (2 ** max(0, attempt - 1)), 120))
+
+
+#: Sent once, the first time an unattended task over a workspace says it is
+#: done (see the completion audit in stream_agent_loop).
+COMPLETION_AUDIT_NOTE = (
+    "[Harness check - automatic runtime message, not a new user request] Before this run ends, audit the work: "
+    "nobody will review it after you, and it is judged only on what the task statement asks for.\n"
+    "1. Re-read the original task statement and list every requirement it states: files and paths, names, output "
+    "format, exact messages, edge cases, limits on speed or size, commands that must work, things that must NOT change.\n"
+    "2. Check each one now with a tool (run it, read the file, time it, try the edge case) - not from memory.\n"
+    "3. Fix whatever fails, then check it again.\n"
+    "4. Remove scratch files you created that the task did not ask for, unless they are needed to run the result.\n"
+    "Then give your final answer: one line per requirement with how you checked it."
+)
+
+
+UNATTENDED_DIRECTIVE = (
+    "## UNATTENDED RUN - OVERRIDES ANY RULE ABOUT ASKING THE USER\n"
+    "Nobody will read a question or approve anything until this run ends. Never stop to ask: pick the most reasonable "
+    "reading of the request, follow it through to the end, and state the assumptions you made in your final answer.\n"
+    "- Work in the workspace you were given; the shell, package managers, git (clone included) and the network are yours to use.\n"
+    "- Do not stop at a plan or at partial progress: the run is judged only on the final state of the files and on what you finally answer.\n"
+    "- Put a first working version of the requested output on disk early (a simpler or slower approach is fine), "
+    "check it, then improve it: a run that ends while you are still deliberating leaves nothing to judge.\n"
+    "- Before you finish, check the result the way the request will be checked: run the program, the tests or the exact "
+    "commands the request names, and read the output files you were asked to produce. Fix what fails and check again.\n"
+    "- Long commands (builds, installs, training) are fine: bound them with `timeout`, or start them in the background and "
+    "poll, instead of giving up on them.\n"
+    "- If a tool carries your messages to the user or customer (`send_message_to_user` or similar), everything you say "
+    "to them goes through it: plain text is never delivered. Keep the conversation going through that tool until the "
+    "task says it is over.\n"
+)
+
 PLAN_MODE_DIRECTIVE = (
     "## PLAN MODE — OVERRIDES EVERYTHING ELSE BELOW\n"
     "You are in PLAN MODE. Your ONLY job this turn is to PROPOSE a plan. You have "
@@ -8027,6 +8199,7 @@ async def _stream_agent_loop_body(
     plan_mode: bool = False,
     approved_plan: Optional[str] = None,
     tool_policy: Optional[ToolPolicy] = None,
+    unattended: bool = False,
     workspace: Optional[str] = None,
     workspace_roots: Optional[List[str]] = None,
     forced_tools: Optional[Set[str]] = None,
@@ -8434,7 +8607,11 @@ async def _stream_agent_loop_body(
         messages = _insert_before_latest_user(messages, _upload_msg)
 
     _t0 = time.time()
-    _needs_admin = _detect_admin_intent(messages)
+    # An unattended workspace run is a job on files, not app administration:
+    # a word like "settings" in its brief ("factory settings") must not bring
+    # in a dozen session/endpoint/webhook schemas. `lookup_tools` still
+    # reaches them if the job really needs one.
+    _needs_admin = _detect_admin_intent(messages) and not (unattended and workspace)
     _last_user = _extract_last_user_message(messages)
     from src.coordination.continuation import objective as _approval_objective
     _continuation_objective = _approval_objective(_last_user, exact_approval)
@@ -10758,6 +10935,10 @@ async def _stream_agent_loop_body(
             _prepend_agent_directive(route_messages, PLAN_MODE_DIRECTIVE)
         elif approved_plan and approved_plan.strip() and not guide_only:
             _prepend_agent_directive(route_messages, build_active_plan_note(approved_plan))
+        if unattended and not plan_mode and not guide_only:
+            _strip_prompt_sections(route_messages, _unattended_dropped_sections())
+            _strip_prompt_rule_lines(route_messages)
+            _prepend_agent_directive(route_messages, UNATTENDED_DIRECTIVE)
         if guide_only:
             _prepend_agent_directive(route_messages, GUIDE_ONLY_DIRECTIVE)
             if _tool_documentation_context:
@@ -11342,6 +11523,19 @@ async def _stream_agent_loop_body(
     except Exception:
         _local_ep = False
         _think_watchdog_on = False
+    # An unattended run can lose its whole time budget to one round of
+    # reasoning that never reaches a tool call (seen live: 45 minutes of
+    # thinking on a hard problem, no file written, on a shared LAN server the
+    # local-endpoint test does not cover). Watch it there too, on a budget
+    # sized for hard problems rather than for an interactive turn.
+    if unattended and _harness_enabled and not _think_watchdog_on:
+        try:
+            _unattended_budget = float(get_setting("agent_unattended_think_budget_seconds", 900) or 0)
+        except (TypeError, ValueError):
+            _unattended_budget = 900.0
+        if _unattended_budget > 0:
+            _think_budget_s = _unattended_budget
+            _think_watchdog_on = True
     _think_user_pinned = isinstance(gen_overrides, dict) and gen_overrides.get("think") is True
     _think_user_off = isinstance(gen_overrides, dict) and gen_overrides.get("think") is False
     _think_mode_info = think_mode if isinstance(think_mode, dict) else {}
@@ -11367,8 +11561,11 @@ async def _stream_agent_loop_body(
     except (TypeError, ValueError):
         _turn_budget_tokens = 0
     if _think_budget_s > 0 and _turn_budget_tokens > 0:
-        _think_budget_s = max(_think_budget_s, _turn_budget_tokens / 8.0 * 1.2)
-    if _think_user_pinned:
+        # Unattended runs go to served models that stream well above 8 tok/s
+        # even when shared; at 8 a "max" budget alone would allow 41 minutes.
+        _budget_rate = 12.0 if unattended else 8.0
+        _think_budget_s = max(_think_budget_s, _turn_budget_tokens / _budget_rate * 1.2)
+    if _think_user_pinned and not unattended:
         _think_watchdog_on = False  # the user pinned thinking on: respect it
     elif not _think_user_off and _harness_scope_active and _local_ep:
         # Local coding turns think by default (Cursor-style), with the
@@ -11413,8 +11610,17 @@ async def _stream_agent_loop_body(
         _empty_round_max_nudges = max(1, int(get_setting("agent_empty_round_max_nudges", 3) or 3))
     except (TypeError, ValueError):
         _empty_round_max_nudges = 3
+    # Nobody can be asked anything in an unattended run, and an empty reply
+    # from the GLM is usually one bad sample, not the end of the task: a
+    # terminal task ended at round 30 of a two-hour budget on two of them.
+    _empty_completion_limit = 4 if unattended else 1
+    if unattended:
+        _empty_round_max_nudges = max(_empty_round_max_nudges, 5)
     _empty_round_nudges = 0
     _echo_nudges = 0
+    _relay_nudges = 0
+    _transport_retries = 0
+    _completion_audit_done = False
     # Two consecutive marker-only rounds mean the nudge itself isn't working
     # (seen live: the model echoed `<<faustus_ctx_ack>>` twice in a row even
     # after being told to answer). At that point re-nudging a third time is
@@ -11438,6 +11644,7 @@ async def _stream_agent_loop_body(
     # A reasoning-loop retry thinks at low effort for that one round; the
     # turn's own settings come back once the round is through.
     _loop_retry_restore: Optional[Dict[str, Any]] = None
+    _reasoning_loops = 0
     # The server refused an image (a text-only model behind a server that
     # does not say so): drop the images, retry the round once, and attach no
     # more for the rest of the turn.
@@ -11576,6 +11783,16 @@ async def _stream_agent_loop_body(
         # the exact call that the server will seal for user approval.  Schema
         # visibility is not authority: both the loop and dispatcher still gate
         # execution, and only a one-use server record can cross that boundary.
+        # A tool this host cannot run at all (PowerShell in a Linux container,
+        # the desktop tools without a display) is never offered: the call
+        # could only fail and cost a round (src/host_tools.py).
+        from src.host_tools import unavailable_tools as _host_off
+        _off = _host_off()
+        if _off:
+            schemas = [
+                schema for schema in schemas
+                if (schema.get("function", {}) or {}).get("name", schema.get("name")) not in _off
+            ]
         return schemas
 
     def _tool_schemas_for_route(route_state):
@@ -12098,7 +12315,11 @@ async def _stream_agent_loop_body(
     # off, or the route's freshness check settled on "not time-sensitive")
     # gets no instruction to use them.
     _web_withheld = set(WEB_TOOL_NAMES) <= set(disabled_tools or ())
-    if _intent.get("freshness_reasons") and not guide_only and not _web_withheld:
+    # An unattended job on a workspace (a bug report, a task brief) mentions
+    # versions and "latest" all the time; the work is in the files, and a
+    # "search the web first" nudge only sends a small model off to search.
+    if (_intent.get("freshness_reasons") and not guide_only and not _web_withheld
+            and not (unattended and workspace)):
         messages.append({
             "role": "system",
             "content": _lang_note("This question is time-sensitive: search the web before answering."),
@@ -13327,6 +13548,7 @@ async def _stream_agent_loop_body(
         _degenerate_output_hit = False
         _degenerate_output_reason = ""
         _engine_lost_hit = False
+        _transport_retry_hit = False
         _context_overflow_hit = False
         _image_input_refused_now = False
         _round_actual_model = model
@@ -13465,6 +13687,17 @@ async def _stream_agent_loop_body(
             bool(all_tool_schemas),
             agent_stream_timeout,
         )
+        # Diagnostics for prompt-size work: FAUSTUS_PROMPT_DUMP=<dir> writes
+        # the exact messages and tool schemas of each round to that folder.
+        _dump_dir = os.environ.get("FAUSTUS_PROMPT_DUMP")
+        if _dump_dir:
+            try:
+                os.makedirs(_dump_dir, exist_ok=True)
+                with open(os.path.join(_dump_dir, f"round-{round_num:03d}.json"), "w", encoding="utf-8") as _df:
+                    json.dump({"messages": messages, "tools": all_tool_schemas or []}, _df,
+                              ensure_ascii=False, indent=1, default=str)
+            except Exception as _dump_err:  # noqa: BLE001 - diagnostics never cost a round
+                logger.debug("[prompt-dump] skipped: %s", _dump_err)
         try:  # OBJ-56: the tools this round really offers, kept for the turn's metadata (tools_offered)
             from src import turn_tool_offer as _tto
             _tto.record(session_id, round_num, all_tool_schemas or [], model or "")
@@ -13558,9 +13791,22 @@ async def _stream_agent_loop_body(
                 # turn with a raw HTTP-400 message.
                 if (
                     is_degenerate_output_error(error_data)
-                    and _xr.permits("degenerate_output_retry", _degenerate_retries, 3)
+                    # Three retries, plus one more per ten rounds: a long task
+                    # on a model that loops now and then (the GLM on the
+                    # Sparks) used to end on its third loop at round 13.
+                    and _xr.permits("degenerate_output_retry", _degenerate_retries,
+                                    _degenerate_retry_limit(round_num, unattended))
                     and (not _degenerate_output_retried
-                         or round_num - _last_degenerate_retry_round >= 4)
+                         or round_num - _last_degenerate_retry_round >= 4
+                         # Mid-task (tools already ran), the ladder below
+                         # answers without tools and so ends the work half
+                         # done: retry the round instead, within the budget.
+                         or bool(tool_events)
+                         # Unattended, the ladder's tool-less answer is the
+                         # end of the task: two polyglot runs died at rounds
+                         # 3 and 7 on back-to-back loops before any tool ran.
+                         # Keep retrying within the same budget.
+                         or unattended)
                     and round_num < max_rounds
                 ):
                     _degenerate_output_hit = True
@@ -13590,7 +13836,7 @@ async def _stream_agent_loop_body(
                     and _harness_enabled
                     and not _force_answer
                     and not plan_mode
-                    and _xr.permits("empty_completion", _empty_round_nudges, 1)
+                    and _xr.permits("empty_completion", _empty_round_nudges, _empty_completion_limit)
                     and (
                         _harness_scope_active
                         or round_num > 1
@@ -13645,6 +13891,37 @@ async def _stream_agent_loop_body(
                         "failed or timed out — falling through to the normal error",
                         round_num,
                     )
+                # Nobody is watching an unattended run, so a model-server blip
+                # (reset connection, 502/503, rate limit) is waited out and the
+                # round redone, instead of ending a long task on one hiccup.
+                # Seen on the benchmarks: three conversations ended at round 1
+                # when the shared server dropped connections for a minute.
+                if (
+                    unattended
+                    and not (round_response or "").strip()
+                    and _unattended_transport_retryable(error_data, terminal_status)
+                    and _transport_retries < _UNATTENDED_TRANSPORT_RETRIES
+                    and round_num < max_rounds
+                ):
+                    _transport_retries += 1
+                    _wait_s = _unattended_transport_wait(_transport_retries)
+                    logger.warning(
+                        "[harness] round %s: model server failure in an unattended run "
+                        "(status=%s class=%s); redoing the round in %.0fs (%s/%s)",
+                        round_num, terminal_status, error_data.get("error_class"), _wait_s,
+                        _transport_retries, _UNATTENDED_TRANSPORT_RETRIES,
+                    )
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "auto_continue",
+                            "reason": "transport_retry", "round": round_num,
+                            "attempt": _transport_retries, "max_attempts": _UNATTENDED_TRANSPORT_RETRIES,
+                            "wait_s": _wait_s,
+                        }) + "\n\n"
+                    )
+                    await asyncio.sleep(_wait_s)
+                    _transport_retry_hit = True
+                    break
                 # The transport cannot replay deltas already delivered, but the
                 # agent can continue from its existing transcript. No tools from
                 # this unfinished generation have been dispatched. Completed
@@ -14347,6 +14624,15 @@ async def _stream_agent_loop_body(
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
 
+        if _transport_retry_hit:
+            if round_response and full_response.endswith(round_response):
+                full_response = full_response[:-len(round_response)]
+            _ledger.notes.append(f"transport_retry@{round_num}")
+            _rounds_budget += 1  # waiting out the server must not eat the step budget
+            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
+
         if _engine_lost_hit:
             # The engine was already restarted and confirmed healthy (above,
             # before the break). Discard whatever partial text this round
@@ -14435,7 +14721,11 @@ async def _stream_agent_loop_body(
                 })
                 # This round thinks briefly; the turn's own effort returns
                 # after it (see `_loop_retry_restore`).
-                if _loop_retry_restore is None:
+                _reasoning_loops += 1
+                # A model that keeps looping at the turn's effort is better
+                # kept at low effort for the rest of an unattended turn than
+                # sent back to loop again (live: four loops in eight rounds).
+                if _loop_retry_restore is None and not (unattended and _reasoning_loops >= 2):
                     _loop_retry_restore = dict(gen_overrides or {})
                 gen_overrides["think"] = True
                 gen_overrides["reasoning_effort"] = "low"
@@ -14446,13 +14736,15 @@ async def _stream_agent_loop_body(
                     "type": "harness_check", "status": "auto_continue",
                     "reason": "degenerate_output_retry", "round": round_num,
                     "dropped_untrusted_context": _dropped_untrusted,
-                    **_xr.event("degenerate_output_retry", used=_degenerate_retries, limit=3, round_num=round_num),
+                    **_xr.event("degenerate_output_retry", used=_degenerate_retries,
+                                limit=_degenerate_retry_limit(round_num, unattended), round_num=round_num),
                 }) + "\n\n"
             )
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
 
         _round_request_duration_ms = max(0.0, (time.monotonic() - _inference_started_monotonic) * 1000.0)
+        _transport_retries = 0
         logger.info(
             "[agent-timing] round_stream_done round=%s elapsed=%.3fs text_chars=%s tool_calls=%s first_event=%s first_token=%s",
             round_num,
@@ -15380,6 +15672,18 @@ async def _stream_agent_loop_body(
             if _text_action == _loop_decisions.NUDGE_EMPTY:
                 _empty_round_nudges += 1
                 _open = [t.get("content") for t in (_ledger.progress or []) if t.get("status") != "completed"]
+                # The loop-breaker hid the tool the model was circling on; an
+                # empty reply after that means hiding it left the model with
+                # nothing it wanted to do (a terminal task without `bash`).
+                # Unattended, give the tools back and say so.
+                _restored_after_empty = []
+                if unattended and _loop_recovery_temporarily_disabled:
+                    _restored_after_empty = sorted(_loop_recovery_temporarily_disabled)
+                    disabled_tools.difference_update(_loop_recovery_temporarily_disabled)
+                    _loop_recovery_temporarily_disabled.clear()
+                    _loop_recovery_active = False
+                    _loop_recovery_blocked_tools.clear()
+                    _loop_recovery_retries = 0
                 logger.warning("[harness] round %s ended with no text and no tool call — nudging (open objectives: %s)",
                                round_num, _open[:4])
                 _ledger.notes.append(f"empty_round_nudge@{round_num}")
@@ -15400,9 +15704,13 @@ async def _stream_agent_loop_body(
                            if _bare_ack_round else
                            "Your last message was EMPTY: no text and no tool call, so nothing happened. ")
                         + (f"Open objectives: {'; '.join(str(o) for o in _open[:4])}. " if _open else "")
+                        + (f"These tools are available again: {', '.join(_restored_after_empty)}; do not repeat "
+                           "the command you were circling on, change the approach. " if _restored_after_empty else "")
                         + "Either continue the task by calling a tool now, or write the final answer "
                         "stating exactly what was done and what remains. "
-                        "Continúa con la siguiente unidad. Si algo no está claro, haz UNA pregunta concreta.")
+                        + ("Nobody can answer a question in this run: keep working on the next step."
+                           if unattended else
+                           "Continúa con la siguiente unidad. Si algo no está claro, haz UNA pregunta concreta."))
                     ),
                 })
                 yield (
@@ -15487,6 +15795,87 @@ async def _stream_agent_loop_body(
             # web question (no workspace, retrieved memory as untrusted
             # context) — the model echoed the marker, the turn ended, and the
             # person got an empty reply. One nudge, then the loop below.
+            # A headless conversation task (a simulated customer behind an
+            # MCP server): prose reaches nobody, and ending the turn on it
+            # abandons the customer mid-conversation. Seen on the benchmarks:
+            # "Could you please provide your email?" as the final answer.
+            _relay_tool = (
+                _unattended_relay_tool(_tool_names_sent, _ledger.events)
+                if unattended and _hc_text and "###STOP###" not in _hc_text else None
+            )
+            if (
+                _relay_tool
+                and _relay_nudges < _UNATTENDED_RELAY_NUDGE_LIMIT
+                and round_num < max_rounds
+            ):
+                _relay_nudges += 1
+                _ledger.notes.append(f"relay_nudge@{round_num}")
+                logger.warning(
+                    "[harness] round %s answered in plain text in an unattended conversation; nudging to %s",
+                    round_num, _relay_tool,
+                )
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": (
+                        "[Harness check - automatic runtime message, not a new user request] "
+                        "Nobody reads plain text in this run, so this message of yours was NOT delivered:\n"
+                        + _hc_text[:1500]
+                        + f"\nEverything you say to the user goes through `{_relay_tool}`. Call it now with "
+                        "what you want to say, then keep working through the tools until the task says "
+                        "the conversation is over."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "no_action", "round": round_num,
+                        "attempt": _relay_nudges, "max_attempts": _UNATTENDED_RELAY_NUDGE_LIMIT,
+                        "reason": "undelivered_message", "tool": _relay_tool,
+                    }) + "\n\n"
+                )
+                full_response = _full_response_before_round
+                yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+
+            # The first time an unattended task over a workspace says it is
+            # done, it audits the work against the task statement once before
+            # the run ends: nobody reviews it afterwards, and most lost
+            # benchmark tasks were "answered" with one stated requirement
+            # (a speed limit, an interactive case, an exact message) never
+            # checked. It runs even when nothing changed yet: a terminal task
+            # once ended after a todo list and one sentence, its file never
+            # written. Conversation tasks are left alone: their work is the
+            # conversation, and it is already over.
+            if (
+                unattended
+                and workspace
+                and not _completion_audit_done
+                and _hc_text
+                and not _boundary_echo_only
+                and _unattended_relay_tool(_tool_names_sent, []) is None
+                and round_num < max_rounds
+            ):
+                _completion_audit_done = True
+                _ledger.notes.append(f"completion_audit@{round_num}")
+                logger.info("[harness] round %s: unattended completion audit before the run ends", round_num)
+                if round_response.strip():
+                    messages.append({"role": "assistant", "content": round_response})
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": COMPLETION_AUDIT_NOTE,
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "auto_continue", "round": round_num,
+                        "reason": "completion_audit", "attempt": 1, "max_attempts": 1,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+
             if (
                 _boundary_echo_only
                 and not _harness_scope_active

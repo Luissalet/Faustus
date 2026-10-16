@@ -1265,9 +1265,15 @@ class _DegenerateStreamGuard:
 
         reason = self._raw_repeat_reason()
 
-        tokens = [t.lower() for t in _DEGENERATE_WORD_RE.findall(text) if len(t) >= 2]
-        for token in tokens:
-            if token == self.last_token:
+        # One-character words stay in the window: they are what tells code
+        # that builds `Tree("x", [Tree("a"), Tree("b")])` apart from a model
+        # stuck on "tree tree tree". Dropping them made a test file for a
+        # tree exercise look like a phrase loop and ended the run (15-10).
+        for token in (t.lower() for t in _DEGENERATE_WORD_RE.findall(text)):
+            if len(token) < 2:
+                self.last_token = ""
+                self.same_run = 0
+            elif token == self.last_token:
                 self.same_run += 1
             else:
                 self.last_token = token
@@ -1279,9 +1285,10 @@ class _DegenerateStreamGuard:
         if not reason and self.same_run >= 28 and self.total_chars >= 100:
             reason = f"repeated '{self.last_token}' {self.same_run} times"
         elif not reason and len(self.recent_tokens) >= 72:
-            top = max(set(self.recent_tokens), key=self.recent_tokens.count)
+            words = {t for t in self.recent_tokens if len(t) >= 2} or set(self.recent_tokens)
+            top = max(words, key=self.recent_tokens.count)
             count = self.recent_tokens.count(top)
-            if count >= 60 and count / max(len(self.recent_tokens), 1) >= 0.78:
+            if len(top) >= 2 and count >= 60 and count / max(len(self.recent_tokens), 1) >= 0.78:
                 reason = f"repeated '{top}' {count}/{len(self.recent_tokens)} recent tokens"
         if not reason and len(self.recent_tokens) >= 80:
             # Phrase loops are common on some local quantized MLX/MoE models:
@@ -1289,7 +1296,11 @@ class _DegenerateStreamGuard:
             # trip the single-token guard above, but it is still a wedged
             # generation. Require many repeats of the same 4-gram so normal
             # prose/list formatting is not interrupted.
-            grams = [tuple(self.recent_tokens[i:i + 4]) for i in range(0, len(self.recent_tokens) - 3)]
+            # A phrase of one-letter words ("a a a a") is a grid or a test
+            # fixture far more often than a loop; a real one-character loop
+            # is caught by the raw-repeat rule above.
+            grams = [g for g in (tuple(self.recent_tokens[i:i + 4]) for i in range(0, len(self.recent_tokens) - 3))
+                     if any(len(t) >= 2 for t in g)]
             if grams:
                 top_gram = max(set(grams), key=grams.count)
                 gram_count = grams.count(top_gram)
@@ -1349,7 +1360,7 @@ class _DegenerateStreamGuard:
             if len(norm) < _REASONING_LOOP_MIN_CHARS:
                 continue
             counts[norm] = counts.get(norm, 0) + 1
-            if counts[norm] >= _REASONING_LOOP_REPEATS:
+            if counts[norm] >= _reasoning_loop_repeats(norm):
                 raise DegenerateOutput(
                     f"reasoning loop: the same sentence came back {counts[norm]} times "
                     f"('{norm[:60]}…')",
@@ -1363,6 +1374,16 @@ class _DegenerateStreamGuard:
 _REASONING_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 _REASONING_LOOP_MIN_CHARS = 60
 _REASONING_LOOP_REPEATS = 3
+#: A model that drafts code in its reasoning rewrites the function, the test or
+#: the JSON fixture it is working on, and most lines come back unchanged on
+#: each draft. Three copies of a code line is a third draft, not a wedge: on
+#: the benchmarks (15-10) nearly every reasoning-loop abort was a code line.
+_REASONING_LOOP_REPEATS_CODE = 6
+_CODE_LINE_HINT_RE = re.compile(r"[(\[{=;\"_`<>]|::|->|^\s*(?:#|//|--|\*)")
+
+
+def _reasoning_loop_repeats(sentence: str) -> int:
+    return _REASONING_LOOP_REPEATS_CODE if _CODE_LINE_HINT_RE.search(sentence) else _REASONING_LOOP_REPEATS
 
 
 def _model_activity_key(url: str, model: str) -> str:
@@ -1436,6 +1457,20 @@ def _mark_host_dead(url: str) -> bool:
             _dead_hosts[key] = time.time() + DEAD_HOST_COOLDOWN
             return True
         return False
+
+def _retry_through_cooldown(should_retry: bool, wait: float, cooled: bool,
+                            has_own_fallback: bool) -> Tuple[bool, float]:
+    """A connect failure that cools the host used to end the stream at once.
+    That is right when the caller has other candidates to move on to
+    (`availability_only_transport`); with a single endpoint it ended the
+    whole turn on one slow TCP connect to a busy server. Then the attempt
+    waits out the cooldown and tries again, within the same retry budget."""
+    if not cooled:
+        return should_retry, wait
+    if has_own_fallback:
+        return False, wait
+    return should_retry, max(wait, DEAD_HOST_COOLDOWN + 1.0)
+
 
 def _clear_host_dead(url: str) -> None:
     key = _host_key(url)
@@ -6765,7 +6800,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
                 delta_emitted=_delta_emitted,
             )
-            _should_retry = _should_retry and not _cooled
+            _should_retry, _wait = _retry_through_cooldown(
+                _should_retry, _wait, _cooled, availability_only_transport)
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"ChatGPT Subscription stream connect to {target_url} failed: {e}{_tail}")
             async for chunk in _stream_retry_or_fail(
@@ -7065,7 +7101,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
                 delta_emitted=_delta_emitted,
             )
-            _should_retry = _should_retry and not _cooled
+            _should_retry, _wait = _retry_through_cooldown(
+                _should_retry, _wait, _cooled, availability_only_transport)
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"Ollama stream connect to {target_url} failed: {e}{_tail}")
             async for chunk in _stream_retry_or_fail(
@@ -7422,7 +7459,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
                 delta_emitted=_delta_emitted,
             )
-            _should_retry = _should_retry and not _cooled
+            _should_retry, _wait = _retry_through_cooldown(
+                _should_retry, _wait, _cooled, availability_only_transport)
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"Anthropic stream connect to {target_url} failed: {e}{_tail}")
             async for chunk in _stream_retry_or_fail(
@@ -7990,7 +8028,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
             delta_emitted=_delta_emitted,
         )
-        _should_retry = _should_retry and not _cooled
+        _should_retry, _wait = _retry_through_cooldown(
+            _should_retry, _wait, _cooled, availability_only_transport)
         if not _should_retry and not _delta_emitted and not _engine_wait_used:
             from src import engine_swap
             if engine_swap.recoverable_url(target_url):

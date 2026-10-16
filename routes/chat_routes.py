@@ -90,6 +90,20 @@ from src.tool_utils import get_mcp_manager
 
 logger = logging.getLogger(__name__)
 
+# Unattended turns (headless runs, task containers) leave these out: no such
+# run called them, and their schemas are among the largest offered.
+UNATTENDED_LEAN_OFF = frozenset({
+    "delegate_agents", "manage_skills", "ask_teacher",
+    # Studio's own panels and the hosted-forge helpers: nothing to drive and
+    # no account in a headless job; plain git in the shell covers the repo.
+    "ui_control", "git_radar", "github_issue", "github_labels", "github_notes",
+    "github_release_check", "code_history",
+})
+_IMAGE_CUE_RE = re.compile(
+    r"\.(?:png|jpe?g|gif|webp|bmp|svg)\b|\b(?:image|images|screenshot|picture|photo|diagram|imagen|captura|foto)\b",
+    re.IGNORECASE,
+)
+
 # Track active streams for partial-save safety net
 _active_streams: Dict[str, dict] = {}
 
@@ -2119,6 +2133,8 @@ def setup_chat_routes(
             "autonomy_preset": {"type": "string", "enum": ["supervised", "bounded_autonomous", "read_only"]},
             "plan_mode": {"type": "boolean"}, "no_memory": {"type": "boolean"},
             "no_skills": {"type": "boolean"},
+            "unattended": {"type": "boolean",
+                "description": "Nobody reads questions until the turn ends (headless run, task container): the agent decides instead of asking."},
             "tool_approval_id": {"type": "string", "description": "Opaque ID of the pending sealed action for this chat."},
             "tool_approval_decision": {"type": "string", "enum": ["approve_action", "approve_task", "approve", "approve_workspace", "deny"],
                 "description": "approve_action authorizes only the sealed action once; other scopes retain their existing meaning."},
@@ -2200,6 +2216,7 @@ def setup_chat_routes(
             execution_defaults.get("autonomy_preset") or ""
         ).strip().lower()
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
+        unattended = str(form_data.get("unattended") or (body or {}).get("unattended") or "").lower() == "true"
         chat_mode = str(form_data.get("mode") or (body or {}).get("mode") or "").lower()  # 'chat' or 'agent'
         tool_approval_id = (
             form_data.get("tool_approval_id")
@@ -3243,6 +3260,15 @@ def setup_chat_routes(
             if plan_mode:
                 from src.tool_security import plan_mode_disabled_tools
                 disabled_tools.update(plan_mode_disabled_tools())
+            # Unattended turn: a question would only end the run unanswered.
+            # It is also a lean one: tools no unattended run in the bench
+            # campaigns ever called (60 runs) cost ~3.5k prompt tokens a round,
+            # which a small model pays in attention as well as in prefill.
+            elif unattended:
+                disabled_tools.add("ask_user")
+                disabled_tools.update(UNATTENDED_LEAN_OFF)
+                if not _IMAGE_CUE_RE.search(message or ""):
+                    disabled_tools.add("inspect_image")
 
             tool_policy = build_effective_tool_policy(
                 disabled_tools=disabled_tools,
@@ -4335,6 +4361,21 @@ def setup_chat_routes(
                                 })
                         except Exception:
                             pass
+                        # An unattended run is handed its MCP servers for the job
+                        # (a task container's own service): their tools are the
+                        # job's interface, not something retrieval may leave out.
+                        if unattended:
+                            try:
+                                _job_mcp = {
+                                    str(row.get("qualified_name") or "")
+                                    for row in (get_mcp_manager().get_all_tools({}) or [])
+                                    if not row.get("is_disabled")
+                                }
+                                _job_mcp.discard("")
+                                if _job_mcp:
+                                    _forced_tools = set(_forced_tools or set()) | _job_mcp
+                            except Exception:
+                                logger.debug("unattended MCP tools not forced", exc_info=True)
                         # /agents (multi-agent delegation) names the tool explicitly;
                         # make sure retrieval cannot drop it.
                         if isinstance(message, str) and "delegate_agents" in message:
@@ -4468,6 +4509,7 @@ def setup_chat_routes(
                             fallback_statuses=_foreground_policy.eligible_statuses,
                             fallback_on_empty=_foreground_policy.fallback_on_empty,
                             plan_mode=plan_mode,
+                            unattended=unattended,
                             approved_plan=approved_plan or None,
                             workspace=workspace or None,
                             workspace_roots=_turn_file_roots or None,
