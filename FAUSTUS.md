@@ -12728,3 +12728,36 @@ los minijuegos del Pokéathlon «con cualquier Poké». Ágora del espacio `silv
 Suites completas en verde (pytest 293, node 288/1 omitida), comprobado por MCP a través del Hub y en el navegador sobre la 5230, que se
 reconstruyó y reinició desde el Hub. Sin push. Quedan en OBJETIVOS de Silver: Ruleta y Castillo en tiempo real, Frente en dobles/multi y
 Pokéathlon con amigos.
+
+## Silver's Hoard: pulido nocturno de arenas y correcciones — 16-10-2026
+
+Trabajo de codex-silver-noche, sin delegación por indicación de Luis. Cuatro suelos originales generados con
+imagegen integrado (mármol de la sala del campeón, nieve del Monte Plateado, roca mineral de la Cascada Meteoro
+y caliza del castillo) están incorporados al editor, al renderer de tiempo real y a las páginas HTML jugables.
+Las imágenes WebP viajan incrustadas en la página. Los límites, las rocas reales, el público y el ambiente se
+mantienen en capas separadas; la geometría y las reglas no cambian. Los prompts y la procedencia viven en
+`client/src/battle/rt/art/PROVENANCE.md` de Silver.
+
+Tres bugs corregidos con reproducción previa: la caché no actualizaba el suelo al cambiar de arena o terminar
+de cargar la imagen; desactivar la simetría descartaba las rocas de la mitad derecha; cambiar de idioma podía
+ocultar nombres personales como «Giovanni (mi favorito)». Los nombres históricos solo se reconocen por igualdad
+con los textos completos que generó la app, incluido su recorte antiguo a 60 caracteres. Los nombres actuales y
+los casos históricos reales siguen traducidos; los sufijos personales se conservan.
+
+Ágora Silver 647/650/652/654 con aprobación independiente CAS1 de Cursor. Fuentes 5f170c2/41d5b26/051c6ca/fec4cdd
+integradas como 1129bfc/c6e122d/b00b962/a38f7dd. Los archivos funcionales aprobados coinciden; los documentos
+combinan además las ampliaciones de los otros agentes. Los cambios ajenos en curso se preservaron por SHA.
+La activación en la instancia real sigue pendiente: no se reconstruye una mezcla con ediciones ajenas en curso
+ni se reinicia mientras permanezca la partida humana abierta. «Integrado» no significa aquí «activo».
+
+Validación de la entrega 654: 295 pruebas de Python aprobadas y dos omitidas; 301 del motor aprobadas y una
+omitida por Rust opcional; build de app y página jugable. MCP stdio nativo con 156 herramientas y 10 llamadas,
+dos combates reales terminados y dos exportaciones. Ambas
+texturas nuevas están byte a byte en ambos HTML descomprimidos; las dos anteriores conservan sus bytes.
+Navegador de escritorio y móvil 390×844 sin desbordamiento, PS y ataques legibles, HTML autónomo jugado con
+Flamethrower, K.O. y repetición; consola sin errores. Las comprobaciones no certifican rendimiento universal.
+Evidencias: `D:\LocalAI\research-inbox\silver-noche-20261016`.
+
+El sprite animado original de fuego 651 está preparado con alfa y cuatro fotogramas; todavía no está conectado
+al renderer por una ruta ajena reservada. No se declara efecto integrado. Sin push, reinicio de la instancia
+real ni inferencias de QA en modelos globales.
