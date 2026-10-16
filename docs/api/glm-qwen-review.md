@@ -25,6 +25,12 @@ Steps record the selected `model`, `endpointId` and redacted `endpointUrl` in
 Headers and API keys are excluded. The native reply's model/endpoint metadata and
 the serving API must also be checked when verifying actual routing.
 
+Normal chat sessions can retain provider authentication headers as well as the
+encrypted endpoint record. New nonempty session-header writes now use the same
+existing `secret_storage` key, while preserving the JSON column and dictionary
+API. Legacy header objects remain readable and are not rewritten when unrelated
+session metadata changes. There is no new credential store or mass migration.
+
 The built-in `groups` MCP exposes these fields in `group_create` and
 `group_update`; `group_get` returns the persisted composition and step evidence.
 
@@ -61,6 +67,11 @@ window for system/tool context and output. Verify the actual loaded window; do
 not substitute GLM's 1048576-token setting. Large reviews should be partitioned
 by file/module with an explicit record of excluded material. Native context
 trimming is not proof that the reviewer saw every source file.
+
+The model metadata table distinguishes Flash-Next's native 262144-token window
+from the generic Qwen3 family fallback. This architectural fallback is not a
+measurement of a particular deployment. A smaller reported local serving window
+still takes precedence; verify the authenticated catalog after service changes.
 
 Send the implementation/review task once with a stable `request_id`. Later
 participants receive completed native tool outputs. Require `git diff` output
