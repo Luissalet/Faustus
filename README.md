@@ -10,6 +10,11 @@ A temporary retryable Sparks service outage before output keeps the task alive
 on the same configured model. Completed tool results are retained; Stop and
 requested initial deadlines remain available. [Service continuity](website/SPARKS-SERVICE-CONTINUITY.md).
 
+Persistent groups can pair the resident GLM implementer with an independent Qwen
+reviewer on a fourth Spark. Participant routes, read-only execution and input
+budgets survive saving and reloading presets. Correction turns remain directed
+native group messages; review is opt-in. [GLM and Qwen review](docs/api/glm-qwen-review.md).
+
 Delegated workers have no implicit deadline and queue every requested task by
 default. They inherit the coordinator's configured model route unless a task
 selects another one. Reading and research return reports without being retried

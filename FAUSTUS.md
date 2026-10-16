@@ -12875,3 +12875,15 @@ se probaron en navegador. La partida humana sigue abierta y el backend PID123200
 Evidencia D:/LocalAI/research-inbox/silver-arenas-visible-20261016. Sin push, reinicios de Main, modelos,
 delegaciones ni encargos a Claude. La automatización nocturna permanece pausada. Es un ajuste local:
 README EN/ES, arquitectura, memoria y nodo propio del grafo actualizados; no cambia el manual global.
+
+## GLM y Qwen en cuatro Sparks — tarea 668, 16-10-2026
+
+Faustus mantiene GLM-5.3-Flash NVFP4 como servicio global en las Sparks 1–3, con contexto configurado de 1.048.576. Qwen3.8-Flash-Next NVFP4 se sirve en Spark4Asus (gx10-c94d), por Ethernet, mediante un proveedor autenticado independiente y contexto anunciado de 262.144. No se incorpora al anillo TP3 ni sustituye la ruta predeterminada.
+
+El grupo y preset «GLM + Qwen Code Review» usan los grupos nativos del Ágora: GLM implementa y Qwen revisa archivos y diff reales. La composición conserva autonomía y presupuesto por participante también al guardar/cargar; Qwen usa read_only y 180.000 tokens de entrada. El mecanismo nativo bloquea sus escrituras aunque el modelo intente la llamada. API y MCP exponen esas opciones y las rutas verificables de cada intervención. Los headers de sesiones nuevas se cifran con el almacén existente; las filas antiguas no se migran masivamente.
+
+Una Spark remota residente no toma el bloqueo de modelos del PC. Ese bloqueo admite los event loops de chat y trabajadores sin el RuntimeError observado durante QA; los motores loopback conservan exclusividad. El modo solo GLM sigue disponible durante el reinicio real de Spark 4; una revisión Qwen no disponible queda como error sin cambiar de modelo ni aparentar aprobación.
+
+Probado en fixture aislado: GLM editó y ejecutó tests; Codex introdujo después un bug deliberado; Qwen leyó la revisión actual, señaló un contraejemplo, se reprodujo RED, GLM corrigió y ejecutó tres tests GREEN y Qwen verificó el código corregido. Una llamada write_file de Qwen devolvió blocked/autonomy_read_only y el archivo no apareció. Receipt repetido devuelve el mismo turno sin editar de nuevo; Stop de un grupo deja terminar otro. Fuente revisada independientemente R1/R2/R3/R6 e integrada preservando el merge ajeno del harness; 62 pruebas del conjunto integrado pasan, además de las suites de área y navegador/MCP.
+
+No hay un bucle automático de correcciones: se usan turnos dirigidos, con un máximo recomendado de dos ciclos y revisión optativa. Tampoco se acredita superioridad general entre modelos ni una entrada real de 1M por leer el catálogo. Perfil, límites, recuperación y contrato en docs/api/glm-qwen-review.md; evidencia detallada y resultados de evaluación en D:/LocalAI/research-inbox/sparks668-20261016.

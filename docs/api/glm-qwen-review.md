@@ -149,3 +149,36 @@ Benchmark at least 20 identical controlled tasks in GLM-only, GLM self-review
 and GLM + Qwen arms before any automatic activation. Record test success,
 regressions, substantiated findings, false positives, latency, usage and retries.
 This integration alone establishes no quality improvement.
+
+## Deployment log and credential handling
+
+The tested engine printed its merged `api_key` in a startup `ServerArgs` line.
+The initial key was rotated; an actual request using that expired credential
+returned 401. Existing journals were retained. The two Faustus endpoint records
+were updated in place using `PATCH /api/model-endpoints/{id}` and the normal
+encrypted store; endpoint IDs and the global GLM route were preserved.
+
+Existing sessions retain their saved headers. After this explicit key rotation,
+the eight task-owned Qwen sessions were rebound through the normal
+`PATCH /api/session/{id}` model picker operation, keeping IDs, names and history.
+A request from an old session first returned 401; after rebinding, that same
+conversation generated successfully with the new credential. A future manual
+key rotation likewise needs existing conversations to reselect the endpoint.
+Ordinary machine reboots keep the key and do not require this operation.
+
+Spark 4 has a generated-launcher override, `docker run --log-driver=none`, plus
+`/etc/systemd/system/qwen38-flash.service.d/668-log-secrets.conf` containing
+`LogFilterPatterns=~api_key`. Normal engine diagnostics continue through the
+system journal, while the credential-bearing configuration line is discarded
+and Docker does not retain a second raw log. The final boot's actual journal
+was checked in memory for the current credential, with zero matches. See
+[systemd's filter contract](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)
+and [Docker's per-container logging configuration](https://docs.docker.com/engine/logging/configure/).
+
+`~/protect-qwen-logs.sh` reapplies these overrides after an installer refresh.
+It is idempotent when already applied; reapplying a lost launcher override does
+not rotate the key again. Do not print the key or `engine-secrets.yaml`, or
+publish unfiltered historical startup configuration. The installation bootstrap,
+operational scripts, hashes and real verification results are retained with the
+task's local evidence. These deployment overrides are outside the pinned
+installer repository.
