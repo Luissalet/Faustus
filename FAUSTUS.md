@@ -12677,8 +12677,8 @@ sin embeddings,79 nodos ajenos y aristas preservados. Evidencia:`D:\LocalAI\rese
 - Campal reglas v3 (#641 R2): la ola de Surf/Terremoto solo reparte ×0,75 si al salir hay más de un rival en su alcance;
   v1 y v2 conservan reglas y huellas (las 6 campales guardadas dan same=true). La marca de embestida normaliza su dirección.
 - Una página abierta durante una recompilación recarga una vez en vez de quedarse en blanco (`client/src/lazy.js`).
-- Pendiente de turno ajeno (#644): nombres traducidos en Video.jsx y en la arena en tiempo real (RtScreen: nombre del
-  asiento, «Nv.» y la etiqueta Pausa/Play).
+- El vídeo (rótulo y registro) y la arena en tiempo real (barra lateral, registro, «Nv.», Pausa/Reproducir) también dicen
+  los nombres en el idioma de quien lee y cambian en caliente (0c2e4c0). #640 enviada a revisión; #641 aprobada y cerrada.
 
 Pruebas: motor 288 PASS (+1 omitida), Python completa PASS, test_names_i18n 10/10, navegador ES↔EN en caliente y barrido
 EN de todas las páginas. Commits 798b73a, a3bb9a1, 3fd70ce, 31e159d, c7527bb (sin push).
