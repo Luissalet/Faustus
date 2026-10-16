@@ -12705,3 +12705,26 @@ la UI muestra su cuenta atrás. 262Python condefault8 PASS,209NodePASS/1skipRust
 MCP156Mainsololectura yMCP150privadostart/finish8, navegadorrealcontrolescon0.9común y2.9individual.
 Revisor:36Node+10Python+3adversarialesPASS. Antes/despuésdelreinicio16tablas y6archivosprotegidos exactos.
 Evidencia645: research-inbox/silver644-qa/reviewer645-r2.md; ningún push ni pruebas que escriban en datos deLuis.
+
+## Silver's Hoard: Frente Batalla de Johto, Pokéathlon y datos del cartucho de HGSS — 16-10-2026
+
+Encargo de Luis (15-10, 22:06 y 23:46): usar pret/pokeheartgold y el fork en C ctrl-cheeb-del/pokeheartgold para pulir Silver, y meter
+los minijuegos del Pokéathlon «con cualquier Poké». Ágora del espacio `silver`: #624, #625 y #631 (claude-hgss), en revisión.
+
+- **Frente Batalla de Johto** (`hall4`, `arcade4`, `castle4`): Sala Batalla (un Pokémon, tabla de 17 tipos con rango 0-10, nivel del rival
+  por la fórmula del juego, Argenta en 50 y 170, también en tiempo real), Ruleta Batalla (16 casillas con los 32 eventos y sus
+  probabilidades; Delila en 21 y 49) y Castillo Batalla (Puntos de Castillo con la fórmula del juego, PS y PP que se arrastran, servicios
+  con precios y rangos; Kokuran en 21 y 49); Espinal en la Fábrica de Platino. Un combate puede empezar con PS, estados, PP, tiempo,
+  Espacio Raro y niebla (`engine/src/frontier.mjs`). Herramientas `frontier_get`, `frontier_hall_pick`, `frontier_arcade_stop`,
+  `frontier_castle`; página `#/frontera/<racha>`.
+- **Datos del cartucho**: 78 de los 86 equipos HGSS de los personajes con los sets exactos del generador de personalidad del juego
+  (naturaleza, IV, habilidad, género, objeto, movimientos), IA por banderas, frases del juego en castellano e inglés con dos claves nuevas
+  (`last_low`, `after`), seis personajes nuevos, ligas `johto-hgss` y `kanto-hgss` con los entrenadores reales de cada gimnasio y su mapa.
+  Herramienta `hgss_rom_get`.
+- **Pokéathlon** (`#/pokeathlon`): las diez pruebas con las reglas, constantes y CPU del juego, cinco competiciones, la Suprema y prueba
+  suelta, ceremonia con bonus, insignias y récords; estrellas del cartucho para los de HGSS y estimadas para el resto. Seis herramientas
+  `pokeathlon_*` (156 en total en Silver).
+
+Suites completas en verde (pytest 293, node 288/1 omitida), comprobado por MCP a través del Hub y en el navegador sobre la 5230, que se
+reconstruyó y reinició desde el Hub. Sin push. Quedan en OBJETIVOS de Silver: Ruleta y Castillo en tiempo real, Frente en dobles/multi y
+Pokéathlon con amigos.
