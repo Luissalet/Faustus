@@ -12731,79 +12731,50 @@ Pokéathlon con amigos.
 
 ## Silver's Hoard: pulido nocturno de arenas y correcciones — 16-10-2026
 
-Trabajo de codex-silver-noche, sin delegación por indicación de Luis. Cuatro suelos originales generados con
-imagegen integrado (mármol de la sala del campeón, nieve del Monte Plateado, roca mineral de la Cascada Meteoro
-y caliza del castillo) están incorporados al editor, al renderer de tiempo real y a las páginas HTML jugables.
-Las imágenes WebP viajan incrustadas en la página. Los límites, las rocas reales, el público y el ambiente se
-mantienen en capas separadas; la geometría y las reglas no cambian. Los prompts y la procedencia viven en
-`client/src/battle/rt/art/PROVENANCE.md` de Silver.
+Lote de producto integrado, aprobado y activo en Main. Codex realizó el encargo solo, sin subagentes ni
+nuevas asignaciones a Claude; Cursor revisó espontáneamente cada entrega de producto con voto CAS1.
 
-Tres bugs corregidos con reproducción previa: la caché no actualizaba el suelo al cambiar de arena o terminar
-de cargar la imagen; desactivar la simetría descartaba las rocas de la mitad derecha; cambiar de idioma podía
-ocultar nombres personales como «Giovanni (mi favorito)». Los nombres históricos solo se reconocen por igualdad
-con los textos completos que generó la app, incluido su recorte antiguo a 60 caracteres. Los nombres actuales y
-los casos históricos reales siguen traducidos; los sufijos personales se conservan.
+Cuatro suelos originales de imagegen están incorporados al editor, al renderer de tiempo real y al HTML
+jugable: mármol de la sala del campeón, nieve del Monte Plateado, roca mineral de la Cascada Meteoro y
+caliza del castillo. Los WebP viajan incrustados. Límites, rocas, público y ambiente permanecen separados;
+la geometría no cambia. Prompts y procedencia en `client/src/battle/rt/art/PROVENANCE.md` de Silver.
 
-Ágora Silver 647/650/652/654 con aprobación independiente CAS1 de Cursor. Fuentes 5f170c2/41d5b26/051c6ca/fec4cdd
-integradas como 1129bfc/c6e122d/b00b962/a38f7dd. Los archivos funcionales aprobados coinciden; los documentos
-combinan además las ampliaciones de los otros agentes. Los cambios ajenos en curso se preservaron por SHA.
-La activación en la instancia real sigue pendiente: no se reconstruye una mezcla con ediciones ajenas en curso
-ni se reinicia mientras permanezca la partida humana abierta. «Integrado» no significa aquí «activo».
+El sprite original de fuego tiene alfa y cuatro fotogramas a12fps, con anclas por núcleo. El Vfx existente
+lo usa en proyectiles y cabezas de haces, con dirección, reloj de pausa/reinicio y fade. El estilo sencillo
+y una imagen que no carga conservan el efecto procedural. También viaja dentro del HTML autónomo.
+Los demás tipos mantienen sus efectos existentes; no hay cambios de motor, daño ni colisión. Procedencia
+y prompt en `client/src/battle/rt/art/MOVE-PROVENANCE.md`.
 
-Validación de la entrega 654: 295 pruebas de Python aprobadas y dos omitidas; 301 del motor aprobadas y una
-omitida por Rust opcional; build de app y página jugable. MCP stdio nativo con 156 herramientas y 10 llamadas,
-dos combates reales terminados y dos exportaciones. Ambas
-texturas nuevas están byte a byte en ambos HTML descomprimidos; las dos anteriores conservan sus bytes.
-Navegador de escritorio y móvil 390×844 sin desbordamiento, PS y ataques legibles, HTML autónomo jugado con
-Flamethrower, K.O. y repetición; consola sin errores. Las comprobaciones no certifican rendimiento universal.
-Evidencias: `D:\LocalAI\research-inbox\silver-noche-20261016`.
+Cuatro bugs reproducidos y corregidos: caché de suelo obsoleta al cambiar de arena o terminar la imagen;
+pérdida de rocas derechas al desactivar simetría; nombres personales como «Giovanni (mi favorito)» ocultos
+por la traducción; archivos `.silverexercise` exportados que fallaban al subirlos como bytes. Los nombres
+históricos reales siguen traducidos por igualdad exacta, incluido el recorte antiguo a60 caracteres.
+La importación admite UTF-8/BOM y arranca una práctica independiente sin alterar el original ni dar medallas.
 
-El sprite animado original de fuego 651 está preparado con alfa y cuatro fotogramas; todavía no está conectado
-al renderer por una ruta ajena reservada. No se declara efecto integrado. Sin push, reinicio de la instancia
-real ni inferencias de QA en modelos globales.
+Integraciones de producto: 647→1129bfc, 650→c6e122d, 652→b00b962, 654→a38f7dd, 656→8a72197 y
+651→4c19592/8a3ba9c. Los blobs funcionales coinciden con las fuentes aprobadas; los documentos combinan
+las ampliaciones ajenas. Cada integración usó bloqueo de merge y HEAD fresco. No se ha hecho push.
 
-Estado posterior, 05:52: arenas 647/654 y simetría 650 activas y cerradas. Una compilación ajena de Main
-ha publicado la interfaz y la plantilla jugable. El editor sin guardar muestra los cuatro WebP aprobados,
-comparados por SHA256; Fourpillars conserva cuatro rocas al desactivar la simetría. La plantilla HTML de
-Main contiene las cuatro imágenes exactas. Este agente no ha reconstruido ni reiniciado la instancia real,
-ni creado arenas, gimnasios, exportaciones o partidas de prueba en ella. Evidencias: main-arenas-active.json,
-main-play-template-active.json, main-castle-active.png y main-symmetry-active.png en la carpeta anterior.
+Última suite completa en QA aislada:297Python aprobadas y dos omitidas;301Node aprobadas y una omitida
+por Rust opcional; buildapp/play aprobado. Regresiones RED→GREEN y prueba del Vfx real: dirección,
+pausa/avance, fade, fallback, estilo sencillo y restauración de canvas. MCPstdio nativo156herramientas en
+QA/160en Main; pruebas específicas de batallas, exportación, importación y práctica, además37lecturas
+MCP+HTTP. No es una certificación de todas las escrituras del catálogo.
 
-656 R1 también tiene aprobación independiente CAS1 de Cursor: fuente d564128 integrada como 8a72197.
-Corrige la subida del archivo .silverexercise que la propia app exporta: antes devolvía HTTP400 porque el
-detector solo reconocía JSON recibido como texto; ahora también decodifica bytes y bytearray, conservando
-primero la detección de partidas Unbound. Dos regresiones reales, UTF-8 normal y con BOM, pasan al exportar,
-subir y arrancar una práctica independiente sin alterar el original. 297 pruebas de Python aprobadas y dos
-omitidas; 301 del motor aprobadas y una omitida. MCP nativo 156/14 llamadas, subida200, práctica desde turno2
-y navegador hasta turno3; consola sin errores. QA cerrada sin partidas ni trabajos activos. Los dos arreglos
-de backend, nombres 652 e importación 656, siguen pendientes de activación: el servidor real permanece desde
-03:51:45 y conserva la partida humana abierta. El fuego 651 sigue preparado sin conexión al renderer.
+Navegador de escritorio y móvil390×844 sin desbordamiento; PS y ataques legibles. HTML autónomo jugado
+con FireBlast/Flamethrower, enfoque, pausa/resume, K.O. a42.8s y repetición; consolas sin errores. El replay
+FireBlast mantiene K.O. a26.7s. Arte servido en Main y plantilla HTML comparados byte a byte; una repetición
+ya terminada carga el bundle nuevo y pausa sin errores. Las métricas CDP de distinta duración/carga
+concurrente son observaciones de carga, no benchmarkFPS ni garantía de rendimiento universal.
 
-Estado posterior, 06:20: los arreglos de nombres 652 e importación 656 ya están activos y sus tareas cerradas.
-Otro agente reinició Silver a las 06:09:17, después de integrarse ambos cambios. La lectura MCP nativa de
-Main responde con 160 herramientas y mantiene la misma partida humana abierta; jobs y active_runs vacíos.
-No se han repetido escrituras de QA en Main ni realizado un reinicio desde este encargo. Los resultados de
-las regresiones y del navegador corresponden a las instancias aisladas descritas arriba. El fuego 651 sigue
-pendiente de la ruta de efectos reservada. Evidencia adicional: main-backend-active.json.
+Este encargo compiló solo el frontend de Main bajo bloqueo; no reinició backend, Hub ni modelos. Otro
+agente reinició Silver a06:09:17; ese proceso continúa y la partida humana abierta permanece intacta.
+Las pruebas se hicieron en QA aislada, sin fixtures de prueba en Main ni inferencias en modelos globales.
+QA, motor hijo y vista previa propios están detenidos con puertos libres; worktree funcional propio
+retirado con ruta, registro Git y limpieza verificados. Un primer intento de cierre se detuvo por una ruta
+incompleta en la comprobación, corregida antes de detener los procesos propios; quedó explicado en Ágora706.
 
-Estado posterior, 06:54: la ruta de efectos caducó y 651 incorpora ya el sprite original de fuego en el
-renderer existente de QA: proyectiles y cabezas de haces, cuatro fotogramas a 12 fps, dirección, pausa,
-reinicio y fade; estilos sencillos y fallo de carga conservan el efecto procedural. No cambia el motor.
-297 pruebas Python aprobadas y dos omitidas; 301 Node y una omitida; build app/HTML, MCP nativo156/3 llamadas,
-dos repeticiones reales, móvil sin desbordamiento y HTML autónomo jugado hasta K.O., pausa y repetición.
-El sprite está byte a byte en el HTML exportado, con procedencia y prompt en el proyecto. Fuentes 0c1684e
-y 8786dea enviadas como revisión1 sin asignar revisor. Todavía no están en Main: a falta de voto, las dos
-horas del protocolo se cumplen a las08:54:27.974, antes del cierre de esta noche a las09:00. Las métricas
-de carga observadas tienen distinta duración y carga concurrente; no certifican FPS ni rendimiento universal.
-
-Estado posterior, 07:22: 651 recibió aprobación independiente CAS1 de Cursor y ya está integrado y activo.
-Las fuentes 0c1684e/8786dea son 4c19592/8a3ba9c en Main; los cuatro blobs funcionales coinciden y los documentos
-conservan las ampliaciones ajenas. Se recompilaron app y HTML bajo bloqueo, sin reiniciar el backend. HTTP
-sirve el sprite aprobado exacto y la plantilla jugable lo incorpora; una repetición ya terminada carga el
-bundle nuevo y pausa sin errores de consola. El proceso real sigue desde las06:09:17 y mantiene la partida
-humana abierta. Las cuatro arenas, los cuatro arreglos y el fuego de este encargo quedan activos.
-
-La QA privada y su servidor de vista previa ya están detenidos, con puertos libres y worktree funcional propio
-retirado tras comprobar ruta, registro Git y limpieza. El primer intento de cierre se detuvo por una referencia
-incompleta al motor; se corrigió la comprobación antes de detener los tres procesos propios. No se tocó ningún
-servidor ajeno. Evidencias finales: result651.txt, main-fire-active.json y main-fire-replay.png.
+El informe duradero, los hashes completos, las pruebas y los límites están en
+`D:\LocalAI\research-inbox\silver-noche-20261016\RESULT.txt`; continuidad en `CONTINUIDAD.txt` de esa carpeta.
+Manual nativo y grafo actualizados únicamente en la sección y nodo propios, preservando el resto y sin
+embeddings. Este encargo y su automatización se limitan a esta noche, hasta las09:00Europe/Madrid.
