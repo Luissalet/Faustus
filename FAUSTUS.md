@@ -12636,3 +12636,29 @@ c05bc2c y fd6ccf5, sin push; Ágora #635).
 - **Arte de Prospero perdido en la restauración:** al restaurar Prospero desde el backup de las 4:00 del 15-10, faltaban las
   poses de espalda y de victoria del sprite de Luis, dibujadas a las 5:2x. Se volvieron a importar al proyecto «Silver's Hoard»
   de Prospero: las 6 imágenes de `ComfyUI\output` de esa hora y los 6 sprites finales de Silver.
+
+## Silver's Hoard: selector visual y correcciones de combate — 16-10-2026
+
+Ágora637, revisión independiente APPROVE CAS2: `3709144`, `4b1fb0c` y `7f5e169` integrados en Main
+`5526904`, sin push. La activación completa espera al cierre de las ediciones concurrentes; no se confunde con
+la interfaz nueva ya compilada mientras el servidor conserva módulos anteriores.
+
+- Selector compartido con retratos, nombres, búsqueda bilingüe y desplegables de origen, región y juego en el
+  modal y en Combatir; los mismos filtros en Entrenadores. Incluye personajes aún sin instalar, como Leon/Lionel
+  y sus doce equipos. Catálogo ampliado a257 personajes y1923 equipos contando Unbound, sin afirmar exhaustividad.
+- Cancelar deja el combate terminal, sin ganador ni palmarés; las lecturas y decisiones retenidas vuelven a
+  comprobar su estado bajo bloqueo. Se cancelan también los trabajos desde sus listas.
+- Retratos ligados al Pokémon y a la posición de la repetición, con alternativas de imagen e iniciales accesibles.
+  Volver a ver después del final limpia la victoria y los efectos anteriores. Entrenador propio anclado fuera del campo.
+- Exportación MP4 visible también al finalizar; «Ataque especial» sustituye y explica «Definitiva». Las reglasRT7
+  conservan la megaevolución al retirar al Pokémon; las reproducciones1–6 mantienen sus reglas.
+- Historial ofrece espera limitada de15s y reintento. El fallo intermitente original no se reprodujo: no se afirma
+  que su causa haya quedado identificada. Inglés inicial con preferencia explícita conservada; auditoría global640 abierta.
+- Campal641: comparte efectosRT y elimina el tope de ocho objetivos en su primera entrega; sigue CHANGES R1 por
+  daño de Surf contra un único rival y dirección de la marca de embestida. Resoluciones del vídeo campal/recorder642 pendientes.
+
+Pruebas637:224PythonPASS,187NodePASS y1omitida deRust opcional; builds app/página jugable, MCP nativo145 con
+instalación deLeon, filtros, cancelación yRT7, MP4 realH2641280×720/AAC, navegador desktop/móvil/repetición/fallback
+y combate completo. Revisor R2:14Python y5Node propios. Conjunto integrado5526904:buildapp/play y20Python/13Node
+de composición PASS. Manual nativoCAS/readback cambia soloSilver de168párrafos;167 ajenos intactos. Grafo propio
+sin embeddings,79 nodos ajenos y aristas preservados. Evidencia:`D:\LocalAI\research-inbox\silver637-qa`.
