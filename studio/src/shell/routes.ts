@@ -59,6 +59,7 @@ export const DESTINATIONS: Destination[] = [
   { path: '/library', label: 'Library', icon: Library },
   { path: '/automations', label: 'Automations', icon: Workflow },
   { path: '/activity', label: 'Activity', icon: Activity },
+  { path: '/connectors', label: 'Hoards', icon: Plug },
 ];
 
 /**
@@ -72,9 +73,8 @@ export const DESTINATIONS: Destination[] = [
 export const MOBILE_DESTINATIONS: Destination[] = [
   { path: '/', label: 'Home', icon: Home },
   { path: '/studio', label: 'Studio', icon: Sparkles },
-  { path: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { path: '/notes', label: 'Notes', icon: StickyNote },
-  { path: '/settings', label: 'Settings', icon: Settings2 },
+  { path: '/projects', label: 'Projects', icon: FolderKanban },
+  { path: '/library', label: 'Library', icon: Library },
 ];
 
 /**

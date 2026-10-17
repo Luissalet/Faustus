@@ -63,6 +63,7 @@ import { ProjectSkillImports } from './project/SkillImports';
 import './projects.css';
 import './home.css';
 import { t, tn } from '../i18n';
+import { ProjectNavigation } from './project/ProjectNavigation';
 
 const TABS = [
   { id: 'brief', label: 'Brief', icon: FileText },
@@ -1029,16 +1030,7 @@ export function ProjectScreen() {
         </p>
       )}
 
-      <div className="fs-tabs" role="tablist" aria-label={t('Project sections')}>
-        {TABS.map((entry) => (
-          <button key={entry.id} type="button" role="tab" aria-selected={tab === entry.id} className="fs-tab" data-testid={`project-tab-${entry.id}`} onClick={() => setTab(entry.id)}>
-            {t(entry.label)}
-            {/* The tab itself says it, so a working chat is visible without
-                opening the section it lives in. */}
-            {entry.id === 'chats' && liveChats > 0 && <ActivityDot state={liveTone} />}
-          </button>
-        ))}
-      </div>
+      <ProjectNavigation entries={TABS} selected={tab} onChange={setTab} projectId={project.id} liveChats={liveChats} liveTone={liveTone} />
 
       {tab === 'brief' && (
         <div className="fs-pj__brief">

@@ -1099,6 +1099,7 @@ export function Composer({
         </div>
           </div>
         </Popover>
+        {knobs.research && <button type="button" className="fs-studio__chip" aria-pressed="true" onClick={() => setKnobs(current => ({ ...current, research: false }))} data-testid="research-active"><Telescope size={13} aria-hidden="true" />{t('Research')}<X size={11} aria-hidden="true" /></button>}
         {activePresetChip}
         <div className="fs-studio__seg" role="radiogroup" aria-label={t('Mode')}>
           <span className="fs-studio__seg-thumb" data-mode={knobs.mode} aria-hidden="true" />
@@ -1106,6 +1107,7 @@ export function Composer({
             type="button"
             role="radio"
             aria-checked={knobs.mode === 'chat'}
+            aria-label={t('Chat')}
             onClick={() => setKnobs((k) => ({ ...k, mode: 'chat' }))}
             data-testid="studio-mode-chat"
           >
@@ -1115,6 +1117,7 @@ export function Composer({
             type="button"
             role="radio"
             aria-checked={knobs.mode === 'agent'}
+            aria-label={t('Agent')}
             onClick={() => setKnobs((k) => ({ ...k, mode: 'agent' }))}
             data-testid="studio-mode-agent"
           >
@@ -1123,6 +1126,9 @@ export function Composer({
         </div>
         </div>
         <div className="fs-studio__bar-tools">
+          <Popover placement="composer" className="fs-studio__conversation-options" testId="conversation-options" trigger={<button type="button" className="fs-studio__chip" data-testid="conversation-options-trigger"><SlidersHorizontal size={13} aria-hidden="true" />{t('Conversation settings')}</button>}>
+            <section className="fs-conversation-options" aria-label={t('Conversation settings')}>
+
         {knobs.mode === 'agent' && (
           <AutonomyPresetSelector
             preset={knobs.autonomyPreset ?? 'supervised'}
@@ -1137,6 +1143,8 @@ export function Composer({
         <GlobalApprovalControl />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
         <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
+            </section>
+          </Popover>
         </div>
         <div className="fs-studio__bar-end">
         {/* Next to the model, where it is seen: how much it reasons (the mode,

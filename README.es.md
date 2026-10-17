@@ -1,6 +1,8 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
+La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
+
 Ágora usa el chat habitual de Studio: Proyecto → Ágora abre su lista de conversaciones, historial y compositor, con el botón habitual del proyecto y un acceso a Tasks. Los adjuntos, comandos y controles del compositor usan el arnés nativo. Puedes usar @menciones y abrir Miembros para elegir modelos, razonamiento compatible y ajustes del debate o consultar la actividad de cada participante. Los miembros se contestan hasta terminar la discusión; los límites opcionales de rondas siguen disponibles. Se conservan las conversaciones, la deliberación y las herramientas de coordinación existentes. [Uso de Ágora](docs/api/agora.md) · [API de grupos compatible](docs/api/groups.md).
 </p>
 

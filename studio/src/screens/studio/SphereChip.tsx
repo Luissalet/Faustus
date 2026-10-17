@@ -6,7 +6,7 @@ import { t, useLang } from '../../i18n';
 import './sphere-chip.css';
 
 /**
- * The family hub's active sphere, in the Studio header.
+ * The family hub's active sphere, beside the shell settings.
  *
  * The person keeps two lives apart in the Hoard Hub (personal / work); this
  * chip shows which one is active, switches it, and opens the hub. It owns no
