@@ -116,6 +116,22 @@ def test_auth_disabled_chat_uses_the_same_local_owner_as_mobile_profiles(databas
     assert runtime.context_messages("chat-a", None) == []
 
 
+def test_local_skill_catalog_matches_existing_library_without_cross_owner_login_leak(database, monkeypatch):
+    from pathlib import Path
+    from src.constants import DATA_DIR
+    from src.owner_identity import DEFAULT_LOCAL_OWNER
+    for name, owner, status in [("named", "luis", "published"), ("another", "other", "published"),
+                                ("shared", "*", "published"), ("draft", "luis", "draft")]:
+        path = Path(DATA_DIR) / "skills/general" / name / "SKILL.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(f'---\nname: {name}\ndescription: A procedure\nowner: "{owner}"\nstatus: {status}\n---\n\n## Procedure\n1. Check sources\n', encoding="utf-8")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    assert {s["name"] for s in runtime.skill_catalog(DEFAULT_LOCAL_OWNER)} == {"named", "another", "shared"}
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    assert {s["name"] for s in runtime.skill_catalog("luis")} == {"named", "shared"}
+    assert {s["name"] for s in runtime.skill_catalog(DEFAULT_LOCAL_OWNER)} == {"shared"}
+
+
 def test_hourly_uses_native_cron_and_persists_across_store_instances(database):
     from core.database import ScheduledTask
     p = profile(proactivity={"enabled": True, "prompt": "Check", "schedule": "hourly", "time": "09:23"})
