@@ -13172,3 +13172,19 @@ Las etiquetas aparecen después del límite resuelto y se retiran al retroceder 
 Fuente2651e6b533f5bd741952eee5edd84e10118d828e aprobada por revisión independiente CAS1, integrada y activa.26Python de área y484full pasadas/2omitidas,427Node pasadas/1omitida, buildapp/play correcto y686archivosfuente/static congelados. MCP178:4pares positivos,0si un actor cae antes de actuar y0antesde resolver el turno humano. UI EN/ES escritorio/móvil, pausa/retroceso y ajuste OFF/recarga/ON; regresión HTML con victoria real e import verificado. No se afirma sinergia universal.
 
 Activación con HEAD fresco, inactividad y un reinicio gestionado sóloSilver:18tablas,153medios,ajustes,token y6arenas intactos. UI del ajuste activo y esquema MCP comprobados; no había dobles acabados elegibles en Main y no se crean fixtures allí. Faustus conserva178tools y refresca settings_set/battle_explain sin reconectar, reiniciar ni cambiar configuración. Manual nativo actualizado por CAS y lectura de comprobación con167párrafos ajenos/estilos intactos; grafo propio activo, demás nodos/aristas exactos. Evidencia: D:/LocalAI/research-inbox/silver-reviews-626-629/activation736.json, native736-final.json y combos736-ui.json. Sinpush, schedules o llamadas LLM/GPU.
+
+## Silver: póster PNG del entrenador — 17-10-2026
+
+La ficha y `trainer_poster` (UI/REST/MCP) exportan un PNG con el retrato guardado,
+todos los miembros del equipo y las medallas ganadas. Reutiliza las imágenes y las
+formas originales de las medallas; las referencias de estilo elegidas aportan la
+paleta sin cambiar la identidad ni generar arte nuevo. Las categorías, los créditos
+y la procedencia registrados permanecen visibles y en los metadatos PNG; los autores
+desconocidos se indican expresamente. No incluye movimientos, EVs, IVs, notas ni prompts.
+Los dibujos y sprites usan un nombre público en lugar de su descripción de generación.
+Las referencias locales se identifican por número y huella de contenido; sus nombres
+privados y los metadatos originales permanecen en la biblioteca, sin alterarlos.
+El trabajo local ofrece progreso, vista previa y una descarga única. Usa Playwright y
+Chrome/Edge, sin FFmpeg, GPU ni un modelo de imagen.
+
+Fuente c1e5885e48aecc77ff9376b3f6a519f8e7047bcf aprobada por revisión independiente CAS4 e integrada y activa. 499 pruebas Python pasadas y dos opcionales omitidas, 15 del área; motor/frontend byteidénticos a la composición con427Node pasadas/una omitida ybuild correcto. La revisión comprobó de forma independiente MCP179, PNGChromium reales, títulos públicos y créditos, y conservación de los originales; no se atribuye al revisor la suitePython completa del autor. La activación gestionada sólo deSilver conservó18tablas,153medios,ajustes,token y6arenas. MainUI yMCP179 comprobados sincrear datos de prueba. El proveedor deSilver enFaustus pasó de178a179 con todaslasconfiguraciones/permisos/env intactos, sinreiniciarFaustus/Hub/Sparks. ManualGoogle actualizado porCAS ylectura posterior: sóloSilver109 cambió, otros167párrafos y todoslosestilos exactos; grafo propio actualizado sin cambiar otros108nodos ni aristas. Evidencia: D:/LocalAI/research-inbox/silver-poster731/activation.json, main-native.json, registered-mcp.json, manual-proof.json ygraph-active-proof.json. Sin generación artística nueva, modelos/GPU ni push.
