@@ -90,8 +90,7 @@ function historyTurn(m: HistoryMessage): Turn | null {
 }
 
 function stepTurn(step: GroupStep, member: Member | undefined): Turn {
-  const displayed = step.status === 'running' && typeof step.detail.display_text === 'string' ? step.detail.display_text : step.text;
-  let turn = blankTurn('assistant', displayed);
+  let turn = blankTurn('assistant', step.text);
   turn.id = step.id;
   turn = restoreFromMetadata(turn, { tool_events: step.detail.tool_results ?? [] });
   turn.speaker = member ? speakerName(member) : undefined;

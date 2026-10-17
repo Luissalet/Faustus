@@ -678,10 +678,6 @@ class NativeGroupBridge:
                         if payload.get("type") in ("tool_output", "agent_terminal", "ask_user", "response_replace", "error", "uncertain") or event_kind == "error":
                             critical = True
                         if payload.get("type") == "response_replace":
-                            if not payload.get("text") and text.strip():
-                                detail.setdefault("display_text", text)
-                            elif payload.get("text"):
-                                detail.pop("display_text", None)
                             text = str(payload.get("text") or "")
                         if not payload.get("thinking"):
                             if isinstance(payload.get("delta"), str):

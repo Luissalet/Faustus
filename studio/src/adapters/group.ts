@@ -98,7 +98,7 @@ export function knownGroupParents(): Set<string> {
 
 export interface GroupStep {
   id: string; turn_id: string; member_id: string; status: string; text: string; error: string;
-  detail: { question?: Record<string, unknown>; last_event?: Record<string, unknown>; run_id?: string; tool_results?: GroupToolResult[]; display_text?: string };
+  detail: { question?: Record<string, unknown>; last_event?: Record<string, unknown>; run_id?: string; tool_results?: GroupToolResult[] };
 }
 export interface GroupToolResult { tool?: string; command?: string; output?: string; exit_code?: number; call_id?: string; result_status?: string; uncertainty?: unknown; [key: string]: unknown }
 export interface GroupSnapshot {
