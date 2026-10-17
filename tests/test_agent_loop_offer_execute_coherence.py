@@ -834,13 +834,14 @@ def test_operator_disabled_tools_setting_outranks_the_reconciliation(workspace):
     assert "read_file" not in turn.offered and "edit_file" not in turn.offered
     assert "read_file" not in turn.executed and "edit_file" not in turn.executed
     # The rest of the floor is untouched by that setting: `ls` runs, and
-    # `apply_patch` is offered and reaches the approval gate — which is a
-    # different thing from a refusal, and the point of the distinction. A
-    # policy block ends the call; an approval card hands it to the user.
+    # `apply_patch` is offered and either runs or reaches the approval gate —
+    # both different things from a refusal, and the point of the distinction.
+    # A policy block ends the call; an approval card hands it to the user;
+    # with workspace edits approved by default (no extra friction) it runs.
     assert "ls" in turn.executed, turn.executed
     assert "apply_patch" in turn.offered, turn.offered
     assert "apply_patch" not in turn.refusals, turn.refusals
-    assert any(
+    assert "apply_patch" in turn.executed or any(
         e.get("type") == "tool_output"
         and e.get("tool") == "apply_patch"
         and "approval" in str(e.get("output", "")).lower()
