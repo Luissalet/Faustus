@@ -1556,6 +1556,8 @@ Day {n} of each month at {time}	El día {n} de cada mes a las {time}
 Days	Días
 Deactivate	Desactivar
 Deactivated — the previous options are restored.	Desactivado — se restauran las opciones anteriores.
+Debate	Debate
+Debating	Debatiendo
 Decided	Decidido
 Decision	Decisión
 Decisions	Decisiones
@@ -3751,7 +3753,9 @@ Nothing archived	Nada archivado
 Nothing blocked waiting for you. Pick up where you left off or start something.	Nada bloqueado esperándote. Continúa donde lo dejaste o empieza algo.
 Nothing cached here yet	Aún no hay nada en caché aquí
 Nothing came back; the detail above is the current answer.	No ha vuelto nada; el detalle de arriba es la respuesta de ahora.
+Preparing the final answer	Preparando la respuesta final
 Still failing: {names}.	Siguen fallando: {names}.
+Waiting for the models	Esperando a los modelos
 document RAG	RAG de documentos
 vector memory	memoria vectorial
 Nothing came out worth saving.	No ha salido nada que valga la pena guardar.
