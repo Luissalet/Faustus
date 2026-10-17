@@ -10,6 +10,7 @@ GET  /api/code-graph/architecture   ?root=
 GET  /api/code-graph/search         ?pattern=&kinds=&limit=&root=&semantic=
 GET  /api/code-graph/trace          ?from=&to=&max_depth=&root=
 GET  /api/code-graph/changes        ?base_ref=&root=
+GET  /api/code-graph/impact         ?symbol=&base_ref=&depth=&root=
 GET  /api/code-graph/snippet        ?symbol=&root=
 GET  /api/code-graph/communities    ?level=&refresh=&summarize=&root=
 GET  /api/code-graph/communities/{id}  ?root=  (id: community id, name substring, or symbol)
@@ -91,6 +92,16 @@ def setup_code_graph_routes():
         require_admin(request)
         return _guarded(code_graph.detect_changes, root, base_ref=base_ref,
                         project_id=project_id)
+
+    @router.get("/impact")
+    def impact(request: Request, symbol: str = "", base_ref: str = "HEAD",
+               depth: int = 3, root: str = "", project_id: str = "",
+               include_history: bool = True, include_risk: bool = True):
+        """Consumers and affected tests, using the same graph as MCP and chat."""
+        require_admin(request)
+        return _guarded(code_graph.impact, symbol, workspace=root,
+                        project_id=project_id, base_ref=base_ref, depth=depth,
+                        include_history=include_history, include_risk=include_risk)
 
     @router.get("/snippet")
     def snippet(request: Request, symbol: str = Query(...), root: str = "", project_id: str = ""):

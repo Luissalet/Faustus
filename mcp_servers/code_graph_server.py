@@ -120,6 +120,8 @@ async def list_tools() -> list[Tool]:
             name="code_graph_impact",
             description=(
                 "What else can break and which tests to run, from a symbol or the current git diff. "
+                "Python calls follow import bindings and lexical scope; incremental refresh "
+                "re-resolves unchanged callers when definitions are added or removed. "
                 "Qué se rompe si toco esta función / qué tests debería correr. Read-only."
             ),
             inputSchema={
@@ -128,6 +130,8 @@ async def list_tools() -> list[Tool]:
                     "symbol": {"type": "string", "description": "Symbol to seed from; omit to seed from the current git diff."},
                     "base_ref": {"type": "string", "description": "Git ref to diff against (default HEAD)."},
                     "depth": {"type": "integer", "minimum": 1, "maximum": 6},
+                    "include_history": {"type": "boolean", "description": "Include historical cochanges from git (default true)."},
+                    "include_risk": {"type": "boolean", "description": "Include the existing change-risk estimate (default true)."},
                     **_ROOT_PROP,
                 },
                 "required": [],
@@ -274,7 +278,9 @@ def _tool_impact(args: dict) -> list[TextContent]:
     cg = _engine["code_graph"]
     out = cg.impact(str(args.get("symbol") or ""), workspace=str(args.get("root") or ""),
                     base_ref=str(args.get("base_ref") or "HEAD"),
-                    depth=_limit(args.get("depth"), 3, 6))
+                    depth=_limit(args.get("depth"), 3, 6),
+                    include_history=args.get("include_history", True),
+                    include_risk=args.get("include_risk", True))
     return _json_result(out)
 
 

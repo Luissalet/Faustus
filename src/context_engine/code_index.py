@@ -214,6 +214,29 @@ store.register_schema("code_index", (
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_code_files_scope ON code_files(workspace, project_id)",
+    # Unresolved source references survive changes to other files. Resolving
+    # them again is cheaper than reparsing every unchanged caller.
+    """
+    CREATE TABLE IF NOT EXISTS code_references (
+        workspace TEXT NOT NULL,
+        path TEXT NOT NULL,
+        src TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        target TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        module_hint TEXT NOT NULL DEFAULT '',
+        optional INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (workspace, src, kind, target, module_hint)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS code_reference_files (
+        workspace TEXT NOT NULL,
+        path TEXT NOT NULL,
+        file_hash TEXT NOT NULL,
+        PRIMARY KEY (workspace, path)
+    )
+    """,
 ))
 
 
@@ -482,6 +505,14 @@ def _decorator_kind(node: Any) -> Tuple[str, str]:
     return "", ""
 
 
+def _scope_nodes(node: ast.AST) -> Iterable[ast.AST]:
+    """Walk one lexical scope, without visiting nested callable/class bodies."""
+    yield node
+    for child in ast.iter_child_nodes(node):
+        if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield from _scope_nodes(child)
+
+
 def _py_imports(tree: ast.AST, module_qual: str, *,
                 is_package: bool) -> Tuple[List[Tuple[str, bool]], Dict[str, Tuple[str, str]]]:
     """`(dotted module, optional)` for every import in the file, plus the
@@ -499,8 +530,8 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
     functions all over the place (`from src import prove as prove_mod`), and an
     import graph that misses those is a graph that says two modules are
     unrelated when one calls the other. The same walk collects `aliases`:
-    `{bound_name: (module_dotted, orig_name)}` for every `as`-bound import,
-    module-level or nested in a function body — `orig_name` is `""` for a
+    `{bound_name: (module_dotted, orig_name)}` for every named import,
+    visible in this lexical scope — `orig_name` is `""` for a
     module alias (`import a.b as m`) and the imported attribute's own name
     for a from-import alias (`from mod import name as alias`). A call site
     that resolves through one of these otherwise reads as a call to a bare
@@ -516,6 +547,7 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
     aliases: Dict[str, Tuple[str, str]] = {}
     seen: Set[str] = set()
     package = module_qual.split(".") + (["__init__"] if is_package else [])
+    local_nodes = {id(node) for node in _scope_nodes(tree)}
 
     def add(dotted: str, optional: bool) -> None:
         if dotted and dotted not in seen:
@@ -526,8 +558,9 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
         if isinstance(node, ast.Import):
             for alias in node.names:
                 add(alias.name or "", False)
-                if alias.asname and alias.name:
-                    aliases[alias.asname] = (alias.name, "")
+                if alias.name and id(node) in local_nodes:
+                    bound = alias.asname or alias.name.split(".")[0]
+                    aliases[bound] = (alias.name if alias.asname else bound, "")
         elif isinstance(node, ast.ImportFrom):
             level = int(node.level or 0)
             if level:
@@ -539,8 +572,8 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
             for alias in node.names:
                 if alias.name and alias.name != "*":
                     add(f"{dotted}.{alias.name}" if dotted else alias.name, True)
-                    if alias.asname:
-                        aliases[alias.asname] = (dotted, alias.name)
+                    if id(node) in local_nodes:
+                        aliases[alias.asname or alias.name] = (dotted, alias.name)
     return out, aliases
 
 
@@ -659,19 +692,25 @@ def _extract_python(*, workspace: str, project_id: str, rel: str, text: str,
         imports.append((module_id, dotted, optional))
 
     for owner_id, node in bodies:
-        seen: Set[str] = set()
-        for inner in ast.walk(node):
+        _, local_aliases = _py_imports(node, module_qual, is_package=is_package)
+        bindings = {**alias_map, **local_aliases}
+        shadowed = {inner.id for inner in _scope_nodes(node)
+                    if isinstance(inner, ast.Name) and isinstance(inner.ctx, ast.Store)}
+        shadowed.update(inner.arg for inner in ast.walk(node.args) if isinstance(inner, ast.arg))
+        seen_calls: Set[Tuple[str, str, str]] = set()
+        for inner in _scope_nodes(node):
             if not isinstance(inner, ast.Call):
                 continue
             dotted = _dotted(inner.func)
             callee = dotted.rsplit(".", 1)[-1]
-            if not callee or callee in seen:
+            if not callee:
                 continue
-            seen.add(callee)
             detail = dotted
             module_hint = ""
             base = _call_base_name(inner.func)
-            alias = alias_map.get(base) if base else None
+            if base in shadowed and (base in bindings or isinstance(inner.func, ast.Name)):
+                continue
+            alias = bindings.get(base) if base else None
             if alias:
                 mod, orig_name = alias
                 if dotted == base:
@@ -685,7 +724,7 @@ def _extract_python(*, workspace: str, project_id: str, rel: str, text: str,
                     callee = orig_name or callee
                     module_hint = mod
                     detail = mod
-                elif dotted == f"{base}.{callee}":
+                elif dotted.startswith(base + "."):
                     # One level of attribute access through the alias:
                     # `m.func(...)` for a plain module alias (`import a.b as
                     # m`, `orig_name` empty, hint is `mod`), or
@@ -693,8 +732,13 @@ def _extract_python(*, workspace: str, project_id: str, rel: str, text: str,
                     # alias of a *submodule* (`from src import
                     # tool_result_offload as offload`, `orig_name` is the
                     # submodule's own name, hint is `mod.orig_name`).
-                    module_hint = f"{mod}.{orig_name}" if orig_name else mod
+                    tail = dotted.split(".")[1:-1]
+                    module_hint = ".".join(part for part in [mod, orig_name, *tail] if part)
                     detail = module_hint
+            identity = (callee, module_hint, detail)
+            if identity in seen_calls:
+                continue
+            seen_calls.add(identity)
             calls.append((owner_id, callee, detail, module_hint))
 
     return _Extracted(symbols=symbols, edges=edges, imports=imports, calls=calls)
@@ -832,6 +876,8 @@ def _forget_file(conn: sqlite3.Connection, workspace: str, rel: str,
     Incoming edges are dropped only for symbols that did not come back, so a
     function that merely moved keeps the callers that point at it — the id is
     stable across a move by construction."""
+    conn.execute("DELETE FROM code_references WHERE workspace = ? AND path = ?", (workspace, rel))
+    conn.execute("DELETE FROM code_reference_files WHERE workspace = ? AND path = ?", (workspace, rel))
     old = [row["id"] for row in conn.execute(
         "SELECT id FROM code_symbols WHERE workspace = ? AND path = ?", (workspace, rel))]
     if not old:
@@ -922,12 +968,10 @@ def _resolve(conn: sqlite3.Connection, workspace: str,
       module that may never have existed.
     * A call is matched by its bare name (already the original name, not an
       alias — `_py_imports`'s alias map rewrote `_offload(...)` to `offload_
-      if_oversized` before this ever runs).  Exactly one symbol with that name
-      in this workspace makes it `static_inferred`.  Several candidates are
-      resolved when the call carried a `module_hint` (the module the alias
-      imported it from) and exactly one candidate is defined in that module,
-      also at `static_inferred` — a hint from an explicit import is not a
-      guess.  Failing that, several candidates are *still* resolved, at the
+      if_oversized` before this ever runs). An explicit `module_hint` first
+      constrains the target to that binding, even if an unrelated namesake
+      is unique in the workspace. Without a binding, exactly one symbol with
+      that name makes it `static_inferred`. Several candidates can be resolved at the
       weaker `lexical` certainty, when exactly one of them is corroborated by
       something other than the name itself (see `_ambiguous_call_corroborated`
       — same file, an unaliased import of its module, or a same-named owning
@@ -994,15 +1038,17 @@ def _resolve(conn: sqlite3.Connection, workspace: str,
                  if sid != src]
         if not found:
             continue
+        if module_hint:
+            matched = [sid for sid, path, _qual, _kind in found
+                       if f"{_module_qualname(path)}.{_qual}" == f"{module_hint}.{name}"]
+            if len(matched) == 1:
+                edges.append(Edge(src, matched[0], "calls", "static_inferred", detail))
+            # An explicit binding to a missing/external definition must not
+            # fall back to an unrelated workspace function sharing its name.
+            continue
         if len(found) == 1:
             edges.append(Edge(src, found[0][0], "calls", "static_inferred", detail))
             continue
-        if module_hint:
-            matched = [sid for sid, path, _qual, _kind in found
-                       if _module_qualname(path) == module_hint]
-            if len(matched) == 1:
-                edges.append(Edge(src, matched[0], "calls", "static_inferred", detail))
-                continue
         src_path, src_qual, src_kind = src_info.get(src, ("", "", ""))
         corroborated = [
             (sid, path, qual, kind) for sid, path, qual, kind in found
@@ -1067,43 +1113,6 @@ def refresh(workspace: str, *, project_id: str = "", paths: Optional[Sequence[st
     return out
 
 
-def _reresolve_dangling(conn: sqlite3.Connection, workspace: str,
-                        project_id: str) -> int:
-    """Promote `module:<name>` imports whose target has since been indexed.
-
-    The cost of resolving incrementally: file A's import of module B is written
-    when A is indexed, and if B was not in the index yet the edge is a
-    `static_inferred` pointer at a name.  Adding B later does not touch A, so
-    without this pass the edge would stay inferred until A itself changed.  A
-    dangling edge whose target now exists is rewritten as `exact` — the same
-    answer a `full=True` refresh would give, without the full refresh."""
-    modules = {row["qualname"]: row["id"] for row in conn.execute(
-        "SELECT qualname, id FROM code_symbols "
-        "WHERE workspace = ? AND kind = 'module'", (workspace,))}
-    if not modules:
-        return 0
-    paths = {row["id"]: row["path"] for row in conn.execute(
-        "SELECT id, path FROM code_symbols "
-        "WHERE workspace = ? AND kind = 'module'", (workspace,))}
-    promoted: List[Tuple[str, str, str, str]] = []
-    for row in conn.execute(
-            "SELECT src, dst FROM code_edges WHERE workspace = ? AND kind = 'imports' "
-            "AND dst LIKE 'module:%'", (workspace,)):
-        dotted = str(row["dst"])[len("module:"):]
-        target = modules.get(dotted)
-        if target and target != row["src"]:
-            promoted.append((row["src"], row["dst"], target, dotted))
-    edges: List[Edge] = []
-    for src, old, target, dotted in promoted:
-        conn.execute("DELETE FROM code_edges WHERE src = ? AND dst = ? AND kind = 'imports'",
-                     (src, old))
-        edges.append(Edge(src, target, "imports", "exact", dotted))
-        if _TEST_PATH_RE.search(paths.get(src, "")):
-            edges.append(Edge(src, target, "tests", "exact", dotted))
-    _insert_edges(conn, workspace, project_id, edges)
-    return len(promoted)
-
-
 def _refresh_files(root: str, scope: str, candidates: Sequence[str],
                    out: Dict[str, Any], *, full: bool, targeted: bool) -> None:
     """The body of :func:`refresh`, in one transaction.
@@ -1120,9 +1129,8 @@ def _refresh_files(root: str, scope: str, candidates: Sequence[str],
     with store.db() as conn:
         known = {row["path"]: row["file_hash"] for row in conn.execute(
             "SELECT path, file_hash FROM code_files WHERE workspace = ?", (root,))}
-        pending_imports: List[Tuple[str, str, bool]] = []
-        pending_calls: List[Tuple[str, str, str, str]] = []
-        module_paths: Dict[str, str] = {}
+        reference_hashes = {row["path"]: row["file_hash"] for row in conn.execute(
+            "SELECT path, file_hash FROM code_reference_files WHERE workspace = ?", (root,))}
         seen: Set[str] = set()
 
         for rel in candidates:
@@ -1136,7 +1144,7 @@ def _refresh_files(root: str, scope: str, candidates: Sequence[str],
                 continue
             seen.add(rel)
             text, file_hash = source
-            if not full and known.get(rel) == file_hash:
+            if not full and known.get(rel) == file_hash and reference_hashes.get(rel) == file_hash:
                 continue
             language = lang_for_path(rel)
             extracted = _extract(workspace=root, project_id=scope, rel=rel, text=text,
@@ -1150,11 +1158,16 @@ def _refresh_files(root: str, scope: str, candidates: Sequence[str],
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (root, rel, scope, file_hash, language, len(extracted.symbols), indexed_at))
             out["reindexed"] += 1
-            pending_imports.extend(extracted.imports)
-            pending_calls.extend(extracted.calls)
-            for symbol in extracted.symbols:
-                if symbol.kind == "module":
-                    module_paths[symbol.id] = rel
+            references = [(root, rel, src, "imports", target, target, "", int(optional))
+                          for src, target, optional in extracted.imports]
+            references.extend((root, rel, src, "calls", name, detail, hint, 0)
+                              for src, name, detail, hint in extracted.calls)
+            conn.executemany(
+                "INSERT OR REPLACE INTO code_references "
+                "(workspace, path, src, kind, target, detail, module_hint, optional) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", references)
+            conn.execute("INSERT OR REPLACE INTO code_reference_files VALUES (?, ?, ?)",
+                         (root, rel, file_hash))
 
         if not targeted and not out["truncated"]:
             # Only a complete walk may conclude that a file is gone.  A
@@ -1165,11 +1178,22 @@ def _refresh_files(root: str, scope: str, candidates: Sequence[str],
                     _drop_file(conn, root, rel)
                     out["removed"] += 1
 
-        if pending_imports or pending_calls:
-            _insert_edges(conn, root, scope,
-                          _resolve(conn, root, pending_imports, pending_calls, module_paths))
-        if out["reindexed"]:
-            _reresolve_dangling(conn, root, scope)
+        if out["reindexed"] or out["removed"]:
+            references = list(conn.execute(
+                "SELECT * FROM code_references WHERE workspace = ?", (root,)))
+            imports = [(r["src"], r["target"], bool(r["optional"])) for r in references if r["kind"] == "imports"]
+            calls = [(r["src"], r["target"], r["detail"], r["module_hint"]) for r in references if r["kind"] == "calls"]
+            module_paths = {r["id"]: r["path"] for r in conn.execute(
+                "SELECT id, path FROM code_symbols WHERE workspace = ? AND kind = 'module'", (root,))}
+            # Legacy indexes are backfilled as files are visited. A targeted
+            # refresh must preserve unvisited legacy callers in the meantime.
+            conn.execute(
+                "DELETE FROM code_edges WHERE workspace = ? "
+                "AND kind IN ('imports', 'calls', 'tests') AND src IN ("
+                "SELECT s.id FROM code_symbols s JOIN code_reference_files f "
+                "ON f.workspace = s.workspace AND f.path = s.path WHERE s.workspace = ?)",
+                (root, root))
+            _insert_edges(conn, root, scope, _resolve(conn, root, imports, calls, module_paths))
 
         out["symbols"] = int(conn.execute(
             "SELECT COUNT(*) AS n FROM code_symbols WHERE workspace = ?",
@@ -1612,7 +1636,7 @@ def drop(workspace: str) -> int:
     try:
         with store.db() as conn:
             removed = 0
-            for table in ("code_edges", "code_symbols", "code_files"):
+            for table in ("code_edges", "code_symbols", "code_files", "code_references", "code_reference_files"):
                 cursor = conn.execute(f"DELETE FROM {table} WHERE workspace = ?", (root,))
                 removed += int(cursor.rowcount or 0)
             return removed

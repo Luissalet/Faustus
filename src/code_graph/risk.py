@@ -178,7 +178,7 @@ def _diff_numstat(root: str, base_ref: str) -> int:
     try:
         proc = subprocess.run(
             [git, "diff", "--numstat", "--no-color", str(base_ref or "HEAD")],
-            cwd=root, capture_output=True, text=True, timeout=30, shell=False)
+            cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, shell=False)
     except (OSError, subprocess.TimeoutExpired):
         return 0
     if proc.returncode not in (0, 1):
