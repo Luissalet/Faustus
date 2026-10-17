@@ -931,11 +931,7 @@ export function ProjectScreen() {
     <ProjectAudit projectId={project.id} say={say} />
   </Dialog>;
   const navigation = <ProjectNavigation selected={tab} onChange={setTab} projectId={project.id} liveChats={liveChats} liveTone={liveTone} />;
-  if (tab === 'overview' && (params.get('view') === 'agora' || rawTab === 'agora')) return <div className="fs-project-agora-workspace">
-    <div className="fs-project-agora-workspace__nav">{navigation}<Button size="sm" variant="ghost" icon={Activity} label={t('Agent activity')} onClick={() => showActivity(true)} testId="project-activity-open" /><Button size="sm" variant="ghost" label={t('Back to overview')} onClick={() => setTab('overview')} /></div>
-    <ProjectAgora project={project} selected={params.get('room') || ''} onSelect={(id) => { const next = new URLSearchParams(params); if (id) next.set('room', id); else next.delete('room'); setParams(next, { replace: true }); }} />
-    {activityPanel}
-  </div>;
+  if (tab === 'overview' && (params.get('view') === 'agora' || rawTab === 'agora')) return <ProjectAgora project={project} selected={params.get('room') || ''} onSelect={(id) => { const next = new URLSearchParams(params); if (id) next.set('room', id); else next.delete('room'); setParams(next, { replace: true }); }} />;
 
   return (
     <div className="fs-screen fs-pj" data-testid="project" data-archived={project.archived || undefined} data-tab={tab}>
