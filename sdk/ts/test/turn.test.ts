@@ -15,6 +15,22 @@ import {
   textStream,
 } from './helpers.js';
 
+test('Turn: a terminal error followed by DONE is an error and keeps its explanation', async () => {
+  const { fetch, calls } = fakeFetch(() => streamResponse(textStream([
+    'event: error\ndata: {"error":"No substantive output","error_class":"generation.empty_completion","sequence":1}\n\n',
+    SSE_DONE,
+  ])));
+  const client = new FaustusClient({ baseUrl: 'http://sdk-test', fetch });
+  const turn = await client.turns.create('s1', { message: 'retry', mode: 'agent' });
+  const events = [];
+  for await (const event of turn) events.push(event);
+  const end = await turn.done;
+  assert.equal(end.reason, 'error');
+  assert.equal(String(end.error), 'Error: No substantive output');
+  assert.equal(events[0]?.type, 'error');
+  assert.equal(calls.length, 1, 'No original POST is repeated');
+});
+
 test('Turn: a dropped connection reconnects by cursor, deduplicates the overlap, and finishes on [DONE]', async () => {
   const { fetch, calls } = fakeFetch((call, i) => {
     if (i === 0) {

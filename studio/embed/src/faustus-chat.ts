@@ -1002,12 +1002,15 @@ export class FaustusChatElement extends HTMLElement {
     const end = await turn.done.catch((err) => ({ reason: 'error' as const, lastSequence: 0, error: err }));
     if (this.#activeTurn !== turn) return;
     this.#setBusy(false);
-    const failed = end.reason === 'error' || (end.reason === 'run_gone' && turnError !== undefined);
-    this.#status.textContent = turnError && end.reason !== 'done'
+    const failed = end.reason === 'error' || turnError !== undefined;
+    this.#status.textContent = turnError
       ? turnError
       : end.reason === 'error' ? 'No se pudo completar la conexión. Puedes reintentar el mismo envío.' : '';
     this.#activeTurn = null;
     this.#observer = null;
+    if (failed && this.#sessionId === sessionId && !this.draft && this.#pendingSend) {
+      this.draft = this.#pendingSend.message;
+    }
     if (!failed && end.reason !== 'aborted') {
       const sentIds = new Set(this.#pendingSend?.attachmentIds || []);
       if (sentIds.size) {

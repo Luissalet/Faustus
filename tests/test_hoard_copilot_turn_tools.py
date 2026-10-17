@@ -72,6 +72,17 @@ def test_the_hint_names_the_app_and_says_what_this_means():
     assert origin_hint_message({}) is None
 
 
+def test_active_reference_is_repeated_verbatim_in_the_action_hint():
+    identifier = 'tr_01M55X3DB1FDGNPVXQE2TDZV23'
+    context = {**ctx(app_id='silver'), 'active_objects': [
+        {'kind': 'trainer', 'object_id': identifier, 'title': 'Current trainer'},
+    ]}
+    hint = origin_hint_message(context)['content']
+    assert identifier in hint
+    assert 'character for character' in hint
+    assert 'different id' in hint
+
+
 def test_two_instances_of_one_app_are_told_apart_by_data_space(monkeypatch):
     from src import hoard_copilot_turn as turn
     names = {"a9e6fd58": "tantalus", "936e1b27": "tantalus-b", "e5f6a7b8": "Phileas's Hoard"}

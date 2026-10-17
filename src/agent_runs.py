@@ -1530,7 +1530,15 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
         _ended_paused = False
         async for ev in events:
             _publish(run, ev)
-            if '"error_class": "first_token_timeout"' in ev:
+            # Named and typed terminal errors remain failures even when the
+            # generator subsequently ends normally (or emits [DONE]).
+            try:
+                payload = json.loads(ev.split("data:", 1)[1].strip())
+            except (ValueError, IndexError):
+                payload = None
+            event_name = ev.partition("\n")[0].partition(":")
+            if ((event_name[0] == "event" and event_name[2].strip() == "error")
+                    or (isinstance(payload, dict) and payload.get("type") == "error")):
                 run.status = "error"
             # UX-04: stream_agent_loop's `pending_pause` break emits exactly
             # this event right before ending the generator normally -- same

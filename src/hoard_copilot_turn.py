@@ -448,8 +448,16 @@ def origin_hint_message(context: Optional[Mapping[str, Any]], manager: Any = Non
         "Answer from that context when it is enough. To read more or to change something, use "
         f"{app}'s own tools (find them with lookup_tools if they are not listed). Do not inspect desktop windows "
         "or other apps unless the user asks for them.",
+        "For a requested change, call the tools directly, carry out the change and verify the result before the final "
+        "reply. Announcing a call or a retry is not executing it; do not end with a promise of what you will do next.",
     ]
     if has_objects:
+        refs = [{key: item[key] for key in ("kind", "object_id") if key in item}
+                for item in (context or {}).get("active_objects", []) if isinstance(item, Mapping) and item.get("object_id")]
+        lines.append("Active object references for this turn (literal tool ID arguments): " + json.dumps(refs, ensure_ascii=False) +
+                     ". Copy each complete object_id character for character into the corresponding tool argument; "
+                     "never shorten or reconstruct it. A not_found result for a different id does not mean the active "
+                     "object is unavailable: compare the argument with these references and retry with the exact id.")
         lines.append("The context objects are identified by their ids, not their titles. If one of them can no longer be read "
                      "(deleted or unavailable), say that it is no longer available and do not act on another object because it "
                      "has the same title or name; ask which one the user means before changing anything else.")

@@ -135,7 +135,7 @@ def drive(monkeypatch, tmp_path):
                 "http://127.0.0.1:11434/v1", "qwen3-coder:30b", [{"role": "user", "content": user}],
                 max_rounds=max_rounds,
                 relevant_tools=None if retrieved is not None else set(tools or {"read_file", "edit_file", "glob"}),
-                workspace=workspace or str(tmp_path), session_id="s-char",
+                workspace=str(tmp_path) if workspace is None else workspace, session_id="s-char",
                 pending_cancel=pending_cancel, disabled_tools=disabled_tools)
             return [chunk async for chunk in gen]
 
@@ -152,6 +152,38 @@ def test_a_text_only_answer_ends_after_one_round_without_extra_rounds(drive):
     assert not run.extra_rounds() and not any(a.startswith("auto_continue") for a in run.actions())
     assert run.executed == []
     assert "server.py arranca" in json.dumps(run.events)
+
+
+def test_announced_retry_runs_the_second_tool_in_the_same_turn(drive):
+    attempts = []
+
+    def execute(block):
+        # The native read_file adapter has already projected its path to text.
+        attempts.append(block.content)
+        return (block.tool_type, {'output': 'not found' if len(attempts) == 1 else 'current content',
+                                  'exit_code': 1 if len(attempts) == 1 else 0})
+
+    run = drive([
+        native_call('read_file', {'path': 'shortened-reference.txt'}),
+        text('The reference was incomplete — retrying with the exact reference from the context.'),
+        native_call('read_file', {'path': 'complete-reference.txt'}),
+        text('The current content is available. No files were changed.'),
+    ], user='Read the current content.', tools={'read_file'}, exec_fn=execute,
+        settings={'agent_harness_checks': False})
+    assert attempts == ['shortened-reference.txt', 'complete-reference.txt']
+    assert run.calls == 4
+    assert any('without making the actual tool call' in m.get('content', '')
+               for m in run.seen[2] if m.get('role') == 'system')
+
+
+def test_first_empty_provider_reply_in_a_hoard_turn_recovers_without_a_workspace(drive, monkeypatch):
+    monkeypatch.setattr(al, 'current_origin_server', lambda: 'silver-qa')
+    run = drive([
+        provider_error('All model candidates returned no substantive output', 502),
+        text('The exact reference is available in the current context.'),
+    ], user='Retry with the exact reference.', workspace='', tools={'read_file'})
+    assert run.calls == 2
+    assert 'The exact reference is available' in json.dumps(run.events)
 
 
 # -- a call to a tool that does not exist -----------------------------------------

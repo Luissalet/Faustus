@@ -35,6 +35,7 @@ function server(initial: Record<string, string> = {}) {
   const held = new Map<string, ReturnType<typeof deferred>>();
   let failWrites = false;
   let streamError = '';
+  let errorDone = false;
   const transport: typeof fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/draft$/);
@@ -66,13 +67,13 @@ function server(initial: Record<string, string> = {}) {
     if (url.pathname === '/api/chat_stream') {
       turns.push(String(init.body));
       // A turn the server refuses mid-stream: an `error` frame, then the stream closes without [DONE].
-      if (streamError) return new Response(`event: error\ndata: ${JSON.stringify({ error: streamError, error_class: 'first_token_timeout', sequence: 1 })}\n\n`, { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'draft-check' } });
+      if (streamError) return new Response(`event: error\ndata: ${JSON.stringify({ error: streamError, error_class: 'first_token_timeout', sequence: 1 })}\n\n${errorDone ? 'data: [DONE]\n\n' : ''}`, { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'draft-check' } });
       return new Response('data: {"delta":"done"}\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'draft-check' } });
     }
     if (url.pathname.startsWith('/api/chat/resume/')) return Response.json({ detail: 'No active run for this session' }, { status: 404 });
     throw new Error(`Unhandled request ${init.method || 'GET'} ${url.pathname}`);
   };
-  return { drafts, attachments, writes, reads, turns, creates, held, transport, setOffline(value: boolean) { failWrites = value; }, failTurns(message: string) { streamError = message; } };
+  return { drafts, attachments, writes, reads, turns, creates, held, transport, setOffline(value: boolean) { failWrites = value; }, failTurns(message: string, done = false) { streamError = message; errorDone = done; } };
 }
 function panel(api: ReturnType<typeof server>, sid: string | null = 'a') {
   const element = document.createElement('faustus-chat') as InstanceType<typeof FaustusChatElement>;
@@ -90,6 +91,20 @@ async function changeChat(element: InstanceType<typeof FaustusChatElement>, sid:
   select.dispatchEvent(new Event('change'));
 }
 const checks: Array<[string, () => Promise<void>]> = [
+  ['a terminal error followed by DONE stays visible and retains the draft for retry', async () => {
+    const api = server(); const element = panel(api); await pause(30);
+    const reason = 'The model returned no usable response.'; api.failTurns(reason, true);
+    const ends: Array<{ reason: string; error?: string }> = [];
+    element.addEventListener('faustus:turn-end', event => ends.push((event as CustomEvent).detail));
+    element.draft = 'Finish the original request';
+    element.shadowRoot!.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await until(() => ends.length === 1, 'Turn ends after the terminal error');
+    assert.equal(ends[0].reason, 'error');
+    assert.equal(ends[0].error, reason);
+    assert.equal(element.shadowRoot!.querySelector('.fc-status')!.textContent, reason);
+    assert.equal(element.draft, 'Finish the original request');
+    assert.equal(api.turns.length, 1);
+  }],
   ['new host draft before SID initialization survives panel recreation without generating', async () => {
     const api = server(); const gate = deferred(); api.held.set('create', gate);
     const element = panel(api, null); let remembered: string | null = null;

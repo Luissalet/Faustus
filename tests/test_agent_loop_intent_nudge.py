@@ -1,6 +1,7 @@
 """The intent-without-action supervisor's detector: an action announced in the
 final words of a round, mid-sentence too, but not an offer."""
 from src.agent_loop import announced_action
+import pytest
 
 
 def test_a_promise_after_a_sentence_counts():
@@ -30,3 +31,23 @@ def test_one_real_promise_among_offers_still_counts():
     text = "I'll add the rest if you want. I'll save the team first."
     match = announced_action(text)
     assert match and "save the team" in match.group(0)
+
+
+@pytest.mark.parametrize('text', [
+    'The id I passed was missing a few letters — retrying with the exact id from the context.',
+    'Retrying with the complete identifier now.',
+    "I'll retry the failed read with the saved identifier.",
+    "I'm retrying with the complete identifier.",
+])
+def test_a_retry_announced_after_a_failed_tool_is_still_an_unfinished_action(text):
+    assert announced_action(text)
+
+
+@pytest.mark.parametrize('text', [
+    'The server is retrying the request in the background.',
+    'Retrying cannot recover a deleted object.',
+    'Retrying with the correct identifier if you want.',
+    'The read failed; no retry was performed.',
+])
+def test_reports_and_offers_about_retries_are_not_unfinished_actions(text):
+    assert announced_action(text) is None
