@@ -13,6 +13,8 @@ export interface Participant {
   personaPrompt: string;
   autonomyPreset?: 'supervised' | 'bounded_autonomous' | 'read_only';
   inputTokenBudget?: number;
+  reasoningEffort?: string;
+  thinkingEnabled?: boolean;
 }
 
 export type GroupMode = 'parallel' | 'round-robin';
@@ -43,7 +45,8 @@ export const isPassText = (text: string) => !text.trim() || PASS_RE.test(text.tr
 export interface GroupPreset {
   name: string;
   participants: { modelId: string; modelDisplay: string; endpointId?: string; characterId?: string; characterName?: string;
-    personaPrompt?: string; autonomyPreset?: Participant['autonomyPreset']; inputTokenBudget?: number }[];
+    personaPrompt?: string; autonomyPreset?: Participant['autonomyPreset']; inputTokenBudget?: number;
+    reasoningEffort?: string; thinkingEnabled?: boolean }[];
 }
 
 const STATES_KEY = 'fs-group-states';
@@ -204,6 +207,8 @@ export async function listGroupPresets(signal?: AbortSignal): Promise<GroupPrese
       personaPrompt: typeof p.personaPrompt === 'string' ? p.personaPrompt : undefined,
       autonomyPreset: ['supervised', 'bounded_autonomous', 'read_only'].includes(String(p.autonomyPreset)) ? p.autonomyPreset as Participant['autonomyPreset'] : undefined,
       inputTokenBudget: typeof p.inputTokenBudget === 'number' ? p.inputTokenBudget : undefined,
+      reasoningEffort: typeof p.reasoningEffort === 'string' ? p.reasoningEffort : undefined,
+      thinkingEnabled: typeof p.thinkingEnabled === 'boolean' ? p.thinkingEnabled : undefined,
     })),
   }));
 }
@@ -218,6 +223,7 @@ export function presetFrom(name: string, participants: Participant[]): GroupPres
     name,
     participants: participants.map((p) => ({ modelId: p.route.model, modelDisplay: p.route.model.split('/').pop() ?? p.route.model,
       endpointId: p.route.endpointId, characterId: p.personaId || undefined, characterName: p.personaName || undefined,
-      personaPrompt: p.personaPrompt || undefined, autonomyPreset: p.autonomyPreset, inputTokenBudget: p.inputTokenBudget })),
+      personaPrompt: p.personaPrompt || undefined, autonomyPreset: p.autonomyPreset, inputTokenBudget: p.inputTokenBudget,
+      reasoningEffort: p.reasoningEffort, thinkingEnabled: p.thinkingEnabled })),
   };
 }

@@ -23,6 +23,9 @@ def participant_execution_options(member):
     options = {}
     if member.get('autonomyPreset') is not None:
         options.update(validate({'autonomy_preset': member['autonomyPreset']}))
+    for source, target in (('reasoningEffort', 'reasoning_effort'), ('thinkingEnabled', 'thinking_enabled')):
+        if member.get(source) is not None:
+            options.update(validate({target: member[source]}))
     budget = parse_turn_input_budget(member.get('inputTokenBudget'))
     if budget is not None:
         options['input_token_budget'] = budget
@@ -467,7 +470,7 @@ class NativeGroupBridge:
                      "endpointName": route.get("endpointName", ""), "kind": route.get("kind", "")}
             selected.append({"route": route, "personaId": source.get("personaId", ""),
                              "personaName": label, "personaPrompt": source.get("personaPrompt", ""),
-                             **{key: source[key] for key in ('autonomyPreset', 'inputTokenBudget') if source.get(key) is not None},
+                             **{key: source[key] for key in ('autonomyPreset', 'inputTokenBudget', 'reasoningEffort', 'thinkingEnabled') if source.get(key) is not None},
                              "headers": headers, '_previous_session': source.get('sessionId', '')})
         if len(selected) < 2:
             raise ValueError("A group needs at least two participants")

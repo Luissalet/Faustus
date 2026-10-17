@@ -21,6 +21,8 @@ PARTICIPANT = {'type': 'object', 'properties': {
     'route': {'type': 'object'}, 'personaName': S, 'personaPrompt': S, 'personaId': S, 'sessionId': S,
     'autonomyPreset': {'type': 'string', 'enum': ['supervised', 'bounded_autonomous', 'read_only']},
     'inputTokenBudget': {'type': 'integer', 'minimum': 4096, 'maximum': 200000},
+    'reasoningEffort': {'type': 'string', 'enum': ['auto', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']},
+    'thinkingEnabled': {'type': 'boolean'},
 }}
 SPECS = {
     "group_options": ("GET", "/config", {}, [], True, "Read the configured global model (Sparks), supported working-group modes and native tool execution options."),

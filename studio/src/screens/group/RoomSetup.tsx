@@ -11,6 +11,7 @@ import type { Preset } from '../../adapters/presets';
 import { hueIndex, initials } from '../../lib/mail';
 import ModelPalette from '../ModelPalette';
 import { t } from '../../i18n';
+import { ParticipantReasoning } from './ParticipantReasoning';
 
 /** How many rounds the members may answer each other after each message. */
 export const ROUND_CHOICES = [0, 1, 2, 3, 5, 8, 12];
@@ -61,7 +62,8 @@ export function RoomSetup({ routes, defaultRoute, personas, presets, onStart, on
       if (!route) continue;
       const persona = p.characterId ? personas.find((x) => x.id === p.characterId) : undefined;
       list.push({ route, personaId: persona?.id ?? '', personaName: persona?.name ?? p.characterName ?? '',
-        personaPrompt: persona?.systemPrompt ?? p.personaPrompt ?? '', autonomyPreset: p.autonomyPreset, inputTokenBudget: p.inputTokenBudget });
+        personaPrompt: persona?.systemPrompt ?? p.personaPrompt ?? '', autonomyPreset: p.autonomyPreset, inputTokenBudget: p.inputTokenBudget,
+        reasoningEffort: p.reasoningEffort, thinkingEnabled: p.thinkingEnabled });
     }
     if (!list.length) {
       say(t('None of that group’s models is available now.'), 'warn');
@@ -144,6 +146,7 @@ export function RoomSetup({ routes, defaultRoute, personas, presets, onStart, on
               <option value="bounded_autonomous">{t('Autonomous')}</option>
               <option value="read_only">{t('Read only')}</option>
             </select>
+            <ParticipantReasoning member={p} onChange={(changes) => setParticipants((cur) => cur.map((member, j) => j === i ? { ...member, ...changes } : member))} />
             <IconButton icon={X} label={t('Remove {name}', { name: speakerName(p) })} size="sm" onClick={() => setParticipants((cur) => cur.filter((_, j) => j !== i))} disabled={participants.length <= 1} />
           </li>
         ))}
@@ -179,7 +182,7 @@ export function RoomSetup({ routes, defaultRoute, personas, presets, onStart, on
         <span className="fs-spacer" />
         <Button variant="primary" size="sm" icon={existing ? Check : Play} label={t(existing ? 'Save members' : 'Open the room')} loading={starting} disabled={participants.length < 2} onClick={() => void start()} testId="group-start" />
       </div>
-      <ModelPalette open={pick !== null} onOpenChange={(o) => !o && setPick(null)} routes={routes} current={pick !== null ? participants[pick]?.route ?? null : null} onPick={(r) => { if (pick !== null) setParticipants((cur) => cur.map((x, j) => (j === pick ? { ...x, route: r } : x))); setPick(null); }} />
+      <ModelPalette open={pick !== null} onOpenChange={(o) => !o && setPick(null)} routes={routes} current={pick !== null ? participants[pick]?.route ?? null : null} onPick={(r) => { if (pick !== null) setParticipants((cur) => cur.map((x, j) => (j === pick ? { ...x, route: r, reasoningEffort: undefined, thinkingEnabled: undefined } : x))); setPick(null); }} />
       {saveName !== null && (
         <Dialog open onOpenChange={(o) => !o && setSaveName(null)} title={t('Save as a group')} testId="group-save" footer={<Button variant="primary" size="sm" label={t('Save')} disabled={!saveName.trim()} onClick={() => void savePreset()} />}>
           <input className="fs-field" value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder={t('Group name')} aria-label={t('Group name')} autoFocus />
