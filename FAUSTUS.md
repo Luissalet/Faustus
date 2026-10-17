@@ -12980,9 +12980,9 @@ nada (una llamada a herramienta que su parser retenía).
   Leyendas Z-A con su piedra desde los sets de Pokémon Champions, set por uso cuando no hay escrito) y
   `sets_popular` con los mismos nombres.
 
-Pruebas: Faustus 111 focales + 421 de agente (1 fallo previo ajeno a este cambio,
-test_operator_disabled_tools_setting_outranks_the_reconciliation, falla igual con los ficheros de
-antes); Silver Python completo y Node 372/1 omitida. Copiloto probado en el navegador con la misma
+Pruebas: Faustus 111 focales + 421 de agente (el único fallo, test_operator_disabled_tools_setting_outranks_the_reconciliation,
+era previo y de la prueba: con tool_approval_mode full apply_patch se ejecuta en vez de pedir
+aprobación; corregida en aa9112a0); Silver Python completo y Node 372/1 omitida. Copiloto probado en el navegador con la misma
 petición: equipo de Pablo guardado con los seis (Delphox @ Delphoxite, Dragonite @ Dragonium Z,
 Glaceon por uso de ZU, Shaymin-Sky @ Choice Scarf, Raichu-Alola @ Psychium Z, Spiritomb @ Leftovers).
 Commits 7e65bf49, 5ba1af37, 42144546; 7000 reiniciado. Sin push.
