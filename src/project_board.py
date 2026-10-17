@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
-VERSION = 1
+VERSION = 2
 MAX_BODY_BYTES = 200_000
 
 #: Closed vocabulary (BOARD_RESEARCH.md "Vocabulario fijo (no configurable)").
@@ -149,6 +149,17 @@ def _labels(value: Any) -> List[str]:
     return out[:40]
 
 
+def _acceptance(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > 100 or any(not isinstance(v, str) for v in value):
+        raise BoardError("acceptance must be a list of at most 100 strings")
+    criteria = list(dict.fromkeys(v.strip() for v in value if v.strip()))
+    if sum(len(v.encode("utf-8")) for v in criteria) > MAX_BODY_BYTES:
+        raise BoardError("acceptance is too large", "board.too_large")
+    return criteria
+
+
 def key_valid(key: str) -> bool:
     return bool(_KEY_RE.match(str(key or "").strip()))
 
@@ -207,6 +218,7 @@ class Store:
                         priority TEXT NOT NULL,
                         assignee TEXT NOT NULL DEFAULT '',
                         labels_json TEXT NOT NULL DEFAULT '[]',
+                        acceptance_json TEXT NOT NULL DEFAULT '[]',
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
                         closed_at TEXT,
@@ -256,6 +268,10 @@ class Store:
                     """
                 )
                 db.execute(f"PRAGMA user_version={VERSION}")
+            elif version == 1:
+                if write:
+                    db.execute("ALTER TABLE issues ADD COLUMN acceptance_json TEXT NOT NULL DEFAULT '[]'")
+                    db.execute(f"PRAGMA user_version={VERSION}")
             elif version != VERSION:
                 raise BoardError("unsupported board database version", "board.bad_database")
             yield db
@@ -285,6 +301,7 @@ class Store:
             "priority": row["priority"],
             "assignee": row["assignee"] or "",
             "labels": json.loads(row["labels_json"] or "[]"),
+            "acceptance": json.loads(row["acceptance_json"] or "[]") if "acceptance_json" in row.keys() else [],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "closed_at": row["closed_at"],
@@ -430,6 +447,7 @@ class Store:
         priority: str = DEFAULT_PRIORITY, assignee: str = "", labels: Optional[List[str]] = None,
         status: str = DEFAULT_STATUS, created_by: str = "",
         links: Optional[List[Mapping[str, Any]]] = None,
+        acceptance: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         project_id = str(project_id or "").strip()
         if not project_id:
@@ -450,17 +468,18 @@ class Store:
         if len(body_md.encode("utf-8")) > MAX_BODY_BYTES:
             raise BoardError(f"body_md exceeds {MAX_BODY_BYTES} bytes", "board.too_large")
 
+        criteria = _acceptance(acceptance)
         with self._db(write=True) as db:
             issue_id, seq = self._next_id(db, project_id, key)
             stamp = _now()
             closed_at = stamp if status in TERMINAL_STATUSES else None
             db.execute(
                 "INSERT INTO issues (id, project_id, seq, type, title, body_md, status, priority, "
-                "assignee, labels_json, created_at, updated_at, closed_at, created_by) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "assignee, labels_json, created_at, updated_at, closed_at, created_by, acceptance_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (issue_id, project_id, seq, type, title, body_md, status, priority,
                  str(assignee or ""), _json(_labels(labels)), stamp, stamp, closed_at,
-                 str(created_by or "")),
+                 str(created_by or ""), _json(criteria)),
             )
             self._insert_event(db, issue_id, "created", {"type": type, "title": title}, created_by)
             for raw in links or []:
@@ -598,7 +617,7 @@ class Store:
     # ------------------------------------------------------------------
     # Mutation
     # ------------------------------------------------------------------
-    _PATCHABLE = ("title", "body_md", "type", "status", "priority", "assignee", "labels")
+    _PATCHABLE = ("title", "body_md", "type", "status", "priority", "assignee", "labels", "acceptance")
 
     def _validate_transition(self, old: str, new: str) -> None:
         if old == new:
@@ -666,6 +685,11 @@ class Store:
                 if new_labels != json.loads(row["labels_json"] or "[]"):
                     updates["labels_json"] = _json(new_labels)
                     changed["labels"] = True
+            if "acceptance" in patch:
+                criteria = _acceptance(patch["acceptance"])
+                if criteria != json.loads(row["acceptance_json"] or "[]"):
+                    updates["acceptance_json"] = _json(criteria)
+                    changed["acceptance"] = True
             if updates:
                 updates["updated_at"] = _now()
                 set_clause = ", ".join(f"{k}=?" for k in updates)

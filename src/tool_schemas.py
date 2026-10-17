@@ -351,6 +351,26 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "project_workspace",
+            "description": "Manage the current chat's project using real stores: read/write standing instructions or durable memory files; search bundled/saved skill libraries or a GitHub repository; install a library skill, import a UTF-8 SKILL.md bundle or GitHub URL, read it, activate a previously human-reviewed digest, or deactivate it. Installation never executes code. For tasks, labels, assignees and acceptance criteria use board_create/board_update; for objectives use project_objectives; for linked documentation use manage_project_context. Never invent project or skill IDs; cite returned keys.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["instructions_read", "instructions_write", "memory_list", "memory_read", "memory_write", "skills_list", "skill_read", "skills_catalog", "skills_repository", "skill_install", "skill_import", "skill_activate", "skill_deactivate"]},
+                    "name": {"type": "string", "description": "Memory filename, or catalog skill id returned by skills_catalog."},
+                    "key": {"type": "string", "description": "Exact project skill key returned by skills_list/install/import."},
+                    "kind": {"type": "string", "enum": ["bundled", "saved"], "description": "Library source for skill_install."},
+                    "url": {"type": "string", "description": "GitHub repository URL to list, or exact skill URL to import."},
+                    "content": {"type": "string", "description": "Replacement instructions/memory text, or complete SKILL.md to import."},
+                    "files": {"type": "object", "additionalProperties": {"type": "string"}, "description": "One skill bundle: relative UTF-8 text file paths mapped to content, including SKILL.md."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "project_objectives",
             "description": "Read or update the current project's objectives dashboard. 'list' returns the objectives with dependencies and impact scores; 'apply' submits typed deltas — never rewrite the whole list. Each delta: {\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\" (EDIT/KILL),\"title\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1-4 (1 highest),\"notes\",\"deps\":[\"OBJ-2\"],\"rationale\",\"base_updated_at\"}. Statuses must reflect what actually changed on disk, not intentions.",
             "parameters": {
@@ -2502,6 +2522,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Priority (default P2)"},
                     "assignee": {"type": "string", "description": "Who owns it -- 'user', 'agent', or a name (optional)"},
                     "labels": {"type": "array", "items": {"type": "string"}, "description": "Free-form labels (optional)"},
+                    "acceptance": {"type": "array", "items": {"type": "string"}, "description": "Acceptance criteria, one verifiable condition per item."},
                     "links": {"type": "array", "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["blocks", "blocked_by", "relates_to", "duplicate_of", "discovered_from"]}, "target": {"type": "string"}}, "required": ["kind", "target"]}, "description": "Relations to existing issues to create at the same time (optional)"}
                 },
                 "required": ["type", "title"]
@@ -2538,7 +2559,8 @@ FUNCTION_TOOL_SCHEMAS = [
                     "status": {"type": "string", "enum": ["open", "in_progress", "blocked", "done", "wontfix", "duplicate"], "description": "New status (optional)"},
                     "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "New priority (optional)"},
                     "assignee": {"type": "string", "description": "New assignee, '' to unassign (optional)"},
-                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Replace the full label set (optional)"}
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Replace the full label set (optional)"},
+                    "acceptance": {"type": "array", "items": {"type": "string"}, "description": "Replace acceptance criteria; [] clears them."}
                 },
                 "required": ["id"]
             }
@@ -4336,7 +4358,7 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = args.get("query", "")
     elif tool_type == "project_context":
         content = json.dumps(args)
-    elif tool_type == "manage_project_context":
+    elif tool_type in ("manage_project_context", "project_workspace"):
         content = json.dumps(args)
     elif tool_type == "project_objectives":
         content = json.dumps(args)

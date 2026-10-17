@@ -1431,6 +1431,14 @@ class ProjectStore:
             except Exception as e:  # noqa: BLE001 - prompt path, never raise
                 logger.debug("objectives_block failed for %s: %s", name, e)
 
+            try:
+                from src.project_workspace import prompt_index
+                skills = prompt_index(project)
+                if skills:
+                    parts.append(skills)
+            except Exception:
+                logger.debug("Project skill index unavailable", exc_info=True)
+
         if workspace:
             parts.append(
                 "## Project memory\n"

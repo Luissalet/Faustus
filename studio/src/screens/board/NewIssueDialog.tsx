@@ -33,6 +33,7 @@ export function NewIssueDialog({
   const [body, setBody] = useState('');
   const [priority, setPriority] = useState<IssuePriority>('P2');
   const [labels, setLabels] = useState('');
+  const [acceptance, setAcceptance] = useState('');
   const [blockedBy, setBlockedBy] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function NewIssueDialog({
     setBody('');
     setPriority('P2');
     setLabels('');
+    setAcceptance('');
     setBlockedBy('');
     setError(null);
   };
@@ -57,6 +59,7 @@ export function NewIssueDialog({
       body_md: body.trim() || undefined,
       priority,
       labels: quick ? undefined : toLabels(labels),
+      acceptance: quick ? undefined : acceptance.split('\n').map((s) => s.trim()).filter(Boolean),
       links: quick ? undefined : toBlockedBy(blockedBy),
     };
     try {
@@ -145,6 +148,10 @@ export function NewIssueDialog({
             <label className="fs-field-label">
               {t('Labels (comma-separated, optional)')}
               <input className="fs-field" value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="frontend, quick-win" />
+            </label>
+            <label className="fs-field-label">
+              {t('Acceptance criteria')}
+              <textarea className="fs-field" rows={3} value={acceptance} onChange={(e) => setAcceptance(e.target.value)} placeholder={t('One verifiable condition per line')} data-testid="board-new-acceptance" />
             </label>
             <label className="fs-field-label">
               {t('Blocked by (issue ids, comma-separated, optional)')}

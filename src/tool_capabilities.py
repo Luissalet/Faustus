@@ -77,6 +77,10 @@ def _register(
         _REGISTRY[name] = capabilities
 
 
+_register({"project_workspace"}, ToolEffect.WRITE_WORKSPACE,
+          result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
+
+
 _register(
     # todowrite only rewrites the agent's own progress list under data/ (the
     # Progress panel). Classifying it as a private write made the approval

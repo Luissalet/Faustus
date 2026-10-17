@@ -189,6 +189,7 @@ class BoardCreateTool:
                 priority=str(args.get("priority") or project_board.DEFAULT_PRIORITY),
                 assignee=str(args.get("assignee") or ""),
                 labels=labels if isinstance(labels, list) else [],
+                acceptance=args.get("acceptance"),
                 created_by=owner or "agent",
                 links=links if isinstance(links, list) else [],
             )
@@ -250,6 +251,8 @@ class BoardUpdateTool:
                 patch[field] = args[field]
         if isinstance(args.get("labels"), list):
             patch["labels"] = args["labels"]
+        if "acceptance" in args:
+            patch["acceptance"] = args["acceptance"]
         if not patch:
             return {"error": "board_update: nothing to update", "exit_code": 1}
         try:

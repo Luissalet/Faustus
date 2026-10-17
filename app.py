@@ -1244,6 +1244,8 @@ app.include_router(setup_model_probe_routes())
 # Projects (chat folder + workspace + standing instructions + file-backed memory)
 from routes.project_routes import setup_project_routes
 app.include_router(setup_project_routes())
+from routes.project_workspace_routes import setup_project_workspace_routes
+app.include_router(setup_project_workspace_routes())
 
 from routes.coordination_routes import setup_coordination_routes
 app.include_router(setup_coordination_routes())

@@ -67,6 +67,7 @@ from .project_concepts_tools import (
     ConceptsUnderstandTool, ConceptGetTool, ConceptsRootsTool,
     ConceptUpsertTool, ConceptLinkTool, ConceptRemoveTool,
 )
+from .project_workspace_tools import ProjectWorkspaceTool
 from .design_canvas_tools import DesignCanvasTool
 from .context_recall_tools import ContextRecallTool
 from .brain_tools import BrainTool
@@ -419,6 +420,7 @@ TOOL_HANDLERS["context_pin"] = ContextPinTool().execute
 TOOL_HANDLERS["context_unpin"] = ContextPinTool(unpin=True).execute
 TOOL_HANDLERS["context_drop"] = ContextDropTool().execute
 TOOL_HANDLERS["context_note"] = ContextNoteTool().execute
+TOOL_HANDLERS["project_workspace"] = ProjectWorkspaceTool().execute
 
 # Lot P: research podcast -- a saved Deep Research report as a two-voice
 # podcast (background job). src/agent_tools/research_podcast_tools.py.
@@ -463,6 +465,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # source. Separate tag from the read-only `project_context` so the
              # fence regex, dispatch and the non-admin blocklist all see it.
              "manage_project_context",
+             "project_workspace",
              "project_objectives", "manage_teach_mode", "capability_health", "branch_futures",
              "memory_rules", "expert_review", "verify_claim", "review_candidature_mail", "whatsapp_read", "whatsapp_send", "whatsapp_react",
              "chat_with_model", "create_session", "list_sessions",
