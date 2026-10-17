@@ -13264,3 +13264,29 @@ No es una evaluación de calidad del modelo ni una afirmación de paridad en los
 hosts Node o en toda la familia. Contratos: HoardLink docs/copilot-live-refresh.md
 y Silver docs/COPILOT_LIVE_REFRESH.md. Evidencia research-inbox/copilot-live792
 y copilot-review792.
+
+## Silver: sprites iniciales y megaevolución visible — #795, 18-10-2026
+
+La arena RT espera las imágenes base y Mega decodificadas antes de avanzar;
+la animación PMD inicial se espera dentro de su plazo y las imágenes estáticas
+siguen disponibles cuando faltan hojas. Una hoja PMD de la forma normal no
+suplanta la Mega. Cada transformación tiene una ráfaga sobre el Pokémon y un
+cartel con su forma real, en cola cuando coinciden varias, con pausa, movimiento
+reducido y aviso accesible. El idioma del cartel puede cambiar sin reiniciar.
+
+`battle_get` conserva especificación, entradas y eventos originales; las mismas
+reglas y presentación sirven a la app y al HTML exportado. En el combate real
+de nivel50 consultado, Swampert megaevoluciona en19,1s y se debilita en25s;
+la otra repetición consultada no contiene megaevolución. No se fuerza la barra
+ni se cambia el resultado para mantener la imagen Mega.
+
+Fuente aprobada CAS1 `e50ad8a2726988ef8085b85c6a5db91b4ef98bca`:516 pruebas
+Python pasadas/dos omitidas,436 Node pasadas/una omitida y ambas compilaciones.
+Revisión independiente con Node completo,699 huellas exactas, MCP180 e interfaz
+con los dos carteles y cambio de idioma sin reiniciar. El autor comprobó móvil390,
+movimiento reducido y el HTML en su vista previa HTTP oficial; el resultado
+SILVERWIN2 reimportado tiene `verified_real_time=1`. La política del navegador
+impide abrir `file://`; no se afirma esa comprobación. Evidencia y recibo final
+de activación: `D:/LocalAI/research-inbox/silver-sprites795/`; revisión propia en
+`D:/LocalAI/research-inbox/review-sprites795-r1/`. No hay herramienta MCP nueva,
+datos reales de prueba, cambios de simulación ni llamadas a modelos.
