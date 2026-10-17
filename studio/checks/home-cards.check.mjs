@@ -1,9 +1,9 @@
-// Home cards â€” automations pinned to the Home screen, showing their latest
+// Home cards: automations pinned to Studio, showing their latest
 // result: the `homeCards.ts` adapter exists with the four calls the
-// contract defines, the "Your cards" block is mounted first on Home (before
-// "Needs your decision"), unpinning is an inline two-step confirm (never
+// contract defines, pending decisions appear before pinned results,
+// unpinning is an inline two-step confirm (never
 // window.confirm), and Automations has a per-task pin toggle plus a list
-// badge for pinned tasks. Static source assertions only, no bundling â€” the
+// badge for pinned tasks. Static source assertions only, no bundling, the
 // same style `nearby-apps.check.mjs` uses.
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -25,8 +25,7 @@ assert.match(home, /function HomeCards\(/, 'the HomeCards block component exists
 assert.match(home, /<HomeCards cards={cards} onChanged={reloadCards} \/>/, 'the HomeCards block is mounted');
 assert.doesNotMatch(home, /window\.confirm/, 'Home.tsx never uses window.confirm');
 
-// The cards block sits before "Needs your decision" in source order â€” Home
-// renders top to bottom, so this is the same as "renders first".
+// Studio keeps pending decisions before pinned results in source order.
 const cardsAt = home.indexOf('<HomeCards');
 const approvalsAt = home.indexOf("t('Needs your decision')");
 assert.ok(cardsAt > 0 && approvalsAt > 0 && approvalsAt < cardsAt, 'pending decisions are visible before pinned results in Studio');

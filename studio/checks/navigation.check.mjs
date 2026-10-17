@@ -50,7 +50,10 @@ try {
   assert.ok(paletteSource.includes('fs-palette__account\"><span>{t(\'Sphere\')}</span><SphereChip />'), 'mobile More retains the sphere menu');
 
   const settingsSource = readFileSync(join(root, 'studio/src/screens/Settings.tsx'), 'utf8');
-  const sectionKeys = [...settingsSource.slice(settingsSource.indexOf('const SECTIONS:'), settingsSource.indexOf('/* â”€â”€ Models:')).matchAll(/key: '([^']+)'/g)].map(match => match[1]);
+  const sectionsAt = settingsSource.indexOf('const SECTIONS:');
+  const modelsAt = settingsSource.indexOf('/* ── Models:');
+  assert.ok(sectionsAt >= 0 && modelsAt > sectionsAt, 'settings section boundaries exist');
+  const sectionKeys = [...settingsSource.slice(sectionsAt, modelsAt).matchAll(/key: '([^']+)'/g)].map(match => match[1]);
   const grouped = m.SETTINGS_GROUPS.flatMap(group => group.sections);
   assert.deepEqual([...grouped].sort(), [...sectionKeys].sort(), 'every settings section occurs exactly once');
   assert.equal(new Set(grouped).size, grouped.length);
