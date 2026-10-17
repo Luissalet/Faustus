@@ -1,11 +1,14 @@
 import { Command } from 'cmdk';
 import { Brain, FileText, Image, KanbanSquare, MessageSquare, NotebookPen, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { SEARCH_SOURCES, searchAll, type SearchHit, type SearchSource } from '../adapters/unifiedSearch';
 import { overlayRoot } from './overlayRoot';
 import { DESTINATIONS, TOOLS } from './routes';
+import { CONTEXT_LABELS, TOOL_PLACEMENT, toolContext, toolHref, toolsIn } from './toolPlacement';
+import { useCreatorAvailable } from '../adapters/creator';
 import { useShell } from './store';
+import { tourForPath } from '../lib/tours';
 import './palette.css';
 import { t } from '../i18n';
 
@@ -74,7 +77,13 @@ export function CommandPalette() {
   const open = useShell((state) => state.paletteOpen);
   const setOpen = useShell((state) => state.setPaletteOpen);
   const navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  const creatorAvailable = useCreatorAvailable();
+  const context = toolContext(pathname);
+  const projectId = /^\/projects\/([^/]+)/.exec(pathname)?.[1] ?? new URLSearchParams(search).get('project');
+  const contextual = toolsIn(context, creatorAvailable === true);
   const [query, setQuery] = useState('');
+  const visibleTools = query.trim() ? TOOLS.filter(tool => tool.path !== '/creator' || creatorAvailable) : contextual;
   const [types, setTypes] = useState<SearchSource[]>([]);
   const { hits, loading } = useEverywhere(open, query, types);
   useEffect(() => {
@@ -163,16 +172,16 @@ export function CommandPalette() {
           ))}
         </Command.Group>
 
-        <Command.Group heading={t('Tools')} className="fs-palette__group">
-          {TOOLS.map((tool) => (
+        <Command.Group heading={t(CONTEXT_LABELS[context])} className="fs-palette__group">
+          {visibleTools.map((tool) => (
             <Command.Item
               key={tool.path}
-              value={`${t(tool.label)} ${t('tool')}`}
-              onSelect={() => go(tool.path)}
+              value={`${t(tool.label)} ${t(TOOL_PLACEMENT[tool.path]?.hint ?? '')}`}
+              onSelect={() => go(toolHref(tool.path, projectId))}
               className="fs-palette__item"
             >
               <tool.icon size={15} aria-hidden="true" />
-              {t(tool.label)}
+              <span>{t(tool.label)}<small className="fs-palette__tool-context">{t(TOOL_PLACEMENT[tool.path]?.hint ?? '')}</small></span>
             </Command.Item>
           ))}
         </Command.Group>
@@ -192,15 +201,8 @@ export function CommandPalette() {
           >
             {t('Search conversations')}
           </Command.Item>
-          {/* Lote 86 (CONTRATO_GIT_4.md): opens the live git panel inside
-              the current chat — distinct from the "Source control" entry
-              under Tools above, which goes to the standalone full screen. */}
-          <Command.Item
-            value={`${t('Source control')} ${t('panel')}`}
-            onSelect={() => go('/studio?panel=git')}
-            className="fs-palette__item"
-          >
-            {t('Source control')}
+          <Command.Item value={t('Help and tours')} onSelect={() => { setOpen(false); useShell.getState().setTour(tourForPath(pathname, search)?.id ?? 'demo'); }} className="fs-palette__item">
+            {t('Help and tours')}
           </Command.Item>
           <Command.Item value={`${t('Settings')} ${t('configuration')}`} onSelect={() => go('/settings')} className="fs-palette__item">
             {t('Settings')}

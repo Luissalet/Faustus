@@ -23,7 +23,7 @@ function valueText(value: unknown): string {
   }
 }
 
-export function ExtractionScreen() {
+export function ExtractionScreen({ onUse }: { onUse?: (text: string) => void } = {}) {
   const [schemas, setSchemas] = useState<api.SavedSchema[]>([]);
   const [name, setName] = useState('');
   const [schemaText, setSchemaText] = useState('{\n  "type": "object",\n  "properties": {}\n}');
@@ -280,6 +280,7 @@ export function ExtractionScreen() {
               ) : null}
 
               <h3>{t('Data')}</h3>
+              {onUse && dataRows.length > 0 && <Button variant="secondary" size="sm" label={t('Add to conversation')} onClick={() => onUse(JSON.stringify({ fields: dataRows, schemaValid: result.schemaValid, errors: result.errors, missingRequired: result.missingRequired, conflicts: result.conflicts, limits: result.limits }, null, 2))} />}
               {dataRows.length === 0 ? <p className="fs-extract__hint">{t('No valid fields')}</p> : (
                 <table className="fs-extract__table">
                   <thead>

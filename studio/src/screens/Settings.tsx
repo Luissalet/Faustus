@@ -90,6 +90,7 @@ import { OpenRouterPrefsSection } from './settings/OpenRouterPrefs';
 import { ModelRouterSection } from './settings/ModelRouter';
 import { EndpointCapabilities } from './settings/EndpointCapabilities';
 import { t, tn } from '../i18n';
+import { SettingsNavigation } from './settings/SettingsNavigation';
 
 /**
  * Ajustes (the previous interface's settings modal, `/settings`).
@@ -1627,10 +1628,14 @@ function ShortcutsSection({ settings, onSave, say }: { settings: Settings | null
 
 export function SettingsScreen() {
   const [params, setParams] = useSearchParams();
-  const [section, setSection] = useState<SectionKey>(() => {
-    const s = params.get('s') as SectionKey | null;
-    return s && SECTIONS.some((x) => x.key === s) ? s : 'general';
-  });
+  const rawSection = params.get('s');
+  const section: SectionKey = SECTIONS.some(item => item.key === rawSection) ? rawSection as SectionKey : 'general';
+  const setSection = useCallback((next: SectionKey | ((current: SectionKey) => SectionKey)) => {
+    const value = typeof next === 'function' ? next(section) : next;
+    const changed = new URLSearchParams(params);
+    changed.set('s', value);
+    setParams(changed);
+  }, [params, section, setParams]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [endpoints, setEndpoints] = useState<ModelEndpoint[] | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -1665,15 +1670,6 @@ export function SettingsScreen() {
     setNotice(t);
     window.setTimeout(() => setNotice((c) => (c === t ? null : c)), 4000);
   }, []);
-
-  useEffect(() => {
-    const next = new URLSearchParams(params);
-    if (next.get('s') !== section) {
-      next.set('s', section);
-      setParams(next, { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section]);
 
   useEffect(() => {
     const c = new AbortController();
@@ -1732,20 +1728,13 @@ export function SettingsScreen() {
         <div>
           <h1 className="fs-screen__title">{t('Settings')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            {t('Models, defaults, voice, search, reminders, the whole agent and the shortcuts. Saved per section, only what changes.')}
+            {t('Find a setting or choose an area. Changes are saved in each section.')}
           </p>
         </div>
       </header>
-      <GlobalApprovalControl variant="settings" />
+      {(section === 'agent' || section === 'security') && <GlobalApprovalControl variant="settings" />}
       <div className="fs-set__layout">
-        <nav className="fs-set__nav" aria-label={t('Sections')}>
-          {SECTIONS.filter((s) => (!s.admin || admin) && (localInstallation === false || (s.key !== 'account' && s.key !== 'users'))).map((s) => (
-            <button key={s.key} type="button" className="fs-set__nav-item" data-on={section === s.key || undefined} onClick={() => setSection(s.key)}>
-              <s.icon size={14} aria-hidden="true" />
-              {t(s.label)}
-            </button>
-          ))}
-        </nav>
+        <SettingsNavigation sections={SECTIONS.filter(s => (!s.admin || admin) && (localInstallation === false || (s.key !== 'account' && s.key !== 'users')))} section={section} onChange={setSection} />
         <div className="fs-set__body">
           {section === 'general' && <AppearanceSection say={say} />}
           {section === 'device' && <ThisDeviceSection say={say} />}

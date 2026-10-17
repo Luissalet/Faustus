@@ -346,6 +346,26 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
 }
 
+.fs-context-tools { display: flex; align-items: center; justify-content: flex-end; gap: var(--fs-space-3); margin-block-end: var(--fs-space-3); flex-wrap: wrap; }
+.fs-context-tools > .fs-link { margin-inline-end: auto; display: inline-flex; align-items: center; gap: var(--fs-space-2); }
+.fs-context-tools__trigger { display: inline-flex; align-items: center; gap: var(--fs-space-2); border: 0; padding: 6px 8px; border-radius: var(--fs-radius-control); background: transparent; color: var(--fs-text-2); font: inherit; font-size: var(--fs-label-size); cursor: pointer; }
+.fs-context-tools__trigger:hover, .fs-context-tools__trigger[data-state='open'] { background: var(--fs-highlight); color: var(--fs-text-1); }
+.fs-context-tools__trigger:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 2px; }
+.fs-palette__tool-context { display: block; color: var(--fs-text-2); font-size: var(--fs-label-size); }
+.fs-project-picker { list-style: none; padding: 0; margin-block: var(--fs-space-5); }
+.fs-project-picker li + li { border-block-start: 1px solid var(--fs-border); }
+.fs-project-picker a { display: flex; align-items: center; gap: var(--fs-space-3); padding: var(--fs-space-3); color: var(--fs-text-1); text-decoration: none; }
+.fs-project-picker a:hover { background: var(--fs-highlight); }
+.fs-project-picker__overview { color: var(--fs-text-2); font-size: var(--fs-label-size); }
+.fs-chat-workspace__body { min-block-size: 0; overflow: auto; padding: var(--fs-space-4); }
+.fs-chat-workspace .fs-screen { padding: 0; min-inline-size: 0; }
+.fs-chat-workspace .fs-extract__grid { grid-template-columns: minmax(0, 1fr); }
+.fs-chat-workspace .fs-extract__panel { min-inline-size: 0; }
+.fs-studio[data-chat-tool] { --fs-side-col: minmax(360px, 42vw); }
+.fs-nav__search { display: flex; align-items: center; gap: var(--fs-space-2); padding: 8px 0; border: 0; background: transparent; color: var(--fs-text-2); font: inherit; font-size: var(--fs-label-size); cursor: pointer; }
+.fs-nav__search kbd { margin-inline-start: auto; font-size: 10px; }
+button.fs-nav__item { border: 0; background: transparent; font: inherit; cursor: pointer; }
+
 /* A screen that crashed or whose chunk vanished after a rebuild: the shell
    stays, the message and a Reload button take the route's place. */
 .fs-route-error {

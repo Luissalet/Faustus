@@ -48,6 +48,14 @@
   min-inline-size: 0;
 }
 
+.fs-set__find { display: flex; align-items: center; gap: var(--fs-space-2); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); padding: 8px; margin-block-end: var(--fs-space-3); color: var(--fs-text-2); }
+.fs-set__find:focus-within { outline: 2px solid var(--fs-brand); outline-offset: 2px; }
+.fs-set__find input { min-inline-size: 0; inline-size: 100%; border: 0; outline: 0; background: transparent; color: var(--fs-text-1); font: inherit; font-size: var(--fs-label-size); }
+.fs-set__groups, .fs-set__subnav { display: grid; gap: 2px; }
+.fs-set__subnav { border-block-start: 1px solid var(--fs-border); margin-block-start: var(--fs-space-3); padding-block-start: var(--fs-space-3); }
+.fs-set__subnav .fs-set__nav-item { padding-inline-start: var(--fs-space-4); }
+.fs-set__nav .fs-context-tools { margin-block-start: var(--fs-space-3); justify-content: flex-start; }
+
 .fs-set__section {
   display: grid;
   /* One track that may shrink below its content's min-content width: an
