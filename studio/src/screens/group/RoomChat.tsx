@@ -17,6 +17,7 @@ import { t, tn } from '../../i18n';
 import { AgoraBoardView } from './AgoraBoard';
 import { ROUND_CHOICES } from './RoomSetup';
 import { mentionQuery, mentionsIn, roomView, shortHandle } from './room-model';
+import { MemberActivity } from './MemberActivity';
 import '../studio.css';
 import '../group.css';
 
@@ -292,22 +293,7 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
           />
         </header>
 
-        <div className="fs-room__strip" aria-label={t('Participants')}>
-          {members.map((m) => {
-            const act = view.activity[m.sessionId] ?? { state: 'idle' };
-            const label = act.state === 'speaking' ? phaseText(live[act.stepId ?? ''])
-              : act.state === 'next' ? t('Next') : act.state === 'asks' ? t('Asks you') : t('Listening');
-            return (
-              <button key={m.sessionId} type="button" className="fs-room__member" data-state={act.state}
-                title={m.route.model + (m.route.endpointName ? ' · ' + m.route.endpointName : '')}
-                onClick={() => setSide('members')}>
-                <span className="fs-avatar" data-hue={hueIndex(speakerName(m))} data-size="sm" aria-hidden="true">{initials(speakerName(m))}</span>
-                <span className="fs-room__member-name">{speakerName(m)}</span>
-                <small>{label}</small>
-              </button>
-            );
-          })}
-        </div>
+        {snapshot && <MemberActivity snapshot={snapshot} connected={!connectionError} onSelect={() => setSide('members')} />}
 
         {connectionError && <p className="fs-notice fs-room__notice" data-tone="danger" role="alert">{connectionError} {t('Reconnecting…')}</p>}
 

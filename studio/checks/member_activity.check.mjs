@@ -20,7 +20,7 @@ try {
     assert.equal(rows[0].state,'done');
     assert.equal(rows[1].step.id,'b1','active work takes precedence over newer queued message');
     let html=renderToStaticMarkup(createElement(MemberActivity,{snapshot}));
-    assert.match(html,/Finished/); assert.match(html,/Thinking/);
+    assert.match(html,/Turn finished/); assert.match(html,/Thinking/);
     assert.match(html,/Elapsed: 1m 40s/,'finished duration stays frozen');
     assert.match(html,/Last activity 2m 0s ago/); assert.match(html,/No recent activity; check the run/);
     assert.doesNotMatch(html,/stuck|Listening/);

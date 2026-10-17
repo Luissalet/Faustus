@@ -9950,3 +9950,10 @@ Up to {n} rounds of replies	Hasta {n} rondas de respuestas
 Work in {name}: rooms, tasks, reviews and decisions of this project.	Trabajo en {name}: salas, tareas, revisiones y decisiones de este proyecto.
 _Nothing to add._	_Nada que añadir._
 next: {names}	después: {names}
+Activity for {name}	Actividad de {name}
+Connection lost; status may have changed	Sin conexión; el estado puede haber cambiado
+Elapsed: {time}	Tiempo transcurrido: {time}
+Last activity {time} ago	Última actividad hace {time}
+No activity timestamp available	Sin fecha de actividad disponible
+No recent activity; check the run	Sin actividad reciente; revisa la ejecución
+Turn finished	Turno terminado

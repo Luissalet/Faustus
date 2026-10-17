@@ -22,7 +22,7 @@ export function memberActivityRows(snapshot: GroupSnapshot) {
     const label = phase === 'thinking' ? t('Thinking') : phase === 'writing' ? t('Writing')
       : phase === 'tool' ? activity.tool ? t('Using {tool}', { tool: activity.tool }) : t('Running a tool')
         : state === 'running' ? t('Waiting for the model') : state === 'queued' ? t('Queued')
-          : state === 'done' ? t('Finished') : state === 'error' ? t('Failed')
+          : state === 'done' ? t('Turn finished') : state === 'error' ? t('Failed')
             : state === 'waiting_user' ? t('Waiting for your answer') : state === 'stopped' ? t('Stopped') : t('Listening');
     return { member, step, activity, state, label };
   });
