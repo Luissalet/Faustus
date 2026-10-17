@@ -5856,6 +5856,7 @@ export const es: Record<string, string> = {
   "Resolved values": "Valores resueltos",
   "Resolving model…": "Determinando el modelo…",
   "Resolving the effective configuration": "Resolviendo la configuración efectiva",
+  "Resource preserved; text preview unavailable.": "Recurso conservado; sin vista previa de texto.",
   "Responds": "Responde",
   "Restart": "Reiniciar",
   "Restart a server stuck on garbage": "Reiniciar un servidor atascado en basura",

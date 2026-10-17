@@ -6,6 +6,7 @@ Imported code is inspected as data; installing never executes it.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -103,13 +104,31 @@ def read_skill(project: dict, key: str) -> dict:
     row = _details(project, key, found)
     base = Path(found.path).parent.resolve()
     files = {}
+    assets = []
+    total = 0
     for path in base.rglob("*"):
         _contained(base, path)
         if path.is_file():
-            if path.stat().st_size > importer.MAX_FILE_BYTES or len(files) >= importer.MAX_FILES:
+            if len(files) + len(assets) >= discovery.MAX_DIGEST_FILES:
                 raise ProjectError("Skill bundle is too large to review.")
-            files[path.relative_to(base).as_posix()] = path.read_text(encoding="utf-8")
+            with path.open("rb") as stream:
+                data = stream.read(discovery.MAX_DIGEST_BYTES - total + 1)
+            total += len(data)
+            if total > discovery.MAX_DIGEST_BYTES:
+                raise ProjectError("Skill bundle is too large to review.")
+            rel = path.relative_to(base).as_posix()
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                text = None
+            if text is not None and "\x00" not in text and len(data) <= importer.MAX_FILE_BYTES:
+                files[rel] = text.replace("\r\n", "\n").replace("\r", "\n")
+            else:
+                # Existing skills may contain images or large references. Keep
+                # their bytes covered by the digest without treating them as text.
+                assets.append({"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
     row["files"] = files
+    row["assets"] = assets
     return row
 
 

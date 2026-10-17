@@ -56,6 +56,10 @@ Activation pins are stored outside the skill bundle in
 `.faustus/project-skills.json`; a content change invalidates activation.
 Deactivation preserves all files. Editing the manifest requires its current
 digest, preserves supporting files and never silently renames the skill.
+Existing binary resources and large references are listed with their path,
+byte size and SHA-256 instead of being decoded as text. Their bytes remain
+included in the activation digest. Typing while a manifest save is pending
+keeps the newer draft open with the returned digest for its next save.
 
 An activated, unchanged skill is listed in the project's context. Its procedure
 is read on demand through the project tool; neither installation nor activation

@@ -7,7 +7,7 @@ for (const key of ['window', 'document', 'navigator', 'HTMLElement', 'MutationOb
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
 globalThis.cancelAnimationFrame = clearTimeout;
-const result = await build({ stdin: { contents: `export {projectSection, PROJECT_SECTIONS, ProjectNavigation} from './studio/src/screens/project/ProjectNavigation'; export {droppedFiles} from './studio/src/screens/project/Skills'; export {workspaceAction, skillFiles} from './studio/src/adapters/projectWorkspace'; export {filterIssues} from './studio/src/adapters/board'; export {createElement, act} from 'react'; export {createRoot} from 'react-dom/client'; export {MemoryRouter} from 'react-router';`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', write: false, loader: { '.css': 'empty' } });
+const result = await build({ stdin: { contents: `export {projectSection, PROJECT_SECTIONS, ProjectNavigation} from './studio/src/screens/project/ProjectNavigation'; export {droppedFiles, ProjectSkills} from './studio/src/screens/project/Skills'; export {workspaceAction, skillFiles} from './studio/src/adapters/projectWorkspace'; export {filterIssues} from './studio/src/adapters/board'; export {createElement, act} from 'react'; export {createRoot} from 'react-dom/client'; export {MemoryRouter} from 'react-router';`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', write: false, loader: { '.css': 'empty' } });
 const m = await import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'));
 assert.deepEqual(m.PROJECT_SECTIONS.map((s) => s.id), ['overview', 'chats', 'tasks', 'knowledge', 'skills', 'settings']);
 for (const [legacy, expected] of Object.entries({brief:'overview',agora:'overview',board:'tasks',objetivos:'tasks',requisitos:'tasks',memoria:'knowledge',contexto:'knowledge',reglas:'settings',repos:'settings',ajustes:'settings',actividad:'overview'})) assert.equal(m.projectSection(legacy), expected);
@@ -38,6 +38,51 @@ const dropped = await m.droppedFiles({items:[{webkitGetAsEntry:() => directory}]
 assert.equal(dropped.length,1);
 assert.equal(dropped[0].webkitRelativePath,'local-skill/SKILL.md','folder drops retain bundle-relative paths');
 await m.act(async () => root.unmount());
+// A real mounted editor must retain typing that arrives during its HTTP save.
+let skill = {key:'.agents/skills/test/SKILL.md', name:'test', markdown:'Original procedure', digest:'v1', active:false, files:{}, assets:[{path:'assets/reference.png',bytes:82,sha256:'a'.repeat(64)}]};
+let reply;
+const saves=[];
+globalThis.fetch=async (_url, init) => {
+  const args=JSON.parse(init?.body || '{}');
+  if(args.action==='skills_list') return Response.json({ok:true,skills:[skill]});
+  if(args.action==='skill_read') return Response.json({ok:true,skill});
+  if(args.action==='skill_write') {
+    saves.push(args);
+    return new Promise(resolve => { reply=() => {
+      skill={...skill,markdown:args.content,digest:`v${saves.length+1}`};
+      resolve(Response.json({ok:true,skill}));
+    }; });
+  }
+  return Response.json({ok:true,imports:[]});
+};
+const skillHost=document.createElement('div');document.body.append(skillHost);
+const skillRoot=m.createRoot(skillHost);
+const tick=() => new Promise(resolve => setTimeout(resolve,0));
+const button=label => [...skillHost.querySelectorAll('button')].find(el => el.textContent.trim()===label);
+await m.act(async () => { skillRoot.render(m.createElement(m.MemoryRouter,null,m.createElement(m.ProjectSkills,{projectId:'p',hasWorkspace:true,say:()=>{}}))); await tick(); });
+await m.act(async () => { button('Review content').click(); await tick(); });
+assert.match(skillHost.textContent,/assets\/reference\.png · 82 B/);
+assert.match(skillHost.textContent,/SHA-256: a{64}/);
+await m.act(async () => button('Edit').click());
+const type=text => {
+  const editor=skillHost.querySelector('textarea[aria-label="SKILL.md"]');
+  Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(editor,text);
+  editor.dispatchEvent(new window.Event('input',{bubbles:true}));
+};
+await m.act(async () => type('First edit'));
+await m.act(async () => button('Save changes').click());
+assert.equal(saves[0].content,'First edit');
+await m.act(async () => type('First edit and newer typing'));
+await m.act(async () => { reply(); await tick(); });
+assert.equal(skillHost.querySelector('textarea').value,'First edit and newer typing','a delayed save must retain subsequent typing');
+assert.equal(skill.markdown,'First edit');
+await m.act(async () => button('Save changes').click());
+assert.equal(saves[1].digest,'v2','the retained draft saves against the returned digest');
+assert.equal(saves[1].content,'First edit and newer typing');
+await m.act(async () => { reply(); await tick(); });
+assert.equal(skillHost.querySelector('textarea'),null,'the editor closes when no newer typing is pending');
+assert.equal(skill.markdown,'First edit and newer typing');
+await m.act(async () => skillRoot.unmount());
 await window.happyDOM.abort();
-console.log('ALL OK: six mounted sections, legacy links, free tags and real skill request/error transport');
+console.log('ALL OK: six mounted sections, legacy links, free tags, binary resource metadata and delayed skill save preserves typing/digest');
 process.exit(0);

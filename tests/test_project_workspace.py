@@ -1,5 +1,6 @@
 """Real stores: preservation, project scope, import safety and activation pins."""
 import asyncio
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -187,6 +188,51 @@ def test_active_skill_body_and_references_are_readable(setup):
     project, _, _ = setup
     key = pw.install_files(project, {"SKILL.md": MD, "references/note.md": "Evidence survives"})["key"]
     assert pw.read_skill(project, key)["files"]["references/note.md"] == "Evidence survives"
+
+
+def test_existing_skill_resources_are_preserved_and_readable_in_ui_and_chat(setup, monkeypatch):
+    from PIL import Image
+    project, _, root = setup
+    folder = root / ".agents/skills/check-results"
+    (folder / "assets").mkdir(parents=True)
+    (folder / "SKILL.md").write_text(MD, encoding="utf-8")
+    (folder / "reference.md").write_text("Readable reference", encoding="utf-8")
+    image = folder / "assets/reference.png"
+    Image.new("RGB", (16, 16), "blue").save(image)
+    original = image.read_bytes()
+    key = ".agents/skills/check-results/SKILL.md"
+    row = pw.read_skill(project, key)
+    assert row["files"]["SKILL.md"] == MD
+    assert row["files"]["reference.md"] == "Readable reference"
+    assert row["assets"] == [{"path": "assets/reference.png", "bytes": len(original), "sha256": hashlib.sha256(original).hexdigest()}]
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setattr(routes, "effective_user", lambda request: "alice")
+    app = FastAPI()
+    app.include_router(routes.setup_project_workspace_routes())
+    response = TestClient(app).post(f"/api/projects/{project['id']}/workspace/action", json={"action": "skill_read", "key": key})
+    assert response.status_code == 200
+    assert response.json()["skill"]["assets"] == row["assets"]
+    result = asyncio.run(ProjectWorkspaceTool().execute(json.dumps({"action": "skill_read", "key": key}), {"project_id": project["id"], "owner": "alice"}))
+    assert result["exit_code"] == 0 and result["skill"]["assets"] == row["assets"]
+    pw.activate(project, key, reviewed=True, expected_digest=row["digest"])
+    changed = pw.write_skill(project, key, MD + "\nUpdated.", row["digest"])
+    assert changed["assets"] == row["assets"] and image.read_bytes() == original
+    pw.activate(project, key, reviewed=True, expected_digest=changed["digest"])
+    Image.new("RGB", (16, 16), "red").save(image)
+    assert pw.read_skill(project, key)["digest"] != changed["digest"]
+    assert not pw.list_skills(project)[0]["active"]
+
+
+def test_existing_large_reference_is_metadata_within_runtime_limits(setup):
+    project, _, root = setup
+    key = pw.install_files(project, {"SKILL.md": MD})["key"]
+    reference = root / key
+    reference = reference.parent / "large.txt"
+    reference.write_bytes(b"a" * (pw.importer.MAX_FILE_BYTES + 1))
+    row = pw.read_skill(project, key)
+    assert row["files"]["SKILL.md"] == MD
+    assert row["assets"][0]["path"] == "large.txt"
+    assert row["assets"][0]["bytes"] == pw.importer.MAX_FILE_BYTES + 1
 
 
 def test_skill_edit_preserves_references_and_invalidates_activation(setup):
