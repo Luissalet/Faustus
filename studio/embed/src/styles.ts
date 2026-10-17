@@ -244,7 +244,7 @@ export const EMBED_STYLES = `
   min-width: 0;
   field-sizing: content;
   resize: vertical;
-  min-height: 112px;
+  min-height: 120px;
   max-height: min(320px, 40dvh);
   border: 1px solid var(--fc-border);
   border-radius: 8px;

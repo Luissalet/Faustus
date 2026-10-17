@@ -1,7 +1,7 @@
 # Faustus — qué añade este fork sobre Odysseus
 
 **Escritura en los copilotos de los Hoards (#772):** el componente compartido
-usa todo el ancho para el mensaje, con cuatro líneas y 112 px iniciales. Crece
+usa todo el ancho para el mensaje, con cuatro líneas y 120 px iniciales. Crece
 con el texto hasta el menor valor entre 320 px y el 40% de la altura de pantalla;
 después tiene scroll interno. Permite redimensionado vertical y coloca los botones
 debajo, con 44 px de alto. Los navegadores sin `field-sizing` conservan el campo
