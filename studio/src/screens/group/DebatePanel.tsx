@@ -14,7 +14,7 @@ export function DebatePanel({debate, index, sessionId, renderReply}: {
   const [open,setOpen] = useState(opened.get(key) ?? false);
   const active = debate.state === 'working';
   const status = active ? (debate.finalizing ? t('Preparing the final answer') : t('Debating')) : debate.state === 'waiting_user' ? t('Needs your decision')
-    : debate.state === 'stopped' ? t('Stopped') : debate.state === 'error' ? t('Failed') : t('Completed');
+    : debate.state === 'stopped' ? t('Cancelled') : debate.state === 'error' ? t('Error') : t('Completed');
   useEffect(() => {
     const jump = (event:Event) => {
       if ((event as CustomEvent<{index?:number}>).detail?.index === index) {

@@ -2714,8 +2714,9 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
               onClick={() => {
                 const turnId = quote.pos?.turnId;
                 const passage = quote.pos?.text ?? '';
-                const index = turns.findIndex((tu) => tu.id === turnId);
-                const turn = index === -1 ? undefined : turns[index];
+                const allTurns = turns.flatMap(turn => turn.debate?.replies ?? [turn]);
+                const index = allTurns.findIndex((tu) => tu.id === turnId);
+                const turn = index === -1 ? undefined : allTurns[index];
                 quote.clear();
                 window.getSelection()?.removeAllRanges();
                 if (turn) onExplore({ historyIndex: turn.historyIndex ?? index, passage });
