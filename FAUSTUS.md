@@ -1,5 +1,15 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Debate dentro del chat y una respuesta final (17-10-2026, #716):**
+Las salas de Studio agrupan sus intervenciones en un desplegable Debate con actividad
+visible; las preguntas nativas que requieren decisión quedan fuera. Los participantes
+eligen un portavoz y el conductor crea un único turno final idempotente. Se conservan
+historiales, razonamiento, herramientas y formato Chat en grupo seleccionable.
+API/MCP create/update/send aceptan `debate`; cancelar no oculta mensajes en cola.
+Las @menciones de prosa se distinguen por color (#718). La calidad degenerada del
+modelo se evalúa por separado (#715); el modo Debate no se presenta como su arreglo.
+
+
 **Dictado recuperable y asistentes personales (17-10-2026, #693/#694):**
 El dictado global pasa por el mismo editor fiel de Studio y guarda original y
 texto final antes de pegar; un fallo de pegado devuelve el texto recuperable.
