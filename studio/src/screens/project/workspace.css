@@ -1,0 +1,27 @@
+.fs-project-workspace { display: grid; gap: var(--fs-space-5); min-width: 0; }
+.fs-project-workspace__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
+.fs-project-workspace__form { display: grid; gap: var(--fs-space-3); }
+.fs-project-workspace__form > .fs-btn { justify-self: start; }
+.fs-project-workspace__section > summary { cursor: pointer; font-weight: 600; min-height: 44px; display: list-item; align-content: center; }
+.fs-project-workspace__section[open] > summary { margin-bottom: var(--fs-space-4); }
+.fs-project-workspace__list { list-style: none; margin: 0; padding: 0; }
+.fs-project-workspace__list > li { display: flex; align-items: center; flex-wrap: wrap; gap: var(--fs-space-3); padding-block: var(--fs-space-4); border-bottom: 1px solid var(--fs-border); }
+.fs-project-workspace__list > li > div { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.fs-project-workspace__list p { margin-block: var(--fs-space-1); color: var(--fs-text-2); }
+.fs-project-workspace__source { width: 100%; max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--fs-font-code); }
+.fs-project-workspace h2 { font-size: var(--fs-title-size); margin-block: 0 var(--fs-space-3); }
+.fs-project-workspace .fs-field-label { min-width: 0; }
+.fs-project-workspace__activity { min-width: 0; }
+.fs-project-navigation { display: flex; align-items: center; gap: var(--fs-space-3); flex-wrap: wrap; }
+.fs-project-navigation > .fs-tabs { flex: 1; min-width: 0; }
+.fs-project-agora-workspace { display: flex; flex-direction: column; block-size: 100%; min-block-size: 0; }
+.fs-project-agora-workspace__nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); padding: var(--fs-space-2) var(--fs-space-4); border-bottom: 1px solid var(--fs-border); }
+.fs-project-agora-workspace__nav > .fs-project-navigation { flex: 1; }
+.fs-project-agora-workspace > .fs-project-agora-shell { flex: 1; block-size: auto; }
+.fs-dialog.fs-project-activity-panel { inset-block: 0; inset-inline: auto 0; translate: none; inline-size: min(760px, 100vw); max-block-size: 100dvh; border-radius: 0; }
+@media (max-width: 767px) {
+  .fs-project-navigation > .fs-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex-basis: 100%; overflow: visible; }
+  .fs-project-navigation .fs-tab { min-height: 44px; justify-content: center; padding-inline: var(--fs-space-2); }
+  .fs-project-workspace__toolbar .fs-btn { min-height: 44px; }
+  .fs-project-workspace__list > li > div { flex-basis: 100%; }
+}

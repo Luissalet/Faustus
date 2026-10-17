@@ -81,15 +81,25 @@ export function IssueDetail({
   const [linkTarget, setLinkTarget] = useState('');
   const [eventsOpen, setEventsOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [draft, setDraft] = useState({ title: '', body_md: '', labels: '', assignee: '', acceptance: '' });
 
   useEffect(() => {
     if (!open || !issueId) return;
+    let cancelled = false;
+    setIssue(null);
     setLoading(true);
     setError(null);
+    setConfirmDelete(false);
+    setComment('');
     getIssue(projectId, issueId)
-      .then((res) => setIssue(res.issue))
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .then((res) => {
+        if (cancelled) return;
+        setIssue(res.issue);
+        setDraft({ title: res.issue.title, body_md: res.issue.body_md, labels: res.issue.labels.join(', '), assignee: res.issue.assignee, acceptance: (res.issue.acceptance ?? []).join('\n') });
+      })
+      .catch((e: Error) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [open, projectId, issueId]);
 
   const patch = async (input: Parameters<typeof updateIssue>[2]) => {
@@ -227,29 +237,26 @@ export function IssueDetail({
               {t('Assignee')}
               <input
                 className="fs-field"
-                value={issue.assignee ?? ''}
+                value={draft.assignee}
                 disabled={busy}
                 placeholder={t('user, agent, or a name')}
-                onBlur={(e) => {
-                  const v = e.target.value.trim();
-                  if (v !== (issue.assignee ?? '')) void patch({ assignee: v || null });
-                }}
-                onChange={(e) => setIssue({ ...issue, assignee: e.target.value })}
+                onChange={(e) => setDraft({ ...draft, assignee: e.target.value })}
               />
             </label>
           </div>
 
-          {issue.body_md ? (
-            <div className="fs-issue-detail__body"><Rich text={issue.body_md} /></div>
-          ) : (
-            <p className="fs-muted">{t('No description.')}</p>
-          )}
-
-          {issue.labels.length > 0 && (
-            <p className="fs-issue-detail__labels">
-              {issue.labels.map((l) => <span key={l} className="fs-issue-card__label">{l}</span>)}
-            </p>
-          )}
+          <form className="fs-issue-form" onSubmit={(e) => {
+            e.preventDefault();
+            void patch({ title: draft.title, body_md: draft.body_md, assignee: draft.assignee.trim(),
+              labels: [...new Set(draft.labels.split(/[,\n]/).map((s) => s.trim()).filter(Boolean))],
+              acceptance: draft.acceptance.split('\n').map((s) => s.trim()).filter(Boolean) });
+          }}>
+            <label className="fs-field-label">{t('Title')}<input className="fs-field" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
+            <label className="fs-field-label">{t('Description')}<textarea className="fs-field" rows={4} value={draft.body_md} onChange={(e) => setDraft({ ...draft, body_md: e.target.value })} /></label>
+            <label className="fs-field-label">{t('Labels (comma-separated, optional)')}<input className="fs-field" value={draft.labels} onChange={(e) => setDraft({ ...draft, labels: e.target.value })} data-testid="board-issue-labels" /></label>
+            <label className="fs-field-label">{t('Acceptance criteria')}<textarea className="fs-field" rows={3} value={draft.acceptance} onChange={(e) => setDraft({ ...draft, acceptance: e.target.value })} placeholder={t('One verifiable condition per line')} data-testid="board-issue-acceptance" /></label>
+            <Button type="submit" size="sm" label={t('Save changes')} loading={busy} disabled={!draft.title.trim()} testId="board-issue-save" />
+          </form>
 
           <section aria-label={t('Links')}>
             <h3 className="fs-panel__label"><Link2 size={12} aria-hidden="true" /> {t('Links')}</h3>

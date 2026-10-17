@@ -127,6 +127,7 @@ export interface IssueRef {
 }
 
 export interface Issue extends IssueCompact {
+  acceptance: string[];
   body_md: string;
   created_at: string;
   closed_at: string | null;
@@ -162,6 +163,7 @@ export interface IssueListFilters {
 }
 
 export interface CreateIssueInput {
+  acceptance?: string[];
   type: IssueType;
   title: string;
   body_md?: string;
@@ -172,6 +174,7 @@ export interface CreateIssueInput {
 }
 
 export interface UpdateIssueInput {
+  acceptance?: string[];
   title?: string;
   body_md?: string;
   type?: IssueType;
@@ -367,6 +370,7 @@ export function groupIssuesByColumn(issues: IssueCompact[], columns: BoardColumn
 }
 
 export interface IssueFilter {
+  label?: string;
   text?: string;
   type?: IssueType;
   priority?: IssuePriority;
@@ -379,6 +383,7 @@ export interface IssueFilter {
 export function filterIssues(issues: IssueCompact[], filter: IssueFilter): IssueCompact[] {
   const text = (filter.text ?? '').trim().toLowerCase();
   return issues.filter((issue) => {
+    if (filter.label && !issue.labels.includes(filter.label)) return false;
     if (text && !issue.title.toLowerCase().includes(text) && !issue.id.toLowerCase().includes(text)) return false;
     if (filter.type && issue.type !== filter.type) return false;
     if (filter.priority && issue.priority !== filter.priority) return false;

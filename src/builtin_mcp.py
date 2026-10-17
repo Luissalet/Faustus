@@ -77,6 +77,7 @@ def _find_npx() -> str:
 # carries hundreds of LOC of unique IMAP / HTTP / manager logic not worth
 # duplicating into the native path right now.
 _BUILTIN_SERVERS = {
+    "project_workspace": ("mcp_servers/project_workspace_server.py", "Built-in: Project workspace"),
     "groups": ("mcp_servers/groups_server.py", "Built-in: Persistent working groups"),
     "sparks": ("mcp_servers/sparks_server.py", "Built-in: Global Sparks models"),
     "council": ("mcp_servers/council_server.py", "Built-in: Model councils"),
@@ -159,6 +160,7 @@ NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "e
 # stay offered: email send_email (cc, bcc), reply_to_email (reply_all), read_email (message_id) and memory
 # manage_memory (kind, lease_days).
 NATIVE_TWIN_TOOLS: dict[str, frozenset[str]] = {
+    "project_workspace": frozenset({"project_workspace"}),
     "email": frozenset({"list_email_accounts", "list_emails", "scan_email_unsubscribes", "unsubscribe_email",
                         "archive_email", "delete_email", "mark_email_read", "bulk_email"}),
     "context": frozenset({"context_recall"}),

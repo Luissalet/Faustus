@@ -60,6 +60,7 @@ export function BoardPanel({ projectId }: { projectId: string }) {
   const [filterText, setFilterText] = useState('');
   const [filterType, setFilterType] = useState<IssueType | ''>('');
   const [filterPriority, setFilterPriority] = useState<IssuePriority | ''>('');
+  const [filterLabel, setFilterLabel] = useState('');
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   // `?issue=<id>` (a search hit, a link in a reply) opens that issue.
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(() => {
@@ -105,8 +106,8 @@ export function BoardPanel({ projectId }: { projectId: string }) {
   }, [load]);
 
   const filtered = useMemo(
-    () => filterIssues(issues ?? [], { text: filterText, type: filterType || undefined, priority: filterPriority || undefined }),
-    [issues, filterText, filterType, filterPriority],
+    () => filterIssues(issues ?? [], { text: filterText, type: filterType || undefined, priority: filterPriority || undefined, label: filterLabel || undefined }),
+    [issues, filterText, filterType, filterPriority, filterLabel],
   );
   const grouped = useMemo(() => groupIssuesByColumn(filtered), [filtered]);
 
@@ -190,6 +191,10 @@ export function BoardPanel({ projectId }: { projectId: string }) {
           {ISSUE_PRIORITIES.map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
         </select>
         <span className="fs-board__toolbar-spacer" />
+        <select className="fs-field" value={filterLabel} onChange={(e) => setFilterLabel(e.target.value)} aria-label={t('Labels')} data-testid="board-filter-label">
+          <option value="">{t('All labels')}</option>
+          {[...new Set((issues ?? []).flatMap((i) => i.labels))].sort().map((label) => <option key={label} value={label}>{label}</option>)}
+        </select>
         <Button
           variant="ghost"
           size="sm"

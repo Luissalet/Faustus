@@ -593,6 +593,9 @@ When referencing app entities by id, use clickable markdown anchors:
 """
 
 _DOMAIN_RULES = {
+    "project_management": """## Project workspace rules
+- Use project_workspace for this project's instructions, durable memory files and skill lifecycle. Use board_create/board_update for task labels, assignees and acceptance criteria; project_objectives for objectives; manage_project_context for linked documentation.
+- Read current content before replacing it. Installing a skill never executes its code. Activate only a reviewed current digest, and report tool results rather than promises.""",
     "web": """\
 ## Web rules
 - For web lookup/search/latest/current requests, use `web_search` or `web_fetch`.
@@ -699,6 +702,7 @@ _DOMAIN_RULES = {
 }
 
 _DOMAIN_TOOL_MAP = {
+    "project_management": {"project_workspace", "project_objectives", "manage_project_context"},
     "web": set(WEB_TOOL_NAMES),
     "documents": {"create_document", "edit_document", "update_document", "suggest_document", "manage_documents", "expert_review", "inspect_deliverable"},
     "email": {"list_email_accounts", "list_emails", "read_email", "scan_email_unsubscribes", "unsubscribe_email", "send_email", "reply_to_email", "bulk_email", "archive_email", "delete_email", "mark_email_read", "resolve_contact", "manage_contact", "review_candidature_mail"},
@@ -730,6 +734,7 @@ _DOMAIN_TOOL_MAP = {
 #: They skip the catalog (see the domain seeding in `stream_agent_loop`);
 #: the rest of the domain stays one `lookup_tools` away.
 _DOMAIN_HOT_TOOLS = {
+    "project_management": {"project_workspace"},
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
     "email": {"list_emails", "read_email", "reply_to_email", "send_email"},
     "whatsapp": {"whatsapp_read", "whatsapp_send"},
@@ -1159,6 +1164,7 @@ def _domain_rule_names_for_tools(tool_names: set) -> list[str]:
 TOOL_SECTIONS = {
     "search_project_chats": "- ```search_project_chats``` - Search only earlier transcripts from the current project. Use for prior project decisions, attempts and discussions before answering from memory or guessing.",
     "project_context": "- ```project_context``` - Inspect roots attached to the current project. Args (JSON): {\"action\":\"list|read|search\",\"item_id\":\"...\",\"path\":\"relative/file\",\"query\":\"...\"}. Attached roots are real working roots: normal file tools may read and modify them.",
+    "project_workspace": "- ```project_workspace``` - Manage this chat's project: instructions_read/write, memory_list/read/write, skills_list/catalog/repository, skill_read/install/import/activate/deactivate. Use actual returned keys and report success only after the tool succeeds. Skill imports are inert until reviewed and activated; the agent cannot self-approve a new digest.",
     "manage_project_context": "- ```manage_project_context``` - Attach, inspect, refresh, update or detach a typed source from this chat's current project. Use it when the user says to add the document/image/folder you just created to the project context. Resolve recent references from the current turn; do not ask for an internal id the user cannot see. Attaching context is not the same as making a folder writable.",
     "project_objectives": "- ```project_objectives``` - Read or update the project's objectives dashboard. Args (JSON): {\"action\":\"list|apply\",\"deltas\":[{\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\",\"title\":\"...\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1,\"deps\":[\"OBJ-2\"],\"rationale\":\"...\"}]}. When a turn of real work ends, update with typed deltas and a rationale; never rewrite the whole list, and only mark statuses that reflect what actually changed on disk.",
     "manage_teach_mode": "- ```manage_teach_mode``` - Record the current chat's semantic tool actions as a demonstration, stop it and compile a reusable candidate. Simulate and validate with evidence; human approval/install cannot be self-issued by an agent.",
@@ -3525,10 +3531,13 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
         # tasks, what's left to do. Deliberately as loose as the sibling
         # domains above: over-inclusion only offers board_* tools, it never
         # forces the model to use them (see the "project_board" rule text).
-        r"\b(pendientes?|backlog|kanban|tablero|bugs?|issues?|ideas?|tareas? del proyecto)\b",
+        r"\b(pendientes?|backlog|kanban|tablero|bugs?|issues?|ideas?|tareas? del proyecto|etiquetas?|tags?|reasigna|criterios de aceptaci[oó]n|acceptance criteria)\b",
         r"\b(what'?s pending|open issues?|to-?do for (?:this|the) project|file a bug|log an? idea|feature request)\b",
+        r"\b(?:crea|a[nñ]ade|apunta|edita|actualiza|reasigna)\b.{0,30}\btareas?\b",
     ):
         domains.add("project_board")
+    if has(r"\b(skills?|instrucciones|instructions|recuerd[ao]|recuerdos?|remember|memoria del proyecto|project memory|acceptance criteria|criterios de aceptaci[oó]n|etiquetas?|tags?)\b"):
+        domains.add("project_management")
     if has(
         r"\b(run|execute|test|debug|fix|save|create|edit|read|open)\b.{0,40}\b("
         r"python|javascript|typescript|java|c\+\+|cpp|c#|csharp|rust|go|golang|"
@@ -9687,7 +9696,7 @@ async def _stream_agent_loop_body(
         # only refuse, whoever chose them (a parallel-read re-entry passes the
         # previous round's set and the domain seeding above re-added them).
         if not str(_hopts.get("project_id") or "").strip():
-            _no_board = _DOMAIN_TOOL_MAP["project_board"]
+            _no_board = _DOMAIN_TOOL_MAP["project_board"] | _DOMAIN_TOOL_MAP["project_management"]
             _relevant_tools -= _no_board
             if _hot_seed is not None:
                 _hot_seed -= _no_board
@@ -9750,7 +9759,7 @@ async def _stream_agent_loop_body(
             # Keep that gate effective across the replacement when no project
             # is attached; MCP pins and other caller-selected tools remain.
             if not str(_hopts.get("project_id") or "").strip():
-                _caller_pinned_tools -= _DOMAIN_TOOL_MAP["project_board"]
+                _caller_pinned_tools -= _DOMAIN_TOOL_MAP["project_board"] | _DOMAIN_TOOL_MAP["project_management"]
             # Explicit MCP-only tasks still need semantically selected MCP
             # schemas when workspace routing replaces the retrieval set.
             # Ordinary coding tasks continue to drop unpinned retrieval noise.

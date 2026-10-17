@@ -49,9 +49,11 @@ class IssueCreateRequest(BaseModel):
     assignee: Optional[str] = Field(None, max_length=120)
     labels: Optional[List[str]] = Field(None, max_length=40)
     links: Optional[List[IssueLinkRef]] = Field(None, max_length=40)
+    acceptance: Optional[List[str]] = Field(None, max_length=100)
 
 
 class IssueUpdateRequest(BaseModel):
+    acceptance: Optional[List[str]] = Field(None, max_length=100)
     title: Optional[str] = Field(None, min_length=1, max_length=300)
     body_md: Optional[str] = Field(None, max_length=200_000)
     type: Optional[str] = Field(None, max_length=20)
@@ -193,6 +195,7 @@ def setup_board_routes() -> APIRouter:
                 assignee=payload.assignee or "", labels=payload.labels or [],
                 created_by=owner or "user",
                 links=[l.model_dump() for l in (payload.links or [])],
+                acceptance=payload.acceptance,
             )
         except project_board.BoardError as e:
             return _board_error(e)

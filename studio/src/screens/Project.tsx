@@ -1,6 +1,5 @@
 import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldCheck, Target, Trash2, Unlink, Users, X } from 'lucide-react';
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { lazyChunk } from '../shell/lazyChunk';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ActivityDot, Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
 import { type ChatSession } from '../adapters/chat';
@@ -53,45 +52,20 @@ import { getNeighborhood, type NeighborNodeType, type Neighborhood } from '../ad
 import { SourceControlPanel } from './source-control/SourceControlPanel';
 import { ProjectAudit } from './project/Audit';
 import { ProjectMemoryFiles } from './project/Memory';
-import { ProjectObjectives } from './project/Objectives';
-import { ProjectAgora, ProjectBoard } from './project/ProjectAgora';
-import { ProjectRequirements } from './project/Requirements';
+import { ProjectAgora } from './project/ProjectAgora';
 import { ProjectRules } from './project/Rules';
 import { ProjectSettings } from './project/Settings';
 import { CoordinationPanel } from './project/CoordinationPanel';
-import { ProjectSkillImports } from './project/SkillImports';
 import './projects.css';
 import './home.css';
 import { t, tn } from '../i18n';
-import { ProjectNavigation } from './project/ProjectNavigation';
+import { ProjectNavigation, projectSection, type ProjectSection } from './project/ProjectNavigation';
+import { ProjectTasks } from './project/Tasks';
+import { ProjectSkills } from './project/Skills';
+import { ProjectOverviewActivity, ProjectOverviewAgora } from './project/Overview';
+import './project/workspace.css';
 
-const TABS = [
-  { id: 'brief', label: 'Brief', icon: FileText },
-  { id: 'chats', label: 'Chats', icon: MessageSquare },
-  // The project's agora: its rooms as a group chat of models, beside its task board.
-  { id: 'agora', label: 'Agora', icon: Users },
-  // Lote 93 (OBJ-6, CONTRATO_BOARD.md): the project's own issue tracker
-  // (FAU-12 style ids) — kanban + table over `/api/projects/{id}/board/*`.
-  { id: 'board', label: 'Board', icon: Kanban },
-  { id: 'objetivos', label: 'Objectives', icon: Target },
-  // W4-A: the project's versioned spec (`docs/api/requirements.md`) —
-  // REQ-N items, human-only accept/reject, an evidence matrix and the
-  // budgeted "context for a task" projection over `/api/projects/{id}
-  // /requirements/*`.
-  { id: 'requisitos', label: 'Requirements', icon: ClipboardList },
-  { id: 'memoria', label: 'Memory', icon: Brain },
-  { id: 'reglas', label: 'Rules', icon: ShieldCheck },
-  { id: 'actividad', label: 'Agent activity', icon: Activity },
-  { id: 'contexto', label: 'Context', icon: Eye },
-  // Lote 86 (CONTRATO_GIT_4.md): "es mejor que un proyecto específico te
-  // liste los repos específicos en las carpetas enlazadas a ESE proyecto" —
-  // replaces the plain "Source control" button (lote 81) with a real
-  // section, scoped to this project's own linked folders.
-  { id: 'repos', label: 'Repositories', icon: GitBranch },
-  { id: 'ajustes', label: 'Settings', icon: Settings2 },
-] as const;
-
-type TabId = (typeof TABS)[number]['id'];
+type TabId = ProjectSection;
 
 const FORMAT_LABEL: Record<string, string> = { md: 'Markdown', txt: 'Plain text', json: 'JSON', html: 'HTML', pdf: 'PDF', docx: 'Word (.docx)' };
 
@@ -111,13 +85,6 @@ const FORMAT_LABEL: Record<string, string> = { md: 'Markdown', txt: 'Plain text'
  * its entry point, still finds `relocateResultMessage` at this path.
  */
 export { relocateResultMessage } from '../adapters/projects';
-
-/* Lote 93 (OBJ-6): lazy, the same way Transcript.tsx lazy-loads Harness/
- * SubagentBoard — most tabs never open Board, and (unlike those two) this
- * one also keeps `Project.tsx`'s own module import graph from reaching
- * `<Rich>` (screens/rich.tsx → shell/display.ts's module-scope `document`
- * access) until the Board tab actually renders, instead of at import time. */
-const BoardPanel = lazyChunk(() => import('./board/BoardPanel').then((m) => ({ default: m.BoardPanel })));
 
 /* ── Context sources ──
  *
@@ -776,7 +743,8 @@ export function ProjectScreen() {
   }, [projectId]);
 
   const rawTab = params.get('tab');
-  const tab: TabId = creating ? 'ajustes' : TABS.some((x) => x.id === rawTab) ? (rawTab as TabId) : 'brief';
+  const tab = projectSection(rawTab);
+  const activityOpen = params.get('activity') === '1' || rawTab === 'actividad';
 
   /* A turn survives leaving the conversation, so this screen has to be able
      to say which of its chats is still working (or waiting for a permission
@@ -814,6 +782,7 @@ export function ProjectScreen() {
   const setTab = (id: TabId) => {
     const next = new URLSearchParams(params);
     next.set('tab', id);
+    next.delete('view');
     setParams(next);
   };
 
@@ -947,12 +916,26 @@ export function ProjectScreen() {
   // off the project record and is changed in Settings, not detached here.
   const workspaceName = project.workspace ? (project.workspace.split(/[\\/]/).filter(Boolean).pop() ?? project.workspace) : '';
 
-  if (tab === 'agora') return <ProjectAgora project={project} selected={params.get('room') || ''}
-    onSelect={(id) => {
-      const next = new URLSearchParams(params);
-      if (id) next.set('room', id); else next.delete('room');
-      setParams(next, { replace: true });
-    }} />;
+  const showActivity = (open: boolean) => {
+    const next = new URLSearchParams(params);
+    if (open) next.set('activity', '1'); else { next.delete('activity'); if (rawTab === 'actividad') next.set('tab', 'overview'); }
+    setParams(next);
+  };
+  const openAgora = (room?: string) => {
+    const next = new URLSearchParams(params);
+    next.set('tab', 'overview'); next.set('view', 'agora');
+    if (room) next.set('room', room); else next.delete('room');
+    setParams(next);
+  };
+  const activityPanel = <Dialog open={activityOpen} onOpenChange={showActivity} title={t('Agent activity')} className="fs-project-activity-panel" testId="project-activity-panel">
+    <ProjectAudit projectId={project.id} say={say} />
+  </Dialog>;
+  const navigation = <ProjectNavigation selected={tab} onChange={setTab} projectId={project.id} liveChats={liveChats} liveTone={liveTone} />;
+  if (tab === 'overview' && (params.get('view') === 'agora' || rawTab === 'agora')) return <div className="fs-project-agora-workspace">
+    <div className="fs-project-agora-workspace__nav">{navigation}<Button size="sm" variant="ghost" icon={Activity} label={t('Agent activity')} onClick={() => showActivity(true)} testId="project-activity-open" /><Button size="sm" variant="ghost" label={t('Back to overview')} onClick={() => setTab('overview')} /></div>
+    <ProjectAgora project={project} selected={params.get('room') || ''} onSelect={(id) => { const next = new URLSearchParams(params); if (id) next.set('room', id); else next.delete('room'); setParams(next, { replace: true }); }} />
+    {activityPanel}
+  </div>;
 
   return (
     <div className="fs-screen fs-pj" data-testid="project" data-archived={project.archived || undefined} data-tab={tab}>
@@ -988,6 +971,7 @@ export function ProjectScreen() {
           )}
         </div>
         <div className="fs-pj__head-actions">
+          <Button variant="secondary" size="sm" icon={Activity} label={t('Agent activity')} onClick={() => showActivity(true)} testId="project-activity-open" />
           <Button variant="ghost" size="sm" icon={project.pinned ? PinOff : Pin} label={project.pinned ? t('Unpin') : t('Pin')} loading={busy === 'pin'} onClick={() => void patch('pin', { pinned: !project.pinned }, project.pinned ? t('Unpinned') : t('Pinned'))} testId="project-pin" />
           <Button
             variant="ghost"
@@ -1030,9 +1014,10 @@ export function ProjectScreen() {
         </p>
       )}
 
-      <ProjectNavigation entries={TABS} selected={tab} onChange={setTab} projectId={project.id} liveChats={liveChats} liveTone={liveTone} />
+      {navigation}
+      {activityPanel}
 
-      {tab === 'brief' && (
+      {tab === 'overview' && (
         <div className="fs-pj__brief">
           <div className="fs-pj__start">
             <div className="fs-pj__start-copy">
@@ -1051,47 +1036,15 @@ export function ProjectScreen() {
             />
           </div>
 
+          <ProjectOverviewAgora project={project} onOpen={openAgora} />
+          <ProjectOverviewActivity projectId={project.id} liveChats={liveChats} onOpen={() => showActivity(true)} />
           <div className="fs-pj__cards">
             <section className="fs-panel fs-pj__card">
               <div className="fs-pj__card-head">
                 <h3>{t('Instructions')}</h3>
-                <Button variant="ghost" size="sm" label={t('Edit')} onClick={() => setTab('ajustes')} />
+                <Button variant="ghost" size="sm" label={t('Edit')} onClick={() => setTab('settings')} />
               </div>
               {project.instructions ? <p className="fs-prose fs-pj__instructions">{project.instructions}</p> : <p className="fs-pj__muted">{t('Add guidance that should apply to every chat in this project.')}</p>}
-            </section>
-
-            <section className="fs-panel fs-pj__card">
-              <div className="fs-pj__card-head">
-                <h3>{t('The agent here')}</h3>
-                <Button variant="ghost" size="sm" label={t('Change')} onClick={() => setTab('ajustes')} />
-              </div>
-              <ul className="fs-pj__flags">
-                {flags.map((f) => (
-                  <li key={f.key} data-on={f.on || undefined} title={t(f.help)}>
-                    <span className="fs-pj__flag-dot" aria-hidden="true" />
-                    {t(f.label)}
-                    <small>{f.on ? t('on') : t('off')}</small>
-                  </li>
-                ))}
-                {project.test_command && (
-                  <li data-on="">
-                    <span className="fs-pj__flag-dot" aria-hidden="true" />
-                    {t('Test command')}
-                    <small>
-                      <code>{project.test_command}</code>
-                    </small>
-                  </li>
-                )}
-                {project.review_model && (
-                  <li data-on="">
-                    <span className="fs-pj__flag-dot" aria-hidden="true" />
-                    {t('Reviewer model')}
-                    <small>{project.review_model}</small>
-                  </li>
-                )}
-              </ul>
-              <CoordinationPanel project={project} onNotice={say} />
-              <ProjectExecutionPreferences project={project} onSaved={setProject} />
             </section>
 
             <section className="fs-panel fs-pj__card">
@@ -1123,7 +1076,7 @@ export function ProjectScreen() {
                         {project.workspace} {'\u00b7'} {t('primary work folder')}
                       </small>
                     </span>
-                    <Button variant="ghost" size="sm" label={t('Change')} onClick={() => setTab('ajustes')} />
+                    <Button variant="ghost" size="sm" label={t('Change')} onClick={() => setTab('settings')} />
                   </li>
                 )}
                 {(links ?? []).map((link) => {
@@ -1142,7 +1095,7 @@ export function ProjectScreen() {
               {links !== null && links.length === 0 && !project.workspace && (
                 <p className="fs-pj__muted">{t('Add a primary folder or link a document to start working.')}</p>
               )}
-              <Button variant="ghost" size="sm" icon={Link2} label={t('Manage sources')} onClick={() => setTab('contexto')} testId="project-manage-sources" />
+              <Button variant="ghost" size="sm" icon={Link2} label={t('Manage sources')} onClick={() => setTab('knowledge')} testId="project-manage-sources" />
             </section>
           </div>
           <p className="fs-file__meta">
@@ -1189,57 +1142,18 @@ export function ProjectScreen() {
         </div>
       )}
 
-      {tab === 'board' && (
-        <div className="fs-panel">
-          <Suspense fallback={<Skeleton label={t('Loading the board')} count={4} height="120px" />}>
-            <BoardPanel projectId={project.id} />
-          </Suspense>
-        </div>
-      )}
+      {tab === 'tasks' && <ProjectTasks key={project.id} project={project} focus={rawTab === 'objetivos' ? 'objectives' : rawTab === 'requisitos' ? 'requirements' : params.get('focus') || undefined} say={say} />}
+      {tab === 'skills' && <ProjectSkills key={project.id} projectId={project.id} hasWorkspace={!!project.workspace} say={say} />}
 
-      {tab === 'objetivos' && (
-        <>
-          <div className="fs-panel">
-            <ProjectBoard project={project} />
-          </div>
-          <div className="fs-panel">
-            <ProjectObjectives projectId={project.id} say={say} />
-          </div>
-        </>
-      )}
-
-      {tab === 'requisitos' && (
-        <div className="fs-panel">
-          <ProjectRequirements projectId={project.id} say={say} />
-        </div>
-      )}
-
-      {tab === 'memoria' && (
-        <div className="fs-panel">
-          <ProjectMemoryFiles project={project} say={say} />
-        </div>
-      )}
-
-      {tab === 'reglas' && (
-        <div className="fs-panel">
-          <ProjectRules workspace={project.workspace ?? ''} say={say} />
-          <ProjectSkillImports projectId={project.id} say={say} />
-        </div>
-      )}
-
-      {tab === 'actividad' && (
-        <div className="fs-panel">
-          <ProjectAudit projectId={project.id} say={say} />
-        </div>
-      )}
-
-      {tab === 'contexto' && (
+      {tab === 'knowledge' && (
         <div className="fs-pj__brief">
+          <section className="fs-panel"><h2>{t('Project memory')}</h2><ProjectMemoryFiles project={project} say={say} /></section>
           <div className="fs-panel">
             {/* `loadLinks`, not `reload`: toggling one policy has no reason to
                 re-fetch the chats and the whole prepended block. */}
             <ProjectSources project={project} links={links} statuses={linkStates} say={say} reload={loadLinks} />
           </div>
+          <details className="fs-panel fs-project-workspace__section"><summary>{t('What the model receives, literally')}</summary>
           <p className="fs-panel__label">{t('What the model receives, literally')}</p>
           <p className="fs-prose" style={{ marginBlockEnd: 'var(--fs-space-3)' }}>
             {t('This block is what Faustus prepends to every conversation of this project. It was available in the API and no screen showed it: knowing what it knows before asking for anything is half of trusting it.')}
@@ -1253,12 +1167,15 @@ export function ProjectScreen() {
           ) : (
             <EmptyState icon={Eye} title={t('No context block')} body={t('This project prepends nothing yet. As soon as it has a folder, instructions or memory, it will appear here exactly as the model reads it.')} />
           )}
+          </details>
           <FileNeighborhood projectId={project.id} />
         </div>
       )}
 
-      {tab === 'repos' && (
-        <div className="fs-pj__brief">
+      {tab === 'settings' && (
+        <div className="fs-project-workspace">
+          <details className="fs-panel fs-project-workspace__section" open={rawTab === 'reglas' || undefined}><summary>{t('Rules and instructions')}</summary><p className="fs-prose">{t('Standing guidance for the agent. Project instructions apply to every chat; file rules can apply to specific paths.')}</p><ProjectRules workspace={project.workspace ?? ''} say={say} /></details>
+          <details className="fs-panel fs-project-workspace__section" open={rawTab === 'repos' || params.get('focus') === 'repos' || undefined}><summary>{t('Repositories')}</summary><div className="fs-pj__brief">
           <div className="fs-pj__card-head">
             <h3>{t('Repositories')}</h3>
             <Link
@@ -1273,24 +1190,58 @@ export function ProjectScreen() {
           </div>
           <SourceControlPanel projectId={project.id} />
         </div>
-      )}
+</details>
+          <details className="fs-panel fs-project-workspace__section"><summary>{t('Agent defaults')}</summary>            <section className="fs-pj__card">
+              <div className="fs-pj__card-head">
+                <h3>{t('The agent here')}</h3>
+                <Button variant="ghost" size="sm" label={t('Change')} onClick={() => setTab('settings')} />
+              </div>
+              <ul className="fs-pj__flags">
+                {flags.map((f) => (
+                  <li key={f.key} data-on={f.on || undefined} title={t(f.help)}>
+                    <span className="fs-pj__flag-dot" aria-hidden="true" />
+                    {t(f.label)}
+                    <small>{f.on ? t('on') : t('off')}</small>
+                  </li>
+                ))}
+                {project.test_command && (
+                  <li data-on="">
+                    <span className="fs-pj__flag-dot" aria-hidden="true" />
+                    {t('Test command')}
+                    <small>
+                      <code>{project.test_command}</code>
+                    </small>
+                  </li>
+                )}
+                {project.review_model && (
+                  <li data-on="">
+                    <span className="fs-pj__flag-dot" aria-hidden="true" />
+                    {t('Reviewer model')}
+                    <small>{project.review_model}</small>
+                  </li>
+                )}
+              </ul>
+              <CoordinationPanel project={project} onNotice={say} />
+              <ProjectExecutionPreferences project={project} onSaved={setProject} />
+            </section>
 
-      {tab === 'ajustes' && (
-        <div className="fs-panel">
+</details>
+          <div className="fs-panel">
           <ProjectSettings
             project={project}
             say={say}
-            onCancel={() => setTab('brief')}
+            onCancel={() => setTab('overview')}
             onSaved={(p) => {
               setProject(p);
               void reload();
-              setTab('brief');
+              setTab('overview');
             }}
           />
           <div className="fs-pj__danger">
             <h3>{t('Danger zone')}</h3>
             <p className="fs-pj__muted">{t('Deleting the project keeps its chats and its folder; only the grouping, the instructions and the objectives go.')}</p>
             <Button variant="danger" size="sm" icon={Trash2} label={t('Delete project')} onClick={() => setConfirm('delete')} testId="project-delete" />
+          </div>
           </div>
         </div>
       )}

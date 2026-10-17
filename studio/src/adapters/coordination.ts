@@ -115,14 +115,14 @@ export type CoordinationRoom = {id: string; kind: 'council' | 'groups'; title: s
 
 export async function spaces(signal?: AbortSignal): Promise<CoordinationSpace[]> {
   const result = await getJson<{ok: boolean; spaces?: CoordinationSpace[]; error?: string}>('/api/hoard/agora/spaces', signal);
-  if (!result.ok) throw new Error(result.error || 'Coordination unavailable');
+  if (!result?.ok) throw new Error(result?.error || 'Coordination unavailable');
   return result.spaces || [];
 }
 
 export async function rooms(spaceId: string, signal?: AbortSignal): Promise<CoordinationRoom[]> {
   const result = await getJson<{ok: boolean; rooms?: CoordinationRoom[]; error?: string}>(
     '/api/hoard/agora/rooms?space_id=' + encodeURIComponent(spaceId), signal);
-  if (!result.ok) throw new Error(result.error || 'Coordination unavailable');
+  if (!result?.ok) throw new Error(result?.error || 'Coordination unavailable');
   return result.rooms || [];
 }
 
