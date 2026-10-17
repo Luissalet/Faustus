@@ -8,6 +8,8 @@ import { DESTINATIONS, TOOLS } from './routes';
 import { CONTEXT_LABELS, TOOL_PLACEMENT, toolContext, toolHref, toolsIn } from './toolPlacement';
 import { useCreatorAvailable } from '../adapters/creator';
 import { useShell } from './store';
+import { usePlatform } from './platform';
+import { SphereChip } from '../screens/studio/SphereChip';
 import { tourForPath } from '../lib/tours';
 import './palette.css';
 import { t } from '../i18n';
@@ -74,6 +76,7 @@ function useEverywhere(open: boolean, query: string, types: SearchSource[]) {
 }
 
 export function CommandPalette() {
+  const platform = usePlatform();
   const open = useShell((state) => state.paletteOpen);
   const setOpen = useShell((state) => state.setPaletteOpen);
   const navigate = useNavigate();
@@ -209,6 +212,7 @@ export function CommandPalette() {
           </Command.Item>
         </Command.Group>
       </Command.List>
+      {platform === 'mobile' && <div className="fs-palette__account"><span>{t('Sphere')}</span><SphereChip /></div>}
     </Command.Dialog>
   );
 }

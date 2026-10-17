@@ -280,7 +280,7 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
 }
 
 .fs-nav__spacer {
-  flex: 0 0 var(--fs-space-2);
+  flex: 1 0 var(--fs-space-2);
 }
 
 .fs-nav__foot {
@@ -941,3 +941,9 @@ button.fs-nav__item { border: 0; background: transparent; font: inherit; cursor:
 @media (max-width: 600px) {
   .fs-app .fs-studio[data-chat-tool] aside.fs-chat-workspace { inset: 0; inline-size: 100%; }
 }
+
+/* Global personal/work context lives beside settings, including mobile More. */
+.fs-nav__account .fs-sphere { inline-size: 100%; justify-content: flex-start; }
+.fs-shell[data-nav='rail'] .fs-nav__account .fs-sphere { inline-size: 30px; padding-inline: 10px; }
+.fs-shell[data-nav='rail'] .fs-nav__account .fs-sphere__name { display: none; }
+.fs-palette__account { display: flex; align-items: center; justify-content: space-between; gap: var(--fs-space-3); padding: var(--fs-space-3) var(--fs-space-4); border-block-start: 1px solid var(--fs-border); color: var(--fs-text-2); font-size: var(--fs-label-size); }

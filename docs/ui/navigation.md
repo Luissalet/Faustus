@@ -3,7 +3,9 @@
 Luis requested this reorganisation on 17 October 2026: the permanent Tools
 inventory and flat settings list made capabilities difficult to find. The rail
 now contains Home, Studio, Projects, Library, Automations, Activity and Hoards.
-Settings and search remain in its footer. On mobile, Home, Studio, Projects and
+Personal/work context, Settings and search share its footer. The sphere is
+also accessible from More on mobile, retaining the Hub-owned state and switch.
+Conversation headers contain no global sphere selector. On mobile, Home, Studio, Projects and
 Library share the bottom bar with More, which opens search and navigation.
 
 Search is clickable and keyboard accessible. It initially offers tools for the

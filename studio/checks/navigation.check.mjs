@@ -41,6 +41,13 @@ try {
   assert.equal(m.DESTINATIONS.length, 7);
   assert.equal(m.MOBILE_DESTINATIONS.length, 4, 'the fifth mobile control opens search/navigation');
 
+  const shellSource = readFileSync(join(root, 'studio/src/shell/AppShell.tsx'), 'utf8');
+  const studioSource = readFileSync(join(root, 'studio/src/screens/Studio.tsx'), 'utf8');
+  const paletteSource = readFileSync(join(root, 'studio/src/shell/CommandPalette.tsx'), 'utf8');
+  assert.ok(shellSource.includes('fs-nav__account\"><SphereChip />'), 'global sphere lives beside settings');
+  assert.ok(!studioSource.includes('<SphereChip'), 'conversation header has no global sphere');
+  assert.ok(paletteSource.includes('fs-palette__account\"><span>{t(\'Sphere\')}</span><SphereChip />'), 'mobile More retains the sphere menu');
+
   const settingsSource = readFileSync(join(root, 'studio/src/screens/Settings.tsx'), 'utf8');
   const sectionKeys = [...settingsSource.slice(settingsSource.indexOf('const SECTIONS:'), settingsSource.indexOf('/* ── Models:')).matchAll(/key: '([^']+)'/g)].map(match => match[1]);
   const grouped = m.SETTINGS_GROUPS.flatMap(group => group.sections);

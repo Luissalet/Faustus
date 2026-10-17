@@ -12,6 +12,7 @@ import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
 import { NotificationTray } from './notifications-tray';
+import { SphereChip } from '../screens/studio/SphereChip';
 import { DESTINATIONS, MOBILE_DESTINATIONS } from './routes';
 import { ContextualTools } from './contextualTools';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
@@ -189,6 +190,7 @@ function Rail() {
 
       {platform !== 'mobile' && (
         <div className="fs-nav__foot">
+          <div className="fs-nav__account"><SphereChip /></div>
           <div className="fs-nav__foot-row">
             <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
               <Settings2 size={13} aria-hidden="true" />
