@@ -1,7 +1,7 @@
 # Personal assistants
 
-Home → **Your assistants** creates a named continuing conversation or adopts an
-existing chat. Open its name to enter ordinary Studio, including mobile/PWA.
+Studio → new conversation → **Your assistants** creates an assistant or adopts
+an existing chat. Open its name to enter the conversation, including mobile/PWA.
 The assistant ID is the canonical session ID. There is no second transcript,
 agent executor, model configuration or project memory.
 

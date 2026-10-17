@@ -1,5 +1,15 @@
 # Objetivos acordados
 
+## Asistentes con instrucciones, skills y proactividad — #724
+
+Perfil propio por chat canónico aplicado en Chat, Agente y turnos programados;
+skills seleccionadas además de las automáticas; misión, horario, zona horaria,
+avisos, pausa, ejecución inmediata y actividad mediante el programador nativo.
+Resultados en el mismo chat, sin mensajes cuando no hay novedades. API/MCP y
+editor de Studio compartidos; referencias inspeccionadas OpenDots, nanobot y
+Codync. La agrupación Memory/Brain en Biblioteca → Conocimiento sigue registrada
+como tarea independiente del Ágora #723; no se da por implementada aquí.
+
 ## Continuar ante caídas temporales del servicio global — resuelto #467
 
 HTTP503 reintentable antes de salida mantiene el mismo turno/modelo y recibos
