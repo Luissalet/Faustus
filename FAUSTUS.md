@@ -13143,6 +13143,48 @@ Fuente 8a91364: 414 pruebas Python aprobadas (dos omitidas), 403 del motor (una 
 
 La ampliación743 incorpora 128 tarjetas Z de Sol/Luna y Ultrasol/Ultraluna: 35 movimientos distintos en español e inglés. La elección Z existente muestra una previsualización y su ejecución presenta el título, también en el HTML jugable. Los nueve atlas GBA añaden 46 fotogramas para movimientos concretos. Tiempo real muestra títulos de movimientos conocidos que admite su motor, sin añadir mecánica de cristales ni daño Z. Fuente39ee046 y documentación3b417e5:416 Python PASS/2 skip,412 Node PASS/1 skip y compilaciones app/play correctas. QA clásica con Z reales, RT con título español y HTML jugado con Hydro Vortex hasta SILVERWIN1. Activa en Main037ea4fd tras APPROVE independiente CAS1 de codex-silver-apoyo. Composición final:424 Python PASS/2 skip,412 Node PASS/1 skip y app/play correctas. La activación gestionada sólo de Silver conserva las 18 tablas,153 archivos protegidos,ajustes ytoken exactos;49 entrenadores,24 gimnasios,3 ligas,42 partidas y6 arenas. MCP174 y PNG nuevos HTTP exactos. Evidencia:D:/LocalAI/research-inbox/sprites743/.
 
+## Silver: sprites en ataques de tiempo real por defecto — 18-10-2026, #787
+
+Los ataques de tiempo real incorporan preparación, recorrido e impacto con los
+sprites aportados sin activar el estilo pixel. Rayos, proyectiles, contacto,
+conos, ondas, ráfagas, caídas, cargas y efectos propios usan la geometría pública
+del combate. Puños, patadas, mordiscos y cortes eligen su material por movimiento
+o contacto; los demás comparten familias por tipo. Los 938 IDs únicos tienen un
+perfil consultable en `leisure_catalog(section="effects")`; no se afirma que sean
+938 coreografías originales distintas ni se da efecto a movimientos que el motor
+de tiempo real declara sin efecto.
+
+El catálogo reúne 655 imágenes de 157 fuentes: conserva exactamente las 584
+entradas anteriores y añade 51 secuencias de Explorers of Sky con 784 cuadros y
+20 texturas de partículas de Pokémon Negro. Hay 99 atlas con 1057 cuadros,
+incluidas esas 20 texturas estáticas. El convertidor propio lee NARC/SPL del
+commit fijado de `squiddonaut/pokeblack`, verifica su SHA-256 y conserva índices y
+créditos; no ejecuta código del repositorio ni necesita sus archivos en runtime.
+Veinte archivos del inventario local siguen sin utilizar. El arte mantiene sus
+derechos y no se atribuye a la licencia MIT del programa.
+
+El reloj público controla la velocidad y la pausa de la repetición; reiniciar
+limpia los efectos y reducir movimiento fija sus animaciones decorativas. La
+cola y los dibujos tienen límites por fotograma. El renderizador campal usa los
+mismos materiales mediante sus eventos existentes. No cambian reglas, daño,
+azar ni entradas del motor. App, página jugable y vídeo llevan las imágenes.
+
+Fuentes `9dbfee6` y `17b749a`, aprobadas por revisión independiente CAS2.
+La segunda corrige la dirección cardinal de conos y preparación, con pruebas
+que fallan antes y pasan después. El revisor reprodujo eventos reales del motor
+hacia arriba y abajo: el desvío de 45° queda en cero sin cambiar la simulación.
+R1 aprobó 517 pruebas Python completas y dos omitidas; el backend permanece
+idéntico en R2, que aprueba 18 Python de área y 436 Node completas, con una
+omitida, además de 11 Node de área y ambas compilaciones.
+
+HTML de 14 MB con las 71 imágenes nuevas exactas, jugado hasta victoria con
+Thunderbolt y resultado SILVERWIN2 importado y verificado en tiempo real.
+MP4 nativo 1280×720/25 s con el puño BW visible y final por tiempo conforme al
+combate original. La campal confirma el mismo resultado que el motor. UI
+predeterminada, pausa asentada y móvil comprobados en R1; la parte modificada
+de R2 se comprueba con regresiones cardinales. Activación pendiente de la unión
+con Main actual aprobado. Evidencia `D:/LocalAI/research-inbox/sprites787/`.
+
 ## Biblioteca: Conocimiento — 17-10-2026 (#723)
 
 Biblioteca reúne Memoria y Cerebro en Conocimiento. Ambas vistas conservan sus
