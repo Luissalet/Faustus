@@ -74,8 +74,8 @@ for (const p of [
   assert.ok(src.includes('aria-label'), 'must label the zones/controls for keyboard and screen-reader users');
 }
 
-// ── routing: server whitelist, client route table, sidebar and the lazy
-// Route entry all agree on /creator ──
+// ── routing: server whitelist, client route table, lazy screen, and the
+// capability gate that keeps /creator out of tools until creator_enabled ──
 {
   const app = read('app.py');
   assert.ok(/@app\.get\("\/creator"\)/.test(app), 'app.py must serve GET /creator as a deep link');
@@ -89,7 +89,21 @@ for (const p of [
   const shell = read('studio/src/shell/AppShell.tsx');
   assert.ok(shell.includes("import('../screens/creator/CreatorScreen')"), 'AppShell.tsx must lazy-import CreatorScreen');
   assert.ok(/<Route path="\/creator" element=\{<CreatorScreen \/>\}\s*\/>/.test(shell), 'AppShell.tsx must route /creator to CreatorScreen');
-  assert.ok(shell.includes('useCreatorAvailable'), 'the rail must gate the /creator entry on the capability flag, not show it unconditionally');
+}
+{
+  // Gate lives in toolPlacement + consumers (not AppShell): /creator is a
+  // Tool filtered by creatorAvailable from useCreatorAvailable().
+  const placement = read('studio/src/shell/toolPlacement.ts');
+  assert.ok(
+    /tool\.path\s*!==\s*'\/creator'\s*\|\|\s*creatorAvailable/.test(placement),
+    'toolPlacement.toolsIn must hide /creator unless creatorAvailable is true',
+  );
+  const contextual = read('studio/src/shell/contextualTools.tsx');
+  assert.ok(contextual.includes('useCreatorAvailable'), 'contextualTools must probe creator availability before listing tools');
+  assert.ok(/toolsIn\(\s*context\s*,\s*creatorAvailable\s*===\s*true\s*\)/.test(contextual), 'contextualTools must pass creatorAvailable into toolsIn');
+  const palette = read('studio/src/shell/CommandPalette.tsx');
+  assert.ok(palette.includes('useCreatorAvailable'), 'CommandPalette must probe creator availability before listing tools');
+  assert.ok(/tool\.path\s*!==\s*'\/creator'\s*\|\|\s*creatorAvailable/.test(palette), 'CommandPalette search must hide /creator unless available');
 }
 
 // ── i18n: every new string this lot introduces has a Spanish row ──
@@ -124,7 +138,7 @@ for (const p of [
 
     const harnessPath = join(tmp, 'harness.mjs');
     const harness = `
-      import * as creator from ${JSON.stringify(bundlePath)};
+      import * as creator from ${JSON.stringify(pathToFileURL(bundlePath).href)};
 
       const calls = [];
       globalThis.fetch = async (url, init) => {
