@@ -1,8 +1,9 @@
 # Faustus — qué añade este fork sobre Odysseus
 
 **Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
-Proyecto → Ágora reutiliza el historial de Studio con respuestas completas,
-herramientas, @menciones, pill de Sparks y tablero lateral del Hub; Objetivos
+Proyecto → Ágora abre Studio real: su lista, cabecera, historial y compositor,
+con respuestas completas, herramientas, @menciones y pill de Sparks. Tasks abre
+el tablero del Hub; el botón habitual del proyecto vuelve a sus detalles. Objetivos
 muestra las mismas tareas. La coordinación del proyecto da a sus miembros las
 herramientas nativas para crearlas y seguirlas. Las salas antiguas se vinculan
 al proyecto sin cambiar identificadores ni historial. Cada participante guarda
@@ -11,11 +12,12 @@ API/MCP. Se ve su fase observada, tiempo transcurrido y última señal persistid
 silencio y desconexión se explican sin diagnosticar un bloqueo. Las respuestas
 entre participantes aparecen en el mismo chat, con el contexto anterior real,
 sin el nuevo tope de tres rondas por defecto; siguen los límites explícitos,
-Stop y las capacidades de Council. El listado de salas se puede plegar para
-ampliar el chat y el tablero tiene cierre accesible en móvil.
-Tras la corrección visual pedida por Luis, el chat del proyecto ocupa toda la
-vista como Studio: conversaciones en el lateral, cabecera compacta y tablero
-cerrado inicialmente. La navegación del proyecto permanece en el lateral.
+Stop y las capacidades de Council. El listado de conversaciones se pliega con
+Ctrl+B y usa el drawer habitual en móvil. No hay cabeceras ni pestañas del
+proyecto sobre el chat. Miembros, en el lugar del selector de modelo, permite
+ver la actividad, editar participantes y configurar debate y razonamiento.
+Los adjuntos, dictado, comandos y controles del compositor usan el arnés nativo;
+executionOptions en API/MCP conserva sus ajustes en cada turno en cola.
 Verificación: 64 pruebas Python, checks de componentes, build, API/MCP y navegador
 privados; llamada nativa al tablero con proveedor HTTP controlado. GLM residente
 en Sparks completó propuesta, objeción, acuerdo y cierre natural con dos roles.

@@ -1,7 +1,7 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
-Agora is also a project group chat: open Project → Agora to see model replies, tool activity, elapsed time and the last observed signal in the normal Studio transcript. Use @mentions, choose each member's supported reasoning settings, and open the connected task board beside the conversation. Members can answer each other until the discussion ends; optional round limits remain selectable. Existing conversations, deliberation and coordination tools remain available. [Agora workspace](docs/api/agora.md) · [compatible group API](docs/api/groups.md).
+Agora uses the regular Studio chat: Project → Agora opens its conversation list, transcript and composer, with the usual project button and a Tasks shortcut. Attachments, slash commands and composer controls use the native chat harness. Use @mentions and Members to choose models, supported reasoning and discussion settings or inspect each participant's activity. Members can answer each other until the discussion ends; optional round limits remain selectable. Existing conversations, deliberation and coordination tools remain available. [Agora workspace](docs/api/agora.md) · [compatible group API](docs/api/groups.md).
 </p>
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>

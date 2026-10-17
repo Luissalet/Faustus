@@ -33,6 +33,7 @@ export interface GroupState {
   projectId?: string;
   /** Follow-up rounds: -1 until the discussion ends, 0 none, positive an explicit limit. */
   discussionRounds?: number;
+  executionOptions?: Record<string, unknown>;
 }
 
 /** Same default as the server (`src/group_discussion.py`). */
@@ -169,8 +170,9 @@ export async function agoraBoard(spaceId: string, signal?: AbortSignal): Promise
   if (!result.ok || !result.columns) throw new Error(result.error || t('The Agora board is unavailable.'));
   return result as AgoraBoard;
 }
-export function sendGroup(id: string, message: string, requestId: string, mentions: string[] = []): Promise<{turn_id: string}> {
-  return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId, mentions });
+export function sendGroup(id: string, message: string, requestId: string, mentions: string[] = [],
+  execution: Pick<GroupState, 'executionOptions' | 'executionMode' | 'workspace'> = {}): Promise<{turn_id: string}> {
+  return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId, mentions, ...execution });
 }
 export function stopGroup(id: string): Promise<unknown> {
   return command(`/api/groups/${encodeURIComponent(id)}/stop`);

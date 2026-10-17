@@ -68,6 +68,7 @@ export function AgoraScreen() {
   const project = agoras.find((space) => space.id === spaceId)?.project_id || '';
   const councils = all.filter((room) => room.kind === 'council');
   const visible = councils.filter((room) => (room.title || room.id).toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
+  if (mode === 'groups') return <GroupScreen key={spaceId} />;
   return <div className="fs-agora" data-testid="agora" data-mode={mode}>
     <header className="fs-agora__head">
       <h1 className="fs-agora__title">{t('Agora')}</h1>
@@ -77,7 +78,6 @@ export function AgoraScreen() {
       </Link>}
       <nav className="fs-agora__modes" aria-label={t('Coordination modes')}>{modes.map(({id, label, icon: Icon}) => <button key={id} type="button" aria-current={mode === id ? 'page' : undefined} onClick={() => choose(id)}><Icon size={16} aria-hidden="true" />{t(label)}</button>)}</nav>
     </header>
-    {mode === 'groups' && <div className="fs-agora__body"><GroupScreen key={spaceId} embedded /></div>}
     {mode === 'council' && <div className="fs-agora__body fs-agora__scroll"><div className="fs-agora__workspace">
       <aside className={'fs-agora__rooms' + (roomsOpen ? ' fs-agora__rooms--open' : '')} aria-label={t('Rooms')}>
         <div className="fs-agora__rooms-head"><h2>{t('Rooms')}</h2><button className="fs-agora__rooms-toggle fs-chip" type="button" aria-expanded={roomsOpen} aria-controls="agora-room-browser" onClick={() => setRoomsOpen(!roomsOpen)}><Users size={16} aria-hidden="true" />{t('Rooms')} ({councils.length})</button><Button size="sm" variant="ghost" icon={Plus} label={t('New room')} onClick={() => choose('council', '')} /></div>

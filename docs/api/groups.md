@@ -4,7 +4,9 @@ Group chat keeps its composition and ordered turns in the server. The parent and
 
 New groups use the configured global model, currently the resident Sparks service, and agent mode. Models and personas can be selected per participant. Plain chat, parallel discussion and ordered turns remain available. There is no fixed participant ceiling. A working folder is optional; native project and tool behavior still applies.
 
-Project → Agora opens the same canonical group in the Studio transcript. Members
+Project → Agora opens the same canonical group in Studio itself, including its
+regular conversation pane, header, transcript and composer. The project chip
+returns to details; Tasks opens the connected task ledger. Members
 accept `reasoningEffort` and `thinkingEnabled` overrides in create/update and
 presets; omitted values inherit and explicit `false` is preserved. Supported
 choices come from the selected endpoint/model. Groups MCP has the same fields.
@@ -15,6 +17,15 @@ an older unbound room and its member sessions without replacing their history.
 Observed participant activity is persisted in `step.detail.activity`, including
 start, last event, finish, phase, tool and event count. Polls do not renew the
 last-event timestamp. A silent or disconnected run is not labelled successful.
+
+Create/update/send accept `executionOptions`, the regular composer's native chat
+fields (attachments, generation, tools, context, memory, skills, behavior and
+execution preferences). Each queued turn snapshots them. Participant identity,
+route and request IDs remain owned by the conductor; explicit member reasoning
+and autonomy override shared defaults. Attachments stay in the canonical user
+message. A send carries options, execution mode and workspace in one request,
+without a browser PATCH racing with streaming progress. The groups MCP schemas
+expose the same options.
 
 The browser and MCP are observers. Disconnecting or opening another page does not stop work or prevent the next participant. Messages join the FIFO queue. A repeated `request_id` returns the same turn. Explicit Stop cancels only this group's active native run IDs and queued steps. Closing a group preserves its Studio transcript.
 
