@@ -1538,3 +1538,12 @@ recuperación inicial vacía sin exigir workspace; error visible y borrador
 recuperado. Probado con modelo global, MCP y navegador en Silver aislado.
 No equivale a una garantía general de calidad; los fallos nuevos requieren
 sus reproducciones concretas. Sin decisión pendiente de Luis.
+
+
+## Vistas actualizadas por el copilot — #792
+
+El lanzador Python transmite los resultados de herramientas al host sin esperar
+al final del turno. Silver actualiza en su sitio y conserva los borradores de
+campos, diálogo y constructor de equipo. Pruebas con transporte SSE controlado,
+handlers nativos y navegador verifican cambios antes del fin del turno. La
+comprobación no evalúa al modelo ni afirma paridad en todos los Hoards.

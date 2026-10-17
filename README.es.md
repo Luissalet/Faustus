@@ -739,3 +739,10 @@ respuesta inicial vacía sin exigir carpeta de trabajo. Los errores terminales
 siguen siendo fallos al llegar `[DONE]`; el panel muestra el motivo y recupera
 el texto enviado si el mismo chat tiene el campo vacío. No garantiza la calidad
 general del modelo. [Comportamiento](docs/api/hoard_copilot.md).
+
+
+El lanzador Python común de los Hoards avisa tras cada herramienta terminada:
+Silver muestra los cambios guardados antes de acabar la respuesta, actualiza
+la vista y conserva las ediciones del entrenador sin guardar. Herramientas y
+ejecución del turno no cambian. Contrato en `docs/COPILOT_LIVE_REFRESH.md` de
+Silver; los demás hosts requieren su sincronización habitual y sus callbacks.

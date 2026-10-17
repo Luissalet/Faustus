@@ -889,3 +889,10 @@ can recover without a filesystem workspace. Terminal stream errors remain failur
 through `[DONE]`; the panel displays the error and restores the submitted text when
 the same conversation has an empty composer. This is not a general model quality
 guarantee. [Copilot behavior](docs/api/hoard_copilot.md).
+
+
+The shared Python Hoard launcher notifies hosts after each completed tool, so
+Silver can show saved changes before the reply ends. It refreshes in place and
+keeps unfinished trainer edits. Native tools and turn execution are unchanged.
+See Silver's `docs/COPILOT_LIVE_REFRESH.md`; other hosts require their ordinary
+vendor synchronization and refresh callbacks.
