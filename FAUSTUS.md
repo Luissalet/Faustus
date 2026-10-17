@@ -13247,3 +13247,20 @@ no prueba fiabilidad universal del modelo. Main75bf0f52 activado tras comprobar
 turnos/grupos inactivos, configuración exacta y bundle común en seis relays.
 Datos reales sin mutaciones de QA; evidencias research-inbox/copilot-reliability778
 y copilot-review778. [Contrato](docs/api/hoard_copilot.md).
+
+
+## Cambios visibles del copilot sin recargar — #792, 18-10-2026
+
+El lanzador Python común de HoardLink transmite cada `tool_output` al host por
+`hoard:copilot-change` y `onChange`, con compatibilidad con callbacks de refresco
+anteriores. No acaba ni remonta el turno. Silver agrupa avisos a250ms y actualiza
+las fichas; los campos editados, diálogo y equipos manuales siguen intactos,
+mientras el constructor sin cambios locales sigue el equipo guardado, incluso
+cuando empezó vacío. Se reutilizan herramientas API/MCP y eventos nativos.
+
+Pruebas de autor y revisión con panel real, handlers nativos, MCP y SSE
+controlado verifican cambios antes del fin del turno y borradores conservados.
+No es una evaluación de calidad del modelo ni una afirmación de paridad en los
+hosts Node o en toda la familia. Contratos: HoardLink docs/copilot-live-refresh.md
+y Silver docs/COPILOT_LIVE_REFRESH.md. Evidencia research-inbox/copilot-live792
+y copilot-review792.
