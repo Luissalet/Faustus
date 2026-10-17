@@ -7,7 +7,6 @@ import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { lazyChunk, RouteErrorBoundary } from './lazyChunk';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router';
 import { Skeleton } from '../components';
-import { HomeScreen } from '../screens/Home';
 import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
@@ -19,11 +18,7 @@ import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
 import { usePlatform } from './platform';
 
-/* Inicio is the eager bundle; every other screen arrives as a route chunk
-   the first time it is opened, so the eager bundle stays inside the 350 KB
-   budget (DECISIONES_UI.md) as screens keep landing. Studio, the heaviest,
-   is fetched right after the first paint (`warmStudio`) so opening it from
-   Inicio costs nothing perceptible. */
+/* Studio is the single entry. Other destinations stay lazy route chunks. */
 const loadStudio = () => import('../screens/Studio');
 const StudioScreen = lazyChunk(() => loadStudio().then((m) => ({ default: m.StudioScreen })));
 const ActivityScreen = lazyChunk(() => import('../screens/Activity').then((m) => ({ default: m.ActivityScreen })));
@@ -235,13 +230,18 @@ function LegacyAgora({mode}: {mode: string}) {
   return <Navigate replace to={'/agora?' + params.toString() + hash} />;
 }
 
+export function StudioEntry() {
+  const {search, hash} = useLocation();
+  return <Navigate replace to={{pathname: '/studio', search, hash}} />;
+}
+
 function RouteBody() {
   return (
     <div className="fs-route">
       <RouteErrorBoundary>
       <Suspense fallback={<Skeleton label={t('Loading the screen')} count={4} height="56px" />}>
       <Routes>
-        <Route path="/" element={<HomeScreen />} />
+        <Route path="/" element={<StudioEntry />} />
         <Route path="/studio" element={<StudioScreen />} />
         <Route path="/projects" element={<ProjectsScreen />} />
         <Route path="/projects/:projectId" element={<ProjectScreen />} />

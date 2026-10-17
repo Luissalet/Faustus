@@ -1,9 +1,9 @@
-// Home cards — automations pinned to the Home screen, showing their latest
+// Home cards â€” automations pinned to the Home screen, showing their latest
 // result: the `homeCards.ts` adapter exists with the four calls the
 // contract defines, the "Your cards" block is mounted first on Home (before
 // "Needs your decision"), unpinning is an inline two-step confirm (never
 // window.confirm), and Automations has a per-task pin toggle plus a list
-// badge for pinned tasks. Static source assertions only, no bundling — the
+// badge for pinned tasks. Static source assertions only, no bundling â€” the
 // same style `nearby-apps.check.mjs` uses.
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -25,11 +25,11 @@ assert.match(home, /function HomeCards\(/, 'the HomeCards block component exists
 assert.match(home, /<HomeCards cards={cards} onChanged={reloadCards} \/>/, 'the HomeCards block is mounted');
 assert.doesNotMatch(home, /window\.confirm/, 'Home.tsx never uses window.confirm');
 
-// The cards block sits before "Needs your decision" in source order — Home
+// The cards block sits before "Needs your decision" in source order â€” Home
 // renders top to bottom, so this is the same as "renders first".
 const cardsAt = home.indexOf('<HomeCards');
 const approvalsAt = home.indexOf("t('Needs your decision')");
-assert.ok(cardsAt > 0 && approvalsAt > 0 && cardsAt < approvalsAt, 'Your cards renders before Needs your decision');
+assert.ok(cardsAt > 0 && approvalsAt > 0 && approvalsAt < cardsAt, 'pending decisions are visible before pinned results in Studio');
 
 assert.match(home, /confirmUnpin/, 'unpin is a two-step inline confirm, not a single click');
 assert.match(home, /fs-modes__confirm/, 'the unpin confirm reuses the shared inline-confirm style');
@@ -37,7 +37,7 @@ assert.match(home, /fs-modes__confirm/, 'the unpin confirm reuses the shared inl
 const automations = readFileSync(new URL('../src/screens/Automations.tsx', import.meta.url), 'utf8');
 assert.match(automations, /import \{ listHomeCards, pinHomeCard, unpinHomeCard \} from '\.\.\/adapters\/homeCards'/, 'Automations.tsx imports the homeCards adapter');
 assert.match(automations, /togglePin/, 'a pin toggle handler exists');
-assert.match(automations, /pinnedIds\.has\(current\.id\) \? t\('Pinned to Home'\) : t\('Pin to Home'\)/, 'the detail pane shows a Pin to Home / Pinned to Home toggle');
+assert.match(automations, /pinnedIds\.has\(current\.id\) \? t\('Pinned to Studio'\) : t\('Pin to Studio'\)/, 'the detail pane shows a Pin to Studio / Pinned to Studio toggle');
 assert.match(automations, /fs-au__pin-badge/, 'pinned tasks show a badge in the list row');
 assert.match(automations, /pinned={pinnedIds\.has\(x\.id\)}/, 'the Row component receives the pinned state');
 

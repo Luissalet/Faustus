@@ -1,7 +1,7 @@
-import { Bot, ChevronRight, CloudSun, Code2, Eye, FileText, GitBranch, Image, Inbox, Mail, Newspaper, RefreshCw, Search } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router';
-import { Button, EmptyState, Skeleton, StatusBadge } from '../components';
+import { Bot, CloudSun, Code2, Eye, FileText, GitBranch, Image, Mail, Newspaper, RefreshCw, Search } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
+import { Button, Skeleton, StatusBadge } from '../components';
 import {
   byRecency,
   loadHome,
@@ -14,20 +14,16 @@ import { usageRecap, type UsageRecap } from '../adapters/commands';
 import { RadarRows, useGitRadar } from './source-control/GitRadar';
 import './source-control.css';
 import { Rich } from './rich';
-import { BrandMark } from '../shell/BrandMark';
-import { useSpotlight } from '../shell/useSpotlight';
 import './home.css';
 import { FleetCard } from './FleetCard';
 import { PersonalAssistants } from './home/PersonalAssistants';
+import { ContextualTools } from '../shell/contextualTools';
 import { t, tn } from '../i18n';
 
 /**
- * Inicio (UI-030).
- *
- * The question is "what do you want to finish", not "here are your metrics".
- * Order is deliberate: what is blocked on you, then what you can continue,
- * then where you work, then how to start something new. Model, temperature
- * and GPU are absent — they are settings, not the point of the screen.
+ * Studio's start content reuses the former Home stores and controls.
+ * Assistants and actionable results stay near the composer. Installation-wide
+ * summaries are available on demand, and never mount inside an open chat.
  */
 
 function Block({
@@ -283,222 +279,83 @@ function UsageRecapBlock() {
   );
 }
 
-export function HomeScreen() {
-  const spotlight = useSpotlight();
-  const navigate = useNavigate();
+/** The useful start-of-work surfaces, inside Studio's existing chat shell. */
+export function StudioStart({ onDraft, welcome = true }: { onDraft: (text: string) => void; welcome?: boolean }) {
   const [data, setData] = useState<HomeData | null>(null);
   const [failed, setFailed] = useState(false);
+  const [revision, setRevision] = useState(0);
   const [cards, setCards] = useState<HomeCard[]>([]);
-  const cardsTimer = useRef<number | null>(null);
+  const [cardsError, setCardsError] = useState('');
+  const [cardsRevision, setCardsRevision] = useState(0);
+  const [overview, setOverview] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    loadHome(controller.signal)
-      .then(setData)
-      .catch(() => setFailed(true));
-    return () => controller.abort();
-  }, []);
-
-  const reloadCards = () => {
-    listHomeCards()
-      .then(setCards)
-      .catch(() => {
-        /* the block stays empty rather than breaking the rest of Home */
-      });
-  };
-
-  // 60 s while nothing is running; 5 s while any pinned card is mid-run, so
-  // a freshly-triggered refresh actually catches the result landing.
-  useEffect(() => {
-    reloadCards();
-    return () => {
-      if (cardsTimer.current) window.clearTimeout(cardsTimer.current);
-    };
-  }, []);
+    const load = () => void loadHome(controller.signal)
+      .then(value => { if (!controller.signal.aborted) { setData(value); setFailed(false); } })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    load();
+    const timer = window.setInterval(load, 60000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [revision]);
 
   useEffect(() => {
-    const anyRunning = cards.some((c) => c.running);
-    if (cardsTimer.current) window.clearTimeout(cardsTimer.current);
-    cardsTimer.current = window.setTimeout(reloadCards, anyRunning ? 5000 : 60000);
-    return () => {
-      if (cardsTimer.current) window.clearTimeout(cardsTimer.current);
+    let live = true;
+    let timer: number | undefined;
+    const load = async () => {
+      let next: HomeCard[] = [];
+      try {
+        next = await listHomeCards();
+        if (live) { setCards(next); setCardsError(''); }
+      } catch (error) { if (live) setCardsError((error as Error).message); }
+      if (live) timer = window.setTimeout(() => void load(), next.some(card => card.running) ? 5000 : 60000);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards]);
+    void load();
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [cardsRevision]);
+  const reloadCards = () => setCardsRevision(value => value + 1);
+  const sessions = byRecency(data?.sessions ?? []).slice(0, 3);
+  const projects = byRecency(data?.projects ?? []).slice(0, 4);
 
-  if (failed) {
-    return (
-      <EmptyState
-        icon={Inbox}
-        title={t('Could not read anything from the server')}
-        body={t('The new interface is alive but cannot reach the API. The previous interface keeps working and does not depend on this.')}
-        primaryAction={{
-          label: t('Open the previous interface'),
-          onClick: () => {
-            window.location.href = '/?shell=legacy';
-          },
-        }}
-      />
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="fs-home">
-        <Skeleton label={t('Loading your home')} height="34px" width="60%" />
-        <Skeleton label={t('Loading recent work')} count={4} height="44px" />
+  return <div className="fs-studio-start" data-testid="studio-start">
+    <ContextualTools context="personal" />
+    {welcome && <div className="fs-studio-start__intro">
+      <p>{t('Start a conversation below or continue with an assistant.')}</p>
+      <div className="fs-studio-start__shortcuts" aria-label={t('Start something')}>
+        {QUICK_STARTS.map(quick => <Button key={quick.label} size="sm" variant="ghost" icon={quick.icon} label={t(quick.label)} onClick={() => onDraft(t(quick.draft))} testId={`quickstart-${quick.label.toLowerCase().replace(/\s+/g, '-')}`} />)}
       </div>
-    );
-  }
+    </div>}
 
-  const sessions = byRecency(data.sessions).slice(0, 3);
-  const projects = byRecency(data.projects).slice(0, 4);
-  const hasAnything = sessions.length > 0 || projects.length > 0;
+    <PersonalAssistants />
 
-  return (
-    <div className="fs-home" data-testid="home">
-      <header className="fs-home__head fs-enter" style={{ ['--i' as string]: 0 }}>
-        <span className="fs-watermark" aria-hidden="true">
-          <BrandMark size={320} />
-        </span>
-        <h1 className="fs-home__title">
-          {t('What do you want to')} <em>{t('finish')}</em>?
-        </h1>
-        <p className="fs-home__sub">
-          {data.approvals.length > 0
-            ? tn(data.approvals.length, '{n} thing is waiting for your decision.', '{n} things are waiting for your decision.')
-            : t('Continue your work or start something.')}
-        </p>
-      </header>
+    {!!data?.approvals.length && <Block title={t('Needs your decision')} index={0}>
+      <div className="fs-studio-start__rows">{data.approvals.map((approval, index) => <Link className="fs-studio-start__row" key={approval.approval_id ?? approval.id ?? index}
+        to={`/activity?status=accion&run=approval-${encodeURIComponent(approval.approval_id ?? approval.id ?? '')}`} data-testid="home-approval">
+        <span>{(approval.plan?.action ?? approval.action ?? approval.tool ?? t('Action awaiting approval')).replace(/_/g, ' ')}</span><StatusBadge status="waiting" />
+      </Link>)}</div>
+    </Block>}
 
-      <HomeCards cards={cards} onChanged={reloadCards} />
+    {cards.length > 0 && <HomeCards cards={cards} onChanged={reloadCards} />}
+    {cardsError && <p className="fs-notice" data-tone="warning" role="alert">{cardsError} <Button size="sm" variant="ghost" label={t('Retry')} onClick={reloadCards} /></p>}
 
-      <PersonalAssistants />
+    {sessions.length > 0 && <section className="fs-studio-start__recent" aria-label={t('Recent conversations')}>
+      <h2>{t('Continue')}</h2><div className="fs-studio-start__rows">{sessions.map(session => <Link key={session.id} className="fs-studio-start__row" to={`/studio?s=${encodeURIComponent(session.id)}`} data-testid="home-session">
+        <span>{session.name}</span><small>{relativeTime(session.last_message_at ?? session.updated_at)}</small>
+      </Link>)}</div>
+    </section>}
 
-      <GitRadarBlock />
+    {projects.length > 0 && <section className="fs-studio-start__projects" aria-label={t('Projects')}>
+      <div className="fs-studio-start__section-head"><h2>{t('Projects')}</h2><Link to="/projects">{t('View all')}</Link></div>
+      <div className="fs-studio-start__shortcuts">{projects.map(project => <Link key={project.id} to={`/projects/${encodeURIComponent(project.id)}`} className="fs-studio-start__project" data-testid="home-project">{project.name}</Link>)}</div>
+    </section>}
 
-      {data.approvals.length > 0 && (
-        <Block title={t('Needs your decision')} index={2}>
-          <div className="fs-list fs-list--rail">
-            {data.approvals.map((approval, index) => (
-              <Link
-                key={approval.approval_id ?? approval.id ?? index}
-                className="fs-row"
-                to={`/activity?status=accion&run=approval-${encodeURIComponent(approval.approval_id ?? approval.id ?? '')}`}
-                data-testid="home-approval"
-              >
-                <span className="fs-row__main">
-                  <span className="fs-row__name">
-                    {(approval.plan?.action ?? approval.action ?? approval.tool ?? t('Action awaiting approval')).replace(/_/g, ' ')}
-                  </span>
-                  <span className="fs-row__meta">
-                    {relativeTime(approval.requested_at) || t('waiting')}
-                  </span>
-                </span>
-                <StatusBadge status="waiting" />
-              </Link>
-            ))}
-          </div>
-        </Block>
-      )}
+    {!data && !failed && <Skeleton label={t('Loading recent work')} count={2} height="36px" />}
+    {failed && <p className="fs-notice" data-tone="warning" role="alert">{t('Could not load recent work. You can still use the conversation.')} <Button size="sm" variant="ghost" label={t('Retry')} onClick={() => setRevision(value => value + 1)} /></p>}
+    {!!data?.degraded.length && <p className="fs-notice" data-tone="warning" data-testid="home-degraded">{t('Some start information could not be loaded: {sources}.', {sources: data.degraded.join(', ')})} <Button size="sm" variant="ghost" label={t('Retry')} onClick={() => setRevision(value => value + 1)} /></p>}
 
-      {sessions.length > 0 && (
-        <Block title={t('Continue')} index={3}>
-          <div className="fs-list fs-list--rail">
-            {sessions.map((session) => (
-              <Link
-                key={session.id}
-                className="fs-row"
-                to={`/studio?s=${encodeURIComponent(session.id)}`}
-                data-testid="home-session"
-              >
-                <span className="fs-row__main">
-                  <span className="fs-row__name">{session.name}</span>
-                  <span className="fs-row__meta">
-                    {[
-                      relativeTime(session.last_message_at ?? session.updated_at),
-                      session.message_count ? `${session.message_count} mensajes` : null,
-                      session.model,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </span>
-                </span>
-                {session.mode === 'agent' && <StatusBadge status="succeeded" label={t('Agent')} />}
-                <ChevronRight size={16} aria-hidden="true" className="fs-row__go" />
-              </Link>
-            ))}
-          </div>
-        </Block>
-      )}
-
-      {projects.length > 0 && (
-        <Block title={t('Projects')} index={4}>
-          <div className="fs-list fs-list--rail">
-            {projects.map((project) => (
-              <a
-                key={project.id}
-                className="fs-row"
-                href={`/projects/${project.id}`}
-                data-testid="home-project"
-              >
-                <span className="fs-row__main">
-                  <span className="fs-row__name">{project.name}</span>
-                  <span className="fs-row__meta">
-                    {[project.workspace, relativeTime(project.updated_at)].filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-                {/* A chevron says "this goes somewhere". A folder icon on a
-                    row already labelled PROYECTOS only repeats the heading. */}
-                <ChevronRight size={16} aria-hidden="true" className="fs-row__go" />
-              </a>
-            ))}
-          </div>
-        </Block>
-      )}
-
-      <FleetCard />
-
-      <Block title={t('Start something')} index={5}>
-        <div className="fs-quickstarts">
-          {QUICK_STARTS.map((quick) => (
-            <button
-              key={quick.label}
-              type="button"
-              className="fs-tile fs-spot"
-              onMouseMove={spotlight}
-              data-testid={`quickstart-${quick.label.toLowerCase().replace(/\s+/g, '-')}`}
-              onClick={() => navigate(`/studio?draft=${encodeURIComponent(t(quick.draft))}`)}
-            >
-              <span className="fs-tile__icon">
-                <quick.icon size={18} aria-hidden="true" />
-              </span>
-              <span>{t(quick.label)}</span>
-            </button>
-          ))}
-        </div>
-      </Block>
-
-      <UsageRecapBlock />
-
-      {!hasAnything && (
-        <EmptyState
-          icon={Inbox}
-          title={t('Nothing to continue yet')}
-          body={t('When you start a piece of work it will appear here, with its project and what was left pending.')}
-          primaryAction={{
-            label: t('Start in Studio'),
-            onClick: () => navigate('/studio'),
-          }}
-        />
-      )}
-
-      {data.degraded.length > 0 && (
-        <p className="fs-notice" data-tone="warning" data-testid="home-degraded">
-          No he podido leer {data.degraded.join(', ')}. Lo demás de esta pantalla es
-          real; eso concreto falta, y prefiero decirlo a enseñarte un cero.
-        </p>
-      )}
-    </div>
-  );
+    <details className="fs-studio-start__overview" onToggle={event => setOverview(event.currentTarget.open)}>
+      <summary>{t('Workspace overview')}</summary>
+      {overview && <div className="fs-studio-start__overview-content"><GitRadarBlock /><FleetCard /><UsageRecapBlock /></div>}
+    </details>
+  </div>;
 }

@@ -77,7 +77,7 @@ function Row({ task, on, selecting, selected, pinned, onOpen, onToggle }: { task
             {task.name}
             {task.is_builtin && <span className="fs-au__builtin" title={task.is_modified ? t('Built-in, edited') : t('Built-in')}>{task.is_modified ? t('built-in · edited') : t('built-in')}</span>}
             {pinned && (
-              <span className="fs-au__pin-badge" title={t('Pinned to Home')} data-testid="automation-pin-badge">
+              <span className="fs-au__pin-badge" title={t('Pinned to Studio')} data-testid="automation-pin-badge">
                 <Pin size={11} aria-hidden="true" />
               </span>
             )}
@@ -222,10 +222,10 @@ export function AutomationsScreen() {
     try {
       if (pinnedIds.has(id)) {
         await unpinHomeCard(id);
-        say(t('Removed from Home'));
+        say(t('Removed from Studio'));
       } else {
         await pinHomeCard(id);
-        say(t('Pinned to Home'));
+        say(t('Pinned to Studio'));
       }
       reloadPins();
     } catch (e) {
@@ -559,7 +559,7 @@ export function AutomationsScreen() {
                   variant="ghost"
                   size="sm"
                   icon={pinnedIds.has(current.id) ? PinOff : Pin}
-                  label={pinnedIds.has(current.id) ? t('Pinned to Home') : t('Pin to Home')}
+                  label={pinnedIds.has(current.id) ? t('Pinned to Studio') : t('Pin to Studio')}
                   loading={busy === `pin:${current.id}`}
                   onClick={() => void togglePin(current.id)}
                   testId="automation-pin-toggle"

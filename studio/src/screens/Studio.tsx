@@ -92,8 +92,7 @@ import { TOURS, resetTours, seenTours } from '../lib/tours';
 import { getTheme as getMode, setTheme as setMode, type ThemeChoice } from '../shell/theme';
 import { applyThemeEvent, clearHighlights, emailReplyRoute, highlight, PANEL_ROUTES } from '../shell/uiEvents';
 import type { UiEvent } from '../adapters/uiEvent';
-import { BrandMark } from '../shell/BrandMark';
-import { useSpotlight } from '../shell/useSpotlight';
+import { StudioStart } from './Home';
 import { ModelPicker } from './ModelPicker';
 import { PresetPicker } from './PresetPicker';
 import { ChatToolsMenu, ChatToolWorkspace, chatWorkspace, type ChatWorkspace } from './studio/ChatTools';
@@ -362,13 +361,6 @@ function writeAttachmentsFor(sessionId: string | null, attachments: Attachment[]
     /* private mode: attachments live only as long as the screen */
   }
 }
-
-const SUGGESTIONS = [
-  'Explain this repository to me as if I had just joined the team',
-  'Search the web for what changed this week on the topic I give you',
-  'Write a script that sorts my downloads by type',
-  'Review the last commit and tell me what could break',
-];
 
 /** When this screen was opened: `/uptime` counts from here. */
 const OPENED_AT = Date.now();
@@ -713,7 +705,6 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     toggleSidebar: () => undefined,
   });
   const freshRef = useRef<string | null>(null);
-  const spotlight = useSpotlight();
 
   const route = useMemo<ModelRoute | null>(() =>
     chooseStudioRoute(routes, routeId, rememberedRoute.current, serverDefault, defaultLoaded),
@@ -3772,39 +3763,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           )}
           {groupConversation.error && <p className="fs-notice" data-tone="danger">{groupConversation.error}</p>}
 
-          {isEmpty && display.welcome && (
-            <div className="fs-studio__hero fs-spot" onMouseMove={spotlight}>
-              <span className="fs-watermark" aria-hidden="true">
-                <BrandMark size={320} />
-              </span>
-              <p className="fs-studio__kicker">Studio</p>
-              <h2 className="fs-home__title fs-studio__hero-title">
-                {t('What are we')} <em>{t('doing')}</em> {t('today?')}
-              </h2>
-              <p className="fs-prose">
-                {t('Type below. In agent mode it uses tools and shows you every step in the rail; in chat mode it only talks.')}
-                <br />
-                <code>{t('@file')}</code> {t('mentions a file in the workspace,')} <code>{t('#rule')}</code> {t('saves a standing instruction,')}{' '}
-                <code>{t('/command')}</code> {t('does the rest.')}
-              </p>
-              <div className="fs-studio__suggestions">
-                {SUGGESTIONS.map((key) => t(key)).map((text, i) => (
-                  <button
-                    key={text}
-                    type="button"
-                    className="fs-tile fs-studio__suggestion fs-enter"
-                    style={{ ['--i' as string]: i + 2 }}
-                    onClick={() => {
-                      setDraft(text);
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    {text}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {isEmpty && !groupMode && !knobs.incognito && <StudioStart welcome={display.welcome} onDraft={text => {
+            const current = textareaRef.current?.value ?? draft;
+            setDraft([current.trimEnd(), text].filter(Boolean).join('\n\n'));
+            textareaRef.current?.focus();
+          }} />}
 
           {turns && turns.length > 0 && (
             <RichReply.Provider value={replyFromBlock}>

@@ -39,8 +39,8 @@ try {
   assert.equal(m.resolveCommand('research', 'a question').command.route, undefined, 'research stays in the conversation');
   for (const name of ['extract', 'extraction', 'git', 'context', 'skills', 'hoards']) assert.ok(m.resolveCommand(name, ''), name);
   assert.equal(m.DESTINATIONS.some(item => item.path === '/source-control'), false);
-  assert.equal(m.DESTINATIONS.length, 7);
-  assert.equal(m.MOBILE_DESTINATIONS.length, 4, 'the fifth mobile control opens search/navigation');
+  assert.equal(m.DESTINATIONS.length, 6);
+  assert.equal(m.MOBILE_DESTINATIONS.length, 3, 'the fourth mobile control opens search/navigation');
 
   const shellSource = readFileSync(join(root, 'studio/src/shell/AppShell.tsx'), 'utf8');
   const studioSource = readFileSync(join(root, 'studio/src/screens/Studio.tsx'), 'utf8');
@@ -50,7 +50,7 @@ try {
   assert.ok(paletteSource.includes('fs-palette__account\"><span>{t(\'Sphere\')}</span><SphereChip />'), 'mobile More retains the sphere menu');
 
   const settingsSource = readFileSync(join(root, 'studio/src/screens/Settings.tsx'), 'utf8');
-  const sectionKeys = [...settingsSource.slice(settingsSource.indexOf('const SECTIONS:'), settingsSource.indexOf('/* ── Models:')).matchAll(/key: '([^']+)'/g)].map(match => match[1]);
+  const sectionKeys = [...settingsSource.slice(settingsSource.indexOf('const SECTIONS:'), settingsSource.indexOf('/* â”€â”€ Models:')).matchAll(/key: '([^']+)'/g)].map(match => match[1]);
   const grouped = m.SETTINGS_GROUPS.flatMap(group => group.sections);
   assert.deepEqual([...grouped].sort(), [...sectionKeys].sort(), 'every settings section occurs exactly once');
   assert.equal(new Set(grouped).size, grouped.length);

@@ -9,7 +9,7 @@ const PARENTS: Record<ToolContext, { path: string; label: string }> = {
   chat: { path: '/studio', label: 'Studio' }, project: { path: '/projects', label: 'Projects' },
   library: { path: '/library', label: 'Library' }, automations: { path: '/automations', label: 'Automations' },
   activity: { path: '/activity', label: 'Activity' }, connections: { path: '/connectors', label: 'Hoards' },
-  personal: { path: '/', label: 'Home' },
+  personal: { path: '/studio', label: 'Studio' },
 };
 
 /** Secondary work stays beside its parent instead of occupying the rail. */
