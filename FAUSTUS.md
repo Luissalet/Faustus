@@ -13134,3 +13134,12 @@ MCP nativo: catálogo de memoria e historial de cambios, lectura de una nota de
 Cerebro y contenido sintético conservado. La captura de píxeles no estuvo
 disponible; no se afirma inspección visual. Evidencia en
 `D:/LocalAI/research-inbox/faustus-cleanup-20261017/`.
+
+
+## Silver: diagnóstico del mando y texto de equipo opcional — 17-10-2026
+
+En Ajustes, Diagnóstico del mando observa sticks, gatillos analógicos y botones mediante la API del navegador. Ofrece las asignaciones de tiempo real (Z-A y sencillo), campales, mapas, Pokéathlon y ruleta, con inicio, parada, reanudación, vaciado y descarga de un registro JSON local de cambios. Plegar el panel detiene la lectura y ocultar la pestaña la pausa. No remapea ni envía lecturas al servidor. La herramienta de consulta `controller_guide` comparte el catálogo de la interfaz por REST y MCP; incluye un comando de firewall para el puerto configurado, sólo como texto. En Main son 175 herramientas y el puerto es 5230. Las pruebas del navegador no detectaron un mando físico; las pruebas unitarias de entradas son sintéticas.
+
+En las páginas jugables, incluir el equipo como texto Showdown en un código de resultado es opcional y está desactivado al iniciar cada intento. El equipo estructurado sigue presente para verificar la repetición. Al importar, Compartir permite copiar el texto canónico derivado del equipo y crear un entrenador mediante una acción expresa con nombre editable. Alternar la copia del texto no registra dos veces la misma partida ni altera la fecha del resultado.
+
+727 está activa en Main `42d324e5`, con el original `ca3a3dbc` aprobado por revisión independiente CAS1. La composición conserva 737, 740, 743 y el arte anterior: 427 pruebas Python correctas y dos omitidas, 419 Node correctas y una omitida, ambas compilaciones y MCP/navegador correctos. La activación gestionada sólo de Silver conserva exactamente las 18 tablas, 153 archivos de contenido, ajustes y token; siguen los 49 entrenadores, 24 gimnasios, tres ligas, 42 partidas y seis arenas. La copia Main y QA comparten los mismos estáticos y sus JS/CSS servidos coinciden. El manual de la familia se actualizó con revisión obligatoria y lectura posterior: un párrafo de Silver cambiado, otros 167 y todos los estilos de párrafo exactos. Evidencia: `D:/LocalAI/research-inbox/silver-reviews-626-629/activation727.json`, `main727-native.json`, `manual727-proof.json` y los registros de composición. Sin reinicio de Faustus, Hub ni Sparks, ni push desde este chat.
