@@ -31,12 +31,12 @@ export interface GroupState {
   space_id?: string;
   /** The project the room works in (its members are chats of that project). */
   projectId?: string;
-  /** Follow-up rounds in which the members answer each other (0 = none). */
+  /** Follow-up rounds: -1 until the discussion ends, 0 none, positive an explicit limit. */
   discussionRounds?: number;
 }
 
 /** Same default as the server (`src/group_discussion.py`). */
-export const DEFAULT_DISCUSSION_ROUNDS = 3;
+export const DEFAULT_DISCUSSION_ROUNDS = -1;
 /** Follow-up rounds are queued turns whose request id starts with this. */
 export const isPeerTurn = (turn: { request_id?: string }) => String(turn.request_id ?? '').startsWith('peer:');
 export const PASS_RE = /^\W*\[\s*pass\s*\]|^\W*pass\W*$/i;

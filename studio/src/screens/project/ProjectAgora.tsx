@@ -60,7 +60,9 @@ export function ProjectAgora({ project, selected, onSelect }: { project: Project
   useLayoutEffect(() => {
     const fit = () => {
       const top = frame.current?.getBoundingClientRect().top ?? 0;
-      setHeight(Math.max(460, Math.floor(window.innerHeight - top - 20)));
+      // Small screens scroll the project header away; keep room for the
+      // transcript as well as the controls and composer below it.
+      setHeight(Math.max(window.innerWidth <= 760 ? 760 : 460, Math.floor(window.innerHeight - top - 20)));
     };
     fit();
     window.addEventListener('resize', fit);

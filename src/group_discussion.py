@@ -19,8 +19,7 @@ import re
 import uuid
 
 PEER_PREFIX = "peer:"
-DEFAULT_ROUNDS = 3
-MAX_ROUNDS = 12
+DEFAULT_ROUNDS = -1  # Continue until nobody addresses a peer, everyone passes, or Stop.
 PASS_TEXT = "[PASS]"
 
 
@@ -30,7 +29,7 @@ def rounds_limit(definition) -> int:
         value = int(raw)
     except (TypeError, ValueError):
         return DEFAULT_ROUNDS
-    return max(0, min(MAX_ROUNDS, value))
+    return max(-1, value)
 
 
 def is_peer(turn) -> bool:
@@ -115,7 +114,7 @@ def mentioned(text, members, author_id="") -> list[str]:
 def next_round(turn, steps, members, mode, limit):
     """Who speaks in the follow-up round after ``turn``, or ``None`` to stop."""
     current = peer_round(turn)
-    if limit <= 0 or current >= limit:
+    if limit == 0 or (limit > 0 and current >= limit):
         return None
     by_id = {m["sessionId"]: m for m in members}
     spoke = [s for s in steps if s.get("status") == "done" and s.get("member_id") in by_id and not is_pass(s.get("text"))]
@@ -153,13 +152,14 @@ def rules(member, members, limit) -> str:
         f"- If you have nothing new to add, reply exactly {PASS_TEXT}.",
         "- When the work needs splitting, put it on the project's Agora board with the coordination tools if you have them, and say who takes what.",
     ]
-    if limit <= 0:
+    if limit == 0:
         lines[2] = "- Address peers by name when you answer them."
     return "\n".join(lines)
 
 
 def peer_prompt(round_number, limit, names=()) -> str:
     who = f" Your turn: {', '.join(names)}." if names else ""
-    return (f"(Group chat, follow-up {round_number}/{limit}.){who} Your peers' new messages are in the shared "
+    count = f"{round_number}/{limit}" if limit > 0 else str(round_number)
+    return (f"(Group chat, follow-up {count}.){who} Your peers' new messages are in the shared "
             "discussion above. Reply only if you add something new: answer what you were asked, correct, disagree or "
             f"build on it, addressing them with @handle. Otherwise reply exactly {PASS_TEXT}.")

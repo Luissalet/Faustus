@@ -1,5 +1,5 @@
 import { Check, Plus, Search, Users, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Button, Dialog, EmptyState, Skeleton, Toast } from '../../components';
 import { listModels, type ModelRoute } from '../../adapters/chat';
 import { groupOptions, listGroupPresets, listGroups, speakerName, type GroupPreset, type GroupState } from '../../adapters/group';
@@ -30,6 +30,8 @@ export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }
   const [managing, setManaging] = useState<GroupState | null>(null);
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
   const [reload, setReload] = useState(0);
+  const [roomsOpen, setRoomsOpen] = useState(false);
+  const roomBrowserId = useId();
   const noticeTimer = useRef<number | null>(null);
   const activity = useChatActivity();
 
@@ -78,8 +80,12 @@ export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }
   const home = spaceId || 'ecosystem';
 
   return (
-    <div className="fs-agora-rooms" data-testid="agora-rooms">
-      <aside className="fs-agora-rooms__list" aria-label={t('Rooms')}>
+    <div className="fs-agora-rooms" data-testid="agora-rooms" data-rooms-open={roomsOpen || undefined}>
+      <nav className="fs-agora-rooms__mobile-nav" aria-label={t('Rooms')}>
+        <button type="button" className="fs-chip" aria-expanded={roomsOpen} aria-controls={roomBrowserId} onClick={() => setRoomsOpen(!roomsOpen)}><Users size={14} aria-hidden="true" /> {t('Rooms')} ({groups?.length ?? 0})</button>
+        <Button size="sm" variant="secondary" icon={Plus} label={t('New room')} onClick={() => { setRoomsOpen(false); setCreating(true); onSelect(''); }} />
+      </nav>
+      <aside id={roomBrowserId} className="fs-agora-rooms__list" aria-label={t('Rooms')}>
         <div className="fs-agora-rooms__head">
           <h3>{t('Rooms')}</h3>
           <Button size="sm" variant="secondary" icon={Plus} label={t('New room')} onClick={() => { setCreating(true); onSelect(''); }} testId="agora-new-room" />
@@ -95,7 +101,7 @@ export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }
             const live = g.participants.some((p) => sessionActivity(activity, p.sessionId) !== null);
             return (
               <li key={g.parentId}>
-                <button type="button" aria-current={open === g.parentId ? 'page' : undefined} onClick={() => { setCreating(false); onSelect(g.parentId); }} data-testid="agora-room">
+                <button type="button" aria-current={open === g.parentId ? 'page' : undefined} onClick={() => { setRoomsOpen(false); setCreating(false); onSelect(g.parentId); }} data-testid="agora-room">
                   <span className="fs-agora-rooms__name">{live && <span className="fs-agora-rooms__live" aria-label={t('Working')} />}{g.name}</span>
                   <span className="fs-agora-rooms__faces" aria-hidden="true">
                     {g.participants.slice(0, 5).map((p) => <span key={p.sessionId} className="fs-avatar" data-hue={hueIndex(speakerName(p))} data-size="sm">{initials(speakerName(p))}</span>)}

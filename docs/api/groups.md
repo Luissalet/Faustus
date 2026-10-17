@@ -4,6 +4,18 @@ Group chat keeps its composition and ordered turns in the server. The parent and
 
 New groups use the configured global model, currently the resident Sparks service, and agent mode. Models and personas can be selected per participant. Plain chat, parallel discussion and ordered turns remain available. There is no fixed participant ceiling. A working folder is optional; native project and tool behavior still applies.
 
+Project → Agora opens the same canonical group in the Studio transcript. Members
+accept `reasoningEffort` and `thinkingEnabled` overrides in create/update and
+presets; omitted values inherit and explicit `false` is preserved. Supported
+choices come from the selected endpoint/model. Groups MCP has the same fields.
+`discussionRounds` defaults to `-1` (continue until discussion ends), `0` disables
+peer follow-ups, and positive values select an explicit round limit. Existing
+saved limits are preserved. `PATCH /api/groups/{id}` accepts `projectId` to link
+an older unbound room and its member sessions without replacing their history.
+Observed participant activity is persisted in `step.detail.activity`, including
+start, last event, finish, phase, tool and event count. Polls do not renew the
+last-event timestamp. A silent or disconnected run is not labelled successful.
+
 The browser and MCP are observers. Disconnecting or opening another page does not stop work or prevent the next participant. Messages join the FIFO queue. A repeated `request_id` returns the same turn. Explicit Stop cancels only this group's active native run IDs and queued steps. Closing a group preserves its Studio transcript.
 
 Completed replies and actual native tool outputs (`tool`, `command`, `output`, `exit_code`, `call_id`) are available to later participants. User clarifications are shared too. Parallel participants see previous rounds; ordered participants also see the preceding participant's completed work. Questions retain their native identifiers and revisions and resume the same participant.

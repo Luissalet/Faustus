@@ -14,7 +14,7 @@ import { t } from '../../i18n';
 import { ParticipantReasoning } from './ParticipantReasoning';
 
 /** How many rounds the members may answer each other after each message. */
-export const ROUND_CHOICES = [0, 1, 2, 3, 5, 8, 12];
+export const ROUND_CHOICES = [-1, 0, 1, 2, 3, 5, 8, 12];
 
 function Avatar({ name }: { name: string }) {
   return (
@@ -163,7 +163,7 @@ export function RoomSetup({ routes, defaultRoute, personas, presets, onStart, on
       <div className="fs-grp__work-options">
         <label className="fs-grp__option">{t('Between themselves')}
           <select className="fs-field" value={rounds} onChange={(e) => setRounds(Number(e.target.value))} data-testid="group-rounds">
-            {ROUND_CHOICES.map((n) => <option key={n} value={n}>{n === 0 ? t('Only answer me') : t('Up to {n} rounds of replies', { n })}</option>)}
+            {ROUND_CHOICES.map((n) => <option key={n} value={n}>{n < 0 ? t('Until the discussion ends') : n === 0 ? t('Only answer me') : t('Up to {n} rounds of replies', { n })}</option>)}
           </select>
         </label>
         <label className="fs-grp__option">{t('Participants can')}

@@ -68,6 +68,17 @@ def test_parallel_round_gets_one_reaction_round_round_robin_needs_a_mention():
     assert d.next_round(last, steps, members(), 'round-robin', 3) is None
 
 
+def test_discussion_is_uncapped_by_default_but_keeps_explicit_zero_and_positive_limits():
+    assert d.rounds_limit({}) == -1
+    assert d.rounds_limit({'discussionRounds': 50}) == 50
+    steps = [{'member_id': 'glm', 'status': 'done', 'text': '@qwen check this'}]
+    later = {'id': 'p', 'request_id': d.peer_request_id('t1', 20)}
+    assert d.next_round(later, steps, members(), 'round-robin', -1)['round'] == 21
+    assert d.next_round(later, steps, members(), 'round-robin', 3) is None
+    assert d.next_round(later, steps, members(), 'round-robin', 0) is None
+    assert '/-1' not in d.peer_prompt(21, -1)
+
+
 async def test_mentioned_member_answers_in_a_follow_up_round(tmp_path):
     inv = Scripted({(0, 'glm'): 'Plan: parser first. @qwen can you write the tests?',
                     (0, 'qwen'): 'Agreed on the parser.',
@@ -135,7 +146,7 @@ async def test_update_keeps_project_and_changes_rounds(tmp_path):
     c.adopt({**room(), 'projectId': 'silver'}, 'owner')
     updated = c.update('room', 'owner', {'discussionRounds': 5, 'name': 'Silver room'})
     assert updated['discussionRounds'] == 5 and updated['projectId'] == 'silver' and updated['name'] == 'Silver room'
-    assert c.update('room', 'owner', {'discussionRounds': 99})['discussionRounds'] == d.MAX_ROUNDS
+    assert c.update('room', 'owner', {'discussionRounds': 99})['discussionRounds'] == 99
 
 
 def test_room_transcript_keeps_the_members_rich_answer_and_skips_follow_up_prompts():

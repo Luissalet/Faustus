@@ -18,7 +18,7 @@ class GroupCreate(BaseModel):
     # The room's project: members work in it (instructions, folders, board).
     project_id: str = ""
     # Follow-up rounds in which the members answer each other (0 = none).
-    discussionRounds: int = Field(default=3, ge=0, le=12)
+    discussionRounds: int = Field(default=-1, ge=-1)
 
 
 class GroupMessage(BaseModel):
@@ -33,7 +33,7 @@ class GroupUpdate(BaseModel):
     mode: Literal['parallel', 'round-robin'] | None = None
     executionMode: Literal['chat', 'agent'] | None = None
     workspace: str | None = None
-    discussionRounds: int | None = Field(default=None, ge=0, le=12)
+    discussionRounds: int | None = Field(default=None, ge=-1)
     # Links a room that has no project yet; a room never changes project.
     projectId: str | None = None
     expected_revision: int | None = None

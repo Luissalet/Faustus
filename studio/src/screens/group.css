@@ -224,7 +224,8 @@
 
 .fs-agora-rooms {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   block-size: 100%;
   min-block-size: 0;
   border: 1px solid var(--fs-border);
@@ -234,12 +235,25 @@
 }
 
 .fs-agora-rooms__list {
-  display: flex;
+  display: none;
   flex-direction: column;
   min-block-size: 0;
   border-inline-end: 1px solid var(--fs-border);
   background: color-mix(in srgb, var(--fs-surface-1) 55%, transparent);
 }
+
+.fs-agora-rooms__mobile-nav {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+}
+.fs-agora-rooms__mobile-nav > button { min-block-size: 44px; }
+.fs-agora-rooms[data-rooms-open] { grid-template-columns: 248px minmax(0, 1fr); }
+.fs-agora-rooms[data-rooms-open] > .fs-agora-rooms__list { display: flex; }
 
 .fs-agora-rooms__head {
   display: flex;
@@ -400,11 +414,14 @@
 }
 
 .fs-room__main {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
+  overflow: hidden;
 }
+
+.fs-room__main > :not(.fs-room__stage) { flex-shrink: 0; }
 
 .fs-room__head {
   position: relative;
@@ -510,7 +527,9 @@
 }
 
 .fs-room__stage {
+  flex: 1 1 0;
   min-block-size: 0;
+  overflow: hidden;
 }
 
 /* The chat uses the width it has; Studio's single column stays 860px. */
@@ -932,10 +951,22 @@
     grid-template-rows: auto minmax(0, 1fr);
   }
   .fs-agora-rooms__list {
+    display: none;
     max-block-size: 30vh;
     border-inline-end: 0;
     border-block-end: 1px solid var(--fs-border);
   }
+  .fs-agora-rooms__mobile-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fs-space-2);
+    padding: var(--fs-space-2) var(--fs-space-3);
+    border-block-end: 1px solid var(--fs-border);
+  }
+  .fs-agora-rooms__mobile-nav > button { min-block-size: 44px; }
+  .fs-agora-rooms[data-rooms-open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  .fs-agora-rooms[data-rooms-open] > .fs-agora-rooms__list { display: flex; }
   .fs-board-agora__columns {
     grid-template-columns: minmax(0, 1fr);
   }

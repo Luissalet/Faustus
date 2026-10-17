@@ -41,6 +41,37 @@ preservation and verification in Main remain pending before closure.
 
 ## Project coordination
 
+Open **Project → Agora** for the project's group conversations. The normal
+Studio transcript shows each member's full response and tools. The participant
+strip reports observed execution phase, elapsed time and last event; silence
+is an observation, not a diagnosis that the model has hung. A lost connection
+is shown explicitly and old rooms without activity dates say so.
+
+Use **Rooms** to browse or create conversations without permanently narrowing
+the chat. **Board** opens the same Hub task ledger used in **Objectives**.
+The separate project **Board** retains its existing planning cards. Native
+coordination tasks require a saved, usable Hub connection for the project;
+the UI does not create an independent ledger when it is missing.
+
+If an older room has no project, **Work in this project** links the existing
+parent and member sessions. Their identities and history stay intact; project
+context applies to subsequent turns. A room already linked to another project
+cannot be reassigned.
+
+Type `@` to choose a member by keyboard or pointer. Members see the previous
+speakers' contributions and may answer each other in the same conversation.
+`discussionRounds=-1` (the default for new rooms) continues until no further
+reply is selected or members pass. `0` disables follow-up rounds; a positive
+value is an explicit limit. Stop remains available. Existing saved values
+remain unchanged.
+
+Each member can inherit reasoning preferences or choose the levels and
+thinking switch announced by its endpoint and model. These settings persist
+in rooms and presets and are sent through the normal execution path. Unknown
+saved values stay visible; changing the model clears its previous override.
+API and native Groups MCP expose the same participant fields
+`reasoningEffort` and `thinkingEnabled`, with explicit `false` preserved.
+
 In **Project → The agent here**, choose the Ágora alongside the connected
 Hub and verified project folders, then save. New project conversations
 inherit the saved space. Existing actor identity, folder scope, delivery

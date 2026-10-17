@@ -1,7 +1,7 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
-Ágora reúne conversaciones, deliberación y coordinación de proyectos en una sola entrada. Cada ágora conserva sus salas, participantes, tareas y decisiones; el Hub comparte la autoridad de los datos y Faustus ejecuta los modelos y herramientas. Se mantienen los modelos elegidos, las personas, el chat y los turnos paralelos u ordenados. Salir del navegador o de MCP no cancela el trabajo. [Uso de Ágora](docs/api/agora.md) · [API de grupos compatible](docs/api/groups.md).
+Ágora también es un chat grupal del proyecto: en Proyecto → Ágora ves las respuestas, herramientas, tiempo transcurrido y última señal observada de cada modelo con el historial habitual de Studio. Puedes usar @menciones, elegir el razonamiento compatible de cada participante y abrir el tablero conectado junto al chat. Los miembros se contestan hasta terminar la discusión; los límites opcionales de rondas siguen disponibles. Se conservan las conversaciones, la deliberación y las herramientas de coordinación existentes. [Uso de Ágora](docs/api/agora.md) · [API de grupos compatible](docs/api/groups.md).
 </p>
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>

@@ -113,6 +113,7 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
   const [draft, setDraft] = useCoordinationDraft('agora:draft:room:' + groupId, '');
   const [recipient, setRecipient] = useState('');
   const [sending, setSending] = useState(false);
+  const [linkingProject, setLinkingProject] = useState(false);
   const [side, setSide] = useState<'board' | 'members' | null>(() => (window.innerWidth >= 1200 ? 'board' : null));
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
@@ -252,6 +253,16 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
     }
   }, [state, say]);
 
+  const linkProject = async () => {
+    if (!state || !projectId || linkingProject) return;
+    setLinkingProject(true);
+    try {
+      const group = await updateGroup(state, { projectId });
+      setSnapshot((current) => current ? { ...current, group } : current);
+    } catch (error) { say((error as Error).message, 'warn'); }
+    finally { setLinkingProject(false); }
+  };
+
   if (!state) {
     return (
       <div className="fs-room fs-room--loading">
@@ -274,7 +285,7 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
           <label className="fs-room__rounds" title={t('How many rounds the members may answer each other after your message')}>
             <span>{t('Between themselves')}</span>
             <select className="fs-field" value={rounds} onChange={(e) => void setRounds(Number(e.target.value))} data-testid="room-rounds">
-              {[...new Set([...ROUND_CHOICES, rounds])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n === 0 ? t('Only answer me') : t('Up to {n} rounds', { n })}</option>)}
+              {[...new Set([...ROUND_CHOICES, rounds])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n < 0 ? t('Until the discussion ends') : n === 0 ? t('Only answer me') : t('Up to {n} rounds', { n })}</option>)}
             </select>
           </label>
           <Vitals busy={busy} />
@@ -292,6 +303,11 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
             ]}
           />
         </header>
+
+        {projectId && !state.projectId && <div className="fs-notice fs-room__notice">
+          <p>{t('This room is not linked to this project yet. Link it to use its instructions, folders and task board in future turns.')}</p>
+          <Button size="sm" label={t('Work in this project')} loading={linkingProject} onClick={() => void linkProject()} testId="room-link-project" />
+        </div>}
 
         {snapshot && <MemberActivity snapshot={snapshot} connected={!connectionError} onSelect={() => setSide('members')} />}
 
