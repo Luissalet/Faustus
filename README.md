@@ -10,6 +10,11 @@ supporting text files survive installation and remain available through the skil
 reference and project workspace tools. These procedures do not install engines
 or add application capabilities by themselves. [Library](skills/library/README.md).
 
+Code impact follows Python import bindings and function scope, and re-resolves
+unchanged callers when definitions appear or disappear. The existing impact
+query is available through HTTP as well as MCP and chat, with optional history
+and risk computation. [Code resolution](docs/api/code-resolution.md).
+
 Studio is the single starting workspace. New conversations show personal assistants, pending decisions, pinned results and recent projects above the ordinary composer. Repository radar, fleet and usage remain in Workspace overview; personal tools retain mail, calendar, notes and messaging. Old Home links preserve their query and fragment. Existing chats, assistant identities and automation results use the same stores and tools. [Studio start](docs/ui/studio-start.md).
 
 Agora uses the regular Studio chat: Project → Agora opens its conversation list, transcript and composer, with the usual project button and a Tasks shortcut. Attachments, slash commands and composer controls use the native chat harness. Use @mentions and Members to choose models, supported reasoning and discussion settings or inspect each participant's activity. Members can answer each other until the discussion ends; optional round limits remain selectable. Existing conversations, deliberation and coordination tools remain available. Visible answers remain on screen while a replacement is drafted; stopping a group keeps queued user messages visible with their stopped status. [Agora workspace](docs/api/agora.md) · [compatible group API](docs/api/groups.md).

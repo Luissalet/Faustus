@@ -5,9 +5,14 @@
 Encargo de Luis: incorporar las funciones útiles de las fuentes investigadas,
 excluyendo Jev, pagos y dependencias de API externas. La biblioteca recibe ocho
 procedimientos y conserva referencias al instalarlos (#781). El estudio de
-ingeniería inversa (#779), el trabajo vivo de Blender (#780), el índice de impacto
-(#782) y los motores de composición, voz y cámara (#783) siguen siendo frentes
+ingeniería inversa (#779), el trabajo vivo de Blender (#780)
+y los motores de composición, voz y cámara (#783) siguen siendo frentes
 de implementación; las skills no se presentan como sustituto de esas funciones.
+
+El índice (#782) ya incorpora resolución por importación/ámbito y actualización
+de llamadas intactas al cambiar definiciones; API/MCP comparten el impacto
+existente. Fuente integrada y revisada. Activación del backend pendiente de que
+termine el turno activo de Faustus; no se detiene la inferencia para actualizar.
 
 ## Escritura cómoda en el copilot común — #772
 

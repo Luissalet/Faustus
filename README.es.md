@@ -11,6 +11,12 @@ herramientas de referencias de skills y del proyecto. Son procedimientos: no
 instalan motores ni añaden por sí solos funciones a las aplicaciones.
 [Biblioteca](skills/library/README.md).
 
+El análisis de impacto respeta las importaciones de Python y el ámbito de cada
+función, y revisa los consumidores intactos cuando aparecen o desaparecen
+definiciones. La consulta existente también está disponible por HTTP, además de
+MCP y chat, con historial y riesgo opcionales.
+[Resolución de código](docs/api/code-resolution.md).
+
 El campo de mensaje del copilot común ocupa todo el ancho del panel, parte de cuatro líneas, crece con el borrador y permite ajustar su altura a mano. Adjuntar y Enviar quedan debajo. [Componente compartido](studio/embed/README.md).
 
 Studio es la entrada única al trabajo. Una conversación nueva muestra asistentes personales, decisiones pendientes, resultados fijados y proyectos recientes junto al compositor habitual. El radar de repositorios, la flota y el uso siguen en Resumen del espacio; las herramientas personales conservan correo, calendario, notas y mensajería. Los enlaces antiguos de Inicio conservan sus parámetros. Los chats, identidades de asistentes y resultados usan los mismos almacenes y herramientas. [Inicio de Studio](docs/ui/studio-start.md).
