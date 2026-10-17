@@ -26,6 +26,15 @@ server = Server("voice")
 
 ACTIONS = ["start", "status", "events", "utterance", "say", "interrupt", "cancel_turn", "stop", "list"]
 TOOLS = [
+    Tool(name="dictation_workspace",
+         description="Manage Faustus dictation vocabulary and recoverable text history. Corrections can learn name spellings. Same data and API as Voice settings. Does not type into another app.",
+         inputSchema={"type": "object", "required": ["action"], "properties": {
+             "action": {"type": "string", "enum": ["vocabulary", "put", "delete_vocabulary", "history", "correct", "delete_history"]},
+             "project": {"type": "string"}, "id": {"type": "string"},
+             "heard": {"type": "string"}, "replacement": {"type": "string"},
+             "text": {"type": "string"}, "learn": {"type": "boolean"},
+             "before": {"type": "number"}, "limit": {"type": "integer"}}},
+         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False)),
     Tool(name="voice_capabilities",
          description=("Speech recognition and synthesis configured in Faustus and what the streaming voice session "
                       "supports (input formats, partial transcripts, send modes). Never loads a model. "
@@ -81,8 +90,8 @@ def _base():
     return (os.environ.get("FAUSTUS_INTERNAL_API_URL") or os.environ.get("FAUSTUS_URL") or internal_api_base()).rstrip("/")
 
 
-async def _request(client, method, path, headers=None, **kwargs):
-    response = await client.request(method, _base() + "/api/voice" + path, headers={**_headers(), **(headers or {})},
+async def _request(client, method, path, headers=None, api="/api/voice", **kwargs):
+    response = await client.request(method, _base() + api + path, headers={**_headers(), **(headers or {})},
                                     **kwargs)
     try:
         payload = response.json()
@@ -191,6 +200,25 @@ async def list_tools():
     return list(TOOLS)
 
 
+async def _dictation_workspace(client, a):
+    from urllib.parse import quote
+    action = a.get("action")
+    base = {"api": "/api/dictation"}
+    if action in ("vocabulary", "history"):
+        params = {k: a[k] for k in ("project", "before", "limit") if k in a}
+        return await _request(client, "GET", "/" + action, params=params, **base)
+    if action == "put":
+        return await _request(client, "POST", "/vocabulary", json={k: a.get(k, "") for k in ("heard", "replacement", "project")}, **base)
+    entry_id = quote(str(a.get("id") or ""), safe="")
+    if not entry_id:
+        return {"exit_code": 1, "error": "id is required"}
+    if action == "correct":
+        return await _request(client, "PATCH", "/history/" + entry_id, json={"text": a.get("text", ""), "learn": a.get("learn", True)}, **base)
+    if action in ("delete_vocabulary", "delete_history"):
+        return await _request(client, "DELETE", "/" + ("vocabulary" if action == "delete_vocabulary" else "history") + "/" + entry_id, **base)
+    return {"exit_code": 1, "error": "Unknown dictation action"}
+
+
 @server.call_tool()
 async def call_tool(name, arguments):
     args = dict(arguments or {})
@@ -200,6 +228,8 @@ async def call_tool(name, arguments):
                 payload = await _request(client, "GET", "/capabilities")
             elif name == "voice_session":
                 payload = await _voice_session(client, args)
+            elif name == "dictation_workspace":
+                payload = await _dictation_workspace(client, args)
             else:
                 payload = {"exit_code": 1, "error": f"Unknown voice tool {name}"}
     except (httpx.HTTPError, ValueError, OSError) as error:

@@ -143,6 +143,7 @@ _BUILTIN_SERVERS = {
     # loading models, utterance replay or text into the ordinary turn, transcripts and spoken audio as events,
     # interrupt (speech only) and an explicit cancel of the turn. Not owner-scoped: the chat's owner runs the turn.
     "voice": ("mcp_servers/voice_server.py", "Built-in: Voice sessions"),
+    "personal_assistants": ("mcp_servers/assistants_server.py", "Built-in: Personal assistants"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool

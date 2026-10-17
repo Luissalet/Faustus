@@ -36,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSearchParams } from 'react-router';
 import { Button, EmptyState, IconButton, Skeleton, Toast } from '../components';
 import { getJson } from '../adapters/api';
+import { DictationWorkspace } from './settings/DictationWorkspace';
 import {
   addEndpoint,
   comboFromEvent,
@@ -662,6 +663,7 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
         </div>
       )}
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />
+      <DictationWorkspace />
     </section>
   );
 }

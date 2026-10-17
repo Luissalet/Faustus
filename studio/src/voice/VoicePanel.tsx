@@ -17,7 +17,7 @@ const labels: Record<VoicePhase, string> = {
   transcribing: 'Turning your voice into text…', review: 'Is this what you meant?',
   thinking: 'Faustus is working', speaking: 'Faustus is speaking', approval: 'Your approval is needed', error: 'Let’s reconnect',
 };
-interface Props { busy: boolean; turn?: Turn; sessionName: string; sessionId?: string | null; onSend(text: string): void; onStop(): void; onClose(): void }
+interface Props { busy: boolean; turn?: Turn; sessionName: string; sessionId?: string | null; projectId?: string; onSend(text: string): void; onStop(): void; onClose(): void }
 
 /* A conversation, not a dictation form: by default the panel listens as
    soon as it opens, sends what it heard when you stop talking, reads the
@@ -285,7 +285,7 @@ export default function VoicePanel(props: Props) {
     try {
       const cap = await capture(configs.stt, {
         signal: controller.signal, deviceId, autoStop: true, lang: language, raw: viaStream,
-        mic: openedMic ?? undefined, silenceMs, natural,
+        mic: openedMic ?? undefined, silenceMs, natural, project: props.projectId,
         onPartial: text => { if (!controller.signal.aborted) setTranscript(text); },
         onTranscribing: () => { if (!controller.signal.aborted) { timing.current.endOfSpeech = performance.now(); utteranceMarks.current = { speech_end: Date.now() }; setPhase('transcribing'); setAnalyser(null); } },
       });

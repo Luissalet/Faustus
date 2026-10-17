@@ -22,14 +22,27 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from src.auth_helpers import get_current_user
+from src.auth_helpers import get_current_user, effective_user, require_authenticated_request
 from src.tool_security import owner_is_admin_or_single_user
 from src.upload_limits import read_upload_limited, STT_MAX_AUDIO_BYTES
 from src import dictation_paste
+from src import dictation_vocabulary as dictations
 
 logger = logging.getLogger(__name__)
+
+
+class VocabularyEntry(BaseModel):
+    heard: str = Field(min_length=1, max_length=120)
+    replacement: str = Field(min_length=1, max_length=120)
+    project: str = Field(default="", max_length=200)
+
+
+class Correction(BaseModel):
+    text: str = Field(min_length=1, max_length=16000)
+    learn: bool = True
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
@@ -71,9 +84,10 @@ _RECORDER_HTML = """<!doctype html>
 (function () {
   var bridge = window.dictationRecorder;
   if (!bridge) return; // preload didn't load — nothing this page can do
-  var stream = null, recorder = null, chunks = [];
+  var stream = null, recorder = null, chunks = [], stopRequested = false;
   bridge.onStart(function (target, method) {
     chunks = [];
+    stopRequested = false;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
       stream = s;
       recorder = new MediaRecorder(s, { mimeType: 'audio/webm' });
@@ -94,14 +108,15 @@ _RECORDER_HTML = """<!doctype html>
           .finally(function () { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; });
       };
       recorder.start();
-      bridge.reportResult({ ok: true, recording: true });
+      if (stopRequested) recorder.stop();
+      else bridge.reportResult({ ok: true, recording: true });
     }).catch(function (err) {
       bridge.reportResult({ ok: false, status: 0, body: { detail: 'Microphone: ' + String(err) } });
     });
   });
   bridge.onStop(function () {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
-    else bridge.reportResult({ ok: false, status: 0, body: { detail: 'Not recording' } });
+    else stopRequested = true;
   });
 })();
 </script>
@@ -111,6 +126,40 @@ _RECORDER_HTML = """<!doctype html>
 
 def setup_dictation_routes(stt_service) -> APIRouter:
     router = APIRouter(prefix="/api/dictation", tags=["dictation"])
+
+    def owner(request):
+        require_authenticated_request(request)
+        return effective_user(request)
+
+    @router.get("/vocabulary")
+    async def vocabulary(request: Request, project: str = ""):
+        return {"entries": dictations.vocabulary(owner(request), project)}
+
+    @router.post("/vocabulary")
+    async def vocabulary_put(request: Request, body: VocabularyEntry):
+        try:
+            return dictations.put_vocabulary(body.heard, body.replacement, owner=owner(request), project=body.project)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.delete("/vocabulary/{entry_id}")
+    async def vocabulary_delete(request: Request, entry_id: str):
+        return {"deleted": dictations.delete_vocabulary(entry_id, owner(request))}
+
+    @router.get("/history")
+    async def history(request: Request, project: str = "", before: float | None = None, limit: int = 30):
+        return {"entries": dictations.history(owner(request), project, before, limit)}
+
+    @router.patch("/history/{entry_id}")
+    async def correction(request: Request, entry_id: str, body: Correction):
+        try:
+            return dictations.correct(entry_id, body.text, owner=owner(request), learn=body.learn)
+        except KeyError as exc:
+            raise HTTPException(404, "Dictation not found") from exc
+
+    @router.delete("/history/{entry_id}")
+    async def history_delete(request: Request, entry_id: str):
+        return {"deleted": dictations.delete_history(entry_id, owner(request))}
 
     @router.get("/recorder", response_class=HTMLResponse)
     async def recorder_page(request: Request):
@@ -171,6 +220,7 @@ def setup_dictation_routes(stt_service) -> APIRouter:
         language: str = Form("", max_length=20, pattern=r"^[a-zA-Z-]*$"),
         target_handle: str = Form(""),
         target_title: str = Form(""),
+        project: str = Form("", max_length=200),
     ):
         _require_local_admin(request)
         if not dictation_paste.IS_WINDOWS:
@@ -189,16 +239,26 @@ def setup_dictation_routes(stt_service) -> APIRouter:
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail="target_handle must be an integer") from exc
 
-        def run():
+        def transcribe():
             kwargs = {"language_override": language} if language else {}
-            text = stt_service.transcribe(audio_bytes, **kwargs)
-            if not text or not text.strip():
-                return {"text": "", "pasted": False}
-            result = dictation_paste.paste_text(text, target=target, method=method)
-            return {"text": text, "pasted": True, **result}
+            return stt_service.transcribe(audio_bytes, **kwargs)
 
         try:
-            return await run_in_threadpool(run)
+            raw = await run_in_threadpool(transcribe)
+            if not raw or not raw.strip():
+                return {"text": "", "pasted": False}
+            from services.stt.natural_dictation import polish
+            identity = effective_user(request)
+            edited = await polish(raw, owner=identity, project=project)
+            text = edited["text"]
+            entry_id = dictations.remember(raw, text, owner=identity, project=project, target=target_title)
+            try:
+                result = await run_in_threadpool(dictation_paste.paste_text, text, target=target, method=method)
+            except Exception as exc:
+                dictations.delivery(entry_id, "paste_failed", str(exc), identity)
+                return {**edited, "id": entry_id, "pasted": False, "error": str(exc), "recoverable": True}
+            dictations.delivery(entry_id, "pasted", owner=identity)
+            return {**edited, "id": entry_id, "pasted": True, **result}
         except dictation_paste.DictationUnsupported as exc:
             raise _unsupported(exc) from exc
         except dictation_paste.DictationError as exc:

@@ -18,6 +18,7 @@ import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import './home.css';
 import { FleetCard } from './FleetCard';
+import { PersonalAssistants } from './home/PersonalAssistants';
 import { t, tn } from '../i18n';
 
 /**
@@ -371,6 +372,8 @@ export function HomeScreen() {
       </header>
 
       <HomeCards cards={cards} onChanged={reloadCards} />
+
+      <PersonalAssistants />
 
       <GitRadarBlock />
 

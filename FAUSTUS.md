@@ -1,5 +1,25 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Dictado recuperable y asistentes personales (17-10-2026, #693/#694):**
+El dictado global pasa por el mismo editor fiel de Studio y guarda original y
+texto final antes de pegar; un fallo de pegado devuelve el texto recuperable.
+El vocabulario general o por proyecto y las correcciones conservadoras de nombres
+se editan desde Voz, API y `dictation_workspace`. Las cantidades, negaciones y
+literales no se aprenden como sustituciones. El grabador conserva la ventana al
+recibir su primera señal de grabación y evita dobles atajos mientras procesa.
+No se ha medido precisión ASR ni probado el micrófono físico o el pegado al
+escritorio humano en este lote. Véase [dictado](docs/api/dictation.md).
+
+Inicio permite crear o adoptar asistentes con nombre sobre el ID del chat
+canónico, editar notas descriptivas y abrir la misma conversación en móvil.
+Quitar y restaurar la referencia conserva el chat y los mensajes. El estado se
+deriva del turno real; las notas no sustituyen las instrucciones del proyecto o
+del chat. La API móvil y MCP `personal_assistants` comparten los datos. La
+continuidad se probó con dos turnos reales de las Sparks globales, saliendo de
+Studio durante el primero y recordando una clave sintética en el segundo.
+No añade un relay público, cliente iOS u otro arnés o historial. Véase
+[asistentes personales](docs/api/personal-assistants.md).
+
 **Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
 Proyecto → Ágora abre Studio real: su lista, cabecera, historial y compositor,
 con respuestas completas, herramientas, @menciones y pill de Sparks. Tasks abre

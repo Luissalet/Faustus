@@ -46,6 +46,7 @@ from typing import Any, Dict, List, Optional
 
 import bcrypt
 import httpx
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
@@ -64,6 +65,13 @@ logger = logging.getLogger(__name__)
 #: Android's default idle-socket timeouts on mobile networks are commonly
 #: well under a minute; 25s keeps well clear of that without being chatty.
 WS_PING_INTERVAL_S = 25.0
+
+
+class PersonalAssistantInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=1000)
+    project_id: str = Field(default="", max_length=200)
+    session_id: str = Field(default="", max_length=200)
 
 #: Plain text only, capped (contract: "no images/blobs" on the messages
 #: read). A message body beyond this is still real content on the desktop —
@@ -151,6 +159,61 @@ def _bearer_from_ws(websocket: WebSocket) -> str:
 
 def setup_mobile_routes() -> APIRouter:
     router = APIRouter(prefix="/api/mobile", tags=["mobile"])
+
+    @router.get("/assistants")
+    def assistants(request: Request):
+        from src.personal_assistants import list_assistants
+        return {"assistants": list_assistants(_mobile_owner(request))}
+
+    @router.post("/assistants")
+    async def assistant_create(request: Request, body: PersonalAssistantInput):
+        from src.personal_assistants import save
+        from src.settings import load_settings, get_user_setting
+        owner = _mobile_owner(request)
+        if not body.name.strip():
+            raise HTTPException(422, "An assistant needs a name.")
+        sid = body.session_id
+        if not sid:
+            settings = load_settings()
+            # Use the ordinary session creation route, including native project
+            # validation, route credentials and saved project defaults.
+            form = {"name": body.name, "project_id": body.project_id, "skip_validation": "true",
+                    "endpoint_id": get_user_setting("default_endpoint_id", owner, settings.get("default_endpoint_id", "")) or "",
+                    "model": get_user_setting("default_model", owner, settings.get("default_model", "")) or ""}
+            headers = {INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN, "X-Odysseus-Owner": owner}
+            async with httpx.AsyncClient(base_url=internal_api_base(), timeout=30, trust_env=False) as client:
+                response = await client.post("/api/session", data=form, headers=headers)
+            if not response.is_success:
+                raise HTTPException(response.status_code, "Could not create the assistant chat: " + response.text[:300])
+            sid = response.json()["id"]
+        try:
+            return save(sid, body.name, body.description, owner)
+        except KeyError as exc:
+            raise HTTPException(404, "Chat not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.patch("/assistants/{sid}")
+    def assistant_update(request: Request, sid: str, body: PersonalAssistantInput):
+        from src.personal_assistants import save, store
+        owner = _mobile_owner(request)
+        if store().get("assistant", sid, owner=owner) is None:
+            raise HTTPException(404, "Assistant not found")
+        try:
+            return save(sid, body.name, body.description, owner)
+        except KeyError as exc:
+            raise HTTPException(404, "Chat not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.delete("/assistants/{sid}")
+    def assistant_retire(request: Request, sid: str):
+        from src.personal_assistants import retire
+        try:
+            retire(sid, _mobile_owner(request))
+        except KeyError as exc:
+            raise HTTPException(404, "Assistant not found") from exc
+        return {"removed": True, "chat_preserved": True}
 
     # ------------------------------------------------------------------ #
     # GET /api/mobile/bootstrap

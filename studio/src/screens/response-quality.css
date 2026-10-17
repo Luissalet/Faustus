@@ -1,3 +1,8 @@
+.fs-rich__mention {
+  color: color-mix(in srgb, var(--fs-brand) 80%, var(--fs-text-1));
+  font-weight: 650;
+}
+
 .fs-response-source {
   display: inline-flex;
   align-items: center;

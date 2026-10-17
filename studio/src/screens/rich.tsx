@@ -23,9 +23,22 @@ import { UiBlock } from '../components/UiBlock';
 
 /** A run of plain text; with the blur on, its secrets become reveal-on-click buttons. */
 function plain(text: string, key: string): ReactNode[] {
-  if (!getDisplay().blur) return [text];
+  const mentions = (value: string, prefix: string): ReactNode[] => {
+    const out: ReactNode[] = [];
+    const pattern = /(?<![\p{L}\p{N}_@/\\.-])@[\p{L}\p{N}_](?:[\p{L}\p{N}_.-]*[\p{L}\p{N}_])?(?![\p{L}\p{N}_/\\-])/gu;
+    let end = 0;
+    for (const match of value.matchAll(pattern)) {
+      const start = match.index!;
+      if (start > end) out.push(value.slice(end, start));
+      out.push(<span className="fs-rich__mention" key={`${prefix}-${start}`}>{match[0]}</span>);
+      end = start + match[0].length;
+    }
+    if (end < value.length) out.push(value.slice(end));
+    return out;
+  };
+  if (!getDisplay().blur) return mentions(text, key);
   return findSensitive(text).map((run, i) =>
-    run.sensitive ? <Censored key={`${key}-${i}`} text={run.text} /> : run.text,
+    run.sensitive ? <Censored key={`${key}-${i}`} text={run.text} /> : mentions(run.text, `${key}-${i}`),
   );
 }
 

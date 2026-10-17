@@ -129,6 +129,13 @@ test('a dictation result destroys the hidden recorder window', async()=>{
   electron.globalShortcut._fire('Ctrl+Alt+Space');
   await new Promise(r=>setTimeout(r,20));
   assert.equal(win.destroyed,false);
+  // The recorder emits a ready message before there is a transcript.
+  electron.ipcMain.listeners['faustus:dictation-result']({},{ok:true,recording:true});
+  assert.equal(win.destroyed,false);
+  electron.globalShortcut._fire('Ctrl+Alt+Space');
+  const stoppedCount=win.sent.filter(m=>m[0]==='faustus:dictation-stop').length;
+  electron.globalShortcut._fire('Ctrl+Alt+Space');
+  assert.equal(win.sent.filter(m=>m[0]==='faustus:dictation-stop').length,stoppedCount);
   electron.ipcMain.listeners['faustus:dictation-result']({},{ok:true,body:{text:'hola'}});
   assert.equal(win.destroyed,true);
   stop();
