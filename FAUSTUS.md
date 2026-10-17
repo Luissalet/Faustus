@@ -13225,3 +13225,25 @@ Activación con un único reinicio gestionado sóloSilver, HEAD fresco/inactivid
 El formulario de nuevo entrenador solo exige un nombre. El equipo en texto y el relleno aleatorio siguen siendo opcionales. Un entrenador vacío queda guardado y abre el editor visual para elegir Pokémon y movimientos ahora o más adelante, incluso si se había dejado otra pestaña seleccionada. Cancelar el editor conserva el entrenador y muestra que aún no tiene equipo.
 
 `trainer_create` ya admitía el equipo vacío; sus descripciones REST/MCP lo explican y `trainer_update` permite añadirlo después. Las reglas de combate siguen exigiendo equipo. No hay migración ni cambios en el motor. Fuente773 `96ccb1294adef2d3225265291ece1719d9057829`: 516 pruebas Python pasadas y dos opcionales omitidas; 429 Node pasadas y una omitida, compilación de app/página jugable, MCP nativo180 e interfaz real de escritorio/móvil390, con un turno jugado tras completar el equipo. Evidencias: `D:/LocalAI/research-inbox/silver-trainers773/`.
+
+
+## Ejecución y errores del copilot común — 18-10-2026, #778
+
+Se corrigen tres casos observados en Silver: ID del entrenador mutilado pese a
+estar completo en el contexto, reintento anunciado sin ejecutar y respuesta vacía
+terminal registrada como éxito. La nota de origen repite IDs verbatim; el supervisor
+reconoce los reintentos anunciados y permite recuperar una primera respuesta vacía
+en un Hoard sin workspace con el presupuesto existente. Journal, SDK y panel
+conservan el fallo aunque llegue DONE. Un envío fallido restaura su texto sólo
+si el mismo chat sigue con compositor vacío; conserva la identidad de petición,
+no pisa un borrador posterior ni reenvía automáticamente cambios.
+
+R2 a176a4cc aprobada independientemente:70 pruebas Python,37 SDK,4 controles
+adicionales y6 suites del panel; navegador con error+DONE, texto recuperado y un
+único envío. Con Silver aislado y Sparks globales reales se guardaron las seis
+especies pedidas, incluida Primarina repetida; lectura MCP exacta. Con el servidor
+R2, trainer_get recuperó de nuevo las seis en orden y contó dos Primarina. Esto
+no prueba fiabilidad universal del modelo. Main75bf0f52 activado tras comprobar
+turnos/grupos inactivos, configuración exacta y bundle común en seis relays.
+Datos reales sin mutaciones de QA; evidencias research-inbox/copilot-reliability778
+y copilot-review778. [Contrato](docs/api/hoard_copilot.md).

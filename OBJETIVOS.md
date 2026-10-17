@@ -1522,3 +1522,13 @@ Estado 16-10-2026 (OBJ-61): rama `claude/harness-bench` fusionada. Hecho: modo d
 Hecho: Qwen3.8-Flash-Next 176B NVFP4 en Spark4, API autenticada y arranque automático verificado tras dos reinicios reales. GLM sigue global en Sparks1–3, sin modificar ni reiniciar sus procesos, con contexto configurado1048576. Grupo/preset nativo «GLM + Qwen Code Review»: implementador GLM y revisor Qwen solo lectura, entrada180000 dentro de su contexto262144. API, nueve herramientas MCP e interfaz conservan rutas, personas y políticas. Ciclo real con diff, fallo detectado, test rojo, corrección GLM y tres tests verdes; escritura del revisor denegada, Stop aislado y deduplicación comprobados.
 
 Las20 funciones Python dan19/20 tanto a GLM solo como a autorrevisión y revisión Qwen. No acredita mejora general: Qwen incumple el contrato de revisión en3casos y una comprobación posterior detecta una regresión por aceptar una afirmación incorrecta del revisor. Se mantiene opcional, con turnos dirigidos y sin bucle automático de correcciones. No se activa como paso obligatorio ni se abre trabajo futuro sin nuevo encargo. Evidencia, latencias, consumo y límites en D:/LocalAI/research-inbox/sparks668-20261016/RESULT.md y docs/api/glm-qwen-review.md.
+
+
+## Ejecución y errores del copilot común — #778
+
+Corregidos los casos reproducidos de reintento anunciado sin ejecución y error
+terminal tratado como éxito. IDs activos repetidos completos en el contexto;
+recuperación inicial vacía sin exigir workspace; error visible y borrador
+recuperado. Probado con modelo global, MCP y navegador en Silver aislado.
+No equivale a una garantía general de calidad; los fallos nuevos requieren
+sus reproducciones concretas. Sin decisión pendiente de Luis.

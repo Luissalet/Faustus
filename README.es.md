@@ -725,3 +725,11 @@ Las Sparks conservan la selección global cuando falta el modelo, se pierde el c
 Daedalus's Hoard genera modelos3D desde imágenes a512/1024 entre las cuatro GPU locales, conserva originales/versiones y exporta GLB/STL/PLY con escala. Ofrece DetailGen3D/UltraShape y ampliación aprendida512→1024 desde el latente guardado: mejor detalle en dos comparaciones reales con malla completa, sin garantía universal ni mallas cerradas para imprimir. Visor ligero/completo, enlaces directos,14herramientas MCP y copilot global. Reparación opcional para impresión y optimización para juegos con UV/PBR en CPU, siempre en versiones nuevas con informe de cierre o presupuesto real. Revisar grosor/soportes en laminador; sin rigging automático. Copia del código: https://github.com/Luissalet/DaedalusHoard. Tema oscuro e icono de dragón turquesa de la familia. Disponible en http://127.0.0.1:8830; modelos, licencias y límites en su README y sección de FAUSTUS.md.
 
 Projects se organiza en seis secciones: Overview, Chats, Tasks, Knowledge, Skills y Settings, con actividad del agente accesible desde todas ellas. Conserva los registros existentes y los enlaces antiguos. Las tareas admiten etiquetas libres editables, reasignación y criterios de aceptación. Las skills del proyecto pueden buscarse, instalarse desde la biblioteca existente, importarse desde archivos/carpetas UTF-8 o repositorios públicos de GitHub, escribirse manualmente y revisarse antes de activarse. Las herramientas del chat y el servidor MCP del proyecto usan los mismos datos que la interfaz. [Espacio de proyectos](docs/ui/projects-workspace.md).
+
+
+El copilot de los Hoards repite los IDs activos completos en el contexto y usa
+el supervisor existente para los reintentos anunciados. Puede recuperar una
+respuesta inicial vacía sin exigir carpeta de trabajo. Los errores terminales
+siguen siendo fallos al llegar `[DONE]`; el panel muestra el motivo y recupera
+el texto enviado si el mismo chat tiene el campo vacío. No garantiza la calidad
+general del modelo. [Comportamiento](docs/api/hoard_copilot.md).

@@ -876,3 +876,11 @@ The Execution MCP exposes three event operations alongside its process tools.
 See [external events](docs/api/external-events.md) for envelopes and semantics.
 
 Projects uses six sections: Overview, Chats, Tasks, Knowledge, Skills and Settings, with agent activity available throughout. Existing project records and old links are preserved. Tasks support editable free labels, reassignment and acceptance criteria. Project skills can be searched, installed from the existing library, imported from local UTF-8 files/folders or public GitHub repositories, written manually and reviewed before activation. Native chat tools and the project workspace MCP server use the same data as the UI. [Projects workspace](docs/ui/projects-workspace.md).
+
+
+Hoard copilot turns repeat active object IDs verbatim in their context and use the
+existing action supervisor for announced retries. Initial empty provider replies
+can recover without a filesystem workspace. Terminal stream errors remain failures
+through `[DONE]`; the panel displays the error and restores the submitted text when
+the same conversation has an empty composer. This is not a general model quality
+guarantee. [Copilot behavior](docs/api/hoard_copilot.md).
