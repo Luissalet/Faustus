@@ -330,6 +330,16 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   max-inline-size: 1480px;
 }
 
+/* A project's group chat and board: every pixel of width. */
+.fs-main[data-screen='full'] .fs-main__inner {
+  max-inline-size: none;
+}
+
+.fs-main[data-screen='full'] {
+  padding-inline: var(--fs-space-5);
+  padding-block-start: var(--fs-space-5);
+}
+
 /* Route change: the new screen rises in. One animation, keyed on the
    path, so the eye is told "you moved" without a spinner or a blank. */
 .fs-route {

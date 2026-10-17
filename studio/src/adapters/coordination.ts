@@ -102,7 +102,15 @@ export async function saveProjectCoordination(id: string, draft: ReturnType<type
 
 
 
-export type CoordinationSpace = {id: string; title: string; description: string; revision: number; members: string[]};
+export type CoordinationSpace = {id: string; title: string; description: string; revision: number; members: string[];
+  /** The project this agora belongs to, when it has one. */
+  project_id?: string; workspace?: string};
+
+/** The agora of a project: the space that names it, else the one its coordination uses. */
+export function projectSpace(all: CoordinationSpace[], projectId: string, configured?: string | null): CoordinationSpace | null {
+  return all.find((space) => space.project_id === projectId)
+    ?? (configured ? all.find((space) => space.id === configured) ?? null : null);
+}
 export type CoordinationRoom = {id: string; kind: 'council' | 'groups'; title: string; space_id: string; owner: string; mode: string; status: string};
 
 export async function spaces(signal?: AbortSignal): Promise<CoordinationSpace[]> {
@@ -118,9 +126,9 @@ export async function rooms(spaceId: string, signal?: AbortSignal): Promise<Coor
   return result.rooms || [];
 }
 
-export async function createSpace(title: string): Promise<CoordinationSpace> {
+export async function createSpace(title: string, extra: {project_id?: string; workspace?: string; description?: string} = {}): Promise<CoordinationSpace> {
   const response = await fetch('/api/hoard/agora/spaces', {method: 'POST', credentials: 'same-origin',
-    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title})});
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title, ...extra})});
   if (!response.ok) throw new Error(await responseReason(response, 'Coordination'));
   const result = await response.json() as {ok: boolean; space: CoordinationSpace; error?: string};
   if (!result.ok) throw new Error(result.error || 'Coordination unavailable');

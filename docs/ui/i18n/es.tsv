@@ -9904,3 +9904,49 @@ The model file is no longer there (moved or deleted). Edit the engine and choose
 The vision projector file is no longer there (moved or deleted). Edit the engine and choose it again.	El fichero del proyector de visión ya no está ahí (movido o borrado). Edita el motor y vuelve a elegirlo.
 read from a screenshot	leído de una captura
 Checking which vision model answers…	Comprobando qué modelo de visión responde…
+A member answers a peer with @name; the one mentioned speaks next. Whoever has nothing new to add stays quiet.	Un miembro contesta a otro con @nombre; el mencionado habla a continuación. Quien no tenga nada nuevo que aportar se calla.
+Agora tasks	Tareas del Ágora
+Agora: {name}	Ágora: {name}
+Autonomous	Autónomo
+Between themselves	Entre ellos
+Create the agora of {name}	Crear el ágora de {name}
+Everyone (or whoever you @mention)	Todos (o a quien menciones con @)
+Everyone answers at the same time, then each one reads the others and can answer them.	Todos contestan a la vez; luego cada uno lee a los demás y puede responderles.
+Everyone answers; mention one with @name to talk to them. They answer each other the same way.	Contestan todos; menciona a uno con @nombre para hablar con él. Entre ellos se contestan igual.
+Hide the board	Ocultar el tablero
+Hide the members	Ocultar los miembros
+How many rounds the members may answer each other after your message	Cuántas rondas pueden contestarse entre ellos después de tu mensaje
+Listening	Escuchando
+Loading the agora	Cargando el ágora
+Members	Miembros
+Mention a member	Mencionar a un miembro
+Named after its members if empty	Si lo dejas vacío, se llama como sus miembros
+No rooms yet. Open one to talk with several models at once about this project.	Aún no hay salas. Abre una para hablar con varios modelos a la vez sobre este proyecto.
+Only answer me	Solo me contestan a mí
+Open a room on the left or start a new one.	Abre una sala a la izquierda o empieza una nueva.
+Open in its project	Abrir en su proyecto
+Open its own chat (every step)	Abrir su propio chat (cada paso)
+Open this board in the Hub	Abrir este tablero en el Hub
+Project defaults	Lo del proyecto
+Proposed by	Propuesta por
+Queued: the room answers it after the current round.	En cola: la sala lo contesta al acabar la ronda actual.
+Reviewer: {name}	Revisa: {name}
+Room	Sala
+Show the board	Mostrar el tablero
+Show the members	Mostrar los miembros
+Showing the {n} most recent of {total}.	Se muestran las {n} más recientes de {total}.
+Speaking	Hablando
+Talk to the group… @name to address one	Habla con el grupo… @nombre para dirigirte a uno
+Task board (Objectives)	Tablero de tareas (Objetivos)
+Tasks of {name}	Tareas de {name}
+The Agora board is unavailable.	El tablero del Ágora no está disponible.
+The project folder	La carpeta del proyecto
+The task board lives in the project’s agora: rooms and agents put their tasks there and move them as they work.	El tablero de tareas vive en el ágora del proyecto: las salas y los agentes ponen ahí sus tareas y las mueven según trabajan.
+This project has no agora of its own yet; its rooms are filed here anyway.	Este proyecto aún no tiene ágora propia; sus salas se guardan aquí igualmente.
+This room has no agora board.	Esta sala no tiene tablero del ágora.
+Tools for {model}	Herramientas de {model}
+Up to {n} rounds	Hasta {n} rondas
+Up to {n} rounds of replies	Hasta {n} rondas de respuestas
+Work in {name}: rooms, tasks, reviews and decisions of this project.	Trabajo en {name}: salas, tareas, revisiones y decisiones de este proyecto.
+_Nothing to add._	_Nada que añadir._
+next: {names}	después: {names}

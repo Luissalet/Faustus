@@ -236,8 +236,12 @@ function Rail() {
  */
 function RouteStage() {
   const { pathname, search } = useLocation();
-  const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname);
-  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') || pathname.startsWith('/creator') || pathname.startsWith('/whatsapp') || pathname.startsWith('/brain') ? 'wide' : undefined;
+  const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname)
+    // The Agora is a chat app: it owns the whole area, like Studio.
+    || pathname === '/agora';
+  // A project's Agora (group chat) and its board use the full width.
+  const projectFull = /^\/projects\/[^/]+$/.test(pathname) && /[?&]tab=(agora|objetivos)(&|$)/.test(search);
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : projectFull ? 'full' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') || pathname.startsWith('/creator') || pathname.startsWith('/whatsapp') || pathname.startsWith('/brain') ? 'wide' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">

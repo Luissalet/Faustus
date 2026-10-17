@@ -446,14 +446,24 @@
   color: var(--fs-text-2);
 }
 
+/* Group chat: who speaks, with the same hue as their avatar. */
 .fs-turn__speaker {
-  margin: 0 0 var(--fs-space-1);
-  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0 0 var(--fs-space-2);
+  font-size: var(--fs-label-size);
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fs-brand);
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--fs-speaker-hue, var(--fs-brand)) 80%, var(--fs-text-1));
 }
+.fs-turn__speaker[data-hue='1'] { --fs-speaker-hue: var(--fs-info); }
+.fs-turn__speaker[data-hue='2'] { --fs-speaker-hue: var(--fs-success); }
+.fs-turn__speaker[data-hue='3'] { --fs-speaker-hue: var(--fs-warning); }
+/* The aurora tokens are translucent (they tint backgrounds); text needs solid mixes. */
+.fs-turn__speaker[data-hue='4'] { --fs-speaker-hue: color-mix(in srgb, var(--fs-info) 50%, var(--fs-success)); }
+.fs-turn__speaker[data-hue='5'] { --fs-speaker-hue: color-mix(in srgb, var(--fs-brand) 50%, var(--fs-warning)); }
+.fs-turn__speaker[data-hue='6'] { --fs-speaker-hue: color-mix(in srgb, var(--fs-info) 55%, var(--fs-brand)); }
 
 .fs-studio__research {
   color: var(--fs-brand);

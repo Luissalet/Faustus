@@ -15,6 +15,10 @@ class GroupCreate(BaseModel):
     name: str = ""
     workspace: str = ""
     space_id: str = "ecosystem"
+    # The room's project: members work in it (instructions, folders, board).
+    project_id: str = ""
+    # Follow-up rounds in which the members answer each other (0 = none).
+    discussionRounds: int = Field(default=3, ge=0, le=12)
 
 
 class GroupMessage(BaseModel):
@@ -29,6 +33,9 @@ class GroupUpdate(BaseModel):
     mode: Literal['parallel', 'round-robin'] | None = None
     executionMode: Literal['chat', 'agent'] | None = None
     workspace: str | None = None
+    discussionRounds: int | None = Field(default=None, ge=0, le=12)
+    # Links a room that has no project yet; a room never changes project.
+    projectId: str | None = None
     expected_revision: int | None = None
 
 
@@ -98,9 +105,15 @@ def setup_group_routes(coordinator):
             for p in body.participants:
                 route = p.get("route") or {}
                 _reject_raw_endpoint_url_for_non_admin(request, user, route.get("endpointId", ""), route.get("endpointUrl", ""))
+            project_id = body.project_id.strip()
+            if project_id:
+                from services.projects import get_store as project_store
+                if not project_store().get(project_id, owner=user):
+                    raise KeyError("Project not found")
             definition = coordinator.transcript.create(body.participants, body.mode, user, name=body.name,
-                workspace=body.workspace, execution_mode=body.executionMode)
+                workspace=body.workspace, execution_mode=body.executionMode, project_id=project_id)
             definition["space_id"] = body.space_id
+            definition["discussionRounds"] = body.discussionRounds
             return coordinator.adopt(definition, user)
         except (KeyError, ValueError) as error:
             fail(error)
@@ -135,6 +148,10 @@ def setup_group_routes(coordinator):
                 route = participant.get('route') or {}
                 _reject_raw_endpoint_url_for_non_admin(request, user, route.get('endpointId', ''), route.get('endpointUrl', ''))
             changes = body.model_dump(exclude_none=True, exclude={'expected_revision'})
+            if changes.get('projectId'):
+                from services.projects import get_store as project_store
+                if not project_store().get(changes['projectId'], owner=user):
+                    raise KeyError("Project not found")
             return coordinator.update(group_id, user, changes, body.expected_revision)
         except (KeyError, ValueError) as error:
             fail(error)

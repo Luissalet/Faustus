@@ -219,3 +219,793 @@
   .fs-grp__composer { flex-wrap: wrap; }
   .fs-grp__textarea { flex-basis: 100%; min-inline-size: 0; }
 }
+
+/* ══ Agora rooms: list of rooms + the group chat, filling the space given ══ */
+
+.fs-agora-rooms {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  block-size: 100%;
+  min-block-size: 0;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-surface-1) 70%, transparent);
+  overflow: hidden;
+}
+
+.fs-agora-rooms__list {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  border-inline-end: 1px solid var(--fs-border);
+  background: color-mix(in srgb, var(--fs-surface-1) 55%, transparent);
+}
+
+.fs-agora-rooms__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-4) var(--fs-space-3) var(--fs-space-2);
+}
+
+.fs-agora-rooms__head h3,
+.fs-agora-rooms__setup h3 {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-agora-rooms__search {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0 var(--fs-space-3) var(--fs-space-2);
+  padding: 0 var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  color: var(--fs-text-3);
+}
+
+.fs-agora-rooms__search input {
+  flex: 1;
+  min-inline-size: 0;
+  block-size: var(--fs-control-sm);
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+}
+
+.fs-agora-rooms__search:focus-within {
+  border-color: var(--fs-focus);
+}
+
+.fs-agora-rooms__search input:focus-visible {
+  outline: none; /* guard-ok: the label around it draws the focus ring */
+}
+
+.fs-agora-rooms__hint {
+  padding: 0 var(--fs-space-3);
+}
+
+.fs-agora-rooms__items {
+  flex: 1;
+  min-block-size: 0;
+  margin: 0;
+  padding: 0 var(--fs-space-2) var(--fs-space-3);
+  list-style: none;
+  overflow-y: auto;
+}
+
+.fs-agora-rooms__items li {
+  max-inline-size: none;
+}
+
+.fs-agora-rooms__items button {
+  display: grid;
+  gap: 4px;
+  inline-size: 100%;
+  margin-block-end: 2px;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-agora-rooms__items button:hover {
+  background: var(--fs-highlight);
+}
+
+.fs-agora-rooms__items button[aria-current] {
+  border-color: var(--fs-border);
+  background: var(--fs-surface-2);
+}
+
+.fs-agora-rooms__items small {
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-agora-rooms__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: var(--fs-label-size);
+  overflow-wrap: anywhere;
+}
+
+.fs-agora-rooms__live {
+  inline-size: 8px;
+  block-size: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--fs-success);
+}
+
+.fs-agora-rooms__faces {
+  display: flex;
+}
+
+.fs-agora-rooms__faces .fs-avatar + .fs-avatar {
+  margin-inline-start: -6px;
+  box-shadow: 0 0 0 2px var(--fs-surface-1);
+}
+
+.fs-agora-rooms__room {
+  display: grid;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.fs-agora-rooms__setup {
+  display: grid;
+  align-content: start;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-5);
+  overflow-y: auto;
+}
+
+.fs-agora-rooms__pick {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-3);
+}
+
+/* ── The group chat ── */
+
+.fs-room {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.fs-room[data-side] {
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 26vw, 380px);
+}
+
+.fs-room--loading {
+  padding: var(--fs-space-5);
+}
+
+.fs-room__main {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.fs-room__head {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-5);
+  border-block-end: 1px solid var(--fs-border);
+  background: var(--fs-glass);
+  backdrop-filter: blur(14px);
+}
+
+.fs-room__title {
+  flex: 1 1 220px;
+  min-inline-size: 0;
+}
+
+.fs-room__title h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fs-room__title p {
+  margin: 2px 0 0;
+  max-inline-size: none;
+  font-size: 12px;
+  color: var(--fs-text-3);
+}
+
+.fs-room__rounds {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: 12px;
+  color: var(--fs-text-3);
+}
+
+.fs-room__rounds .fs-field {
+  block-size: var(--fs-control-sm);
+  padding-block: 0;
+}
+
+.fs-room__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-5);
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-room__member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 100%;
+  padding: 3px 12px 3px 3px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+.fs-room__member small {
+  color: var(--fs-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-inline-size: 28ch;
+}
+
+.fs-room__member[data-state='speaking'] {
+  border-color: color-mix(in srgb, var(--fs-success) 60%, var(--fs-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fs-success) 18%, transparent);
+}
+
+.fs-room__member[data-state='speaking'] small {
+  color: var(--fs-success);
+}
+
+.fs-room__member[data-state='asks'] {
+  border-color: var(--fs-warning);
+}
+
+.fs-room__member[data-state='next'] small {
+  color: var(--fs-text-2);
+}
+
+.fs-room__member-name {
+  font-weight: 600;
+}
+
+.fs-room__notice {
+  margin: var(--fs-space-2) var(--fs-space-5) 0;
+}
+
+.fs-room__stage {
+  min-block-size: 0;
+}
+
+/* The chat uses the width it has; Studio's single column stays 860px. */
+.fs-room .fs-studio__turns {
+  max-inline-size: min(1180px, 100%);
+}
+
+.fs-room__empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--fs-space-2);
+  margin-block-start: 18vh;
+  text-align: center;
+  color: var(--fs-text-2);
+}
+
+.fs-room__ask {
+  padding: 0 var(--fs-space-5);
+}
+
+.fs-room__composer {
+  position: relative;
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-5) var(--fs-space-4);
+  border-block-start: 1px solid var(--fs-border);
+  background: var(--fs-glass);
+  backdrop-filter: blur(14px);
+}
+
+.fs-room__input {
+  inline-size: 100%;
+  min-block-size: 64px;
+  max-block-size: 40vh;
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-body-size);
+  line-height: var(--fs-body-line);
+  resize: vertical;
+}
+
+.fs-room__input:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+.fs-room__composer-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-room__status {
+  flex: 1 1 260px;
+  min-inline-size: 0;
+  margin: 0;
+  max-inline-size: none;
+  font-size: 12px;
+  color: var(--fs-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-room__to {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: 12px;
+  color: var(--fs-text-3);
+}
+
+.fs-room__to .fs-field {
+  block-size: var(--fs-control-sm);
+  padding-block: 0;
+  max-inline-size: 240px;
+}
+
+.fs-room__mentions {
+  position: absolute;
+  inset-inline-start: var(--fs-space-5);
+  inset-block-end: calc(100% - var(--fs-space-2));
+  z-index: 5;
+  display: grid;
+  min-inline-size: 240px;
+  padding: var(--fs-space-1);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  box-shadow: var(--fs-panel-shadow);
+}
+
+.fs-room__mention {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: 6px var(--fs-space-2);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-room__mention small {
+  color: var(--fs-text-3);
+}
+
+.fs-room__mention[aria-selected='true'],
+.fs-room__mention:hover {
+  background: var(--fs-highlight);
+}
+
+.fs-room__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+  min-block-size: 0;
+  padding: var(--fs-space-3);
+  border-inline-start: 1px solid var(--fs-border);
+  background: color-mix(in srgb, var(--fs-surface-1) 60%, transparent);
+  overflow-y: auto;
+}
+
+.fs-room__side-tabs {
+  display: flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-room__side-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--fs-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-3);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+.fs-room__side-tabs button[aria-selected='true'] {
+  border-color: var(--fs-border);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-room__roster {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-room__roster-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--fs-space-3);
+  max-inline-size: none;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+}
+
+.fs-room__roster-row div {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.fs-room__roster-row small {
+  color: var(--fs-text-3);
+  overflow-wrap: anywhere;
+}
+
+.fs-room__roster-row[data-state='speaking'] {
+  border-color: color-mix(in srgb, var(--fs-success) 60%, var(--fs-border));
+}
+
+/* ── The Agora board (Objectives tab and beside a room) ── */
+
+.fs-board-agora {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+.fs-board-agora__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-board-agora__head h3 {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-board-agora__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-board-agora__hub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fs-text-2);
+}
+
+.fs-board-agora__columns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--fs-space-3);
+  align-items: start;
+}
+
+.fs-board-agora[data-variant='compact'] .fs-board-agora__columns {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fs-board-agora__column {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-surface-2) 70%, transparent);
+}
+
+.fs-board-agora__column-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-board-agora__column-head b {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--fs-text-3);
+}
+
+.fs-board-agora__column-head svg[data-open] {
+  transform: rotate(180deg);
+}
+
+.fs-board-agora__column[data-column='in_progress'] {
+  border-block-start: 2px solid var(--fs-info);
+}
+
+.fs-board-agora__column[data-column='review'] {
+  border-block-start: 2px solid var(--fs-warning);
+}
+
+.fs-board-agora__column[data-column='done'] {
+  border-block-start: 2px solid var(--fs-success);
+}
+
+.fs-board-agora__cards {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 62vh;
+  overflow-y: auto;
+}
+
+.fs-board-agora[data-variant='compact'] .fs-board-agora__cards {
+  max-block-size: none;
+}
+
+.fs-board-agora__card {
+  display: grid;
+  gap: 6px;
+  max-inline-size: none;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-board-agora__card[data-status='blocked'],
+.fs-board-agora__card[data-status='changes'] {
+  border-inline-start: 3px solid var(--fs-warning);
+}
+
+.fs-board-agora__card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-board-agora__card-head code {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
+.fs-board-agora__title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.fs-board-agora__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.fs-board-agora__who {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-end: 4px;
+  font-size: 11px;
+  color: var(--fs-text-2);
+}
+
+.fs-board-agora__chip {
+  padding: 0 6px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--fs-text-3);
+}
+
+.fs-board-agora__chip[data-status='blocked'],
+.fs-board-agora__chip[data-status='changes'] {
+  border-color: var(--fs-warning);
+  color: var(--fs-warning);
+}
+
+.fs-board-agora__chip[data-status='claimed'],
+.fs-board-agora__chip[data-status='in_progress'] {
+  border-color: color-mix(in srgb, var(--fs-info) 60%, var(--fs-border));
+  color: var(--fs-info);
+}
+
+.fs-board-agora__body {
+  margin: 0;
+  max-inline-size: none;
+  font-size: 12px;
+  color: var(--fs-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fs-board-agora__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fs-text-3);
+}
+
+@media (max-width: 1100px) {
+  .fs-board-agora__columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fs-room[data-side] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fs-room[data-side] .fs-room__side {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: 6;
+    inline-size: min(360px, 92vw);
+    box-shadow: var(--fs-panel-shadow);
+    background: var(--fs-surface-1);
+  }
+  .fs-room {
+    position: relative;
+  }
+}
+
+@media (max-width: 760px) {
+  .fs-agora-rooms {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .fs-agora-rooms__list {
+    max-block-size: 30vh;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--fs-border);
+  }
+  .fs-board-agora__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fs-room__head,
+  .fs-room__strip,
+  .fs-room__composer {
+    padding-inline: var(--fs-space-3);
+  }
+}
+
+/* ── A project's Agora tab ── */
+
+.fs-pj-agora {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+.fs-pj-agora__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2) var(--fs-space-3);
+}
+
+.fs-pj-agora__bar .fs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fs-pj-agora__where {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-pj-agora__create {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-pj-agora__create small,
+.fs-pj-agora__error {
+  color: var(--fs-danger);
+}
+
+.fs-pj-agora__frame {
+  min-block-size: 0;
+}
+
+.fs-pj-agora__noboard {
+  display: grid;
+  gap: var(--fs-space-3);
+  justify-items: start;
+}
+
+/* In the Agora tab the chat matters more than the project's big title. */
+.fs-pj[data-tab='agora'] > .fs-screen__head .fs-screen__title {
+  font-size: var(--fs-title-size);
+}
+
+.fs-pj[data-tab='agora'] > .fs-screen__head .fs-screen__sub:not(.fs-pj__no-folder) {
+  display: none;
+}
+
+/* A group chat reads wider lines than Studio's single column. */
+.fs-room .fs-turn__body :is(p, li, h1, h2, h3, h4, blockquote) {
+  max-inline-size: 120ch;
+}

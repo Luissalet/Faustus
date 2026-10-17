@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldCheck, Target, Trash2, Unlink, X } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldCheck, Target, Trash2, Unlink, Users, X } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyChunk } from '../shell/lazyChunk';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -54,6 +54,7 @@ import { SourceControlPanel } from './source-control/SourceControlPanel';
 import { ProjectAudit } from './project/Audit';
 import { ProjectMemoryFiles } from './project/Memory';
 import { ProjectObjectives } from './project/Objectives';
+import { ProjectAgora, ProjectBoard } from './project/ProjectAgora';
 import { ProjectRequirements } from './project/Requirements';
 import { ProjectRules } from './project/Rules';
 import { ProjectSettings } from './project/Settings';
@@ -66,6 +67,8 @@ import { t, tn } from '../i18n';
 const TABS = [
   { id: 'brief', label: 'Brief', icon: FileText },
   { id: 'chats', label: 'Chats', icon: MessageSquare },
+  // The project's agora: its rooms as a group chat of models, beside its task board.
+  { id: 'agora', label: 'Agora', icon: Users },
   // Lote 93 (OBJ-6, CONTRATO_BOARD.md): the project's own issue tracker
   // (FAU-12 style ids) — kanban + table over `/api/projects/{id}/board/*`.
   { id: 'board', label: 'Board', icon: Kanban },
@@ -944,7 +947,7 @@ export function ProjectScreen() {
   const workspaceName = project.workspace ? (project.workspace.split(/[\\/]/).filter(Boolean).pop() ?? project.workspace) : '';
 
   return (
-    <div className="fs-screen fs-pj" data-testid="project" data-archived={project.archived || undefined}>
+    <div className="fs-screen fs-pj" data-testid="project" data-archived={project.archived || undefined} data-tab={tab}>
       <div>
         <Link to="/projects" className="fs-tab" style={{ paddingInline: 0 }}>
           <ArrowLeft size={14} aria-hidden="true" /> {t('Projects')}
@@ -1195,10 +1198,25 @@ export function ProjectScreen() {
         </div>
       )}
 
+      {tab === 'agora' && (
+        <ProjectAgora project={project} selected={params.get('room') || ''}
+          onSelect={(id) => {
+            const next = new URLSearchParams(params);
+            if (id) next.set('room', id);
+            else next.delete('room');
+            setParams(next, { replace: true });
+          }} />
+      )}
+
       {tab === 'objetivos' && (
-        <div className="fs-panel">
-          <ProjectObjectives projectId={project.id} say={say} />
-        </div>
+        <>
+          <div className="fs-panel">
+            <ProjectBoard project={project} />
+          </div>
+          <div className="fs-panel">
+            <ProjectObjectives projectId={project.id} say={say} />
+          </div>
+        </>
       )}
 
       {tab === 'requisitos' && (

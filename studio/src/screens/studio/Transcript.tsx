@@ -18,6 +18,7 @@ import { ResponseSources } from '../../components/ResponseSources';
 import { issueIdRegex } from '../../adapters/board';
 import { IssueChip, renderIssueSegments } from '../board/IssueChips';
 import { splitMentions } from '../../lib/mentions';
+import { hueIndex, initials } from '../../lib/mail';
 import { writeClipboardText } from '../../lib/clipboard-write';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
@@ -2085,7 +2086,13 @@ function AssistantTurn({
     <article className="fs-turn fs-turn--assistant" data-enter={enter || undefined} data-nav-id={turn.id} data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
       <div className="fs-turn__body">
-        {turn.speaker && <p className="fs-turn__speaker">{turn.speaker}</p>}
+        {turn.speaker && (
+          // A group chat names who speaks: avatar and colour per member.
+          <p className="fs-turn__speaker" data-hue={hueIndex(turn.speaker)} data-testid="turn-speaker">
+            <span className="fs-avatar" data-hue={hueIndex(turn.speaker)} data-size="sm" aria-hidden="true">{initials(turn.speaker)}</span>
+            <span>{turn.speaker}</span>
+          </p>
+        )}
         {((turn.thoughts && turn.thoughts.length > 0) || turn.steps.length > 0 || turn.thinking) && (
           <ActivityTrail
             steps={turn.steps}

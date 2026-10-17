@@ -10,6 +10,7 @@ import time
 import uuid
 
 from src.constants import DATA_DIR
+from src import group_discussion as discussion
 from src.hoard_link.coordination.groups import GroupStore as _SharedGroupStore
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,22 @@ class GroupCoordinator:
         if changes.get('participants') is not None:
             definition = self.transcript.create(changes['participants'], changes.get('mode', previous['mode']), owner,
                 name=changes.get('name', previous['name']), workspace=changes.get('workspace', previous.get('workspace', '')),
-                execution_mode=changes.get('executionMode', previous.get('executionMode', 'agent')), existing=previous)
+                execution_mode=changes.get('executionMode', previous.get('executionMode', 'agent')), existing=previous,
+                project_id=previous.get('projectId', ''))
         else:
             definition = {**previous, **{k: v for k, v in changes.items() if k in ('name', 'mode', 'executionMode', 'workspace')}}
         definition['space_id'] = previous.get('space_id', 'ecosystem')
+        if previous.get('projectId'):
+            definition['projectId'] = previous['projectId']
+        elif changes.get('projectId'):
+            # An older room joins its project: every member chat works there from now on.
+            definition['projectId'] = changes['projectId']
+            if hasattr(self.transcript, 'bind_project'):
+                self.transcript.bind_project(definition, changes['projectId'], owner)
+        if changes.get('discussionRounds') is not None:
+            definition['discussionRounds'] = discussion.rounds_limit({'discussionRounds': changes['discussionRounds']})
+        elif 'discussionRounds' in previous:
+            definition['discussionRounds'] = previous['discussionRounds']
         self.transcript.validate(definition, owner)
         result = self.store.save(definition, owner, expected_revision=expected_revision)
         if hasattr(self.transcript, 'sessions'):
@@ -145,6 +158,8 @@ class GroupCoordinator:
             pending = next((t for t in turns if t["status"] in ("queued", "running")), None)
             if pending is None:
                 return
+            if self._superseded(pending, turns):
+                continue
             self.store.update_turn(pending["id"], "running")
             try:
                 self.transcript.user(pending, owner)
@@ -152,7 +167,8 @@ class GroupCoordinator:
                 for step in steps:
                     if step["status"] in ("done", "error"):
                         self.transcript.reply(pending, step, owner)
-                if pending["definition"]["mode"] == "parallel":
+                # Follow-up rounds always take turns: each speaker reads the previous one.
+                if pending["definition"]["mode"] == "parallel" and not discussion.is_peer(pending):
                     await asyncio.gather(*(self._speak(pending, step, owner) for step in steps if step["status"] in ("queued", "running")))
                 else:
                     for step in steps:
@@ -169,6 +185,8 @@ class GroupCoordinator:
                     self.store.update_turn(pending["id"], status)
                     if status == "waiting_user":
                         return
+                    if status in ("done", "completed_with_errors"):
+                        self._follow_up(pending, owner)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -180,6 +198,41 @@ class GroupCoordinator:
     def _stopped(self, turn_id):
         status = self.store.turn_status(turn_id)
         return status is None or status == "stopped"
+
+    def _superseded(self, pending, turns):
+        """A follow-up round still waiting gives way to the person's newer message."""
+        if not discussion.is_peer(pending) or pending["status"] != "queued":
+            return False
+        later = turns[turns.index(pending) + 1:]
+        if not any(t["status"] == "queued" and not discussion.is_peer(t) for t in later):
+            return False
+        for step in self.store.steps(pending["id"]):
+            if step["status"] == "queued":
+                self.store.update_step(step["id"], expected_status="queued", status="stopped",
+                                       detail={**step["detail"], "superseded": True})
+        self.store.update_turn(pending["id"], "stopped")
+        return True
+
+    def _follow_up(self, turn, owner):
+        """Queue the next round of the members' conversation, if anyone was addressed."""
+        try:
+            group = self.store.group(turn["group_id"], owner)
+            if group.get("archived"):
+                return
+            turns = self.store.turns(turn["group_id"])
+            if any(t["status"] == "queued" and not discussion.is_peer(t) for t in turns):
+                return  # The person spoke again; their message comes first.
+            limit = discussion.rounds_limit(group)
+            members = group["participants"]
+            plan = discussion.next_round(turn, self.store.steps(turn["id"]), members,
+                                         turn["definition"].get("mode"), limit)
+            if not plan:
+                return
+            names = [m["personaName"] for m in members if m["sessionId"] in plan["members"]]
+            self.store.enqueue(turn["group_id"], owner, discussion.peer_prompt(plan["round"], limit, names),
+                               discussion.peer_request_id(plan["origin"], plan["round"]), plan["members"])
+        except Exception as error:  # The finished turn stands; only the follow-up is skipped.
+            logger.warning("Group follow-up round not queued for %s: %s", turn.get("group_id"), error)
 
     async def _speak(self, turn, step, owner):
         if self._stopped(turn["id"]):
@@ -334,24 +387,46 @@ class NativeGroupBridge:
         self.sessions.save_sessions()
 
     def user(self, turn, owner):
+        if discussion.is_peer(turn):
+            return  # A follow-up round is the members talking; the person said nothing new.
         self._append_once(turn["group_id"], "user", turn["message"],
                           {"group_turn_id": turn["id"]}, ("group_turn_id", turn["id"]))
 
+    # The member's own answer already carries what Studio draws (tool rail,
+    # thinking, sources, timings); the room transcript keeps the same record.
+    # Identity and edit markers stay with the member's session.
+    _NOT_COPIED = frozenset(("client_message_id", "edited", "interrupted", "forked_from", "condensed", "range"))
+
     def reply(self, turn, step, owner):
         member = next(p for p in turn["definition"]["participants"] if p["sessionId"] == step["member_id"])
+        request_id = (step["detail"].get("continuation") or {}).get("request_id") or step["id"]
+        rich = {}
+        try:
+            saved = self._saved_response(member["sessionId"], request_id).get("metadata") or {}
+            rich = {key: value for key, value in saved.items()
+                    if not key.startswith(("_", "group_")) and key not in self._NOT_COPIED}
+        except Exception:
+            rich = {}
         self._append_once(turn["group_id"], "assistant", step["text"],
-                          {"group_step_id": step["id"], "group_turn_id": turn["id"],
+                          {**rich, "group_step_id": step["id"], "group_turn_id": turn["id"],
                            "group_model": member["personaName"], "model": member["route"]["model"],
+                           "group_member_id": member["sessionId"], "group_round": discussion.peer_round(turn),
+                           "group_pass": discussion.is_pass(step["text"]) and not step.get("error"),
                            "group_route": step['detail'].get('route', {}),
                            "group_step_status": step.get("status", "done"), "group_error": step.get("error", ""),
                            "group_tool_results": step["detail"].get("tool_results", [])},
                           ("group_step_id", step["id"]))
 
+    def bind_project(self, definition, project_id, owner):
+        for sid in [definition["parentId"], *(p["sessionId"] for p in definition["participants"])]:
+            self.sessions.set_session_project(sid, project_id, owner=owner)
+
     def answer(self, turn, message, request_id, owner):
         self._append_once(turn["group_id"], "user", message,
                           {"group_answer_id": request_id}, ("group_answer_id", request_id))
 
-    def create(self, participants, mode, owner, *, name="", workspace="", execution_mode="agent", existing=None):
+    def create(self, participants, mode, owner, *, name="", workspace="", execution_mode="agent", existing=None,
+               project_id=""):
         from services.hoard_copilot import global_model
         from src.endpoint_resolver import resolve_endpoint_by_id
         selected = []
@@ -391,7 +466,7 @@ class NativeGroupBridge:
             parent = self.sessions.get_session(existing['parentId'])
         else:
             parent = self.sessions.create_session(uuid.uuid4().hex, "[GRP] " + title,
-                first["route"]["endpointUrl"], first["route"]["model"], owner=owner)
+                first["route"]["endpointUrl"], first["route"]["model"], owner=owner, project_id=project_id or None)
         members = []
         for p in selected:
             previous = next((old for old in (existing or {}).get('participants', [])
@@ -403,8 +478,11 @@ class NativeGroupBridge:
                 p.pop('headers', None)
                 members.append({**p, 'sessionId': previous['sessionId']})
                 continue
+            # A room in a project works there: project instructions, folders,
+            # objectives and the project's Agora coordination reach every member.
             session = self.sessions.create_session(uuid.uuid4().hex, "[GRP] " + p["personaName"],
-                p["route"]["endpointUrl"], p["route"]["model"], owner=owner, mode=execution_mode)
+                p["route"]["endpointUrl"], p["route"]["model"], owner=owner, mode=execution_mode,
+                project_id=project_id or None)
             session.headers = p.pop("headers")
             from core.models import ChatMessage
             others = ", ".join(x["personaName"] for x in selected if x is not p)
@@ -416,8 +494,11 @@ class NativeGroupBridge:
             session.add_message(ChatMessage("system", (p["personaPrompt"] + "\n\n" + etiquette).strip()))
             members.append({**p, "sessionId": session.id})
         self.sessions.save_sessions()
-        return {"parentId": parent.id, "name": title, "mode": mode, "participants": members,
-                "startedAt": time.time() * 1000, "executionMode": execution_mode, "workspace": workspace}
+        result = {"parentId": parent.id, "name": title, "mode": mode, "participants": members,
+                  "startedAt": time.time() * 1000, "executionMode": execution_mode, "workspace": workspace}
+        if project_id:
+            result["projectId"] = project_id
+        return result
 
     def _context(self, turn, member):
         return self._context_packet(turn, member)['text']
@@ -436,13 +517,19 @@ class NativeGroupBridge:
         if cursor and not start:
             parts.append('The previous context cursor is absent from the retained transcript. This is the available history; inspect earlier records if needed.')
         seen = cursor
+        parallel = turn['definition'].get('mode') == 'parallel' and not discussion.is_peer(turn)
         for m in rows[start:]:
             meta = m.metadata or {}
-            if turn['definition'].get('mode') == 'parallel' and meta.get('group_turn_id') == turn['id']:
+            if parallel and meta.get('group_turn_id') == turn['id']:
                 break  # Same-round replies must remain unread for the next turn.
             seen = event_id(m) or seen
             if meta.get("group_answer_id"):
                 parts.append("[User clarification]: " + str(m.content))
+            if m.role == "user" and meta.get("group_turn_id") and meta["group_turn_id"] != turn["id"]:
+                parts.append("[Person]: " + str(m.content))
+            if meta.get("group_step_id") and meta.get("group_pass") and meta.get("group_model") != member["personaName"]:
+                parts.append(f"[{meta.get('group_model', 'Participant')}] had nothing to add.")
+                continue
             if meta.get("group_step_id") and meta.get("group_model") != member["personaName"]:
                 parts.append(f"[{meta.get('group_model', 'Participant')}]: {m.content}")
                 if meta.get("group_error"):
@@ -450,7 +537,10 @@ class NativeGroupBridge:
                 if meta.get("group_tool_results"):
                     parts.append("Native tool results and outcome metadata from that participant:\n" +
                                  json.dumps(meta["group_tool_results"], ensure_ascii=False))
-        return {'text': "Shared group discussion. Preserve completed work and verify unresolved results:\n" + "\n\n".join(parts),
+        participants = turn['definition'].get('participants') or []
+        rules = discussion.rules(member, participants, discussion.rounds_limit(turn['definition'])) if len(participants) > 1 else ''
+        return {'text': (rules + "\n\n" if rules else '') +
+                "Shared group discussion. Preserve completed work and verify unresolved results:\n" + "\n\n".join(parts),
                 'cursor': seen}
 
     def _saved_response(self, session_id, step_id):

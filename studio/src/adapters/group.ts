@@ -27,7 +27,18 @@ export interface GroupState {
   executionMode?: 'chat' | 'agent';
   workspace?: string;
   space_id?: string;
+  /** The project the room works in (its members are chats of that project). */
+  projectId?: string;
+  /** Follow-up rounds in which the members answer each other (0 = none). */
+  discussionRounds?: number;
 }
+
+/** Same default as the server (`src/group_discussion.py`). */
+export const DEFAULT_DISCUSSION_ROUNDS = 3;
+/** Follow-up rounds are queued turns whose request id starts with this. */
+export const isPeerTurn = (turn: { request_id?: string }) => String(turn.request_id ?? '').startsWith('peer:');
+export const PASS_RE = /^\W*\[\s*pass\s*\]|^\W*pass\W*$/i;
+export const isPassText = (text: string) => !text.trim() || PASS_RE.test(text.trim());
 
 export interface GroupPreset {
   name: string;
@@ -88,7 +99,7 @@ export interface GroupStep {
 export interface GroupToolResult { tool?: string; command?: string; output?: string; exit_code?: number; call_id?: string; result_status?: string; uncertainty?: unknown; [key: string]: unknown }
 export interface GroupSnapshot {
   group: GroupState; busy: boolean;
-  turns: { id: string; message: string; status: string; participants?: (Participant & {sessionId: string})[] }[];
+  turns: { id: string; message: string; status: string; request_id?: string; created?: number; participants?: (Participant & {sessionId: string})[] }[];
   steps: GroupStep[];
 }
 
@@ -129,10 +140,31 @@ export async function openGroup(id: string, signal?: AbortSignal): Promise<Group
   }
 }
 export async function startGroup(input: Participant[], mode: GroupMode,
-  executionMode: 'chat' | 'agent' = 'agent', workspace = '', spaceId = 'ecosystem', name = ''): Promise<GroupState> {
-  const state = await command<GroupState>('/api/groups', { participants: input, mode, executionMode, workspace, space_id: spaceId, name });
+  executionMode: 'chat' | 'agent' = 'agent', workspace = '', spaceId = 'ecosystem', name = '',
+  extra: { projectId?: string; discussionRounds?: number } = {}): Promise<GroupState> {
+  const state = await command<GroupState>('/api/groups', { participants: input, mode, executionMode, workspace, space_id: spaceId, name,
+    project_id: extra.projectId ?? '', discussionRounds: extra.discussionRounds ?? DEFAULT_DISCUSSION_ROUNDS });
   saveGroupState(state);
   return state;
+}
+
+/* ── The Agora task board of a space (the Hub's, trimmed for a kanban) ── */
+
+export interface BoardTask {
+  id: number; title: string; status: string; owner: string | null; reviewer: string | null; kind: string;
+  priority: number | null; repo: string; body: string; activity: string | null; review_state: string | null;
+  updated: number | null; closed_at: number | null; created_by: string | null;
+}
+export type BoardColumn = 'open' | 'in_progress' | 'review' | 'done';
+export interface AgoraBoard {
+  space_id: string; columns: Record<BoardColumn, BoardTask[]>; counts: Record<string, number>; done_total: number;
+  agents: { id: string; state: string | null; doing: string | null; stale: boolean | null }[];
+}
+export async function agoraBoard(spaceId: string, signal?: AbortSignal): Promise<AgoraBoard> {
+  const result = await getJson<{ ok: boolean; error?: string } & Partial<AgoraBoard>>(
+    '/api/hoard/agora/board?space_id=' + encodeURIComponent(spaceId), signal);
+  if (!result.ok || !result.columns) throw new Error(result.error || t('The Agora board is unavailable.'));
+  return result as AgoraBoard;
 }
 export function sendGroup(id: string, message: string, requestId: string, mentions: string[] = []): Promise<{turn_id: string}> {
   return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId, mentions });

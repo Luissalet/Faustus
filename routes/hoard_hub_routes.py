@@ -25,6 +25,46 @@ class ActiveSphere(BaseModel):
     id: str = Field(default="", max_length=64)
 
 
+# The Hub's own board groups: what is waiting, what is moving, what waits for
+# a reviewer, what is finished.
+BOARD_COLUMNS = {
+    'open': 'open',
+    'claimed': 'in_progress', 'in_progress': 'in_progress', 'blocked': 'in_progress', 'changes': 'in_progress',
+    'review': 'review',
+    'approved': 'done', 'done': 'done',
+}
+_TASK_FIELDS = ('id', 'title', 'status', 'owner', 'reviewer', 'kind', 'priority', 'repo', 'created', 'updated',
+                'claimed_at', 'submitted_at', 'closed_at', 'review_state', 'thread_id', 'created_by')
+
+
+def compact_board(board, *, done_limit=40):
+    columns = {'open': [], 'in_progress': [], 'review': [], 'done': []}
+    dropped = 0
+    for task in board.get('tasks') or ():
+        column = BOARD_COLUMNS.get(str(task.get('status') or ''))
+        if column is None:
+            dropped += 1
+            continue
+        row = {key: task.get(key) for key in _TASK_FIELDS}
+        row['body'] = str(task.get('body') or '')[:600]
+        activity = task.get('activity') if isinstance(task.get('activity'), dict) else {}
+        row['activity'] = activity.get('state')
+        columns[column].append(row)
+    for name, rows in columns.items():
+        if name == 'done':
+            rows.sort(key=lambda r: r.get('closed_at') or r.get('updated') or 0, reverse=True)
+        else:
+            rows.sort(key=lambda r: (r.get('priority') if isinstance(r.get('priority'), int) else 2, -(r.get('updated') or 0)))
+    counts = board.get('counts') if isinstance(board.get('counts'), dict) else {}
+    # The Hub sends only the recent finished tasks; its counts know them all.
+    done_total = max(len(columns['done']), int(counts.get('done') or 0) + int(counts.get('approved') or 0))
+    columns['done'] = columns['done'][:done_limit]
+    agents = [{k: a.get(k) for k in ('id', 'state', 'doing', 'stale')} for a in board.get('agents') or ()
+              if isinstance(a, dict)]
+    return {'ok': True, 'space_id': board.get('space_id'), 'columns': columns, 'counts': board.get('counts') or {},
+            'done_total': done_total, 'dropped': dropped, 'agents': agents}
+
+
 def setup_hoard_hub_routes() -> APIRouter:
     router = APIRouter(tags=["hoard-hub"])
 
@@ -46,12 +86,26 @@ def setup_hoard_hub_routes() -> APIRouter:
         return await asyncio.to_thread(call, 'hub_coordination_rooms', {'space_id': space_id,
             'owner': _require_owner(request), 'group_owner': group_owner(request) or ''})
 
+    @router.get('/api/hoard/agora/board')
+    async def coordination_board(space_id: str = 'ecosystem', done_limit: int = 40):
+        """The Agora task board of one space, trimmed to what a kanban draws."""
+        from src.shared_coordination import call
+        result = await asyncio.to_thread(call, 'hub_agora_board', {'space_id': space_id})
+        if not isinstance(result, dict) or not result.get('ok'):
+            return {'ok': False, 'error': (result or {}).get('error') if isinstance(result, dict) else 'Agora unavailable'}
+        return compact_board(result, done_limit=max(0, min(done_limit, 200)))
+
     @router.post('/api/hoard/agora/spaces')
     async def create_coordination_space(request: Request):
         require_admin(request)
         from src.shared_coordination import call
         body = await request.json()
-        return await asyncio.to_thread(call, 'hub_agora_space_create', {'agent': 'faustus', 'title': body.get('title', '')})
+        args = {'agent': 'faustus', 'title': body.get('title', '')}
+        # A project's own agora: bound to the project and its main folder.
+        for key in ('project_id', 'workspace', 'description'):
+            if body.get(key):
+                args[key] = str(body[key])
+        return await asyncio.to_thread(call, 'hub_agora_space_create', args)
 
     @router.get('/api/hoard/agora/open')
     def open_coordination_board(space_id: str = 'ecosystem', embedded: bool = False):
