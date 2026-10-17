@@ -2,7 +2,7 @@
 // adapters/knowledge.ts (GET /api/projects/{id}/knowledge/neighborhood),
 // a compact "Contexto usado (n) — por qué" card in Transcript.tsx fed by the
 // new `context_receipts` SSE event (adapters/chat.ts), and "Vecindario de un
-// fichero" in Project.tsx's Context tab. Static source inspection, like
+// fichero" in Project.tsx's Knowledge tab. Static source inspection, like
 // l99-studio-topology.check.mjs: this is JSX wiring across several large
 // screens, not pure logic a bundled import can exercise on its own.
 //
@@ -55,18 +55,23 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(cardBody.includes('<details') && !cardBody.includes('<details open'), 'the card must be a collapsed <details>, not forced open');
 }
 
-// ── screens/Project.tsx: "Vecindario de un fichero" in the Context tab ──
+// ── screens/Project.tsx: "Vecindario de un fichero" in the Knowledge tab ──
+// Project sections renamed: legacy `contexto`/`memoria` URLs alias to
+// `knowledge` via projectSection(); Repositories live under settings.
 {
   const p = 'studio/src/screens/Project.tsx';
   const src = read(p);
   assert.ok(src.includes('function FileNeighborhood'), 'Project.tsx must define FileNeighborhood');
   assert.ok(src.includes("from '../adapters/knowledge'") && src.includes('getNeighborhood'), 'FileNeighborhood must read through adapters/knowledge.ts, not a fetch of its own');
   assert.ok(!/\bfetch\(/.test(src), 'Project.tsx must not call fetch() directly — adapters/knowledge.ts already does');
-  // Scoped to the Context tab only, never rendered elsewhere.
-  const contextoTab = src.slice(src.indexOf("tab === 'contexto'"), src.indexOf("tab === 'repos'"));
-  assert.ok(contextoTab.includes('<FileNeighborhood'), '<FileNeighborhood> must be rendered inside the contexto tab');
-  const otherTabs = src.slice(0, src.indexOf("tab === 'contexto'")) + src.slice(src.indexOf("tab === 'repos'"));
-  assert.ok(!otherTabs.includes('<FileNeighborhood'), 'FileNeighborhood must not be rendered outside the Context tab');
+  // Scoped to the Knowledge tab only, never rendered elsewhere.
+  const knowledgeStart = src.indexOf("tab === 'knowledge'");
+  const knowledgeEnd = src.indexOf("tab === 'settings'", knowledgeStart);
+  assert.ok(knowledgeStart >= 0 && knowledgeEnd > knowledgeStart, 'Project.tsx must keep a knowledge tab block before settings');
+  const knowledgeTab = src.slice(knowledgeStart, knowledgeEnd);
+  assert.ok(knowledgeTab.includes('<FileNeighborhood'), '<FileNeighborhood> must be rendered inside the knowledge tab');
+  const otherTabs = src.slice(0, knowledgeStart) + src.slice(knowledgeEnd);
+  assert.ok(!otherTabs.includes('<FileNeighborhood'), 'FileNeighborhood must not be rendered outside the Knowledge tab');
   for (const field of ['What it must satisfy', 'Decisions that condition it', 'Tests that cover it', 'Out of date']) {
     assert.ok(src.includes(field), `FileNeighborhood must group results under: ${field}`);
   }
