@@ -14,6 +14,7 @@ import functools
 import hashlib
 import inspect
 import json
+from src.hoard_copilot_turn import current_origin_server
 from collections import OrderedDict
 import random
 import re
@@ -898,15 +899,18 @@ def _code_intel_family_for(text: str) -> set:
 # six." and stopped, with the change never made.
 ANNOUNCED_ACTION_RE = re.compile(
     r"(?:^|\n|[.;:!]\s+)\s*(?:let me|i'?ll|i will|i need to|we need to|need to|"
-    r"i should|we should|i must|we must|going to|let's|now i'?ll|next,? i'?ll)\s+"
+    r"i should|we should|i must|we must|i'?m|we'?re|going to|let's|now i'?ll|next,? i'?ll)\s+"
     r"(?:tail|check|investigate|look at|see|read|fetch|inspect|"
     r"verify|diagnose|examine|debug|capture|grab|pull|view|run|call|"
     r"trigger|launch|start|kick off|stop|kill|restart|adopt|serve|"
     r"register|list|search|find|query|hit|ping|test|use|perform|do|"
     r"replace|update|set|change|create|write|edit|save|add|build|make|apply|put|fill|give|"
     r"delete|remove|rename|install|import|export|send|generate|move|copy|assign|load|open|"
-    r"upload|download|fix|patch|configure|enable|disable|swap|draw|record|schedule)"
+    r"upload|download|fix|patch|configure|enable|disable|swap|draw|record|schedule|retry|retrying|try again)"
     r"\b[^.\n]{0,140}"
+    # A failed tool can be followed by "... — retrying with the exact id"
+    # without "I'll". It still announces a call, rather than completing it.
+    r"|(?:^|\n|[.;!—–]\s+)\s*retrying\s+(?:with|using)\b[^.\n]{0,140}"
     # Spanish, the way the models narrate before a call: "Hago zoom para
     # leer...", "Compruebo el estado", "Voy a pulsar...". Without these a
     # Spanish turn that announced its next step simply ended there.
@@ -13884,6 +13888,7 @@ async def _stream_agent_loop_body(
                     and _xr.permits("empty_completion", _empty_round_nudges, _empty_completion_limit)
                     and (
                         _harness_scope_active
+                        or bool(current_origin_server())
                         or round_num > 1
                         or bool(_ledger.progress)
                     )

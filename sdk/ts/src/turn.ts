@@ -93,6 +93,7 @@ export class TurnImpl implements Turn {
   private readonly queue = new AsyncQueue<SseEvent>();
   private resolveDone!: (end: TurnEnd) => void;
   private finished = false;
+  private terminalError: Error | undefined;
 
   constructor(deps: TurnDeps, initialBody: ReadableStream<Uint8Array>) {
     this.http = deps.http;
@@ -117,6 +118,9 @@ export class TurnImpl implements Turn {
 
   private finish(end: TurnEnd): void {
     if (this.finished) return;
+    if (this.terminalError && end.reason !== 'aborted') {
+      end = { ...end, reason: 'error', error: this.terminalError };
+    }
     this.finished = true;
     this.queue.end();
     this.resolveDone(end);
@@ -132,6 +136,9 @@ export class TurnImpl implements Turn {
       this.lastSequence = seq;
     }
     const event = decode(raw, sseEvent);
+    if (event?.type === 'error') {
+      this.terminalError = new Error(String(event.error || event.message || event.text || event.detail || 'Turn failed'));
+    }
     if (event) this.queue.push(event);
   }
 

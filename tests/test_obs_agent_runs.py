@@ -92,6 +92,22 @@ async def test_stop_reports_cancellation_to_live_and_replay_subscribers():
 # ── OBS-01: trace_id / step_id / sequence / stream_id on every event ───────
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('error', [
+    'event: error\ndata: {"error":"No substantive output","status":502}\n\n',
+    'data: {"type":"error","error":"No substantive output"}\n\n',
+])
+async def test_terminal_error_followed_by_done_cannot_be_recorded_as_success(error):
+    async def body():
+        yield error
+        yield 'data: [DONE]\n\n'
+    run = agent_runs.start('failed-completion', body())
+    await run.task
+    assert run.status == 'error'
+    assert run.outcome != 'success'
+    assert agent_runs.finished_marker('failed-completion')['status'] == 'error'
+    await _quiesce(run)
+
+@pytest.mark.asyncio
 async def test_every_published_event_carries_the_observability_fields():
     run = agent_runs.start("sid", _never())
     agent_runs._publish(run, _tool_start(round_=1))
