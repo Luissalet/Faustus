@@ -1,5 +1,23 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
+Proyecto → Ágora reutiliza el historial de Studio con respuestas completas,
+herramientas, @menciones, pill de Sparks y tablero lateral del Hub; Objetivos
+muestra las mismas tareas. La coordinación del proyecto da a sus miembros las
+herramientas nativas para crearlas y seguirlas. Las salas antiguas se vinculan
+al proyecto sin cambiar identificadores ni historial. Cada participante guarda
+su modelo y los controles de razonamiento admitidos, incluidos en presets y
+API/MCP. Se ve su fase observada, tiempo transcurrido y última señal persistida;
+silencio y desconexión se explican sin diagnosticar un bloqueo. Las respuestas
+entre participantes aparecen en el mismo chat, con el contexto anterior real,
+sin el nuevo tope de tres rondas por defecto; siguen los límites explícitos,
+Stop y las capacidades de Council. El listado de salas se puede plegar para
+ampliar el chat y el tablero tiene cierre accesible en móvil.
+Verificación: 64 pruebas Python, checks de componentes, build, API/MCP y navegador
+privados; llamada nativa al tablero con proveedor HTTP controlado. GLM residente
+en Sparks completó propuesta, objeción, acuerdo y cierre natural con dos roles.
+No supone una evaluación de calidad de Qwen ni de autonomía general.
+
 **Caídas temporales de Sparks (13-10-2026, Ágora #467):** el transporte compartido
 espera y continúa ante HTTP503 tipado como reintentable antes de cualquier salida,
 sin cambiar el modelo, prompt o cabeceras ni repetir herramientas completadas.
