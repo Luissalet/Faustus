@@ -1,11 +1,10 @@
-import { Check, Plus, Search, Users, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Button, Dialog, EmptyState, Skeleton, Toast } from '../../components';
+import { Check, MessageSquare, Plus, Search, Users, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Button, Dialog, EmptyState, IconButton, Skeleton, Toast } from '../../components';
 import { listModels, type ModelRoute } from '../../adapters/chat';
 import { groupOptions, listGroupPresets, listGroups, speakerName, type GroupPreset, type GroupState } from '../../adapters/group';
 import { listPresets, type Preset } from '../../adapters/presets';
 import { sessionActivity, useChatActivity } from '../../shell/activity';
-import { hueIndex, initials } from '../../lib/mail';
 import { t } from '../../i18n';
 import { RoomChat } from './RoomChat';
 import { RoomSetup } from './RoomSetup';
@@ -16,9 +15,9 @@ import '../group.css';
  * conversations: a list on the left, the group chat filling the rest. Used
  * by a project's Agora tab (its own rooms) and by the Agora screen.
  */
-export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }: {
+export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint, sidebarFooter }: {
   /** The agora whose rooms these are; null when the project has none yet. */
-  spaceId: string | null; projectId?: string; selected: string; onSelect: (id: string) => void; emptyHint?: string;
+  spaceId: string | null; projectId?: string; selected: string; onSelect: (id: string) => void; emptyHint?: string; sidebarFooter?: ReactNode;
 }) {
   const [routes, setRoutes] = useState<ModelRoute[] | null>(null);
   const [defaultRoute, setDefaultRoute] = useState<ModelRoute | null>(null);
@@ -30,10 +29,19 @@ export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }
   const [managing, setManaging] = useState<GroupState | null>(null);
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
   const [reload, setReload] = useState(0);
-  const [roomsOpen, setRoomsOpen] = useState(false);
+  const [roomsOpen, setRoomsOpen] = useState(() => window.innerWidth > 760);
   const roomBrowserId = useId();
   const noticeTimer = useRef<number | null>(null);
   const activity = useChatActivity();
+  useEffect(() => {
+    const toggle = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault(); setRoomsOpen((value) => !value);
+      }
+    };
+    window.addEventListener('keydown', toggle);
+    return () => window.removeEventListener('keydown', toggle);
+  }, []);
 
   const say = useCallback((text: string, tone: 'ok' | 'warn' = 'ok') => {
     setNotice({ text, tone });
@@ -81,14 +89,11 @@ export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }
 
   return (
     <div className="fs-agora-rooms" data-testid="agora-rooms" data-rooms-open={roomsOpen || undefined}>
-      <nav className="fs-agora-rooms__mobile-nav" aria-label={t('Rooms')}>
-        <button type="button" className="fs-chip" aria-expanded={roomsOpen} aria-controls={roomBrowserId} onClick={() => setRoomsOpen(!roomsOpen)}><Users size={14} aria-hidden="true" /> {t('Rooms')} ({groups?.length ?? 0})</button>
-        <Button size="sm" variant="secondary" icon={Plus} label={t('New room')} onClick={() => { setRoomsOpen(false); setCreating(true); onSelect(''); }} />
-      </nav>
-      <aside id={roomBrowserId} className="fs-agora-rooms__list" aria-label={t('Rooms')}>
-        <div className="fs-agora-rooms__head">
-          <h3>{t('Rooms')}</h3>
-          <Button size="sm" variant="secondary" icon={Plus} label={t('New room')} onClick={() => { setCreating(true); onSelect(''); }} testId="agora-new-room" />
+      <aside id={roomBrowserId} className="fs-agora-rooms__list fs-studio__sessions" aria-label={t('Conversations')}>
+        <div className="fs-studio__sessions-head">
+          <span className="fs-panel__label">{t('Agora')}</span>
+          <IconButton size="sm" icon={Plus} label={t('New room')} onClick={() => { setCreating(true); onSelect(''); if (window.innerWidth <= 760) setRoomsOpen(false); }} testId="agora-new-room" />
+          <IconButton size="sm" icon={X} label={t('Close the conversation list')} onClick={() => setRoomsOpen(false)} />
         </div>
         <label className="fs-agora-rooms__search">
           <Search size={14} aria-hidden="true" />
@@ -96,27 +101,27 @@ export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }
         </label>
         {groups === null && <Skeleton label={t('Loading rooms…')} count={3} height="48px" />}
         {groups !== null && !groups.length && <p className="fs-muted fs-agora-rooms__hint">{emptyHint ?? t('No rooms in this space yet.')}</p>}
-        <ul className="fs-agora-rooms__items">
+        <ul className="fs-agora-rooms__items fs-studio__list">
           {visible.map((g) => {
             const live = g.participants.some((p) => sessionActivity(activity, p.sessionId) !== null);
             return (
               <li key={g.parentId}>
-                <button type="button" aria-current={open === g.parentId ? 'page' : undefined} onClick={() => { setRoomsOpen(false); setCreating(false); onSelect(g.parentId); }} data-testid="agora-room">
-                  <span className="fs-agora-rooms__name">{live && <span className="fs-agora-rooms__live" aria-label={t('Working')} />}{g.name}</span>
-                  <span className="fs-agora-rooms__faces" aria-hidden="true">
-                    {g.participants.slice(0, 5).map((p) => <span key={p.sessionId} className="fs-avatar" data-hue={hueIndex(speakerName(p))} data-size="sm">{initials(speakerName(p))}</span>)}
-                  </span>
-                  <small>{g.mode === 'parallel' ? t('All at once') : t('Taking turns')} · {g.participants.length}</small>
+                <button type="button" className="fs-studio__session" aria-current={open === g.parentId ? 'page' : undefined} onClick={() => { if (window.innerWidth <= 760) setRoomsOpen(false); setCreating(false); onSelect(g.parentId); }} data-testid="agora-room">
+                  <span className="fs-studio__session-name">{live && <span className="fs-agora-rooms__live" aria-label={t('Working')} />}<Users size={11} aria-hidden="true" />{g.name}</span>
+                  <span className="fs-studio__session-meta">{g.participants.map(speakerName).join(' · ')}</span>
                 </button>
               </li>
             );
           })}
         </ul>
+        {sidebarFooter}
       </aside>
+
+      {roomsOpen && <button type="button" className="fs-agora-rooms__scrim" aria-label={t('Close the conversation list')} onClick={() => setRoomsOpen(false)} />}
 
       <section className="fs-agora-rooms__room">
         {open ? (
-          <RoomChat key={open} groupId={open} projectId={projectId} say={say}
+          <RoomChat key={open} groupId={open} projectId={projectId} say={say} conversationsOpen={roomsOpen} onToggleConversations={() => setRoomsOpen(!roomsOpen)}
             onNewRoom={() => { setCreating(true); onSelect(''); }}
             onManage={(state) => setManaging(state)}
             onClosed={() => { onSelect(''); setReload((n) => n + 1); }} />
@@ -126,6 +131,7 @@ export function AgoraRooms({ spaceId, projectId, selected, onSelect, emptyHint }
           <EmptyState icon={Users} title={t('No models')} body={t('Add an endpoint in Settings → Models first.')} />
         ) : (creating || !groups?.length) ? (
           <div className="fs-agora-rooms__setup">
+            <Button variant="ghost" icon={MessageSquare} label={t('Conversations')} onClick={() => setRoomsOpen(!roomsOpen)} />
             <h3>{t('New room')}</h3>
             <p className="fs-muted">{t('Several models in one conversation, each as itself or wearing a persona. They answer you and each other.')}</p>
             <RoomSetup key={home + (projectId ?? '')} routes={routes} defaultRoute={defaultRoute} personas={personas} presets={presets}

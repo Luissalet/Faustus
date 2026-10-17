@@ -1,5 +1,6 @@
 import type { HistoryMessage } from '../../adapters/chat';
 import { metricsFrom } from '../../adapters/chat';
+import { attachmentsFromMetadata } from '../../adapters/composer';
 import { isPassText, isPeerTurn, speakerName, type GroupSnapshot, type GroupStep, type Participant } from '../../adapters/group';
 import { blankTurn, restoreFromMetadata, type Turn } from '../studio/model';
 import { t } from '../../i18n';
@@ -68,6 +69,7 @@ function historyTurn(m: HistoryMessage): Turn | null {
   const meta = m.metadata ?? {};
   if (m.role === 'user') {
     const turn = blankTurn('user', m.content);
+    turn.attachments = attachmentsFromMetadata(meta);
     turn.id = 'room-' + String(meta.group_turn_id ?? meta.group_answer_id ?? m.index);
     turn.streaming = false;
     return turn;

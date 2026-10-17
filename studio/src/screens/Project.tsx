@@ -946,6 +946,13 @@ export function ProjectScreen() {
   // off the project record and is changed in Settings, not detached here.
   const workspaceName = project.workspace ? (project.workspace.split(/[\\/]/).filter(Boolean).pop() ?? project.workspace) : '';
 
+  if (tab === 'agora') return <ProjectAgora project={project} selected={params.get('room') || ''}
+    onSelect={(id) => {
+      const next = new URLSearchParams(params);
+      if (id) next.set('room', id); else next.delete('room');
+      setParams(next, { replace: true });
+    }} />;
+
   return (
     <div className="fs-screen fs-pj" data-testid="project" data-archived={project.archived || undefined} data-tab={tab}>
       <div>
@@ -1196,16 +1203,6 @@ export function ProjectScreen() {
             <BoardPanel projectId={project.id} />
           </Suspense>
         </div>
-      )}
-
-      {tab === 'agora' && (
-        <ProjectAgora project={project} selected={params.get('room') || ''}
-          onSelect={(id) => {
-            const next = new URLSearchParams(params);
-            if (id) next.set('room', id);
-            else next.delete('room');
-            setParams(next, { replace: true });
-          }} />
       )}
 
       {tab === 'objetivos' && (

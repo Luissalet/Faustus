@@ -2,7 +2,7 @@ import { chooseStudioRoute, configuredDefaultRoute } from '../adapters/model-sel
 import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Sparkles, Waypoints, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { lazyChunk } from '../shell/lazyChunk';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, IconButton, Popover, Skeleton } from '../components';
@@ -102,14 +102,18 @@ import { pendingShellCommand, shellApproval, shellCommand, type ShellResult } fr
 import { egg as makeEgg, type Egg as EggData, type EggKind } from '../lib/fun';
 import { Egg } from './studio/Egg';
 import { Rich, RichReply } from './rich';
-import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
+import { knownGroupParents, listGroups, speakerName, stripGroupPrefix, type GroupState } from '../adapters/group';
+import { useGroupConversation } from './group/useGroupConversation';
+import { shortHandle } from './group/room-model';
+import { StudioGroupControls } from './group/StudioGroupControls';
+import { acknowledgeCoordinationAttempt, coordinationAttempt } from '../components/coordinationNavigation';
 import { Composer, type Knobs } from './studio/Composer';
 import { CoordinationStatus } from './studio/CoordinationStatus';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
-import { Transcript, type Decision } from './studio/Transcript';
+import { AskCard, Transcript, type Decision } from './studio/Transcript';
 import SideThreadsPanel from './studio/SideThreadsPanel';
 import ExploreDialog, { type ExploreAnchor } from './studio/ExploreDialog';
 import CondenseDialog from './studio/CondenseDialog';
@@ -398,10 +402,39 @@ interface Notice {
  * visible in the reply instead of buried behind a "show details" toggle.
  * This file wires the pieces; the pieces live in ./studio/.
  */
-export function StudioScreen() {
+export function StudioScreen({ groupContext }: { groupContext?: {
+  selected: string; onSelect: (id: string) => void; spaceId: string | null; project?: Project;
+  ensureSpace?: () => Promise<string>;
+  navigation?: ReactNode;
+} } = {}) {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const sessionId = params.get('s');
+  const groupId = groupContext?.selected || params.get('agora')
+    || (params.get('s') && knownGroupParents().has(params.get('s')!) ? params.get('s') : null);
+  const groupMode = Boolean(groupContext || groupId);
+  const sessionId = groupId || params.get('s');
+  const groupConversation = useGroupConversation(groupId);
+  const [groups, setGroups] = useState<GroupState[] | null>(null);
+  const [groupReload, setGroupReload] = useState(0);
+  const [newGroupSignal, setNewGroupSignal] = useState(0);
+  const [newGroupSpace, setNewGroupSpace] = useState<string | null>(null);
+  const homeSpace = groupContext?.spaceId || newGroupSpace || groupConversation.group?.space_id || 'ecosystem';
+  useEffect(() => {
+    const controller = new AbortController();
+    const read = () => listGroups(controller.signal, groupContext?.spaceId || undefined).then((all) => {
+      if (!controller.signal.aborted) setGroups(all.filter((group) => !groupContext?.project || group.projectId === groupContext.project.id
+        || Boolean(groupContext.spaceId && group.space_id === groupContext.spaceId)));
+    }).catch(() => undefined);
+    void read();
+    const timer = window.setInterval(read, 5000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [groupContext?.spaceId, groupContext?.project?.id, groupReload]);
+  const landedGroup = useRef(false);
+  useEffect(() => {
+    if (!groupContext || landedGroup.current || groupId || !groups?.length) return;
+    landedGroup.current = true;
+    groupContext.onSelect(groups[0].parentId);
+  }, [groupContext, groupId, groups]);
 
   const [sessions, setSessions] = useState<ChatSession[] | null>(null);
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
@@ -524,7 +557,8 @@ export function StudioScreen() {
   /* Commands that need handlers declared further down (fork, tts): the
      handlers are stored here after they exist, and read at call time. */
   const extrasRef = useRef<{ fork: () => void; tts: () => void }>({ fork: () => undefined, tts: () => undefined });
-  const [turns, setTurns] = useState<Turn[] | null>(sessionId ? null : []);
+  const [ordinaryTurns, setTurns] = useState<Turn[] | null>(sessionId ? null : []);
+  const turns = groupId ? groupConversation.snapshot ? groupConversation.turns : null : ordinaryTurns;
   const [title, setTitle] = useState('');
   // The draft outlives the screen. Leaving to check something in another chat
   // or a project and coming back used to hand you an empty box: the route
@@ -589,7 +623,8 @@ export function StudioScreen() {
   }, [draft, sessionId, knobs.incognito, attachments]);
   const sendingMessage = useRef(false);
   const [preparingMessage, setPreparingMessage] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [ordinaryBusy, setBusy] = useState(false);
+  const busy = groupId ? groupConversation.busy : ordinaryBusy;
   const display = useDisplay();
   const lang = useLang();
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -694,6 +729,31 @@ export function StudioScreen() {
   const say = useCallback((text: string, tone: Notice['tone'] = 'info', action?: Notice['action']) => {
     setNotice({ text, tone, action });
   }, []);
+  const startNewGroup = useCallback(() => {
+    void (async () => {
+      if (groupContext?.ensureSpace && !groupContext.spaceId) setNewGroupSpace(await groupContext.ensureSpace());
+      setNewGroupSignal((value) => value + 1);
+    })().catch((error: Error) => say(error.message, 'danger'));
+  }, [groupContext, say]);
+  const restoredGroup = useRef<string | null>(null);
+  useEffect(() => {
+    const state = groupConversation.group;
+    if (!state || restoredGroup.current === state.parentId) return;
+    restoredGroup.current = state.parentId;
+    const options = state.executionOptions ?? {};
+    setKnobsState((previous) => ({...previous, mode: state.executionMode ?? 'agent', incognito: false,
+      ...(typeof options.allow_bash === 'boolean' ? {bash: options.allow_bash} : {}),
+      ...(typeof options.allow_web_search === 'boolean' ? {web: options.allow_web_search} : {}),
+      ...(typeof options.use_rag === 'boolean' ? {rag: options.use_rag} : {}),
+      ...(typeof options.plan_mode === 'boolean' ? {plan: options.plan_mode} : {}),
+      ...(typeof options.no_memory === 'boolean' ? {noMemory: options.no_memory} : {}),
+      ...(typeof options.no_skills === 'boolean' ? {noSkills: options.no_skills} : {}),
+      ...(typeof options.input_token_budget === 'number' ? {inputTokenBudget: options.input_token_budget} : {}),
+    }));
+    if (state.workspace) setWorkspaceState(state.workspace);
+    const saved = state.executionOptions?.gen_overrides;
+    if (typeof saved === 'string') { try { setGen(JSON.parse(saved)); } catch { /* legacy options */ } }
+  }, [groupConversation.group]);
 
   /** A command's answer, as Markdown. */
   const report = useCallback((markdown: string, tone: Notice['tone'] = 'info', action?: Notice['action']) => {
@@ -806,6 +866,10 @@ export function StudioScreen() {
   const setKnobs = useCallback(
     (update: (k: Knobs) => Knobs) => {
       const next = update(knobs);
+      if (groupMode && next.incognito) {
+        say(t('Group conversations keep their shared history. Open a private conversation for Nobody mode.'), 'warning');
+        return;
+      }
       if (next.rag !== knobs.rag) setRagActive(next.rag);
       if (knobs.incognito && !next.incognito && sessionId && incognitoIds().includes(sessionId)) {
         // Leaving Nobody mode on a Nobody session: that session goes away
@@ -814,7 +878,7 @@ export function StudioScreen() {
       }
       setKnobsState(next);
     },
-    [knobs, sessionId, navigate],
+    [knobs, sessionId, navigate, groupMode, say],
   );
 
   /* ui_control (adapters/uiEvent.ts): what the agent asked the screen to do
@@ -899,7 +963,8 @@ export function StudioScreen() {
   useEffect(() => {
     listProjects().then(setProjects).catch(() => setProjects([]));
   }, [sessionId]);
-  const project = useMemo(() => (current?.folder ? projects.find((p) => p.folder === current.folder) ?? null : null), [projects, current]);
+  const project = useMemo(() => groupContext?.project ?? projects.find((item) => item.id === groupConversation.group?.projectId)
+    ?? (current?.folder ? projects.find((p) => p.folder === current.folder) ?? null : null), [projects, current, groupContext?.project, groupConversation.group?.projectId]);
   useEffect(() => {
     const AUTO = 'odysseus-project-workspace';
     let applied = '';
@@ -1255,6 +1320,11 @@ export function StudioScreen() {
   /* History: whenever the session in the URL changes — except the session
      this screen just created for a first message, whose stream is live. */
   useEffect(() => {
+    if (groupId) {
+      controllerRef.current?.abort(); controllerRef.current = null;
+      setAttachments(readAttachmentsFor(sessionId)); setLoadError(null); setNotice(null);
+      return;
+    }
     if (sessionId && freshRef.current === sessionId) {
       freshRef.current = null;
       return;
@@ -1319,7 +1389,7 @@ export function StudioScreen() {
     };
     // routes is read once at load on purpose: the picker must not jump later.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, groupId]);
 
   /* The gallery sends a picture to a conversation: ?image=<url>&name=. */
   useEffect(() => {
@@ -1552,6 +1622,31 @@ export function StudioScreen() {
     [turnsFromHistory],
   );
 
+  const sendToGroup = useCallback(async (message: string, sent: Attachment[] = []) => {
+    if (!groupId || !groupConversation.group) throw new Error(t('Loading the conversation'));
+    const scope = 'studio:group:' + groupId;
+    const attempt = coordinationAttempt(scope, message, sent.map((item) => item.id).join(','));
+    const execution = await executionForSend(groupId);
+    const autonomy = resolveExecutionAutonomy(executionPicks, execution.defaults, knobs.autonomyPreset);
+    const options: Record<string, unknown> = {
+      attachments: JSON.stringify(sent.map((item) => item.id)),
+      gen_overrides: JSON.stringify(gen), plan_mode: knobs.mode === 'agent' && knobs.plan && !knobs.research,
+      allow_bash: knobs.mode === 'agent' && knobs.bash, allow_web_search: knobs.web,
+      use_rag: knobs.rag, use_research: knobs.research, no_memory: Boolean(knobs.noMemory), no_skills: Boolean(knobs.noSkills),
+      think_mode: thinkMode, behavior_mode: activeModeId ?? undefined, chat_mode: activeChatMode,
+      autonomy_preset: autonomy.override, initial_response_timeout_s: executionPicks.initial_response_timeout_s,
+      context_overrides: knobs.contextOverrides ? JSON.stringify(knobs.contextOverrides) : undefined,
+      doc_context: knobs.docContext?.length ? JSON.stringify(knobs.docContext) : undefined,
+      input_token_budget: knobs.inputTokenBudget, preset_id: preset?.id,
+      active_doc_id: panel.doc && !panel.doc.streaming ? panel.doc.id ?? undefined : undefined,
+    };
+    const answer = await groupConversation.send(message || sent.map((item) => item.name).join(', '), options, knobs.mode, workspace, attempt.id);
+    if (!answer?.turn_id) throw new Error(t('Message not confirmed. Retry the same send.'));
+    acknowledgeCoordinationAttempt(scope, attempt.id);
+    if (knobs.research) setKnobsState((previous) => ({...previous, research: false}));
+    refreshSessions(); refreshActivity(); pinnedRef.current = true;
+  }, [groupId, groupConversation, executionForSend, executionPicks, knobs, gen, thinkMode, activeModeId, activeChatMode, preset, panel.doc, workspace, refreshSessions]);
+
   const run = useCallback(
     async (
       sid: string,
@@ -1574,6 +1669,14 @@ export function StudioScreen() {
         execution?: { sid: string; value: SessionExecutionDefaults };
       } = {},
     ) => {
+      if (groupId) {
+        try {
+          if (options.approval) await groupConversation.resume('', {tool_approval_id: options.approval.id, tool_approval_decision: options.approval.decision});
+          else if (options.questionId) await groupConversation.resume(message, {question_id: options.questionId, question_revision: options.revision, option_ids: options.optionIds});
+          else await sendToGroup(message, options.attachments);
+        } catch (error) { say((error as Error).message, 'danger'); }
+        return;
+      }
       let resolvedExecution: SessionExecutionDefaults;
       try {
         resolvedExecution = options.execution?.sid === sid ? options.execution.value : await executionForSend(sid);
@@ -1690,7 +1793,7 @@ export function StudioScreen() {
         refreshStaleWires(sid);
       }
     },
-    [knobs, executionPicks, executionForSend, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires, say],
+    [knobs, executionPicks, executionForSend, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires, say, groupId, groupConversation, sendToGroup],
   );
 
   /**
@@ -3042,7 +3145,7 @@ export function StudioScreen() {
         finally { literalShellInFlight.current = false; }
         return;
       }
-      if (busy) {
+      if (busy && !groupMode) {
         if (!message) return;
         // A parked turn (waiting on an approval card or a question) still
         // looks "live" here, and the server refuses a steer for it. Rather
@@ -3068,6 +3171,22 @@ export function StudioScreen() {
       if (/^#(?!#)\s*\S/.test(message) && !message.includes('\n')) {
         setDraft('');
         await runCommand('remember', message.replace(/^#\s*/, ''));
+        return;
+      }
+
+      if (groupMode) {
+        if (!groupId) { startNewGroup(); return; }
+        sendingMessage.current = true; setPreparingMessage(true);
+        const sent = attachments;
+        try {
+          await sendToGroup(withImageReferences(message, sent), sent);
+          if (visibleSession.current !== groupId) return;
+          setDraft((current) => current.trim() === message ? '' : current);
+          const ids = new Set(sent.map((item) => item.id));
+          setAttachments((list) => list.filter((item) => !ids.has(item.id)));
+          setNotice(null);
+        } catch (error) { say((error as Error).message, 'danger'); }
+        finally { sendingMessage.current = false; setPreparingMessage(false); }
         return;
       }
 
@@ -3113,7 +3232,7 @@ export function StudioScreen() {
       }
     },
     [attachments, busy, runCommand, ensureSession, executionForSend, run, sessionId, pendingModeId, pendingChatMode, steerLive,
-      workspace, project, effectiveAutonomy, showShellResult, say, knobs.incognito],
+      workspace, project, effectiveAutonomy, showShellResult, say, knobs.incognito, groupId, groupMode, sendToGroup, startNewGroup],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and
@@ -3137,6 +3256,7 @@ export function StudioScreen() {
   }, [busy, route, ensureSession, run, knobs.mode]);
 
   const stop = useCallback(() => {
+    if (groupId) { void groupConversation.stop().catch((error: Error) => say(error.message, 'danger')); return; }
     controllerRef.current?.abort();
     controllerRef.current = null;
     // Closing our stream stops nothing: the run is detached. The server only
@@ -3152,7 +3272,7 @@ export function StudioScreen() {
     }
     patchLast((t) => apply(t, { type: 'done' }));
     setBusy(false);
-  }, [sessionId, patchLast, say]);
+  }, [sessionId, patchLast, say, groupId, groupConversation]);
 
   // TASK-04/UX-04: the Stop menu's harsher scopes ("Cancel task"/"Cancel all
   // work") and the softer "Stop generation" (also what Escape now sends —
@@ -3214,7 +3334,7 @@ export function StudioScreen() {
   const busyNow = useRef(false);
   busyNow.current = busy;
   useEffect(() => {
-    if (!sessionId || busy || executionBlocked || claimingSends.current || knobs.incognito) return;
+    if (groupMode || !sessionId || busy || executionBlocked || claimingSends.current || knobs.incognito) return;
     claimingSends.current = true;
     void (async () => {
       try {
@@ -3235,7 +3355,7 @@ export function StudioScreen() {
         claimingSends.current = false;
       }
     })();
-  }, [busy, executionBlocked, sessionId, run, knobs.incognito]);
+  }, [busy, executionBlocked, sessionId, run, knobs.incognito, groupMode]);
 
   /* ── Earlier answers (‹ 1/3 ›): what a regenerate or an edit replaced ── */
   const [answerVersions, setAnswerVersions] = useState<Record<string, AnswerVersion[]>>({});
@@ -3348,13 +3468,18 @@ export function StudioScreen() {
   );
 
   const openSession = (id: string | null) => {
-    // A group chat's parent lives in Group chat, where the table is; the
-    // transcript is still readable here from the sessions list's menu.
+    if (groupMode && !id) {
+      startNewGroup();
+      return;
+    }
+    if (groupContext) { groupContext.onSelect(id || ''); setDrawerOpen(false); return; }
+    // Group parents open this same Studio, with the native group conductor.
     if (id && knownGroupParents().has(id)) {
-      navigate(`/group?s=${encodeURIComponent(id)}`);
+      navigate(`/studio?agora=${encodeURIComponent(id)}`);
       return;
     }
     const next = new URLSearchParams(params);
+    next.delete('agora');
     if (id) next.set('s', id);
     else next.delete('s');
     setParams(next);
@@ -3499,13 +3624,18 @@ export function StudioScreen() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [layout, setLayout]);
 
-  const pending = turns?.length ? Boolean(turns[turns.length - 1].ask) : false;
+  const pending = Boolean(groupConversation.ask) || (turns?.length ? Boolean(turns[turns.length - 1].ask) : false);
   const isEmpty = !sessionId && turns !== null && turns.length === 0;
+  const groupSessions: ChatSession[] | null = groups?.map((group) => sessions?.find((session) => session.id === group.parentId) ?? {
+    id: group.parentId, name: '[GRP] ' + group.name, model: group.participants.map(speakerName).join(', '), endpointUrl: '',
+    mode: group.executionMode ?? 'agent', messageCount: 0, lastMessageAt: null, createdAt: null,
+    folder: groupContext?.project?.folder ?? null, isImportant: false, hasDocuments: false, hasImages: false, totalTokens: 0,
+  }) ?? null;
 
   return (
     <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout}>
       <SessionsPane
-        sessions={sessions}
+        sessions={groupMode ? groupSessions : sessions}
         currentId={sessionId}
         filter={filter}
         setFilter={setFilter}
@@ -3523,7 +3653,7 @@ export function StudioScreen() {
             <span>{t('Conversations')}</span>
           </button>
           <h1 className="fs-studio__title" title={title || undefined}>
-            {sessionId ? stripGroupPrefix(current?.name || title || t('Conversation')) : t('New conversation')}
+            {groupMode ? groupConversation.group?.name || t('New room') : sessionId ? stripGroupPrefix(current?.name || title || t('Conversation')) : t('New conversation')}
           </h1>
           {project && (
             <Link to={`/projects/${encodeURIComponent(project.id)}`} className="fs-studio__chip fs-studio__project" title={t('Open the project {name}', { name: project.name })} data-testid="studio-project">
@@ -3531,6 +3661,10 @@ export function StudioScreen() {
               <span>{project.name}</span>
             </Link>
           )}
+          {groupMode && <Link className="fs-studio__chip" data-testid="studio-group-tasks"
+            to={project ? `/projects/${encodeURIComponent(project.id)}?tab=objetivos` : `/agora?space_id=${encodeURIComponent(homeSpace)}&mode=development`}>
+            <CheckSquare size={13} aria-hidden="true" /><span>{t('Tasks')}</span>
+          </Link>}
           <Vitals busy={busy} />
           <SparkVitals />
           <SphereChip />
@@ -3606,6 +3740,7 @@ export function StudioScreen() {
               {loadError}
             </p>
           )}
+          {groupConversation.error && <p className="fs-notice" data-tone="danger">{groupConversation.error}</p>}
 
           {isEmpty && display.welcome && (
             <div className="fs-studio__hero fs-spot" onMouseMove={spotlight}>
@@ -3786,6 +3921,13 @@ export function StudioScreen() {
           {executionFailed ? t('Could not load project execution preferences. Your draft is kept; retry before sending.') : t('Loading project execution preferences… Your draft is kept.')}
           {executionFailed && <Button size="sm" variant="ghost" label={t('Retry')} onClick={() => setExecutionReload(value => value + 1)} />}
         </div>}
+        {groupConversation.ask && <div className="fs-room__ask">
+          <AskCard ask={groupConversation.ask} busy={preparingMessage}
+            onAnswer={(text, optionIds) => void groupConversation.resume(text, {question_id: groupConversation.ask?.questionId,
+              question_revision: groupConversation.ask?.revision, option_ids: optionIds}).catch((error: Error) => say(error.message, 'danger'))}
+            onApproval={(decision) => void groupConversation.resume('', {tool_approval_id: groupConversation.ask?.approvalId,
+              tool_approval_decision: decision}).catch((error: Error) => say(error.message, 'danger'))} />
+        </div>}
         <Composer
           draft={draft}
           setDraft={setDraft}
@@ -3805,13 +3947,13 @@ export function StudioScreen() {
           gen={gen}
           onClearGen={() => setGen({})}
           onSetGen={setGen}
-          modelName={route?.model ?? null}
+          modelName={groupMode ? null : route?.model ?? null}
           thinkMode={thinkMode}
           thinkChosen={thinkChosen}
           onSetThinkMode={pickThinkMode}
-          reasoningLevels={reasoningLevels}
-          thinkingSupported={reasoningCaps.thinking_supported}
-          thinkingToggle={reasoningCaps.thinking_toggle}
+          reasoningLevels={groupMode ? [] : reasoningLevels}
+          thinkingSupported={groupMode ? false : reasoningCaps.thinking_supported}
+          thinkingToggle={groupMode ? false : reasoningCaps.thinking_toggle}
           thinkingOn={thinkingOn}
           onSetThinkingOn={reasoningCaps.thinking_toggle ? pickThinkingOn : undefined}
           thinkEffort={thinkEffort}
@@ -3820,13 +3962,14 @@ export function StudioScreen() {
           attachments={attachments}
           setAttachments={(update) => setAttachments(update)}
           sessionId={sessionId}
+          participants={groupConversation.group?.participants.map((member) => ({handle: shortHandle(member, groupConversation.group!.participants), label: speakerName(member)}))}
           onSend={(text) => void send(text)}
           onStop={stop}
-          onPauseGeneration={pauseGeneration}
-          onCancelTask={cancelTask}
-          onCancelWork={cancelWork}
-          onSteer={steerLive}
-          onQueueSend={queueSend}
+          onPauseGeneration={groupMode ? undefined : pauseGeneration}
+          onCancelTask={groupMode ? undefined : cancelTask}
+          onCancelWork={groupMode ? undefined : cancelWork}
+          onSteer={groupMode ? (text) => void send(text) : steerLive}
+          onQueueSend={groupMode ? (text) => void send(text) : queueSend}
           onVoice={() => {
             if (voiceSession) { setVoiceSession(null); return; }
             void ensureSession(t('Voice conversation')).then(sid => {
@@ -3835,7 +3978,12 @@ export function StudioScreen() {
           }}
           voiceActive={Boolean(voiceSession)}
           onNotice={say}
-          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => { explicitPick.current = true; pendingSessionRoute.current = null; setRouteId(r.id); }} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
+          modelPicker={groupMode ? <StudioGroupControls snapshot={groupConversation.snapshot} routes={routes}
+            navigation={groupContext?.navigation}
+            spaceId={homeSpace} projectId={project?.id} newSignal={newGroupSignal} say={say}
+            onChanged={() => setGroupReload((value) => value + 1)}
+            onOpen={(state) => { if (groupContext) groupContext.onSelect(state.parentId); else navigate(`/studio?agora=${encodeURIComponent(state.parentId)}`); }} />
+            : <ModelPicker routes={routes} current={route} onPick={(r) => { explicitPick.current = true; pendingSessionRoute.current = null; setRouteId(r.id); }} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
           behaviorModes={modeCatalog.modes}
           behaviorModeId={activeModeId}
           onPickBehaviorMode={pickBehaviorMode}

@@ -26,7 +26,8 @@ import './sparks.css';
 export function SparkVitals() {
   const [open, setOpen] = useState(false);
   const { state, history, refresh } = useSparks(open);
-  if (!state || (!state.ok && state.error === 'disabled')) return null;
+  if (!state) return <span className="fs-vitals fs-sparks" role="status" aria-label={t('DGX Sparks: GPU, memory and loaded model')}><Server size={13} aria-hidden="true" />Sparks…</span>;
+  if (!state.ok && state.error === 'disabled') return null;
 
   const online = state.nodes.filter((n) => n.online);
   // A figure a Spark did not report is unknown, never zero: average and add only what was measured.

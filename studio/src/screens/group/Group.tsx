@@ -1,7 +1,9 @@
 import { useCallback } from 'react';
+import { Link } from 'react-router';
 import { useCoordinationParams } from '../../components/coordinationNavigation';
 import { CoordinationSpaces } from '../../components/CoordinationSpaces';
-import { AgoraRooms } from './AgoraRooms';
+import { StudioScreen } from '../Studio';
+import { t } from '../../i18n';
 import '../group.css';
 
 /**
@@ -10,15 +12,17 @@ import '../group.css';
  * as a full group chat on the right. A project shows the same view for its
  * own agora in its Agora tab.
  */
-export function GroupScreen({ embedded = false }: { embedded?: boolean } = {}) {
+export function GroupScreen() {
   const [params, setParams] = useCoordinationParams('groups');
   const spaceId = params.get('space_id') || 'ecosystem';
   const selected = params.get('s') || '';
   const select = useCallback((id: string) => setParams({ space_id: spaceId, ...(id ? { s: id } : {}) }, { replace: true }), [setParams, spaceId]);
   return (
-    <div className="fs-grp-screen" data-testid="group">
-      {!embedded && <CoordinationSpaces value={spaceId} onChange={(id) => setParams({ space_id: id }, { replace: true })} />}
-      <AgoraRooms key={spaceId} spaceId={spaceId} selected={selected} onSelect={select} />
+    <div className="fs-project-agora-shell" data-testid="group">
+      <StudioScreen groupContext={{selected, onSelect: select, spaceId, navigation: <>
+        <CoordinationSpaces value={spaceId} onChange={(id) => setParams({space_id: id}, {replace: true})} />
+        <Link className="fs-chip" to={`/agora?space_id=${encodeURIComponent(spaceId)}&mode=council`}>{t('Deliberation')}</Link>
+      </>}} />
     </div>
   );
 }

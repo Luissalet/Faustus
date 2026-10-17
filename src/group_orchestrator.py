@@ -15,6 +15,20 @@ from src.group_activity import activity_detail
 from src.hoard_link.coordination.groups import GroupStore as _SharedGroupStore
 logger = logging.getLogger(__name__)
 
+# The regular Studio composer sends these same native chat fields. Routing,
+# session identity and run identity remain owned by the participant bridge.
+COMPOSER_FIELDS = frozenset(('attachments', 'gen_overrides', 'plan_mode', 'allow_bash',
+    'allow_web_search', 'use_rag', 'use_research', 'think_mode', 'reasoning_effort',
+    'thinking_enabled', 'initial_response_timeout_s', 'autonomy_preset', 'context_overrides',
+    'doc_context', 'input_token_budget', 'no_memory', 'no_skills', 'behavior_mode', 'chat_mode',
+    'preset_id', 'active_doc_id', 'delegate_tasks'))
+
+
+def composer_options(value):
+    if not isinstance(value, dict) or set(value) - COMPOSER_FIELDS:
+        raise ValueError('Use native composer execution options; participant routing is set separately')
+    return copy.deepcopy(value)
+
 
 def participant_execution_options(member):
     """Reuse native execution preferences and input budgeting for each member."""
@@ -69,6 +83,8 @@ class GroupCoordinator:
             raise ValueError("A group needs distinct participant sessions")
         definition.setdefault("executionMode", "agent")
         definition.setdefault("workspace", "")
+        if 'executionOptions' in definition:
+            definition['executionOptions'] = composer_options(definition['executionOptions'])
         for p in members:
             p["personaName"] = p.get("personaName") or p["route"]["model"].rsplit("/", 1)[-1]
         if definition["executionMode"] not in ("chat", "agent"):
@@ -81,6 +97,7 @@ class GroupCoordinator:
         if expected_revision is not None and previous['revision'] != expected_revision:
             from src.hoard_link.coordination.council_store import RevisionConflict
             raise RevisionConflict(group_id, expected_revision, previous['revision'])
+        execution_options = composer_options(changes.get('executionOptions', previous.get('executionOptions', {})))
         if changes.get('participants') is not None:
             definition = self.transcript.create(changes['participants'], changes.get('mode', previous['mode']), owner,
                 name=changes.get('name', previous['name']), workspace=changes.get('workspace', previous.get('workspace', '')),
@@ -89,6 +106,7 @@ class GroupCoordinator:
         else:
             definition = {**previous, **{k: v for k, v in changes.items() if k in ('name', 'mode', 'executionMode', 'workspace')}}
         definition['space_id'] = previous.get('space_id', 'ecosystem')
+        definition['executionOptions'] = execution_options
         if previous.get('projectId'):
             definition['projectId'] = previous['projectId']
         elif changes.get('projectId'):
@@ -104,10 +122,11 @@ class GroupCoordinator:
         result = self.store.save(definition, owner, expected_revision=expected_revision)
         if hasattr(self.transcript, 'sessions'):
             parent = self.transcript.sessions.get_session(group_id)
-            parent.name = '[GRP] ' + result['name']
-            self.transcript.sessions.save_sessions()
+            if parent.name != '[GRP] ' + result['name']:
+                parent.name = '[GRP] ' + result['name']
+                self.transcript.sessions.save_sessions()
         removed = {p['sessionId'] for p in previous['participants']} - {p['sessionId'] for p in result['participants']}
-        for turn in self.store.turns(group_id):
+        for turn in self.store.turns(group_id) if removed else ():
             for step in self.store.steps(turn['id']):
                 if step['member_id'] in removed and step['status'] == 'queued':
                     self.store.update_step(step['id'], expected_status='queued', status='stopped', detail={**step['detail'], 'member_removed': True})
@@ -404,8 +423,11 @@ class NativeGroupBridge:
     def user(self, turn, owner):
         if discussion.is_peer(turn):
             return  # A follow-up round is the members talking; the person said nothing new.
+        attachments = turn['definition'].get('executionOptions', {}).get('attachments', [])
+        if isinstance(attachments, str):
+            attachments = json.loads(attachments)
         self._append_once(turn["group_id"], "user", turn["message"],
-                          {"group_turn_id": turn["id"]}, ("group_turn_id", turn["id"]))
+                          {"group_turn_id": turn["id"], 'attachments': attachments}, ("group_turn_id", turn["id"]))
 
     # The member's own answer already carries what Studio draws (tool rail,
     # thinking, sources, timings); the room transcript keeps the same record.
@@ -608,11 +630,14 @@ class NativeGroupBridge:
                 self._append_once(member["sessionId"], "system", context['text'],
                                   {"group_request_boundary": request_id, 'group_seen_cursor': context['cursor']},
                                   ("group_request_boundary", request_id))
-                body = {"session": member["sessionId"],
+                body = {**composer_options(turn['definition'].get('executionOptions', {})),
+                    "session": member["sessionId"],
                     "message": continuation.get("message", turn["message"]), "client_message_id": request_id,
                     "mode": turn["definition"]["executionMode"], "model": member["route"]["model"],
                     "selected_endpoint_id": member["route"].get("endpointId", ""),
-                    "workspace": turn["definition"].get("workspace", ""), "allow_bash": True, "allow_web_search": True}
+                    "workspace": turn["definition"].get("workspace", "")}
+                body.setdefault('allow_bash', True)
+                body.setdefault('allow_web_search', True)
                 body.update({k: v for k, v in continuation.items() if k not in {"request_id", "message"}})
                 # Saved member policy also applies to question continuations.
                 # The normal chat endpoint enforces read_only at tool dispatch.
@@ -623,7 +648,7 @@ class NativeGroupBridge:
                     'endpointUrl': redact_url(member['route'].get('endpointUrl', ''))}
                 request = native_request(self.app, owner, body)
                 try:
-                    response = await self.chat_endpoint(request, initial_response_timeout_s=None)
+                    response = await self.chat_endpoint(request, initial_response_timeout_s=body.get('initial_response_timeout_s'))
                 except Exception as exc:
                     if detail.get("question") and getattr(exc, "status_code", None) in (400, 409, 422):
                         return {"text": step["text"], "question": detail["question"],
