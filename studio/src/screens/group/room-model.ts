@@ -90,7 +90,8 @@ function historyTurn(m: HistoryMessage): Turn | null {
 }
 
 function stepTurn(step: GroupStep, member: Member | undefined): Turn {
-  let turn = blankTurn('assistant', step.text);
+  const displayed = step.status === 'running' && typeof step.detail.display_text === 'string' ? step.detail.display_text : step.text;
+  let turn = blankTurn('assistant', displayed);
   turn.id = step.id;
   turn = restoreFromMetadata(turn, { tool_events: step.detail.tool_results ?? [] });
   turn.speaker = member ? speakerName(member) : undefined;
@@ -135,8 +136,9 @@ export function roomView(history: HistoryMessage[], snapshot: GroupSnapshot | nu
       if (step.status === 'waiting_user') activity[step.member_id] = { state: 'asks', stepId: step.id };
       if (seenSteps.has(step.id) || step.status === 'queued' || (step.status === 'stopped' && !step.text)) continue;
       const member = roster.find((p) => p.sessionId === step.member_id) as Member | undefined;
-      const streamed = live[step.id];
-      turns.push(streamed ? { ...streamed, speaker: member ? speakerName(member) : streamed.speaker } : stepTurn(step, member));
+      const streamed = step.status === 'running' ? live[step.id] : undefined;
+      const saved = stepTurn(step, member);
+      turns.push(streamed ? { ...streamed, text: streamed.text || saved.text, speaker: saved.speaker ?? streamed.speaker } : saved);
     }
   }
   return { turns, activity };

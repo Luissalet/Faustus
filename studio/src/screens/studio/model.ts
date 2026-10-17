@@ -223,6 +223,8 @@ export interface Turn {
   role: 'user' | 'assistant' | 'system';
   text: string;
   thinking: string;
+  /** A replacement being drafted; keep the visible answer until it is ready. */
+  replacementText?: string;
   thoughts: Thought[];
   steps: Step[];
   rounds: number;
@@ -855,13 +857,19 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
           }
         : {
             ...turn,
-            text: turn.text + event.text,
+            ...(turn.replacementText !== undefined
+              ? { replacementText: turn.replacementText + event.text }
+              : { text: turn.text + event.text }),
             thoughts: closeOpenThought(turn.thoughts ?? [], now),
             live: liveToken(live, now, false),
             uncertain: undefined,
           };
     case 'response_replace':
-      return { ...turn, text: event.text, live: liveToken(live, now, false), uncertain: undefined };
+      return { ...turn,
+        ...(event.text || !turn.text.trim()
+          ? { text: event.text, replacementText: undefined }
+          : { replacementText: '' }),
+        live: liveToken(live, now, false), uncertain: undefined };
     case 'heartbeat': {
       // While a tool is running (the latest `tool_start` has no matching
       // `tool_output` yet), the heartbeat's own phase — the server's
@@ -1159,6 +1167,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'done':
       return {
         ...turn,
+        text: turn.error ? turn.text : turn.replacementText ?? turn.text,
+        replacementText: undefined,
         streaming: false,
         uncertain: undefined,
         thoughts: closeOpenThought(turn.thoughts ?? [], Date.now()),
