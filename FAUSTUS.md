@@ -1,5 +1,17 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Inicio unificado en Studio (17-10-2026, #739):**
+Home deja de duplicar el inicio de conversación. Studio conserva el compositor
+habitual y muestra asistentes, decisiones pendientes, resultados fijados y
+proyectos recientes cuando el chat está vacío. Los resúmenes de repositorios,
+flota y uso se abren bajo demanda; correo, calendario, notas y WhatsApp siguen
+en Herramientas personales. Una conversación abierta conserva su historial sin
+el panel de inicio. Los enlaces de `/` pasan a `/studio` con parámetros y ancla;
+las acciones rápidas conservan el borrador escrito. No hay migración de datos:
+asistentes, automatizaciones, resultados e IDs mantienen sus almacenes y las
+herramientas API/MCP existentes. El componente de asistentes es el compartido
+con #724. Véase [inicio de Studio](docs/ui/studio-start.md).
+
 **Dictado recuperable y asistentes personales (17-10-2026, #693/#694):**
 El dictado global pasa por el mismo editor fiel de Studio y guarda original y
 texto final antes de pegar; un fallo de pegado devuelve el texto recuperable.

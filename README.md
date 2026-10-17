@@ -3,6 +3,8 @@
 
 Navigation now follows the work: chat actions and document workspaces in Studio, repositories inside each project, specialist apps under Hoards, and five searchable settings areas. All existing tools and saved data remain accessible. See [navigation](docs/ui/navigation.md).
 
+Studio is the single starting workspace. New conversations show personal assistants, pending decisions, pinned results and recent projects above the ordinary composer. Repository radar, fleet and usage remain in Workspace overview; personal tools retain mail, calendar, notes and messaging. Old Home links preserve their query and fragment. Existing chats, assistant identities and automation results use the same stores and tools. [Studio start](docs/ui/studio-start.md).
+
 Agora uses the regular Studio chat: Project → Agora opens its conversation list, transcript and composer, with the usual project button and a Tasks shortcut. Attachments, slash commands and composer controls use the native chat harness. Use @mentions and Members to choose models, supported reasoning and discussion settings or inspect each participant's activity. Members can answer each other until the discussion ends; optional round limits remain selectable. Existing conversations, deliberation and coordination tools remain available. Visible answers remain on screen while a replacement is drafted; stopping a group keeps queued user messages visible with their stopped status. [Agora workspace](docs/api/agora.md) · [compatible group API](docs/api/groups.md).
 </p>
 
