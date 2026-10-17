@@ -29,8 +29,7 @@ const DocumentScreen = lazyChunk(() => import('../screens/documents/Editor').the
 const ProjectScreen = lazyChunk(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
 const ProjectsScreen = lazyChunk(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
 const NotesScreen = lazyChunk(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
-const BrainScreen = lazyChunk(() => import('../screens/Brain').then((m) => ({ default: m.BrainScreen })));
-const MemoryScreen = lazyChunk(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
+const KnowledgeScreen = lazyChunk(() => import('../screens/library/Knowledge').then((m) => ({ default: m.KnowledgeScreen })));
 const CalendarScreen = lazyChunk(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
 const EmailScreen = lazyChunk(() => import('../screens/email/Email').then((m) => ({ default: m.EmailScreen })));
 const ResearchScreen = lazyChunk(() => import('../screens/research/Research').then((m) => ({ default: m.ResearchScreen })));
@@ -251,8 +250,8 @@ function RouteBody() {
         <Route path="/activity" element={<ActivityScreen />} />
         <Route path="/automations" element={<AutomationsScreen />} />
         <Route path="/notes" element={<NotesScreen />} />
-        <Route path="/brain" element={<BrainScreen />} />
-        <Route path="/memory" element={<MemoryScreen />} />
+        <Route path="/brain" element={<KnowledgeScreen />} />
+        <Route path="/memory" element={<KnowledgeScreen />} />
         <Route path="/calendar" element={<CalendarScreen />} />
         <Route path="/email" element={<EmailScreen />} />
         <Route path="/research" element={<ResearchScreen />} />

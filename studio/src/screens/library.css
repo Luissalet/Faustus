@@ -96,6 +96,29 @@
   color: var(--fs-text-3);
 }
 
+.fs-knowledge__sections {
+  display: flex;
+  gap: var(--fs-space-4);
+  padding-block: var(--fs-space-2);
+}
+
+.fs-knowledge__sections a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+}
+
+.fs-knowledge__sections a[aria-current='page'] {
+  color: var(--fs-text-1);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: var(--fs-space-2);
+}
+
+.fs-knowledge__body > .fs-screen { padding: 0; }
+.fs-knowledge__body > .fs-brain { min-block-size: 65vh; }
+.fs-knowledge { min-inline-size: 0; }
+
 /* ── Lote Z: the images ── */
 
 .fs-gal {

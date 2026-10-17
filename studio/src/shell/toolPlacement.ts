@@ -39,6 +39,7 @@ export function toolContext(pathname: string): ToolContext {
   if (pathname === '/studio') return 'chat';
   if (pathname.startsWith('/projects')) return 'project';
   if (pathname.startsWith('/library') || pathname.startsWith('/documents')) return 'library';
+  if (pathname === '/brain' || pathname === '/memory') return 'library';
   if (pathname === '/automations') return 'automations';
   if (pathname === '/activity') return 'activity';
   if (pathname === '/settings') return 'connections';

@@ -1,6 +1,6 @@
 import { Check, Library as LibraryIcon, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, Navigate, useSearchParams } from 'react-router';
 import { EmptyState, Skeleton, Toast } from '../components';
 import { ImageGallery } from './library/Gallery';
 import { DocumentsLibrary } from './library/Documents';
@@ -8,6 +8,7 @@ import { ChatsLibrary } from './library/Chats';
 import { ResearchLibrary } from './library/Research';
 import { HistoryLibrary } from './library/History';
 import { MeetingsLibrary } from './library/Meetings';
+import { LibraryNavigation } from './library/LibraryNavigation';
 import { loadLibrary, type Artifact } from '../adapters/library';
 import { relativeTime } from '../adapters/home';
 import { useSpotlight } from '../shell/useSpotlight';
@@ -15,17 +16,6 @@ import './projects.css';
 import './home.css';
 import './library.css';
 import { t, tn } from '../i18n';
-
-const TYPES = [
-  { id: 'todo', label: 'All' },
-  { id: 'imagen', label: 'Images' },
-  { id: 'documento', label: 'Documents' },
-  { id: 'chats', label: 'Chats' },
-  { id: 'research', label: 'Research' },
-  { id: 'meetings', label: 'Meetings' },
-  { id: 'historial', label: 'Imported' },
-  { id: 'archivo', label: 'Archive' },
-];
 
 const ARCHIVE_KINDS = [
   { id: 'documento', label: 'Documents' },
@@ -89,6 +79,12 @@ export function LibraryScreen() {
     setParams(next, { replace: key === 'q' });
   }
 
+  if (type === 'knowledge') {
+    const next = new URLSearchParams(params);
+    next.delete('type');
+    return <Navigate replace to={{ pathname: '/memory', search: next.size ? `?${next}` : '' }} />;
+  }
+
   if (failed) {
     return (
       <EmptyState
@@ -122,21 +118,7 @@ export function LibraryScreen() {
         </label>
       </header>
 
-      <div className="fs-tabs" role="tablist" aria-label={t('Filter by type')}>
-        {TYPES.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            aria-selected={entry.id === type}
-            className="fs-tab"
-            data-testid={`library-type-${entry.id}`}
-            onClick={() => setParam('type', entry.id, 'todo')}
-          >
-            {t(entry.label)}
-          </button>
-        ))}
-      </div>
+      <LibraryNavigation />
 
       {type === 'imagen' && <ImageGallery query={query} say={say} />}
       {type === 'documento' && <DocumentsLibrary query={query} say={say} />}

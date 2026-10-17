@@ -23,14 +23,15 @@ export function ContextualTools({ context: explicitContext, projectId: explicitP
   const context = explicitContext ?? toolContext(pathname);
   const projectId = explicitProject ?? params.projectId ?? new URLSearchParams(search).get('project');
   const tools = toolsIn(context, creatorAvailable === true);
-  const parent = context === 'project' && projectId ? { path: `/projects/${encodeURIComponent(projectId)}`, label: 'Project' } : PARENTS[context];
+  const parent = context === 'project' && projectId ? { path: `/projects/${encodeURIComponent(projectId)}`, label: 'Project' }
+    : pathname === '/brain' || pathname === '/memory' ? { path: '/library?type=knowledge', label: 'Knowledge' } : PARENTS[context];
   const isChild = Boolean(TOOL_PLACEMENT[pathname]) && pathname !== parent.path;
   return (
     <div className="fs-context-tools" data-testid={`context-tools-${context}`}>
       {isChild && <Link to={parent.path} className="fs-link"><ArrowLeft size={13} aria-hidden="true" /> {t(parent.label)}</Link>}
       <Menu testId={`context-menu-${context}`} align="end"
         trigger={<button type="button" className="fs-context-tools__trigger">{t(CONTEXT_LABELS[context])}<ChevronDown size={13} aria-hidden="true" /></button>}
-        items={tools.map(tool => ({ label: t(tool.path === '/research' ? 'Research reports' : tool.label), icon: tool.icon,
+        items={tools.map(tool => ({ label: t(tool.path === '/research' ? 'Research reports' : tool.path === '/brain' ? 'Knowledge' : tool.label), icon: tool.icon,
           onSelect: () => navigate(toolHref(tool.path, projectId, sessionId)) }))} />
     </div>
   );

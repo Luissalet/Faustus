@@ -1279,7 +1279,8 @@ function DecisionTimeline({ say }: { say: (text: string) => void }) {
 
 /* ── Screen ── */
 
-export function MemoryScreen() {
+export function MemoryScreen({ embedded = false }: { embedded?: boolean } = {}) {
+  const Heading = embedded ? 'h2' : 'h1';
   const [params, setParams] = useSearchParams();
   const tab: 'memories' | 'provenance' | 'changes' = params.get('t') === 'provenance' ? 'provenance' : params.get('t') === 'changes' ? 'changes' : 'memories';
   const [memories, setMemories] = useState<Memory[] | null>(null);
@@ -1504,7 +1505,7 @@ export function MemoryScreen() {
     <div className="fs-screen fs-memory" data-testid="memory">
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">{t('Memory')}</h1>
+          <Heading className="fs-screen__title">{t('Memory')}</Heading>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
             {tab === 'provenance'
               ? t('Why the agent believes what it believes: every edge here was read from a stored record, none asserted by a model.')
