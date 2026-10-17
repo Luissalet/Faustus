@@ -1,0 +1,8 @@
+{
+  "question": "How does percentage behave after addition?",
+  "cases": [
+    {"expression": "200 + 10%", "expected": 220},
+    {"expression": "200 * 10%", "expected": 20}
+  ],
+  "negative_controls": ["percentage always divides by 100", "wrong previous value", "boundary shifted by one"]
+}

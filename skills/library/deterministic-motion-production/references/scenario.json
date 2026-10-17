@@ -1,0 +1,6 @@
+{
+  "duration_seconds": 12,
+  "fps": 30,
+  "scenes": [{"start": 0, "end": 4, "content": "Title"}, {"start": 4, "end": 9, "content": "Three-value chart"}, {"start": 9, "end": 12, "content": "Conclusion"}],
+  "seek_order": [8, 0, 11, 4, 8]
+}

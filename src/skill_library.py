@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from services.memory.skill_format import Skill, slugify
@@ -121,6 +122,18 @@ def _read_library_skill(slug: str) -> Optional[Skill]:
     return sk
 
 
+def _bundle_files(slug: str, skill: Skill) -> Dict[str, str]:
+    """Keep a bundled procedure's references beside its installed SKILL.md."""
+    root = Path(LIBRARY_DIR) / slug
+    files = {"SKILL.md": skill.to_markdown()}
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError(f"Library resource must be a regular file: {path.name}")
+        if path.is_file() and path != root / "SKILL.md":
+            files[path.relative_to(root).as_posix()] = path.read_text(encoding="utf-8")
+    return files
+
+
 def list_library(owner: Optional[str] = None) -> List[Dict]:
     """Every bundled skill, parsed. A file that fails to parse is reported
     with an `error` field rather than dropped silently or raising — one bad
@@ -191,14 +204,6 @@ def install(owner: Optional[str], slugs: List[str], *, replace: bool = False) ->
         if not replace and slug in already:
             results.append({"slug": slug, "status": "skipped", "reason": "already installed"})
             continue
-        replaced = 0
-        if replace and slug in already:
-            # Replace means replace: without this the import landed beside
-            # the old copy under a `-2` name (seen live after editing a
-            # bundled skill and reinstalling it).
-            for row in uninstall(owner, [slug]).get("results") or []:
-                if row.get("status") == "removed":
-                    replaced += 1
         skill_dir = os.path.join(LIBRARY_DIR, slug)
         scan = skill_import_review.scan_skill_folder(skill_dir)
         if scan.get("risk_level") == "critical":
@@ -211,7 +216,17 @@ def install(owner: Optional[str], slugs: List[str], *, replace: bool = False) ->
         if sk is None:
             results.append({"slug": slug, "status": "not_found", "reason": "could not be read"})
             continue
-        files = {"SKILL.md": sk.to_markdown()}
+        try:
+            files = _bundle_files(slug, sk)
+        except (OSError, UnicodeError, ValueError) as exc:
+            results.append({"slug": slug, "status": "error", "reason": str(exc)[:300]})
+            continue
+        replaced = 0
+        if replace and slug in already:
+            # Validate the complete bundle before removing an installed copy.
+            for row in uninstall(owner, [slug]).get("results") or []:
+                if row.get("status") == "removed":
+                    replaced += 1
         try:
             record = mgr.import_bundle_from_files(
                 files, owner=owner, category=sk.category or "imported")

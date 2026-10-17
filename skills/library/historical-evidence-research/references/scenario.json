@@ -1,0 +1,7 @@
+{
+  "decision_at": "2024-04-01T09:00:00Z",
+  "documents": [
+    {"id": "Q4-2023", "period_end": "2023-12-31", "published_at": "2024-02-20T08:00:00Z", "eligible": true},
+    {"id": "Q1-2024", "period_end": "2024-03-31", "published_at": "2024-04-20T08:00:00Z", "eligible": false}
+  ]
+}
