@@ -1,0 +1,40 @@
+.fs-member-activity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2, 8px);
+  margin: 0;
+  padding: var(--fs-space-3, 12px) var(--fs-space-4, 16px);
+  list-style: none;
+  border-bottom: 1px solid var(--fs-border);
+}
+.fs-member-activity > li { flex: 1 1 13rem; min-width: 0; }
+.fs-member-activity button {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 4px 12px;
+  width: 100%;
+  height: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--fs-text-1);
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-sm, 6px);
+  cursor: pointer;
+}
+.fs-member-activity button:hover { background: var(--fs-surface-3); }
+.fs-member-activity button:focus-visible { outline: 2px solid var(--fs-focus); outline-offset: 2px; }
+.fs-member-activity__name { font-weight: 600; overflow-wrap: anywhere; }
+.fs-member-activity__phase { flex: 1 1 auto; color: var(--fs-text-2); overflow-wrap: anywhere; }
+.fs-member-activity__time,
+.fs-member-activity__signal { color: var(--fs-text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.fs-member-activity__quiet { color: var(--fs-warning); font-size: 12px; width: 100%; }
+.fs-member-activity__error { color: var(--fs-danger); font-size: 12px; width: 100%; overflow-wrap: anywhere; }
+.fs-member-activity [data-state="done"] .fs-member-activity__phase { color: var(--fs-success); }
+.fs-member-activity [data-state="error"] .fs-member-activity__phase,
+.fs-member-activity [data-state="disconnected"] .fs-member-activity__phase { color: var(--fs-danger); }
+@media (max-width: 767px) {
+  .fs-member-activity { padding: 8px; max-height: 12rem; overflow-y: auto; }
+  .fs-member-activity > li { flex-basis: 100%; }
+}

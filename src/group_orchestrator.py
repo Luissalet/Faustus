@@ -11,6 +11,7 @@ import uuid
 
 from src.constants import DATA_DIR
 from src import group_discussion as discussion
+from src.group_activity import activity_detail
 from src.hoard_link.coordination.groups import GroupStore as _SharedGroupStore
 logger = logging.getLogger(__name__)
 
@@ -242,9 +243,13 @@ class GroupCoordinator:
             return
         recovering = step["status"] == "running"
         member = next(p for p in turn["definition"]["participants"] if p["sessionId"] == step["member_id"])
+        activity_previous = activity_detail(step["detail"])
+        self.store.update_step(step["id"], detail=activity_previous)
         async def progress(text, detail):
+            nonlocal activity_previous
             if not self._stopped(turn["id"]):
-                self.store.update_step(step["id"], text=text, detail=detail)
+                activity_previous = activity_detail(detail, activity_previous, event=True)
+                self.store.update_step(step["id"], text=text, detail=activity_previous)
         try:
             result = await self.invoker.invoke(turn=turn, step=step, member=member, owner=owner,
                                                progress=progress, recovering=recovering)
@@ -252,7 +257,8 @@ class GroupCoordinator:
                 return
             state = "waiting_user" if result.get("question") else "error" if result.get("error") else "done"
             self.store.update_step(step["id"], status=state, text=result.get("text", step["text"]),
-                                   error=result.get("error", ""), detail=result.get("detail", {}))
+                                   error=result.get("error", ""),
+                                   detail=activity_detail(result.get("detail", {}), activity_previous, status=state))
             if state in ("done", "error"):
                 finished = next(s for s in self.store.steps(turn["id"]) if s["id"] == step["id"])
                 self.transcript.reply(turn, finished, owner)
@@ -260,13 +266,19 @@ class GroupCoordinator:
             raise
         except Exception as exc:
             if not self._stopped(turn["id"]):
-                self.store.update_step(step["id"], status="error", error=str(exc))
+                self.store.update_step(step["id"], status="error", error=str(exc),
+                                       detail=activity_detail(activity_previous, status="error"))
                 failed = next(s for s in self.store.steps(turn["id"]) if s["id"] == step["id"])
                 self.transcript.reply(turn, failed, owner)
 
     async def stop(self, group_id, owner):
         self.store.group(group_id, owner)
+        pending = [s for t in self.store.turns(group_id) for s in self.store.steps(t["id"])
+                   if s["status"] in ("queued", "running", "waiting_user")]
         active = self.store.stop(group_id)
+        for step in pending:
+            self.store.update_step(step["id"], expected_status="stopped",
+                                   detail=activity_detail(step["detail"], status="stopped"))
         for step in active:
             await self.invoker.stop(step["member_id"], step["detail"].get("run_id", ""))
         task = self.tasks.get(group_id)
