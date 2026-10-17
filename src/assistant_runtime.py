@@ -22,9 +22,13 @@ def is_assistant_task(task):
 def skill_catalog(owner):
     from services.memory.skills import SkillsManager
     from src.constants import DATA_DIR
+    from src.owner_identity import single_user_mode
     # Drafts are not executable procedures. Project skills remain available
     # through the project's normal activation and disclosure mechanism.
-    return [s for s in SkillsManager(DATA_DIR).load(owner=owner) if s.get("status") == "published"]
+    # The existing Skills UI loads every operator bucket without login, just
+    # as owner_filter does for chats. Login mode retains strict ownership.
+    scope = None if single_user_mode() else owner
+    return [s for s in SkillsManager(DATA_DIR).load(owner=scope) if s.get("status") == "published"]
 
 
 def validate_config(instructions, skills, proactivity):

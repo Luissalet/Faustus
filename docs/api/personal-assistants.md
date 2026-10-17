@@ -12,6 +12,8 @@ turn, outside the shared base-prompt cache. Selected procedure bodies supplement
 automatic skill selection, including lean chat and short follow-ups. Explicit
 `no_skills` and the owner's skills preference still apply. Unavailable pins are
 reported; active project skills retain normal project activation/disclosure.
+Without login the catalog includes the operator's existing named/legacy buckets,
+matching the normal skills library; authenticated mode keeps strict ownership.
 
 **Proactivity** uses one stable native `ScheduledTask`, the configured global
 model and the ordinary harness. Choose hourly, daily, weekly or five-field cron,
