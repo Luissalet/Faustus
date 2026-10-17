@@ -86,6 +86,26 @@ def test_guard_does_not_raise_on_ordinary_prose():
     )
 
 
+@pytest.mark.parametrize('size',[1,7,41,100000])
+def test_guard_detects_varied_word_salad_without_an_exact_phrase_loop(size):
+    # The repeated topic is separated by varied fragments, so neither a
+    # consecutive-word run nor ten copies of one four-word phrase exists.
+    fragments=['above','across','through','under','otherwise','beyond','between','toward',
+               'along','around','within','outside','during','beside','inside','without',
+               'before','after','behind','near','over','despite','beneath','against']
+    text='; '.join('later '+fragments[i%len(fragments)] for i in range(150))
+    guard=llm_core._DegenerateStreamGuard('model')
+    with pytest.raises(llm_core.DegenerateOutput,match='vocabulary'):
+        for i in range(0,len(text),size):
+            guard.check(text[i:i+size])
+
+
+def test_repeated_field_names_with_varied_data_are_not_word_salad():
+    guard=llm_core._DegenerateStreamGuard('model')
+    text='\n'.join(f'{{"future": "item-{i}", "value": {i*7}}}' for i in range(100))
+    for i in range(0,len(text),7):guard.check(text[i:i+7])
+
+
 def test_guard_does_not_raise_below_the_120_char_floor():
     guard = llm_core._DegenerateStreamGuard("looping-model")
     guard.check("0" * 90)  # short burst — not yet degenerate

@@ -12,6 +12,21 @@ asistentes, automatizaciones, resultados e IDs mantienen sus almacenes y las
 herramientas API/MCP existentes. El componente de asistentes es el compartido
 con #724. Véase [inicio de Studio](docs/ui/studio-start.md).
 
+**Debate dentro del chat y una respuesta final (17-10-2026, #716):**
+Las salas de Studio agrupan sus intervenciones en un desplegable Debate con actividad
+visible; las preguntas nativas que requieren decisión quedan fuera. Los participantes
+eligen un portavoz y el conductor crea un único turno final idempotente. Se conservan
+historiales, razonamiento, herramientas y formato Chat en grupo seleccionable.
+API/MCP create/update/send aceptan `debate`; cancelar no oculta mensajes en cola.
+Las @menciones de prosa se distinguen por color (#718). Ágora mantiene Studio a
+pantalla completa al entrar desde las seis secciones del proyecto (#738).
+El detector existente reconoce también vocabulario colapsado aunque varíen las
+frases (#715), usando el mismo error y recuperación. El patrón guardado de GLM
+se detecta alrededor de 1.200 caracteres frente a casi 8.000 anteriores; ocho
+respuestas coherentes comparadas no disparan la detección. Esto no diagnostica
+la causa física del proveedor ni garantiza la calidad semántica de cualquier salida.
+
+
 **Dictado recuperable y asistentes personales (17-10-2026, #693/#694):**
 El dictado global pasa por el mismo editor fiel de Studio y guarda original y
 texto final antes de pegar; un fallo de pegado devuelve el texto recuperable.

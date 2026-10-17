@@ -3,6 +3,8 @@
 This guide describes the completed source implementation. Deployment and
 production activation are separate from the private interface verification.
 
+Conversation uses Studio's native transcript and composer. New Studio rooms use a collapsible **Debate**, with observed activity and a single final answer from the members' chosen reporter. Native questions remain outside the fold. **Members → Edit members → Conversation** also keeps the separate-reply **Group chat** format available. The native group API and MCP expose the same `debate` option; see [working groups](groups.md). These settings preserve existing sessions and history.
+
 ## Continue work in a space
 
 Open **Ágora** in Studio and select an Ágora. The existing general space is

@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections import Counter
 
 PEER_PREFIX = "peer:"
+FINAL_PREFIX = "final:"
 DEFAULT_ROUNDS = -1  # Continue until nobody addresses a peer, everyone passes, or Stop.
 PASS_TEXT = "[PASS]"
 
@@ -36,6 +38,14 @@ def is_peer(turn) -> bool:
     return str((turn or {}).get("request_id") or "").startswith(PEER_PREFIX)
 
 
+def is_final(turn) -> bool:
+    return str((turn or {}).get("request_id") or "").startswith(FINAL_PREFIX)
+
+
+def is_internal(turn) -> bool:
+    return is_peer(turn) or is_final(turn)
+
+
 def peer_round(turn) -> int:
     """0 for the person's own message, N for the Nth follow-up round."""
     if not is_peer(turn):
@@ -48,7 +58,7 @@ def peer_round(turn) -> int:
 
 
 def origin(turn) -> str:
-    if not is_peer(turn):
+    if not is_internal(turn):
         return str(turn.get("id") or "")
     parts = str(turn["request_id"]).split(":")
     return parts[1] if len(parts) > 1 else ""
@@ -163,3 +173,43 @@ def peer_prompt(round_number, limit, names=()) -> str:
     return (f"(Group chat, follow-up {count}.){who} Your peers' new messages are in the shared "
             "discussion above. Reply only if you add something new: answer what you were asked, correct, disagree or "
             f"build on it, addressing them with @handle. Otherwise reply exactly {PASS_TEXT}.")
+
+
+def nominations(steps, members):
+    votes = Counter()
+    for step in steps:
+        if step.get('status') != 'done':
+            continue
+        for nomination in re.findall(r'\[REPORTER:\s*@?([^\]\n]+)\]', step.get('text', ''), re.I):
+            for sid, names in handles(members).items():
+                if nomination.strip().casefold() in names:
+                    votes[sid] += 1
+    return votes
+
+
+def reporter(steps, members):
+    """Use the members' nominations; otherwise the last useful contributor."""
+    useful = [s for s in steps if s.get('status') == 'done' and not is_pass(s.get('text'))
+              and any(m['sessionId'] == s['member_id'] for m in members)]
+    votes = nominations(useful, members)
+    if votes:
+        return max((m['sessionId'] for m in members), key=lambda sid: votes[sid])
+    return useful[-1]['member_id'] if useful else None
+
+
+def debate_rules():
+    return ("\n- This request is a debate with ONE final answer. Discuss and verify with peers first; do not each publish a final answer. "
+            "When you have converged, choose one member to report back using [REPORTER: @handle]. "
+            "The runtime gives that member one final turn. During discussion inspect evidence and agree on shared write actions; "
+            "leave those actions to the reporter instead of executing the same writes in parallel. Preserve effects already completed. "
+            "Ask the person only for a decision genuinely required to proceed; "
+            "use the native ask_user tool when available. Resolve ordinary implementation choices among yourselves.")
+
+
+def final_prompt(member, members, message):
+    return (f"The debate has finished. You, @{short_handle(member, members)}, are its chosen reporter. "
+            "Give the person ONE complete final answer in the requested language, incorporating the agreed conclusions, "
+            "corrections and actual tool evidence from the shared discussion. Carry out any outstanding requested actions once; "
+            "do not repeat completed actions. Do not reopen the peer debate or nominate another reporter. "
+            "If a necessary decision is still missing, ask the person through the native question mechanism. "
+            "Original request:\n" + message)

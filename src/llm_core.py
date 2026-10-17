@@ -12,6 +12,7 @@ import os
 import math
 import unicodedata
 import weakref
+from collections import Counter
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from typing import Any, Optional, Dict, List, Tuple, Callable, Mapping
@@ -1085,6 +1086,27 @@ def _token_soup_reason(text: str) -> Optional[str]:
     return None
 
 
+def _vocabulary_collapse_reason(text: str) -> Optional[str]:
+    """A dominant word amid changing fragments, without an exact phrase loop.
+
+    Require sustained low diversity as well as dominance. Numbered records,
+    JSON keys and one-letter code/math tokens are not this prose failure.
+    Inspect raw text so provider chunk boundaries cannot split the words.
+    """
+    if re.search(r'["\'][^"\'\n]{1,80}["\']\s*:', text):
+        return None
+    tokens = [word.casefold() for word in _DEGENERATE_WORD_RE.findall(text)]
+    if len(tokens) < 160:
+        return None
+    for words in (tokens[:160], tokens[-160:]):
+        counts = Counter(words)
+        top, count = counts.most_common(1)[0]
+        if (len(top) >= 4 and top.isalpha() and count >= 64 and len(counts) <= 48
+                and sum(len(word) == 1 or any(c.isdigit() for c in word) for word in words) <= 16):
+            return f"collapsed vocabulary: '{top}' occurs {count}/160 words with only {len(counts)} distinct words"
+    return None
+
+
 def _gibberish_guard_settings() -> Tuple[int, float]:
     """(window_chars, threshold) from settings, falling back safely."""
     try:
@@ -1314,6 +1336,7 @@ class _DegenerateStreamGuard:
         self.total_chars = 0
         self.tail = ""
         self.script_tail = ""
+        self.vocabulary_tail = ""
         self._gibberish_window, self._gibberish_threshold = _gibberish_guard_settings()
 
     def _raw_repeat_reason(self) -> Optional[str]:
@@ -1341,6 +1364,8 @@ class _DegenerateStreamGuard:
             return
         self.total_chars += len(text)
         self.tail = (self.tail + text)[-_DEGENERATE_RAW_TAIL_WINDOW:]
+        vocabulary = self.vocabulary_tail + text
+        self.vocabulary_tail = vocabulary[-2400:]
 
         reason = self._raw_repeat_reason()
 
@@ -1385,6 +1410,10 @@ class _DegenerateStreamGuard:
                 gram_count = grams.count(top_gram)
                 if gram_count >= 10:
                     reason = f"repeated phrase '{' '.join(top_gram)}' {gram_count} times"
+
+        if not reason:
+            reason = (_vocabulary_collapse_reason(vocabulary[:2400])
+                      or _vocabulary_collapse_reason(self.vocabulary_tail))
 
         if not reason:
             # Pure gibberish that never repeats one short unit — a run of

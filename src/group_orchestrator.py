@@ -85,6 +85,8 @@ class GroupCoordinator:
         definition.setdefault("workspace", "")
         if 'executionOptions' in definition:
             definition['executionOptions'] = composer_options(definition['executionOptions'])
+        if not isinstance(definition.get('debate', False), bool):
+            raise ValueError('Choose a boolean debate setting')
         for p in members:
             p["personaName"] = p.get("personaName") or p["route"]["model"].rsplit("/", 1)[-1]
         if definition["executionMode"] not in ("chat", "agent"):
@@ -107,6 +109,8 @@ class GroupCoordinator:
             definition = {**previous, **{k: v for k, v in changes.items() if k in ('name', 'mode', 'executionMode', 'workspace')}}
         definition['space_id'] = previous.get('space_id', 'ecosystem')
         definition['executionOptions'] = execution_options
+        if changes.get('debate') is not None:
+            definition['debate'] = changes['debate']
         if previous.get('projectId'):
             definition['projectId'] = previous['projectId']
         elif changes.get('projectId'):
@@ -224,7 +228,7 @@ class GroupCoordinator:
 
     def _superseded(self, pending, turns):
         """A follow-up round still waiting gives way to the person's newer message."""
-        if not discussion.is_peer(pending) or pending["status"] != "queued":
+        if not discussion.is_internal(pending) or pending["status"] != "queued":
             return False
         later = turns[turns.index(pending) + 1:]
         if not any(t["status"] == "queued" and not discussion.is_peer(t) for t in later):
@@ -239,6 +243,8 @@ class GroupCoordinator:
     def _follow_up(self, turn, owner):
         """Queue the next round of the members' conversation, if anyone was addressed."""
         try:
+            if discussion.is_final(turn):
+                return
             group = self.store.group(turn["group_id"], owner)
             if group.get("archived"):
                 return
@@ -249,6 +255,19 @@ class GroupCoordinator:
             members = group["participants"]
             plan = discussion.next_round(turn, self.store.steps(turn["id"]), members,
                                          turn["definition"].get("mode"), limit)
+            if turn['definition'].get('debate'):
+                origin_id = discussion.origin(turn)
+                related = [t for t in turns if discussion.origin(t) == origin_id]
+                steps = [s for t in related for s in self.store.steps(t['id'])]
+                if not plan or (discussion.peer_round(turn) > 0 and discussion.nominations(steps, members)):
+                    reporter = discussion.reporter(steps, members)
+                    original = next((t for t in related if t['id'] == origin_id), turn)
+                    if reporter:
+                        member = next(m for m in members if m['sessionId'] == reporter)
+                        self.store.enqueue(turn['group_id'], owner,
+                            discussion.final_prompt(member, members, original['message']),
+                            discussion.FINAL_PREFIX + origin_id, [reporter])
+                    return
             if not plan:
                 return
             names = [m["personaName"] for m in members if m["sessionId"] in plan["members"]]
@@ -376,6 +395,7 @@ class GroupCoordinator:
         group = self.store.group(group_id, owner)
         turns = self.store.turns(group_id)
         return {"group": group, "turns": [{**{k: v for k, v in t.items() if k != "definition"},
+                'debate': bool(t['definition'].get('debate')),
                 'participants': [{k: p[k] for k in ('sessionId', 'personaName', 'route') if k in p}
                                  for p in t['definition']['participants']]} for t in turns],
                 "steps": [s for t in turns for s in self.store.steps(t["id"])],
@@ -421,7 +441,7 @@ class NativeGroupBridge:
         self.sessions.save_sessions()
 
     def user(self, turn, owner):
-        if discussion.is_peer(turn):
+        if discussion.is_internal(turn):
             return  # A follow-up round is the members talking; the person said nothing new.
         attachments = turn['definition'].get('executionOptions', {}).get('attachments', [])
         if isinstance(attachments, str):
@@ -448,6 +468,8 @@ class NativeGroupBridge:
                           {**rich, "group_step_id": step["id"], "group_turn_id": turn["id"],
                            "group_model": member["personaName"], "model": member["route"]["model"],
                            "group_member_id": member["sessionId"], "group_round": discussion.peer_round(turn),
+                           'group_debate': bool(turn['definition'].get('debate')),
+                           'group_origin_turn_id': discussion.origin(turn), 'group_final': discussion.is_final(turn),
                            "group_pass": discussion.is_pass(step["text"]) and not step.get("error"),
                            "group_route": step['detail'].get('route', {}),
                            "group_step_status": step.get("status", "done"), "group_error": step.get("error", ""),
@@ -576,6 +598,8 @@ class NativeGroupBridge:
                                  json.dumps(meta["group_tool_results"], ensure_ascii=False))
         participants = turn['definition'].get('participants') or []
         rules = discussion.rules(member, participants, discussion.rounds_limit(turn['definition'])) if len(participants) > 1 else ''
+        if turn['definition'].get('debate') and not discussion.is_final(turn):
+            rules += discussion.debate_rules()
         return {'text': (rules + "\n\n" if rules else '') +
                 "Shared group discussion. Preserve completed work and verify unresolved results:\n" + "\n\n".join(parts),
                 'cursor': seen}

@@ -55,7 +55,7 @@ export function useGroupConversation(groupId: string | null) {
       if (!groupId) return;
       if (!current) throw new Error(t('Loading the conversation'));
       const result = await sendGroup(groupId, message, requestId, mentionsIn(message, current.group.participants),
-        {executionOptions, executionMode: mode, workspace});
+        {executionOptions, executionMode: mode, workspace, debate: current.group.debate ?? true});
       const updated = await groupSnapshot(groupId);
       if (visibleGroup.current === groupId) setSnapshot(updated);
       return result;
