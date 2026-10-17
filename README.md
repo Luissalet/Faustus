@@ -8,6 +8,8 @@ Agora uses the regular Studio chat: Project → Agora opens its conversation lis
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>
 
+Dictation shares the Studio editor, saves recoverable text before pasting and keeps general/project vocabulary with conservative learning from spelling corrections. Manage vocabulary and recent dictations in Voice settings or MCP. Home's named personal assistants use ordinary persistent chats: create or adopt a chat, reopen the same session on desktop/mobile and keep its project, tools, voice and history. Removing an assistant preserves the chat. [Dictation](docs/api/dictation.md) · [Personal assistants](docs/api/personal-assistants.md).
+
 A temporary retryable Sparks service outage before output keeps the task alive
 on the same configured model. Completed tool results are retained; Stop and
 requested initial deadlines remain available. [Service continuity](website/SPARKS-SERVICE-CONTINUITY.md).

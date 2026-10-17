@@ -8,6 +8,8 @@ La navegación se organiza por trabajo: acciones y documentos en el chat, reposi
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>
 
+El dictado comparte el editor de Studio, guarda texto recuperable antes de pegar y conserva vocabulario general o por proyecto con aprendizaje conservador de correcciones de nombres. Se gestiona en los ajustes de Voz y por MCP. Los asistentes con nombre de Inicio usan chats normales persistentes: puedes crear o adoptar uno, reabrir la misma sesión desde ordenador o móvil y conservar proyecto, herramientas, voz e historial. Quitar el asistente conserva el chat. [Dictado](docs/api/dictation.md) · [Asistentes personales](docs/api/personal-assistants.md).
+
 Un fallo temporal de las Sparks antes de responder mantiene el trabajo con el
 mismo modelo configurado y los resultados de herramientas ya obtenidos. Se
 conservan Stop y los plazos iniciales solicitados. [Continuidad del servicio](website/SPARKS-SERVICE-CONTINUITY.md).
