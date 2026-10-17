@@ -5,6 +5,8 @@
 .fs-assistants__form { display: grid; gap: 1rem; padding-block: 1rem 1.5rem; }
 .fs-assistants label { display: grid; gap: .5rem; min-width: 0; }
 .fs-assistants input, .fs-assistants textarea, .fs-assistants select { width: 100%; font-size: 1rem; }
+.fs-assistants textarea.fs-field { height: auto; min-height: 5rem; resize: vertical; }
+.fs-assistants textarea[rows="5"] { min-height: 9rem; }
 .fs-assistants__fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }
 .fs-assistants__list { list-style: none; padding: 0; margin: 0; }
 .fs-assistants__list > li { display: flex; gap: 1rem; padding-block: 1.25rem; border-block-end: 1px solid var(--fs-border); }
