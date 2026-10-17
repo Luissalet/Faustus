@@ -70,6 +70,9 @@ Conversation-level selectors share Conversation settings in the composer;
 the current model, reasoning, message, attachments and send controls remain
 at hand. Project navigation retains its six main tabs and places objectives,
 requirements, memory, rules, activity and context together in Project details.
+The side panel keeps Results, Files and Sources at hand, the selected tab,
+and Progress/Agents when they contain work. Other available panes remain in
+Panel tools. Files and document drafts retain the existing lifecycle. Model calls, timings, tool costs and context accounting for a finished reply share Turn details. Context warnings and errors remain visible.
 
 Guided tours remain accessible from Help and tours in search and the existing
 slash commands. They no longer offer themselves over the current screen.

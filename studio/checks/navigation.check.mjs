@@ -71,5 +71,10 @@ try {
   assert.ok(!shell.includes('useBadges'), 'sidebar does not poll every repository');
   assert.ok(shell.includes('nav-more') && shell.includes('nav-search'), 'mouse and mobile can reach all destinations');
   console.log('ALL OK: navigation coverage, project scope, research, settings groups and live settings navigation');
-} finally { await browser.happyDOM.abort(); rmSync(temporary, { recursive: true, force: true }); }
+} finally {
+  await browser.happyDOM.abort();
+  assert.equal(dirname(resolve(temporary)), resolve(tmpdir()));
+  assert.ok(temporary.startsWith(join(tmpdir(), 'faustus-navigation-')));
+  rmSync(temporary, { recursive: true, force: true });
+}
 process.exit(0);

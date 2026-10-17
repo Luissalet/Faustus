@@ -13009,3 +13009,10 @@ aprobación; corregida en aa9112a0); Silver Python completo y Node 372/1 omitida
 petición: equipo de Pablo guardado con los seis (Delphox @ Delphoxite, Dragonite @ Dragonium Z,
 Glaceon por uso de ZU, Shaymin-Sky @ Choice Scarf, Raichu-Alola @ Psychium Z, Spiritomb @ Leftovers).
 Commits 7e65bf49, 5ba1af37, 42144546; 7000 reiniciado. Sin push.
+
+
+## 17-10-2026 — Navegación por contexto y ajustes agrupados
+
+El menú Tools permanente se sustituye por accesos junto al trabajo y búsqueda global con ratón, teclado y móvil. Studio mantiene Research con `/research` en la misma conversación, y extracción, comparación y contexto en paneles solicitados. Los esquemas, evidencias, validación, datos y APIs/MCP existentes se conservan; extracción añade a la conversación los campos visibles y sus límites. No se afirma una migración de motores o datos a otro Hoard.
+
+Source control se abre dentro del proyecto; los enlaces antiguos piden proyecto y conservan una vista general explícita. Proyectos agrupa detalles secundarios, el panel lateral muestra las pestañas relevantes, y el compositor agrupa sus opciones e información. Ajustes conserva todas sus secciones bajo cinco áreas con búsqueda y enlaces `?s=`; móvil usa selectores de área/sección. Ayuda y visitas guiadas se solicitan desde búsqueda o comandos. Inventario y verificación en `docs/ui/navigation.md`.

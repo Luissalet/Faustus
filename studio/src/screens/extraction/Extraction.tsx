@@ -150,7 +150,7 @@ export function ExtractionScreen({ onUse }: { onUse?: (text: string) => void } =
     <div className="fs-extract" data-screen="extraction">
       <header className="fs-extract__head">
         <div>
-          <h1>{t('Extraction')}</h1>
+          {!onUse && <h1>{t('Extraction')}</h1>}
           <p>{t('Fill a JSON Schema from a document. Dropped values stay dropped.')}</p>
         </div>
         <Button label={t('Extract')} onClick={() => void onRun()} disabled={busy} icon={Play} />

@@ -46,8 +46,16 @@ export function SettingsNavigation<K extends string>({ sections, section, onChan
   const active = SETTINGS_GROUPS.find(group => (group.sections as readonly string[]).includes(section)) ?? SETTINGS_GROUPS[0];
   const visible = query.trim() ? sections.filter(item => settingMatches(item.key, item.label, query))
     : sections.filter(item => (active.sections as readonly string[]).includes(item.key));
-  return <nav className="fs-set__nav" aria-label={t('Sections')} data-testid="settings-navigation">
+  return <nav className="fs-set__nav" aria-label={t('Sections')} data-testid="settings-navigation" data-searching={Boolean(query.trim()) || undefined}>
     <label className="fs-set__find"><Search size={14} aria-hidden="true" /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('Find a setting')} aria-label={t('Find a setting')} /></label>
+    {!query.trim() && <div className="fs-set__mobile-nav">
+      <label>{t('Area')}<select className="fs-field" value={active.id} onChange={event => {
+        const group = SETTINGS_GROUPS.find(item => item.id === event.target.value);
+        const first = group && sections.find(item => (group.sections as readonly string[]).includes(item.key));
+        if (first) onChange(first.key);
+      }}>{SETTINGS_GROUPS.filter(group => sections.some(item => (group.sections as readonly string[]).includes(item.key))).map(group => <option key={group.id} value={group.id}>{t(group.label)}</option>)}</select></label>
+      <label>{t('Section')}<select className="fs-field" value={section} onChange={event => onChange(event.target.value as K)}>{visible.map(item => <option key={item.key} value={item.key}>{t(item.label)}</option>)}</select></label>
+    </div>}
     {!query.trim() && <div className="fs-set__groups">
       {SETTINGS_GROUPS.filter(group => sections.some(item => (group.sections as readonly string[]).includes(item.key))).map(group =>
         <button type="button" key={group.id} className="fs-set__nav-item" data-on={active.id === group.id || undefined} aria-current={active.id === group.id ? 'true' : undefined}

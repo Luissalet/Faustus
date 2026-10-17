@@ -1,7 +1,7 @@
-import { Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
+import { Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
-import { Button, IconButton, Popover, Skeleton } from '../../components';
+import { Button, IconButton, Menu, Popover, Skeleton } from '../../components';
 import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVersion, revealDoc, saveDoc, type DocVersion } from '../../adapters/documents';
 import { readWorkspaceFile, revealWorkspaceFile, saveWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
 import { ApiError } from '../../adapters/api';
@@ -754,7 +754,7 @@ function OpenDocChip({ doc, active, dispatch }: { doc: DocState; active: boolean
 export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun,onVisualSelection }: SidePanelProps) {
   const tabStrip=useRef<HTMLDivElement>(null);
   useEffect(()=>{tabStrip.current?.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest',inline:'nearest'});},[state.tab]);
-  const tabs=TABS.filter(tab=>
+  const availableTabs=TABS.filter(tab=>
     (tab.id!=='doc'||state.doc) &&
     (tab.id!=='file'||state.file) &&
     (tab.id!=='files'||Boolean(workspace)) &&
@@ -762,6 +762,8 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
     (tab.id!=='board'||Boolean(project)),
   );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
+  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'agents' && workers.length > 0));
+  const otherTabs = availableTabs.filter(tab => !tabs.includes(tab));
   // #247: what the current turn has read / written, for the Files tab.
   const fileMarks=useMemo(()=>turnFileMarks(turns,workspace),[turns,workspace]);
   const fileCounts=markCounts(splitHidden(fileMarks).shown); // what the tree can list; the legend says how many it cannot
@@ -834,6 +836,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
             </button>
           ))}
         </div>
+        {otherTabs.length > 0 && <Menu align="end" testId="panel-tools-menu" trigger={<IconButton icon={MoreHorizontal} label={t('Panel tools')} size="sm" testId="panel-tools" />} items={otherTabs.map(tab => ({ label: t(tab.label), icon: tab.icon, onSelect: () => dispatch({ type: 'tab', tab: tab.id }) }))} />}
         <IconButton icon={X} label={t('Close the panel')} size="sm" onClick={() => dispatch({ type: 'close' })} />
       </header>
       {typeof location!=='undefined'&&isInsecureRemoteAccess(location.hostname,location.protocol)&&(

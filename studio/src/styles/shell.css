@@ -358,10 +358,17 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
 .fs-project-picker a:hover { background: var(--fs-highlight); }
 .fs-project-picker__overview { color: var(--fs-text-2); font-size: var(--fs-label-size); }
 .fs-chat-workspace__body { min-block-size: 0; overflow: auto; padding: var(--fs-space-4); }
+.fs-app aside.fs-chat-workspace { background: var(--fs-paper); backdrop-filter: none; }
 .fs-chat-workspace .fs-screen { padding: 0; min-inline-size: 0; }
 .fs-chat-workspace .fs-extract__grid { grid-template-columns: minmax(0, 1fr); }
 .fs-chat-workspace .fs-extract__panel { min-inline-size: 0; }
-.fs-studio[data-chat-tool] { --fs-side-col: minmax(360px, 42vw); }
+.fs-studio[data-chat-tool] { --fs-side-col: minmax(360px, 44%); }
+.fs-chat-workspace .fs-empty { padding: var(--fs-space-3); gap: var(--fs-space-2); border: 0; background: transparent; }
+.fs-chat-workspace .fs-empty__title { font-size: var(--fs-label-size); }
+.fs-conversation-options, .fs-chat-information__content { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-3); max-inline-size: min(480px, calc(100vw - 40px)); padding: var(--fs-space-3); }
+.fs-chat-information__content .fs-studio__layout-switch { margin-inline-start: 0; }
+.fs-turn__details { margin-block-start: var(--fs-space-2); color: var(--fs-text-2); font-size: var(--fs-label-size); }
+.fs-turn__details > summary { cursor: pointer; padding-block: var(--fs-space-1); }
 .fs-nav__search { display: flex; align-items: center; gap: var(--fs-space-2); padding: 8px 0; border: 0; background: transparent; color: var(--fs-text-2); font: inherit; font-size: var(--fs-label-size); cursor: pointer; }
 .fs-nav__search kbd { margin-inline-start: auto; font-size: 10px; }
 button.fs-nav__item { border: 0; background: transparent; font: inherit; cursor: pointer; }
@@ -916,4 +923,21 @@ button.fs-nav__item { border: 0; background: transparent; font: inherit; cursor:
   background: var(--fs-brand);
   color: var(--fs-on-brand);
   pointer-events: none;
+}
+
+/* Keep mouse search available when the rail is collapsed. */
+.fs-shell[data-nav='rail'] .fs-nav__search { display: flex; justify-content: center; inline-size: 100%; }
+.fs-shell[data-nav='rail'] .fs-nav__search span, .fs-shell[data-nav='rail'] .fs-nav__search kbd { display: none; }
+
+/* A requested workspace takes the room previously occupied by the chat list. */
+@media (min-width: 1280px) {
+  .fs-app .fs-studio[data-chat-tool][data-panel] { grid-template-columns: minmax(0, 1fr) minmax(360px, 44%); }
+  .fs-app .fs-studio[data-chat-tool] aside.fs-chat-workspace { position: relative; inline-size: auto; }
+}
+@media (max-width: 1279px) {
+  .fs-app .fs-studio[data-chat-tool][data-panel] { grid-template-columns: minmax(0, 1fr); }
+  .fs-app .fs-studio[data-chat-tool] aside.fs-chat-workspace { position: absolute; inset: 0 0 0 auto; z-index: 6; inline-size: min(94vw, 620px); }
+}
+@media (max-width: 600px) {
+  .fs-app .fs-studio[data-chat-tool] aside.fs-chat-workspace { inset: 0; inline-size: 100%; }
 }

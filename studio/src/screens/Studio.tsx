@@ -1,5 +1,5 @@
 import { chooseStudioRoute, configuredDefaultRoute } from '../adapters/model-selection';
-import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Sparkles, Waypoints, X } from 'lucide-react';
+import { Info, CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Sparkles, Waypoints, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
@@ -96,6 +96,8 @@ import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
 import { PresetPicker } from './PresetPicker';
+import { ChatToolsMenu, ChatToolWorkspace, chatWorkspace, type ChatWorkspace } from './studio/ChatTools';
+import { toolHref } from '../shell/toolPlacement';
 import { delegationLabel, genFromArgs, helpMarkdown, parseCommand, parseDelegation, resolveCommand } from './studio/commands';
 import * as cmd from '../adapters/commands';
 import { pendingShellCommand, shellApproval, shellCommand, type ShellResult } from '../adapters/shell-command';
@@ -656,6 +658,13 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   const thinkingOn = thinkingOnPick ?? executionDefaults.thinking_enabled ?? null;
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
+  const chatTool = chatWorkspace(params.get('tool'));
+  const openChatWorkspace = useCallback((tool: ChatWorkspace | null, projectId?: string) => {
+    const next = new URLSearchParams(params);
+    if (tool) next.set('tool', tool); else next.delete('tool');
+    if (tool === 'context' && projectId) next.set('project', projectId);
+    setParams(next);
+  }, [params, setParams]);
   // CMP-01-layout (W2-A2): conversation / document / review, per session
   // (see readLayoutFor/writeLayoutFor above), presentation only — the
   // document and the conversation the three arrangements share both stay in
@@ -1622,7 +1631,8 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     [turnsFromHistory],
   );
 
-  const sendToGroup = useCallback(async (message: string, sent: Attachment[] = []) => {
+  const sendToGroup = useCallback(async (message: string, sent: Attachment[] = [], researchOverride?: boolean) => {
+    const research = researchOverride ?? knobs.research;
     if (!groupId || !groupConversation.group) throw new Error(t('Loading the conversation'));
     const scope = 'studio:group:' + groupId;
     const attempt = coordinationAttempt(scope, message, sent.map((item) => item.id).join(','));
@@ -1630,9 +1640,9 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     const autonomy = resolveExecutionAutonomy(executionPicks, execution.defaults, knobs.autonomyPreset);
     const options: Record<string, unknown> = {
       attachments: JSON.stringify(sent.map((item) => item.id)),
-      gen_overrides: JSON.stringify(gen), plan_mode: knobs.mode === 'agent' && knobs.plan && !knobs.research,
+      gen_overrides: JSON.stringify(gen), plan_mode: knobs.mode === 'agent' && knobs.plan && !research,
       allow_bash: knobs.mode === 'agent' && knobs.bash, allow_web_search: knobs.web,
-      use_rag: knobs.rag, use_research: knobs.research, no_memory: Boolean(knobs.noMemory), no_skills: Boolean(knobs.noSkills),
+      use_rag: knobs.rag, use_research: research, no_memory: Boolean(knobs.noMemory), no_skills: Boolean(knobs.noSkills),
       think_mode: thinkMode, behavior_mode: activeModeId ?? undefined, chat_mode: activeChatMode,
       autonomy_preset: autonomy.override, initial_response_timeout_s: executionPicks.initial_response_timeout_s,
       context_overrides: knobs.contextOverrides ? JSON.stringify(knobs.contextOverrides) : undefined,
@@ -1643,7 +1653,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     const answer = await groupConversation.send(message || sent.map((item) => item.name).join(', '), options, knobs.mode, workspace, attempt.id);
     if (!answer?.turn_id) throw new Error(t('Message not confirmed. Retry the same send.'));
     acknowledgeCoordinationAttempt(scope, attempt.id);
-    if (knobs.research) setKnobsState((previous) => ({...previous, research: false}));
+    if (research) setKnobsState((previous) => ({...previous, research: false}));
     refreshSessions(); refreshActivity(); pinnedRef.current = true;
   }, [groupId, groupConversation, executionForSend, executionPicks, knobs, gen, thinkMode, activeModeId, activeChatMode, preset, panel.doc, workspace, refreshSessions]);
 
@@ -1666,6 +1676,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
          *  a session's very first turn — see `SendOptions.behaviorMode`'s
          *  own doc comment for why every later turn omits it. */
         behaviorMode?: string;
+        research?: boolean;
         execution?: { sid: string; value: SessionExecutionDefaults };
       } = {},
     ) => {
@@ -1673,7 +1684,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         try {
           if (options.approval) await groupConversation.resume('', {tool_approval_id: options.approval.id, tool_approval_decision: options.approval.decision});
           else if (options.questionId) await groupConversation.resume(message, {question_id: options.questionId, question_revision: options.revision, option_ids: options.optionIds});
-          else await sendToGroup(message, options.attachments);
+          else await sendToGroup(message, options.attachments, options.research);
         } catch (error) { say((error as Error).message, 'danger'); }
         return;
       }
@@ -1712,7 +1723,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         user.attachments = options.attachments ?? [];
         setTurns((list) => [...(list ?? []), user, blankTurn('assistant')]);
       }
-      const research = knobs.research && !options.approval && !options.delegation;
+      const research = (options.research ?? knobs.research) && !options.approval && !options.delegation;
       // Like the previous interface: the toggle is spent by the turn it starts.
       if (research) setKnobsState((k) => ({ ...k, research: false }));
       try {
@@ -2005,11 +2016,25 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       // exists so the suggestions can offer the providers by name.
       const path = name === 'setup' ? 'setup' : resolved.path;
       if (command.route) {
-        if (name === 'research' && args) navigate(`/research?q=${encodeURIComponent(args)}`);
-        else navigate(command.route);
+        navigate(toolHref(command.route, project?.id, sessionId));
         return true;
       }
       switch (path) {
+        case 'research':
+          setKnobsState(current => ({ ...current, research: true }));
+          if (args) setDraft(args);
+          textareaRef.current?.focus();
+          say(t('Research is ready for your next message.'));
+          return true;
+        case 'extract':
+        case 'compare':
+        case 'context':
+          openChatWorkspace(path, project?.id);
+          return true;
+        case 'git':
+          if (project) panelDispatch({ type: 'open', tab: 'git' });
+          else navigate('/source-control');
+          return true;
         case 'help':
           report(helpMarkdown(args));
           return true;
@@ -2927,7 +2952,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       busy,
       ensureSession,
       run,
-      knobs,
+      knobs, openChatWorkspace,
       setKnobs,
       panel.open,
       panel.tab,
@@ -3123,7 +3148,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   /* ── Send ── */
   const send = useCallback(
     async (text: string) => {
-      const message = text.trim();
+      let message = text.trim();
       if ((!message && attachments.length === 0) || sendingMessage.current) return;
       if (message.startsWith('!!')) {
         if (literalShellInFlight.current) return;
@@ -3161,7 +3186,9 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       }
 
       const parsed = message ? parseCommand(message) : null;
-      if (parsed) {
+      const researchRequest = parsed?.resolved?.command.name === 'research' && Boolean(parsed.args);
+      if (researchRequest && parsed) message = parsed.args;
+      else if (parsed) {
         setDraft('');
         await runCommand(parsed.name, parsed.args);
         return;
@@ -3179,9 +3206,9 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         sendingMessage.current = true; setPreparingMessage(true);
         const sent = attachments;
         try {
-          await sendToGroup(withImageReferences(message, sent), sent);
+          await sendToGroup(withImageReferences(message, sent), sent, researchRequest || undefined);
           if (visibleSession.current !== groupId) return;
-          setDraft((current) => current.trim() === message ? '' : current);
+          setDraft((current) => current.trim() === text.trim() ? '' : current);
           const ids = new Set(sent.map((item) => item.id));
           setAttachments((list) => list.filter((item) => !ids.has(item.id)));
           setNotice(null);
@@ -3202,7 +3229,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
         if (!sid) return; // Keep the draft and attachments available for retry.
         const execution = await executionForSend(sid);
-        setDraft(current => current.trim() === message ? '' : current);
+        setDraft(current => current.trim() === text.trim() ? '' : current);
         // A fresh chat becomes a session on its first send; the message left
         // through `new`, so `new` must not offer it again to the next chat.
         if (!sessionId) writeDraftFor(null, '');
@@ -3222,7 +3249,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           setChatModeState(pendingChatMode);
           await setChatMode(sid, pendingChatMode).then((view) => setChatModeState(view.mode)).catch(() => undefined);
         }
-        void run(sid, withImageReferences(message, sent), { attachments: sent, behaviorMode: isNewSession ? pendingModeId ?? undefined : undefined, execution: { sid, value: execution } });
+        void run(sid, withImageReferences(message, sent), { research: researchRequest || undefined, attachments: sent, behaviorMode: isNewSession ? pendingModeId ?? undefined : undefined, execution: { sid, value: execution } });
       } catch {
         // The resolution failure is shown next to the composer; the draft and
         // attachments were not consumed.
@@ -3564,7 +3591,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     open_calendar: () => navigate('/calendar'),
     open_compare: () => navigate('/compare'),
     open_cookbook: () => navigate('/cookbook'),
-    open_research: () => navigate('/research'),
+    open_research: () => { setKnobsState(current => ({ ...current, research: true })); textareaRef.current?.focus(); },
     open_gallery: () => navigate('/library?type=imagen'),
     open_library: () => navigate('/library'),
     open_memory: () => navigate('/memory'),
@@ -3633,7 +3660,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   }) ?? null;
 
   return (
-    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout}>
+    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden || chatTool ? 'hidden' : undefined} data-panel={panel.open || chatTool || undefined} data-chat-tool={chatTool || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout}>
       <SessionsPane
         sessions={groupMode ? groupSessions : sessions}
         currentId={sessionId}
@@ -3648,7 +3675,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
 
       <section className="fs-studio__stage">
         <header className="fs-studio__head">
-          <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen || !paneHidden} title={t('Show or hide the conversations (Ctrl+B)')} onClick={toggleSidebar} data-testid="studio-drawer">
+          <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen || (!paneHidden && !chatTool)} title={t('Show or hide the conversations (Ctrl+B)')} onClick={() => { if (chatTool) { openChatWorkspace(null); if (paneHidden) toggleSidebar(); } else toggleSidebar(); }} data-testid="studio-drawer">
             <MessageSquare size={13} aria-hidden="true" />
             <span>{t('Conversations')}</span>
           </button>
@@ -3665,11 +3692,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
             to={project ? `/projects/${encodeURIComponent(project.id)}?tab=objetivos` : `/agora?space_id=${encodeURIComponent(homeSpace)}&mode=development`}>
             <CheckSquare size={13} aria-hidden="true" /><span>{t('Tasks')}</span>
           </Link>}
+          <Popover align="end" className="fs-chat-information" testId="chat-information" trigger={<IconButton icon={Info} label={t('Conversation information')} size="sm" testId="chat-information-trigger" />}>
+            <section className="fs-chat-information__content" aria-label={t('Conversation information')}>
           <Vitals busy={busy} />
           <SparkVitals />
           <SphereChip />
-          {/* #235: messages other agents left for this chat (the transcript shows the delivered ones). */}
-          <AgentInbox sessionId={sessionId} busy={busy} onNew={reloadAfterAgentMail} />
           {/* CMP-01-layout (W2-A2): three arrangements of the same
               conversation+panel — pure presentation, see `layout` above. */}
           <div className="fs-studio__layout-switch" role="radiogroup" aria-label={t('Layout')} data-testid="studio-layout-switch">
@@ -3687,7 +3714,12 @@ export function StudioScreen({ groupContext }: { groupContext?: {
               <span className="fs-sr-only">{t('Review')}</span>
             </button>
           </div>
+            </section>
+          </Popover>
+          {/* #235: messages other agents left for this chat (the transcript shows the delivered ones). */}
+          <AgentInbox sessionId={sessionId} busy={busy} onNew={reloadAfterAgentMail} />
           <div className="fs-studio__head-actions">
+            <ChatToolsMenu projectId={project?.id} sessionId={sessionId} onResearch={() => { setKnobsState(current => ({ ...current, research: true })); textareaRef.current?.focus(); }} onWorkspace={tool => openChatWorkspace(tool, project?.id)} />
             {/* Lote 86 (CONTRATO_GIT_4.md, OBJ-4): "gestionarlo en vivo con
                 el modelo" — a repo only exists to manage once there is a
                 workspace or a project's linked folders to find one in. */}
@@ -4002,7 +4034,8 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         />
       </section>
 
-      {panel.open && (
+      {chatTool && <ChatToolWorkspace tool={chatTool} onClose={() => { openChatWorkspace(null); requestAnimationFrame(() => textareaRef.current?.focus()); }} onUse={text => { setDraft(current => [current.trimEnd(), text].filter(Boolean).join('\n\n')); openChatWorkspace(null); requestAnimationFrame(() => textareaRef.current?.focus()); }} />}
+      {panel.open && !chatTool && (
         <Suspense fallback={<aside className="fs-panel" aria-busy="true" />}>
           <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} turns={turns||[]} workspace={workspace} project={project} busy={busy} onRerun={rerunWorker} onVisualSelection={async selection=>{
             const sid=sessionId;
@@ -4022,7 +4055,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           the panel (a fifth grid track only exists at the 1280px breakpoint
           — see studio.css; hidden below that, same as the panel becoming an
           overlay there). `docId` is read from `panel.doc`, never copied. */}
-      {layout === 'review' && panel.open && (
+      {layout === 'review' && panel.open && !chatTool && (
         <div className="fs-review" data-testid="studio-review-pane">
           <Suspense fallback={<div aria-busy="true" />}>
             <ReviewPane docId={panel.doc && !panel.doc.streaming ? panel.doc.id : null} />

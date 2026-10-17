@@ -181,7 +181,7 @@ function Rail() {
         </NavLink>
       ))}
 
-      {platform === 'mobile' && <button type="button" className="fs-nav__item" onClick={() => setPaletteOpen(true)} data-testid="nav-more">
+      {platform === 'mobile' && <button type="button" className="fs-nav__item" onClick={() => setPaletteOpen(true)} data-testid="nav-more" aria-label={t('Search and navigate')}>
         <span className="fs-nav__node"><Search size={14} aria-hidden="true" /></span><span className="fs-nav__label">{t('More')}</span>
       </button>}
 
@@ -196,7 +196,7 @@ function Rail() {
             </NavLink>
             <NotificationTray side="top" align="start" />
           </div>
-          <button type="button" className="fs-nav__hint fs-nav__search" onClick={() => setPaletteOpen(true)} data-testid="nav-search"><Search size={13} aria-hidden="true" />{t('Search')} <kbd>Ctrl K</kbd></button>
+          <button type="button" className="fs-nav__hint fs-nav__search" onClick={() => setPaletteOpen(true)} data-testid="nav-search" aria-label={t('Search and navigate')} title={t('Search and navigate')}><Search size={13} aria-hidden="true" /><span>{t('Search')}</span><kbd>Ctrl K</kbd></button>
         </div>
       )}
     </nav>
