@@ -124,3 +124,16 @@ project recovery is available by identity, titles, text and explicit dates; the
 complete family migration remains task343. The facade currently reuses native turn routes instead of
 implementing a duplicate execution API. Transport and native tool registration
 continue to use the established family/connector capabilities.
+
+## Action completion and failures
+
+The origin hint repeats active object IDs verbatim and asks the agent to execute,
+verify and report requested changes. Announced retries participate in the existing
+intent supervisor. A Hoard turn can recover from an initial empty provider reply
+without requiring a filesystem workspace, using the existing recovery budget.
+
+A terminal SSE error remains a failed run even if the stream subsequently sends
+`[DONE]`. The SDK and shared panel preserve that failure. The panel displays the
+error and restores the submitted text when the same conversation's composer is
+empty, retaining the request identity for an explicit retry. It does not replace
+a later draft or automatically resubmit a mutation.
