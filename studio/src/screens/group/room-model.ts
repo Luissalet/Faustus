@@ -1,5 +1,6 @@
 import type { HistoryMessage } from '../../adapters/chat';
 import { metricsFrom } from '../../adapters/chat';
+import { attachmentsFromMetadata } from '../../adapters/composer';
 import { isPassText, isPeerTurn, speakerName, type GroupSnapshot, type GroupStep, type Participant } from '../../adapters/group';
 import { blankTurn, restoreFromMetadata, type Turn } from '../studio/model';
 import { t } from '../../i18n';
@@ -68,6 +69,7 @@ function historyTurn(m: HistoryMessage): Turn | null {
   const meta = m.metadata ?? {};
   if (m.role === 'user') {
     const turn = blankTurn('user', m.content);
+    turn.attachments = attachmentsFromMetadata(meta);
     turn.id = 'room-' + String(meta.group_turn_id ?? meta.group_answer_id ?? m.index);
     turn.streaming = false;
     return turn;
@@ -119,11 +121,12 @@ export function roomView(history: HistoryMessage[], snapshot: GroupSnapshot | nu
   const activity: RoomView['activity'] = Object.fromEntries(members.map((m) => [m.sessionId, { state: 'idle' as const }]));
   for (const turn of snapshot?.turns ?? []) {
     const peer = isPeerTurn(turn);
-    if (!peer && !seenTurns.has(turn.id) && turn.status !== 'stopped') {
+    if (!peer && !seenTurns.has(turn.id)) {
       const pending = blankTurn('user', turn.message);
       pending.id = 'room-' + turn.id;
       pending.streaming = false;
       if (turn.status === 'queued') pending.note = t('Queued: the room answers it after the current round.');
+      if (turn.status === 'stopped') pending.note = t('Stopped');
       turns.push(pending);
     }
     const roster = turn.participants ?? members;
@@ -133,8 +136,9 @@ export function roomView(history: HistoryMessage[], snapshot: GroupSnapshot | nu
       if (step.status === 'waiting_user') activity[step.member_id] = { state: 'asks', stepId: step.id };
       if (seenSteps.has(step.id) || step.status === 'queued' || (step.status === 'stopped' && !step.text)) continue;
       const member = roster.find((p) => p.sessionId === step.member_id) as Member | undefined;
-      const streamed = live[step.id];
-      turns.push(streamed ? { ...streamed, speaker: member ? speakerName(member) : streamed.speaker } : stepTurn(step, member));
+      const streamed = step.status === 'running' ? live[step.id] : undefined;
+      const saved = stepTurn(step, member);
+      turns.push(streamed ? { ...streamed, text: streamed.text || saved.text, speaker: saved.speaker ?? streamed.speaker } : saved);
     }
   }
   return { turns, activity };

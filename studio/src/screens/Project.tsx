@@ -63,6 +63,7 @@ import { ProjectSkillImports } from './project/SkillImports';
 import './projects.css';
 import './home.css';
 import { t, tn } from '../i18n';
+import { ProjectNavigation } from './project/ProjectNavigation';
 
 const TABS = [
   { id: 'brief', label: 'Brief', icon: FileText },
@@ -946,6 +947,13 @@ export function ProjectScreen() {
   // off the project record and is changed in Settings, not detached here.
   const workspaceName = project.workspace ? (project.workspace.split(/[\\/]/).filter(Boolean).pop() ?? project.workspace) : '';
 
+  if (tab === 'agora') return <ProjectAgora project={project} selected={params.get('room') || ''}
+    onSelect={(id) => {
+      const next = new URLSearchParams(params);
+      if (id) next.set('room', id); else next.delete('room');
+      setParams(next, { replace: true });
+    }} />;
+
   return (
     <div className="fs-screen fs-pj" data-testid="project" data-archived={project.archived || undefined} data-tab={tab}>
       <div>
@@ -1022,16 +1030,7 @@ export function ProjectScreen() {
         </p>
       )}
 
-      <div className="fs-tabs" role="tablist" aria-label={t('Project sections')}>
-        {TABS.map((entry) => (
-          <button key={entry.id} type="button" role="tab" aria-selected={tab === entry.id} className="fs-tab" data-testid={`project-tab-${entry.id}`} onClick={() => setTab(entry.id)}>
-            {t(entry.label)}
-            {/* The tab itself says it, so a working chat is visible without
-                opening the section it lives in. */}
-            {entry.id === 'chats' && liveChats > 0 && <ActivityDot state={liveTone} />}
-          </button>
-        ))}
-      </div>
+      <ProjectNavigation entries={TABS} selected={tab} onChange={setTab} projectId={project.id} liveChats={liveChats} liveTone={liveTone} />
 
       {tab === 'brief' && (
         <div className="fs-pj__brief">
@@ -1196,16 +1195,6 @@ export function ProjectScreen() {
             <BoardPanel projectId={project.id} />
           </Suspense>
         </div>
-      )}
-
-      {tab === 'agora' && (
-        <ProjectAgora project={project} selected={params.get('room') || ''}
-          onSelect={(id) => {
-            const next = new URLSearchParams(params);
-            if (id) next.set('room', id);
-            else next.delete('room');
-            setParams(next, { replace: true });
-          }} />
       )}
 
       {tab === 'objetivos' && (

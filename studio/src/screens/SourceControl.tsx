@@ -1,9 +1,10 @@
 import { GitBranch } from 'lucide-react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { SourceControlPanel } from './source-control/SourceControlPanel';
 import { GitRadarStrip } from './source-control/GitRadar';
 import './source-control.css';
 import { t } from '../i18n';
+import { ProjectPicker } from './projects/ProjectPicker';
 
 /**
  * OBJ-4 — Source control: every git repo under the owner's linked project
@@ -22,6 +23,7 @@ import { t } from '../i18n';
 export function SourceControlScreen() {
   const [params] = useSearchParams();
   const projectId = params.get('project') ?? undefined;
+  if (!projectId && params.get('scope') !== 'all') return <ProjectPicker />;
 
   return (
     <div className="fs-screen fs-sc" data-testid="source-control">
@@ -30,7 +32,7 @@ export function SourceControlScreen() {
           <h1 className="fs-screen__title">
             <GitBranch size={20} aria-hidden="true" /> {t('Source control')}
           </h1>
-          <p className="fs-screen__sub">{t('Every git repository under your linked project folders and watched folders.')}</p>
+          <p className="fs-screen__sub">{projectId ? <><Link className="fs-link" to={`/projects/${encodeURIComponent(projectId)}?tab=repos`}>{t('Project')}</Link> · {t('Repositories')}</> : t('Every git repository under your linked project folders and watched folders.')}</p>
         </div>
       </header>
       {/* The radar (src/git_radar.py): which of those repos still has work

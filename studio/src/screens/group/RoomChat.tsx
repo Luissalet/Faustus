@@ -1,14 +1,15 @@
-import { ExternalLink, Kanban, MessageSquare, PanelRight, Plus, Send, Square, Trash2, Users, X } from 'lucide-react';
+import { ExternalLink, Kanban, MessageSquare, PanelRight, Plus, Send, Settings2, Square, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Button, IconButton, Menu, Skeleton } from '../../components';
+import { Button, IconButton, Menu, Popover, Skeleton } from '../../components';
+import { useLiveSteps, type Running } from './group-live';
 import { acknowledgeCoordinationAttempt, coordinationAttempt, useCoordinationDraft } from '../../components/coordinationNavigation';
-import { loadHistory, resumeTurn, type HistoryMessage } from '../../adapters/chat';
+import { loadHistory, type HistoryMessage } from '../../adapters/chat';
 import {
   archiveGroup, DEFAULT_DISCUSSION_ROUNDS, groupSnapshot, openGroup, questionFrom, resumeGroup, sendGroup, speakerName,
   stopGroup, updateGroup, type GroupSnapshot, type GroupState,
 } from '../../adapters/group';
-import { apply, blankTurn, type Turn } from '../studio/model';
+import type { Turn } from '../studio/model';
 import { AskCard, Transcript } from '../studio/Transcript';
 import { Vitals } from '../studio/Vitals';
 import { SparkVitals } from '../studio/SparkVitals';
@@ -28,71 +29,6 @@ import '../group.css';
  * composer that addresses members with @name.
  */
 
-type Running = { stepId: string; sessionId: string; runId: string };
-
-/** Follows each member's live run, exactly as Studio rejoins a running chat. */
-function useLiveSteps(running: Running[]): Record<string, Turn> {
-  const [, setTick] = useState(0);
-  const turns = useRef<Record<string, Turn>>({});
-  const streams = useRef(new Map<string, AbortController>());
-  const dirty = useRef(false);
-  const key = running.map((r) => `${r.stepId}@${r.sessionId}#${r.runId}`).sort().join('|');
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (dirty.current) {
-        dirty.current = false;
-        setTick((n) => n + 1);
-      }
-    }, 150);
-    const open = streams.current;
-    return () => {
-      window.clearInterval(timer);
-      for (const controller of open.values()) controller.abort();
-    };
-  }, []);
-  useEffect(() => {
-    const wanted = new Map(running.map((r) => [r.stepId, r]));
-    for (const [id, controller] of streams.current) {
-      if (!wanted.has(id)) {
-        controller.abort();
-        streams.current.delete(id);
-      }
-    }
-    for (const [stepId, run] of wanted) {
-      if (streams.current.has(stepId)) continue;
-      const controller = new AbortController();
-      streams.current.set(stepId, controller);
-      void (async () => {
-        for (let attempt = 0; attempt < 80 && !controller.signal.aborted; attempt += 1) {
-          let turn: Turn | null = null;
-          const attemptController = new AbortController();
-          const stop = () => attemptController.abort();
-          controller.signal.addEventListener('abort', stop, { once: true });
-          try {
-            for await (const event of resumeTurn(run.sessionId, {
-              signal: attemptController.signal,
-              // Another run of that member's chat is not this step's answer.
-              onRunId: (id) => { if (id && id !== run.runId) attemptController.abort(); },
-            })) {
-              turn = apply(turn ?? { ...blankTurn('assistant'), id: stepId }, event);
-              // Questions are answered from the room, not inside the reply.
-              turns.current[stepId] = { ...turn, ask: undefined };
-              dirty.current = true;
-            }
-          } catch {
-            /* the run ended or the stream was cut; the room record has the answer */
-          } finally {
-            controller.signal.removeEventListener('abort', stop);
-          }
-          if (turn) return;
-          await new Promise((resolve) => window.setTimeout(resolve, 1500));
-        }
-      })();
-    }
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return turns.current;
-}
-
 function phaseText(turn: Turn | undefined): string {
   const live = turn?.live;
   if (!live) return t('Speaking');
@@ -102,9 +38,9 @@ function phaseText(turn: Turn | undefined): string {
   return live.label || t('Waiting for the model');
 }
 
-export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectId }: {
+export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectId, conversationsOpen, onToggleConversations }: {
   groupId: string; onNewRoom: () => void; onManage: (state: GroupState) => void; onClosed: () => void;
-  say: (text: string, tone?: 'ok' | 'warn') => void; projectId?: string;
+  say: (text: string, tone?: 'ok' | 'warn') => void; projectId?: string; conversationsOpen?: boolean; onToggleConversations?: () => void;
 }) {
   const navigate = useNavigate();
   const [snapshot, setSnapshot] = useState<GroupSnapshot | null>(null);
@@ -114,7 +50,7 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
   const [recipient, setRecipient] = useState('');
   const [sending, setSending] = useState(false);
   const [linkingProject, setLinkingProject] = useState(false);
-  const [side, setSide] = useState<'board' | 'members' | null>(() => (window.innerWidth >= 1200 ? 'board' : null));
+  const [side, setSide] = useState<'board' | 'members' | null>(null);
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
   const signature = useRef('');
@@ -134,6 +70,10 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
       try {
         const current = first ? await openGroup(groupId, controller.signal) : await groupSnapshot(groupId, controller.signal);
         first = false;
+        if (controller.signal.aborted) return;
+        // Controls and observed member state do not wait for a large history.
+        setSnapshot(current);
+        setConnectionError('');
         const finished = current.steps.filter((s) => s.status !== 'queued' && s.status !== 'running');
         const next = current.turns.map((x) => x.id + ':' + x.status).join(',') + '|' + finished.map((s) => s.id + ':' + s.status).join(',');
         if (next !== signature.current) {
@@ -144,10 +84,6 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
             const recorded = new Set(loaded.history.map((m) => String(m.metadata.group_step_id ?? '')));
             if (finished.every((s) => s.status === 'stopped' || recorded.has(s.id))) signature.current = next;
           }
-        }
-        if (!controller.signal.aborted) {
-          setSnapshot(current);
-          setConnectionError('');
         }
       } catch (error) {
         if (!controller.signal.aborted) setConnectionError((error as Error).message);
@@ -275,6 +211,7 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
     <div className="fs-room" data-side={side || undefined} data-testid="room-chat">
       <section className="fs-room__main" aria-label={state.name}>
         <header className="fs-room__head">
+          {onToggleConversations && <button type="button" className="fs-studio__chip" aria-expanded={conversationsOpen} onClick={onToggleConversations} title={t('Show or hide the conversations (Ctrl+B)')}><MessageSquare size={13} aria-hidden="true" /><span className="fs-room__conversations-label">{t('Conversations')}</span></button>}
           <div className="fs-room__title">
             <h2 title={state.name}>{state.name}</h2>
             <p>
@@ -282,18 +219,21 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
               {state.executionMode === 'chat' ? ' · ' + t('Discuss without tools') : ''}
             </p>
           </div>
+          <Popover trigger={<IconButton icon={Settings2} label={t('Room settings')} size="sm" />}>
+          <p className="fs-muted">{state.mode === 'parallel' ? t('All at once') : t('Taking turns')} · {tn(members.length, '{n} participant', '{n} participants')}</p>
           <label className="fs-room__rounds" title={t('How many rounds the members may answer each other after your message')}>
             <span>{t('Between themselves')}</span>
             <select className="fs-field" value={rounds} onChange={(e) => void setRounds(Number(e.target.value))} data-testid="room-rounds">
               {[...new Set([...ROUND_CHOICES, rounds])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n < 0 ? t('Until the discussion ends') : n === 0 ? t('Only answer me') : t('Up to {n} rounds', { n })}</option>)}
             </select>
           </label>
+          </Popover>
           <Vitals busy={busy} />
           <SparkVitals />
           <IconButton icon={Kanban} label={side === 'board' ? t('Hide the board') : t('Show the board')} size="sm" onClick={() => setSide(side === 'board' ? null : 'board')} testId="room-board-toggle" />
           <IconButton icon={PanelRight} label={side === 'members' ? t('Hide the members') : t('Show the members')} size="sm" onClick={() => setSide(side === 'members' ? null : 'members')} />
           <Menu
-            trigger={<Button variant="secondary" size="sm" icon={Users} label={t('Room')} />}
+            trigger={<IconButton size="sm" icon={Users} label={t('Room')} />}
             align="end"
             items={[
               { label: t('Manage members'), icon: Users, onSelect: () => onManage(state) },

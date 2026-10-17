@@ -19,12 +19,16 @@ class GroupCreate(BaseModel):
     project_id: str = ""
     # Follow-up rounds in which the members answer each other (0 = none).
     discussionRounds: int = Field(default=-1, ge=-1)
+    executionOptions: dict[str, Any] = Field(default_factory=dict)
 
 
 class GroupMessage(BaseModel):
     message: str
     request_id: str = ""
     mentions: list[str] = Field(default_factory=list)
+    executionOptions: dict[str, Any] | None = None
+    executionMode: Literal['chat', 'agent'] | None = None
+    workspace: str | None = None
 
 
 class GroupUpdate(BaseModel):
@@ -36,6 +40,7 @@ class GroupUpdate(BaseModel):
     discussionRounds: int | None = Field(default=None, ge=-1)
     # Links a room that has no project yet; a room never changes project.
     projectId: str | None = None
+    executionOptions: dict[str, Any] | None = None
     expected_revision: int | None = None
 
 
@@ -102,6 +107,8 @@ def setup_group_routes(coordinator):
         user = owner(request)
         from routes.session_routes import _reject_raw_endpoint_url_for_non_admin
         try:
+            from src.group_orchestrator import composer_options
+            execution_options = composer_options(body.executionOptions)
             for p in body.participants:
                 route = p.get("route") or {}
                 _reject_raw_endpoint_url_for_non_admin(request, user, route.get("endpointId", ""), route.get("endpointUrl", ""))
@@ -114,6 +121,7 @@ def setup_group_routes(coordinator):
                 workspace=body.workspace, execution_mode=body.executionMode, project_id=project_id)
             definition["space_id"] = body.space_id
             definition["discussionRounds"] = body.discussionRounds
+            definition['executionOptions'] = execution_options
             return coordinator.adopt(definition, user)
         except (KeyError, ValueError) as error:
             fail(error)
@@ -135,7 +143,14 @@ def setup_group_routes(coordinator):
     @router.post("/{group_id}/messages")
     async def send(request: Request, group_id: str, body: GroupMessage):
         try:
-            return await coordinator.submit(group_id, owner(request), body.message, body.request_id or uuid.uuid4().hex, body.mentions)
+            user = owner(request)
+            changes = body.model_dump(exclude_none=True, include={'executionOptions', 'executionMode', 'workspace'})
+            # One native request owns options and queueing. Do not ask a browser
+            # to PATCH a revision that streaming progress is constantly changing.
+            if changes:
+                current = coordinator.store.group(group_id, user)
+                coordinator.update(group_id, user, changes, current['revision'])
+            return await coordinator.submit(group_id, user, body.message, body.request_id or uuid.uuid4().hex, body.mentions)
         except (KeyError, ValueError) as error:
             fail(error)
 

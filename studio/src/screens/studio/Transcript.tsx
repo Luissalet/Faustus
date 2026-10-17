@@ -2238,10 +2238,8 @@ function AssistantTurn({
             </p>
           );
         })()}
-        {turn.ledger && <Ledger ledger={turn.ledger} sessionId={sessionId} role="assistant" content={turn.text} />}
-        {/* Plain chat turns carry no context ledger; the model-call trace
-            still exists for them, so it gets its own disclosure. */}
-        {!turn.ledger && !turn.streaming && sessionId && last && <ModelCallsInspector sessionId={sessionId} />}
+        {turn.ledger && (turn.streaming || turn.ledger.advice.some(item => item.level === 'warn')) && <Ledger ledger={turn.ledger} sessionId={sessionId} role="assistant" content={turn.text} />}
+        {/* Finished-turn diagnostics share the disclosure below the actions. */}
         {/* The heartbeat, last of all: it sits exactly where the turn's own
             numbers will appear when it finishes. */}
         {turn.streaming && turn.live && !(turn.research && !turn.research.done) && !(turn.live.phase === 'tool' && turn.steps.length > 0) && (
@@ -2301,9 +2299,14 @@ function AssistantTurn({
             </span>
           </div>
         )}
-        {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} promptCache={turn.metrics.prompt_cache} prefixCache={turn.metrics.prefix_cache} />}
-        {!turn.streaming && turn.metrics?.toolsOffered && <ToolsOfferedLine offered={turn.metrics.toolsOffered} />}
-        {!turn.streaming && sessionId && turn.metrics?.runId && <TurnCostBreakdown sessionId={sessionId} runId={turn.metrics.runId} />}
+        {!turn.streaming && ((turn.ledger && !turn.ledger.advice.some(item => item.level === 'warn')) || turn.metrics?.execution || turn.metrics?.toolsOffered || (sessionId && ((!turn.ledger && last) || turn.metrics?.runId))) && <details className="fs-turn__details" data-testid="turn-details">
+          <summary>{t('Turn details')}</summary>
+          {turn.ledger && !turn.ledger.advice.some(item => item.level === 'warn') && <Ledger ledger={turn.ledger} sessionId={sessionId} role="assistant" content={turn.text} />}
+          {!turn.ledger && sessionId && last && <ModelCallsInspector sessionId={sessionId} />}
+          {turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} promptCache={turn.metrics.prompt_cache} prefixCache={turn.metrics.prefix_cache} />}
+          {turn.metrics?.toolsOffered && <ToolsOfferedLine offered={turn.metrics.toolsOffered} />}
+          {sessionId && turn.metrics?.runId && <TurnCostBreakdown sessionId={sessionId} runId={turn.metrics.runId} />}
+        </details>}
       </div>
     </article>
   );

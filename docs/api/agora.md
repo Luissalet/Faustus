@@ -18,10 +18,10 @@ Choose one of the three modes:
 | Deliberation | Compare proposals, raise objections, review and synthesise with the existing room execution controls. |
 | Tasks and decisions | Read and manage the selected space's tasks, discussions, reviews, checkpoints and decisions through the Hub interface. |
 
-The Rooms browser lists conversations and deliberations for the selected
-space. Search by room title or create a room with **New room**. On mobile,
-open **Rooms** to browse; choosing a room closes the browser. The task view
-also offers **Open in a separate window**.
+Conversation uses Studio's regular conversation list; its plus button creates
+a group and Members contains the space selector and Deliberation access.
+Deliberation retains its Rooms browser. Search by room title or create a room
+with **New room**. The task view also offers **Open in a separate window**.
 
 Studio remembers the last room for each space and mode in the current
 browser tab. Room and setup drafts survive mode changes. A send without a
@@ -41,14 +41,20 @@ preservation and verification in Main remain pending before closure.
 
 ## Project coordination
 
-Open **Project → Agora** for the project's group conversations. The normal
-Studio transcript shows each member's full response and tools. The participant
-strip reports observed execution phase, elapsed time and last event; silence
-is an observation, not a diagnosis that the model has hung. A lost connection
-is shown explicitly and old rooms without activity dates say so.
+Open **Project → Agora** for the project's group conversations in the actual
+Studio screen: the same Conversations pane, header, transcript and composer.
+The usual project chip returns to project details; **Tasks** opens its Hub
+task ledger in **Objectives**. There is no project title, tab bar or room toolbar
+above the chat. Ctrl+B toggles the regular conversation list, which becomes
+a drawer on mobile. Its plus button creates a group conversation.
 
-Use **Rooms** to browse or create conversations without permanently narrowing
-the chat. **Board** opens the same Hub task ledger used in **Objectives**.
+The composer retains attachments, dictation, slash commands and native execution
+controls. Its @ picker includes group members alongside workspace files.
+**Members** occupies the model-picker slot: inspect observed phase, elapsed time
+and last event, or edit each participant's model, persona, tools and supported
+reasoning settings. The same dialog controls discussion rounds. Silence is an
+observation, not a diagnosis that the model has hung; old rooms without activity
+dates do not invent them. Completed messages retain their full native tool rail.
 The separate project **Board** retains its existing planning cards. Native
 coordination tasks require a saved, usable Hub connection for the project;
 the UI does not create an independent ledger when it is missing.

@@ -32,6 +32,7 @@ import {
   Terminal,
   Theater,
   Timer,
+  Users,
   X,
 } from 'lucide-react';
 import type { Dictation } from '../../adapters/speech';
@@ -179,6 +180,8 @@ export interface ComposerProps {
   attachments: Attachment[];
   setAttachments: (update: (list: Attachment[]) => Attachment[]) => void;
   sessionId: string | null;
+  /** Group addresses share the regular @ file picker. */
+  participants?: { handle: string; label: string }[];
   onSend: (text: string) => void;
   onStop: () => void;
   /** UX-04: the three Stop scopes and the two ways to add to a live turn
@@ -333,6 +336,7 @@ export function Composer({
   attachments,
   setAttachments,
   sessionId,
+  participants = [],
   onSend,
   onStop,
   onPauseGeneration,
@@ -589,23 +593,29 @@ export function Composer({
    * per frame) instead of directly on every keystroke, so several keystrokes
    * landing in one animation frame run the match pass once, not once each —
    * what keeps a long draft under a 16ms-per-keystroke budget. */
-  const [mention, setMention] = useState<{ query: string; items: WorkspaceFile[] } | null>(null);
+  type MentionItem = WorkspaceFile & { participantLabel?: string };
+  const [mention, setMention] = useState<{ query: string; items: MentionItem[] } | null>(null);
   const [commands, setCommands] = useState<Suggestion[] | null>(null);
   const [active, setActive] = useState(0);
   const mentionAbort = useRef<AbortController | null>(null);
-  const suggestionCtx = useRef({ workspace });
-  suggestionCtx.current = { workspace };
+  const suggestionCtx = useRef({ workspace, participants });
+  suggestionCtx.current = { workspace, participants };
 
   const applySuggestionIntent = useCallback((value: string, caret: number) => {
     const intent = resolveSuggestionIntent(value, caret);
-    if (intent.kind === 'mention' && suggestionCtx.current.workspace) {
+    if (intent.kind === 'mention') {
       mentionAbort.current?.abort();
       const controller = new AbortController();
       mentionAbort.current = controller;
-      searchWorkspaceFiles(suggestionCtx.current.workspace, intent.query, controller.signal)
+      const people: MentionItem[] = suggestionCtx.current.participants
+        .filter((member) => (member.handle + ' ' + member.label).toLowerCase().includes(intent.query.toLowerCase()))
+        .map((member) => ({ path: member.handle, participantLabel: member.label }));
+      setMention({ query: intent.query, items: people });
+      setActive(0);
+      if (suggestionCtx.current.workspace) searchWorkspaceFiles(suggestionCtx.current.workspace, intent.query, controller.signal)
         .then((items) => {
           if (controller.signal.aborted) return;
-          setMention({ query: intent.query, items: capMentionItems(items) });
+          setMention({ query: intent.query, items: [...people, ...capMentionItems(items)] });
           setActive(0);
         })
         .catch(() => undefined);
@@ -819,10 +829,10 @@ export function Composer({
       data-testid="studio-composer"
     >
       {mention && mention.items.length > 0 && (
-        <ul className="fs-studio__suggest" role="listbox" aria-label={t('Workspace files')} data-testid="studio-mentions">
+        <ul className="fs-studio__suggest" role="listbox" aria-label={participants.length ? t('Members and workspace files') : t('Workspace files')} data-testid="studio-mentions">
           {mention.items.map((item, i) => (
             <li
-              key={item.path}
+              key={(item.participantLabel ? 'member:' : 'file:') + item.path}
               role="option"
               aria-selected={i === active}
               className="fs-studio__suggest-item"
@@ -831,8 +841,8 @@ export function Composer({
                 pickMention(item);
               }}
             >
-              <FileText size={13} aria-hidden="true" />
-              <span className="fs-studio__suggest-main">{item.path}</span>
+              {item.participantLabel ? <Users size={13} aria-hidden="true" /> : <FileText size={13} aria-hidden="true" />}
+              <span className="fs-studio__suggest-main">{item.participantLabel ? `@${item.path} · ${item.participantLabel}` : item.path}</span>
             </li>
           ))}
         </ul>
@@ -910,7 +920,8 @@ export function Composer({
       )}
 
       <ContextPanel
-        draft={draft}
+        draft={participants.length ? draft.replace(/(^|\s)@([^\s@]+)/g, (all, lead: string, handle: string) =>
+          participants.some((member) => member.handle.toLowerCase() === handle.replace(/[.,:;!?]+$/, '').toLowerCase()) ? lead : all) : draft}
         overrides={knobs.contextOverrides ?? {}}
         onChange={(next) => setKnobs((k) => ({ ...k, contextOverrides: next }))}
         tokenBudget={knobs.inputTokenBudget}
@@ -1088,6 +1099,7 @@ export function Composer({
         </div>
           </div>
         </Popover>
+        {knobs.research && <button type="button" className="fs-studio__chip" aria-pressed="true" onClick={() => setKnobs(current => ({ ...current, research: false }))} data-testid="research-active"><Telescope size={13} aria-hidden="true" />{t('Research')}<X size={11} aria-hidden="true" /></button>}
         {activePresetChip}
         <div className="fs-studio__seg" role="radiogroup" aria-label={t('Mode')}>
           <span className="fs-studio__seg-thumb" data-mode={knobs.mode} aria-hidden="true" />
@@ -1095,6 +1107,7 @@ export function Composer({
             type="button"
             role="radio"
             aria-checked={knobs.mode === 'chat'}
+            aria-label={t('Chat')}
             onClick={() => setKnobs((k) => ({ ...k, mode: 'chat' }))}
             data-testid="studio-mode-chat"
           >
@@ -1104,6 +1117,7 @@ export function Composer({
             type="button"
             role="radio"
             aria-checked={knobs.mode === 'agent'}
+            aria-label={t('Agent')}
             onClick={() => setKnobs((k) => ({ ...k, mode: 'agent' }))}
             data-testid="studio-mode-agent"
           >
@@ -1112,6 +1126,9 @@ export function Composer({
         </div>
         </div>
         <div className="fs-studio__bar-tools">
+          <Popover placement="composer" className="fs-studio__conversation-options" testId="conversation-options" trigger={<button type="button" className="fs-studio__chip" data-testid="conversation-options-trigger"><SlidersHorizontal size={13} aria-hidden="true" />{t('Conversation settings')}</button>}>
+            <section className="fs-conversation-options" aria-label={t('Conversation settings')}>
+
         {knobs.mode === 'agent' && (
           <AutonomyPresetSelector
             preset={knobs.autonomyPreset ?? 'supervised'}
@@ -1126,6 +1143,8 @@ export function Composer({
         <GlobalApprovalControl />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
         <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
+            </section>
+          </Popover>
         </div>
         <div className="fs-studio__bar-end">
         {/* Next to the model, where it is seen: how much it reasons (the mode,
