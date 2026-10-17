@@ -13009,3 +13009,12 @@ aprobación; corregida en aa9112a0); Silver Python completo y Node 372/1 omitida
 petición: equipo de Pablo guardado con los seis (Delphox @ Delphoxite, Dragonite @ Dragonium Z,
 Glaceon por uso de ZU, Shaymin-Sky @ Choice Scarf, Raichu-Alola @ Psychium Z, Spiritomb @ Leftovers).
 Commits 7e65bf49, 5ba1af37, 42144546; 7000 reiniciado. Sin push.
+
+
+## Silver's Hoard: entrenadores overworld en el público — 17-10-2026
+
+El público de los combates en tiempo real combina Pokémon del catálogo de la generación con 277 diseños de entrenadores overworld: 231 del FRLG Accurate NPC Megapack y 46 del pack de Taiga. Aproximadamente el 40 % de las plazas ocupadas son entrenadores; la semilla conserva sus diseños y posiciones en las repeticiones, sin repetir diseño dentro de la misma arena.
+
+Los entrenadores miran hacia la cancha con sus cuatro orientaciones originales y usan los saltos de reacción del público. Su atlas está incluido en la aplicación y en el HTML exportado, por lo que estos espectadores no necesitan el servicio PMD. Se mantienen el interruptor de público, el estilo plain y el mecanismo de carga e imagen de reserva de los Pokémon. El público es presentación: no cambia reglas, daño, entradas de repetición ni azar del motor.
+
+La herramienta `credits`, su API y la página de créditos recogen las dos fuentes. Silver conserva las listas originales de autores, el manifiesto de procedencia y el generador del atlas; `docs/CROWD.md` describe el formato y la reconstrucción. Los sprites de aficionados conservan sus créditos y no se relicencian como el código de la aplicación.
