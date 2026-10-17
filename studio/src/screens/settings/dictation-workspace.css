@@ -1,0 +1,16 @@
+.fs-dictation { margin-block-start: var(--fs-space-8, 2rem); }
+.fs-dictation label { display: grid; gap: .5rem; }
+.fs-dictation__form { display: flex; align-items: end; flex-wrap: wrap; gap: 1rem; margin-block: 1.5rem; }
+.fs-dictation__form label { flex: 1 1 12rem; min-width: 0; }
+.fs-dictation__scope { max-width: 32rem; }
+.fs-dictation__list { list-style: none; padding: 0; margin-block: 1rem; }
+.fs-dictation__list > li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1rem; border-block-end: 1px solid var(--fs-border); overflow-wrap: anywhere; }
+.fs-dictation article { width: 100%; min-width: 0; }
+.fs-dictation__heading, .fs-dictation__actions { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.fs-dictation__actions { justify-content: start; margin-block-start: .75rem; }
+.fs-dictation__heading time, .fs-dictation small { color: var(--fs-text-2); }
+.fs-dictation__text { white-space: pre-wrap; max-width: 72ch; }
+.fs-dictation textarea { width: 100%; resize: vertical; }
+.fs-dictation input, .fs-dictation select, .fs-dictation textarea { font-size: 1rem; }
+.fs-dictation button { min-height: 44px; }
+@media (max-width: 540px) { .fs-dictation__form { align-items: stretch; } .fs-dictation__form label { flex-basis: 100%; } }

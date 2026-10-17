@@ -104,6 +104,7 @@ export interface CaptureOptions {
   signal: AbortSignal;
   /** Clean fillers and spoken self-corrections after recognition. */
   natural?: boolean;
+  project?: string;
   deviceId?: string;
   autoStop?: boolean;
   lang?: string;
@@ -137,7 +138,7 @@ export async function capture(config: SpeechCapabilities, options: CaptureOption
     try {
       const response = await fetch('/api/stt/polish', {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, mode: 'clean' }),
+        body: JSON.stringify({ text, mode: 'clean', ...(options.project ? { project: options.project } : {}) }),
         signal: AbortSignal.any([signal, AbortSignal.timeout(dictationEditTimeout(text))]),
       });
       signal.throwIfAborted();

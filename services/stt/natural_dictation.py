@@ -65,7 +65,19 @@ def faithful_deletions(source: str, candidate: str) -> bool:
     return all(any(word == previous for previous in iterator) for word in edited)
 
 
-async def polish(text: str, mode: str = "clean", draft: str = "", *, owner=None, complete=None, resolve=None) -> dict:
+async def polish(text: str, mode: str = "clean", draft: str = "", *, owner=None, project="", complete=None, resolve=None) -> dict:
+    result = await _polish(text, mode, draft, owner=owner, complete=complete, resolve=resolve)
+    if mode == "clean":
+        from src.dictation_vocabulary import apply_vocabulary
+        corrected = apply_vocabulary(result["text"], owner, project)
+        if corrected != result["text"]:
+            result["editor_status"] = result["status"]
+            result["status"] = "edited"
+            result["text"] = corrected
+    return result
+
+
+async def _polish(text: str, mode: str = "clean", draft: str = "", *, owner=None, complete=None, resolve=None) -> dict:
     original = text.strip()
     baseline = draft if mode == "revise" else original
     result = {"text": baseline, "raw_text": original, "status": "unchanged"}

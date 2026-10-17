@@ -3777,7 +3777,7 @@ export function StudioScreen() {
         )}
 
         {voiceSession && voiceSession === sessionId && <Suspense fallback={<div className="fs-studio__notice" role="status">{t('Opening voice mode…')}</div>}>
-          <VoicePanel key={voiceSession} sessionId={sessionId} sessionName={project?.name || title || t('Conversation')} busy={busy}
+          <VoicePanel key={voiceSession} sessionId={sessionId} projectId={project?.id} sessionName={project?.name || title || t('Conversation')} busy={busy}
             turn={turns?.slice().reverse().find(turn => turn.role === 'assistant')}
             onSend={text => void send(text)} onStop={stop} onClose={() => setVoiceSession(null)} />
         </Suspense>}
