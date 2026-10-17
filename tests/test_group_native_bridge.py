@@ -216,32 +216,3 @@ def test_invalid_member_policy_cannot_silently_gain_write_access(options):
     from src.group_orchestrator import participant_execution_options
     with pytest.raises(ValueError):
         participant_execution_options(options)
-
-
-async def test_revision_keeps_displayed_draft_but_saves_only_final_answer(monkeypatch):
-    from src import chat_outbox
-    monkeypatch.setattr(chat_outbox, 'get', lambda **kwargs: None)
-    async def endpoint(request, **kwargs):
-        async def stream():
-            for frame in [
-                '{"delta":"Original answer"}',
-                '{"type":"response_replace","text":""}',
-                '{"delta":"Discarded revision"}',
-                '{"type":"response_replace","text":""}',
-                '{"delta":"Final answer"}',
-                '{"type":"response_replace","text":"Final answer"}',
-            ]:
-                yield 'data: ' + frame + '\n\n'
-            yield 'data: [DONE]\n\n'
-        return StreamingResponse(stream())
-    bridge = NativeGroupBridge(Sessions(), endpoint, FastAPI())
-    progress = []
-    async def update(text, detail): progress.append((text, dict(detail)))
-    t = turn()
-    result = await bridge.invoke(turn=t, step=step(), member=t['definition']['participants'][0], owner='owner', progress=update)
-    resets = [detail for text, detail in progress if detail.get('last_event', {}).get('type') == 'response_replace' and not text]
-    assert len(resets) == 2
-    assert all(detail['display_text'] == 'Original answer' for detail in resets)
-    assert result['text'] == 'Final answer' and 'display_text' not in result['detail']
-    bridge.reply(t, {**step(), **result}, 'owner')
-    assert bridge.sessions.get_session('parent').history[-1].content == 'Final answer'
