@@ -43,6 +43,7 @@ export function RoomSetup({ routes, defaultRoute, personas, presets, onStart, on
   const [workspace, setWorkspace] = useCoordinationDraft(prefix + 'workspace', existing?.workspace || '');
   const [mode, setMode] = useCoordinationDraft<GroupMode>(prefix + 'mode', existing?.mode || 'round-robin');
   const [rounds, setRounds] = useCoordinationDraft<number>(prefix + 'rounds', existing?.discussionRounds ?? DEFAULT_DISCUSSION_ROUNDS);
+  const [debate, setDebate] = useCoordinationDraft<boolean>(prefix + 'debate', existing?.debate ?? true);
   const [name, setName] = useCoordinationDraft(prefix + 'name', existing?.name || '');
   const [pick, setPick] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
@@ -102,8 +103,8 @@ export function RoomSetup({ routes, defaultRoute, personas, presets, onStart, on
     setStarting(true);
     try {
       const created = existing
-        ? await updateGroup(existing, {participants: participants as GroupState['participants'], mode, executionMode, workspace, name, discussionRounds: rounds})
-        : await startGroup(participants, mode, executionMode, workspace, spaceId, name, { projectId, discussionRounds: rounds });
+        ? await updateGroup(existing, {participants: participants as GroupState['participants'], mode, executionMode, workspace, name, discussionRounds: rounds, debate})
+        : await startGroup(participants, mode, executionMode, workspace, spaceId, name, { projectId, discussionRounds: rounds, debate });
       if (mounted.current) onStart(created);
     } catch (err) {
       say((err as Error).message || t('Could not start the group.'), 'warn');
@@ -161,6 +162,12 @@ export function RoomSetup({ routes, defaultRoute, personas, presets, onStart, on
       </div>
       <p className="fs-muted">{mode === 'round-robin' ? t('Each participant answers after the previous one and sees what was said.') : t('Everyone answers at the same time, then each one reads the others and can answer them.')}</p>
       <div className="fs-grp__work-options">
+        <label className="fs-grp__option">{t('Conversation')}
+          <select className="fs-field" value={debate ? 'debate' : 'chat'} onChange={event=>setDebate(event.target.value === 'debate')} data-testid="group-debate-mode">
+            <option value="debate">{t('Debate')}</option>
+            <option value="chat">{t('Group chat')}</option>
+          </select>
+        </label>
         <label className="fs-grp__option">{t('Between themselves')}
           <select className="fs-field" value={rounds} onChange={(e) => setRounds(Number(e.target.value))} data-testid="group-rounds">
             {ROUND_CHOICES.map((n) => <option key={n} value={n}>{n < 0 ? t('Until the discussion ends') : n === 0 ? t('Only answer me') : t('Up to {n} rounds of replies', { n })}</option>)}

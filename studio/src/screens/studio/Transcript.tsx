@@ -6,6 +6,7 @@ import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton, TurnCostBreakdown } from '../../components';
 import { TurnActivity } from './TurnActivity';
+import { DebatePanel } from '../group/DebatePanel';
 import { ToolsOfferedLine } from './ToolsOfferedLine';
 import { AgentMessageTurn } from './AgentMessageTurn';
 import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type NetworkSummary, type WebSource } from '../../adapters/chat';
@@ -1622,6 +1623,7 @@ function UserTurn({
               )}
               <Said text={turn.text} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
               {turn.edited && <span className="fs-turn__edited">{t('edited')}</span>}
+              {turn.note && <p className="fs-notice" role="status">{turn.note}</p>}
             </div>
             <div className="fs-turn__actions" data-testid="turn-actions">
               <CopyButton text={turn.text} />
@@ -2730,26 +2732,10 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
         if (!turn) return null;
         const index = virtualItem.index;
         const enter = !seenIds.current.has(turn.id);
-        return (
-          <div
-            key={virtualItem.key}
-            ref={rowVirtualizer.measureElement}
-            data-index={virtualItem.index}
-            className="fs-studio__turn-row"
-            style={{ transform: `translateY(${virtualItem.start}px)` }}
-          >
-            {turn.role === 'user' ? (
-              <UserTurn turn={turn} busy={busy} enter={enter} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
-            ) : turn.role === 'system' ? (
-              <CondensedTurn
-                turn={turn}
-                busy={busy}
-                onExpand={onExpandCondensed ? () => onExpandCondensed(turn.historyIndex ?? index) : undefined}
-              />
-            ) : (
+        const drawAssistant = (turn: Turn, lastReply: boolean) => (
               <AssistantTurn
                 turn={turn}
-                last={index === turns.length - 1}
+                last={lastReply}
                 busy={busy}
                 enter={enter}
                 sessionId={sessionId}
@@ -2780,7 +2766,26 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
                 projectId={projectId}
                 modeName={turn.behaviorMode ? (modeNameById.get(turn.behaviorMode) ?? turn.behaviorMode) : undefined}
               />
-            )}
+        );
+        return (
+          <div
+            key={virtualItem.key}
+            ref={rowVirtualizer.measureElement}
+            data-index={virtualItem.index}
+            className="fs-studio__turn-row"
+            style={{ transform: `translateY(${virtualItem.start}px)` }}
+          >
+            {turn.role === 'user' ? (
+              <UserTurn turn={turn} busy={busy} enter={enter} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
+            ) : turn.role === 'system' ? (
+              <CondensedTurn
+                turn={turn}
+                busy={busy}
+                onExpand={onExpandCondensed ? () => onExpandCondensed(turn.historyIndex ?? index) : undefined}
+              />
+            ) : turn.debate ? (
+              <DebatePanel debate={turn.debate} index={index} sessionId={sessionId} renderReply={drawAssistant} />
+            ) : drawAssistant(turn, index === turns.length - 1)}
           </div>
         );
       })}

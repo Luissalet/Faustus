@@ -34,12 +34,15 @@ export interface GroupState {
   /** Follow-up rounds: -1 until the discussion ends, 0 none, positive an explicit limit. */
   discussionRounds?: number;
   executionOptions?: Record<string, unknown>;
+  debate?: boolean;
 }
 
 /** Same default as the server (`src/group_discussion.py`). */
 export const DEFAULT_DISCUSSION_ROUNDS = -1;
 /** Follow-up rounds are queued turns whose request id starts with this. */
 export const isPeerTurn = (turn: { request_id?: string }) => String(turn.request_id ?? '').startsWith('peer:');
+export const isFinalTurn = (turn: { request_id?: string }) => String(turn.request_id ?? '').startsWith('final:');
+export const groupOrigin = (turn: { id: string; request_id?: string }) => isPeerTurn(turn) || isFinalTurn(turn) ? String(turn.request_id).split(':')[1] : turn.id;
 export const PASS_RE = /^\W*\[\s*pass\s*\]|^\W*pass\W*$/i;
 export const isPassText = (text: string) => !text.trim() || PASS_RE.test(text.trim());
 
@@ -103,7 +106,7 @@ export interface GroupStep {
 export interface GroupToolResult { tool?: string; command?: string; output?: string; exit_code?: number; call_id?: string; result_status?: string; uncertainty?: unknown; [key: string]: unknown }
 export interface GroupSnapshot {
   group: GroupState; busy: boolean;
-  turns: { id: string; message: string; status: string; request_id?: string; created?: number; participants?: (Participant & {sessionId: string})[] }[];
+  turns: { id: string; message: string; status: string; debate?: boolean; request_id?: string; created?: number; participants?: (Participant & {sessionId: string})[] }[];
   steps: GroupStep[];
 }
 
@@ -145,9 +148,9 @@ export async function openGroup(id: string, signal?: AbortSignal): Promise<Group
 }
 export async function startGroup(input: Participant[], mode: GroupMode,
   executionMode: 'chat' | 'agent' = 'agent', workspace = '', spaceId = 'ecosystem', name = '',
-  extra: { projectId?: string; discussionRounds?: number } = {}): Promise<GroupState> {
+  extra: { projectId?: string; discussionRounds?: number; debate?: boolean } = {}): Promise<GroupState> {
   const state = await command<GroupState>('/api/groups', { participants: input, mode, executionMode, workspace, space_id: spaceId, name,
-    project_id: extra.projectId ?? '', discussionRounds: extra.discussionRounds ?? DEFAULT_DISCUSSION_ROUNDS });
+    project_id: extra.projectId ?? '', discussionRounds: extra.discussionRounds ?? DEFAULT_DISCUSSION_ROUNDS, debate: extra.debate ?? true });
   saveGroupState(state);
   return state;
 }
@@ -171,7 +174,7 @@ export async function agoraBoard(spaceId: string, signal?: AbortSignal): Promise
   return result as AgoraBoard;
 }
 export function sendGroup(id: string, message: string, requestId: string, mentions: string[] = [],
-  execution: Pick<GroupState, 'executionOptions' | 'executionMode' | 'workspace'> = {}): Promise<{turn_id: string}> {
+  execution: Pick<GroupState, 'executionOptions' | 'executionMode' | 'workspace' | 'debate'> = {}): Promise<{turn_id: string}> {
   return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId, mentions, ...execution });
 }
 export function stopGroup(id: string): Promise<unknown> {

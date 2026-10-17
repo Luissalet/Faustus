@@ -1,0 +1,44 @@
+.fs-app .fs-debate {
+  margin-block: var(--fs-space-3);
+  border-block: 1px solid var(--fs-border);
+}
+.fs-app .fs-debate__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-height: 48px;
+  padding: var(--fs-space-3) var(--fs-space-2);
+  cursor: pointer;
+  list-style: none;
+}
+.fs-debate__summary::-webkit-details-marker { display: none; }
+.fs-debate__summary:hover { background: var(--fs-surface-2); }
+.fs-debate__summary:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 2px; }
+.fs-debate__summary strong { font-size: var(--fs-body-size); color: var(--fs-text-1); }
+.fs-debate__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+.fs-debate[data-state='waiting_user'] .fs-debate__status { color: var(--fs-warning); }
+.fs-debate[data-state='error'] .fs-debate__status { color: var(--fs-danger); }
+.fs-debate__speakers {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+.fs-debate__chevron { flex-shrink: 0; transition: transform 140ms ease-out; }
+.fs-debate[open] .fs-debate__chevron { transform: rotate(90deg); }
+.fs-debate__replies { padding: var(--fs-space-3) var(--fs-space-2); }
+.fs-debate__replies > div + div { margin-top: var(--fs-space-5); }
+.fs-debate__empty { margin: 0; color: var(--fs-text-2); }
+.fs-debate__spinner { animation: fs-debate-spin 1s linear infinite; }
+@keyframes fs-debate-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .fs-debate__spinner { animation: none; }
+  .fs-debate__chevron { transition: none; }
+}

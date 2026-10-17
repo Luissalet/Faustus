@@ -2,6 +2,10 @@
 
 Group chat keeps its composition and ordered turns in the server. The parent and participant conversations remain ordinary canonical Studio sessions. Each participant runs through the normal chat endpoint, native agent run, configured model credentials, tool selection and question handling. There is no additional agent loop or operational dependency on another application.
 
+Studio defaults to a collapsible **Debate** with live participant activity and one separate final answer. Create/update/send and the corresponding MCP tools accept `debate: true`; native clients that omit it retain their existing format. The room editor keeps **Group chat** available for separate replies. During a debate, members inspect evidence, resolve ordinary choices and nominate one reporter with `[REPORTER: @handle]`. When they converge or the configured reply rounds finish, the conductor queues exactly one `final:<origin_turn_id>` turn for that reporter; the deterministic request ID prevents duplicate final answers after recovery or acknowledgement retries. Without a nomination, the last member with a useful successful reply reports back. The final turn does not start another peer discussion.
+
+The collapsed block retains all replies, reasoning, tools and errors; it shows who is active, when a decision is needed, and when the reporter is preparing the final answer. Actual native questions remain outside the collapsed block. Stop preserves queued user instructions and their stopped status. Final replies and their provenance are canonical history records (`group_debate`, `group_origin_turn_id`, `group_final`); internal peer/final prompts are never shown as messages written by the person. A stopped debate is not silently resumed or finalized.
+
 New groups use the configured global model, currently the resident Sparks service, and agent mode. Models and personas can be selected per participant. Plain chat, parallel discussion and ordered turns remain available. There is no fixed participant ceiling. A working folder is optional; native project and tool behavior still applies.
 
 Project → Agora opens the same canonical group in Studio itself, including its

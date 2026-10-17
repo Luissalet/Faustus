@@ -82,3 +82,15 @@ async def test_unavailable_global_route_stays_selected_instead_of_pc_fallback(gr
         route=(await client.get('/api/groups/config')).json()['defaultRoute']
         assert route['endpointId']=='sparks-configured' and route['model']=='configured-global'
         assert route['missing'] and route['endpointUrl']==''
+
+
+async def test_native_send_exposes_and_persists_debate_mode(group_api):
+    app,c,_=group_api
+    async with AsyncClient(transport=ASGITransport(app=app),base_url='http://127.0.0.1') as client:
+        result=await client.post('/api/groups/parent/messages',json={'message':'Consolidate','request_id':'debate-key','debate':True})
+        assert result.status_code==200
+        await idle(c)
+        snapshot=(await client.get('/api/groups/parent')).json()
+        assert snapshot['group']['debate'] is True
+        assert snapshot['turns'][0]['debate'] is True
+        assert len([t for t in snapshot['turns'] if t['request_id'].startswith('final:')]) == 1

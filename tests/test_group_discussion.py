@@ -35,6 +35,93 @@ class Scripted:
         pass
 
 
+class DebateScripted(Scripted):
+    async def invoke(self, **kw):
+        if d.is_final(kw['turn']):
+            self.calls.append(('final', kw['member']['sessionId']))
+            return {'text': 'One agreed final answer.', 'detail': {}}
+        return await super().invoke(**kw)
+
+
+async def test_debate_selects_a_nominated_reporter_and_one_idempotent_final_turn(tmp_path):
+    inv = DebateScripted({(0,'glm'):'Option A', (0,'qwen'):'Option B',
+                         (1,'glm'):'Agreed on B. [REPORTER: @qwen]', (1,'qwen'):'[PASS]'})
+    c = GroupCoordinator(inv, Transcript(), store=GroupStore(tmp_path/'groups.db'))
+    c.adopt({**room('parallel'), 'debate':True}, 'owner')
+    await c.submit('room','owner','Consolidate the proposals','stable')
+    await idle(c)
+    turns = c.store.turns('room')
+    finals = [turn for turn in turns if d.is_final(turn)]
+    assert len(finals) == 1 and finals[0]['status'] == 'done'
+    assert d.origin(finals[0]) == turns[0]['id']
+    assert inv.calls[-1] == ('final','qwen')
+    assert len(c.store.steps(finals[0]['id'])) == 1
+    assert c.store.steps(finals[0]['id'])[0]['text'] == 'One agreed final answer.'
+    assert 'Original request:\nConsolidate the proposals' in finals[0]['message']
+    c._follow_up(turns[-2], 'owner')
+    c._follow_up(finals[0], 'owner')
+    await c.submit('room','owner','Consolidate the proposals','stable')
+    await idle(c)
+    assert len(c.store.turns('room')) == len(turns), 'recovery/repeated acknowledgements must not duplicate the final answer'
+
+
+async def test_explicit_discussion_limit_still_produces_one_final_answer(tmp_path):
+    inv = DebateScripted({(0,'glm'):'A', (0,'qwen'):'B'})
+    c = GroupCoordinator(inv, Transcript(), store=GroupStore(tmp_path/'groups.db'))
+    c.adopt({**room('parallel', rounds=0), 'debate':True}, 'owner')
+    await c.submit('room','owner','Consolidate','stable')
+    await idle(c)
+    assert inv.calls[-1] == ('final','qwen')
+    assert len(inv.calls) == 3
+
+
+async def test_stop_during_final_answer_does_not_resume_or_queue_another_final(tmp_path):
+    class Blocking(DebateScripted):
+        def __init__(self):
+            super().__init__({(0,'glm'):'A',(0,'qwen'):'B'})
+            self.started=asyncio.Event()
+        async def invoke(self, **kw):
+            if d.is_final(kw['turn']):
+                self.calls.append(('final',kw['member']['sessionId']))
+                self.started.set()
+                await asyncio.Event().wait()
+            return await super().invoke(**kw)
+    inv=Blocking()
+    c=GroupCoordinator(inv,Transcript(),store=GroupStore(tmp_path/'groups.db'))
+    c.adopt({**room('parallel',rounds=0),'debate':True},'owner')
+    await c.submit('room','owner','Consolidate','stable')
+    await inv.started.wait()
+    await c.stop('room','owner')
+    await idle(c)
+    finals=[t for t in c.store.turns('room') if d.is_final(t)]
+    assert len(finals)==1 and finals[0]['status']=='stopped'
+    assert not c.snapshot('room','owner')['busy']
+    assert inv.calls.count(('final','qwen'))==1
+
+
+async def test_debate_waits_for_a_real_user_decision_instead_of_inventing_a_final(tmp_path):
+    class Questions(DebateScripted):
+        async def invoke(self, **kw):
+            if kw['member']['sessionId'] == 'glm':
+                return {'text':'Which option is required?', 'question':{'question':'A or B?'}, 'detail':{}}
+            return await super().invoke(**kw)
+    c = GroupCoordinator(Questions({}), Transcript(), store=GroupStore(tmp_path/'groups.db'))
+    c.adopt({**room(), 'debate':True}, 'owner')
+    await c.submit('room','owner','Consolidate','stable')
+    await idle(c)
+    snapshot = c.snapshot('room','owner')
+    assert snapshot['busy'] and snapshot['turns'][0]['status'] == 'waiting_user'
+    assert not any(d.is_final(t) for t in snapshot['turns'])
+
+
+def test_reporter_uses_valid_votes_and_does_not_choose_failed_content():
+    steps = [{'member_id':'glm','status':'error','text':'[REPORTER: @glm]'},
+             {'member_id':'qwen','status':'done','text':'Useful answer. [REPORTER: @missing]'}]
+    assert not d.nominations(steps,members())
+    assert d.reporter(steps,members()) == 'qwen'
+    assert d.reporter([],members()) is None
+
+
 def test_handles_include_short_unique_prefixes():
     found = d.handles(members())
     assert found['glm'] == ['glm-5.3-flash-nvfp4', 'glm']
