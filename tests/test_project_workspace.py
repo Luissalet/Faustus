@@ -70,6 +70,17 @@ def test_duplicate_and_multiskill_import_preserve_existing(setup):
         pw.install_files(project, {"a/SKILL.md": MD, "b/SKILL.md": MD})
 
 
+def test_staged_skill_is_not_discoverable_until_scan_completes(setup, monkeypatch):
+    project, _, _ = setup
+    scan = review.scan_skill_folder
+    def inspect_before_publish(path):
+        assert pw.list_skills(project) == []
+        return scan(path)
+    monkeypatch.setattr(review, "scan_skill_folder", inspect_before_publish)
+    result = pw.install_files(project, {"SKILL.md": MD})
+    assert result["key"] in [key for key, _ in pw._found(project)]
+
+
 def test_chat_writes_real_instructions_memory_and_scopes_owner(setup):
     project, store, _ = setup
     tool = ProjectWorkspaceTool()

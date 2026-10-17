@@ -200,7 +200,7 @@ def install_files(project: dict, files: dict[str, str]) -> dict:
         base.mkdir(parents=True, exist_ok=True)
         # Stage inside the same filesystem: validation/scan failures never leave
         # a partially discoverable SKILL.md behind.
-        with tempfile.TemporaryDirectory(prefix=".import-", dir=base) as temp:
+        with tempfile.TemporaryDirectory(prefix=".skill-import-", dir=base.parent) as temp:
             staged = Path(temp) / name
             staged.mkdir()
             for rel, text in clean.items():
