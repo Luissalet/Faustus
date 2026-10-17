@@ -12970,3 +12970,37 @@ benchmark de FPS. Build Main y todos los assets idénticos a QA por HTTP, planti
 play6482872bytes igual. Main conserva la partida humana abierta; no se reinició aquí.
 Evidencia research-inbox/silver-visuals-20261017.
 Sin push, reinicio Main, modelos, subagentes ni encargos a Claude.
+
+## Copiloto de Silver: equipo con sets populares, conexión automática y cortes de generación muda — 17-10-2026
+
+Luis pidió desde el panel de Silver «pon al entrenador actual estos seis Pokémon con sets populares de
+Smogon» (Mega Delphox, Dragonite, Glaceon, Shaymin Forma Cielo, Raichu alola, Spiritomb) y el turno se
+quedó en «Sending...». La traza (data/llm_traces) dio dos causas: Silver tenía manifiesto en
+plugins/silver pero ningún conector, así que el turno no recibió ninguna herramienta de Silver; y GLM
+5.3 flash en las Sparks siguió generando a 130 tokens/s durante nueve minutos sin que vLLM soltara
+nada (una llamada a herramienta que su parser retenía).
+
+- Conector de Silver dado de alta (161 herramientas). `hoard_copilot_turn.connect_origin_app`: un
+  turno de un Hoard con manifiesto y sin servidor conectado lo conecta antes del turno por las rutas
+  de Connectors con el token interno (`/api/app-connectors/<id>/connect` o `/adopt` con el puerto que
+  encuentra el descubrimiento), un intento por app cada 5 min. Si sigue sin estar, la pista del turno
+  lo dice y prohíbe sustituir sus herramientas con búsquedas web. Faltaban también daguerre, heron,
+  laplace, mercator, midas y nightingale: se conectan al usar su panel.
+- `llm_core._lines_until_stall`: en el camino OpenAI-compatible, tras la primera línea, un silencio
+  de `llm_stream_idle_timeout_s` (120 s, 0 = apagado) cierra la llamada como salida degenerada y entra
+  la recuperación de siempre. Comprobado en vivo el mismo día: cortó un silencio de GLM y el
+  reintento hizo la llamada.
+- `agent_loop.announced_action`: el supervisor de «lo anunció y no lo hizo» detecta también promesas
+  en inglés tras otra frase («The right tool exists: ... I'll replace Pablo's team with these six.»,
+  fin de turno real sin llamada) y verbos de escritura (replace, update, create, save, add...); las
+  ofertas («if you want», «si quieres») no cuentan.
+- Silver (80f2b02, 4812b0b, 83e5922): herramienta `team_popular_sets` (nombres libres ES/EN, megas de
+  Leyendas Z-A con su piedra desde los sets de Pokémon Champions, set por uso cuando no hay escrito) y
+  `sets_popular` con los mismos nombres.
+
+Pruebas: Faustus 111 focales + 421 de agente (el único fallo, test_operator_disabled_tools_setting_outranks_the_reconciliation,
+era previo y de la prueba: con tool_approval_mode full apply_patch se ejecuta en vez de pedir
+aprobación; corregida en aa9112a0); Silver Python completo y Node 372/1 omitida. Copiloto probado en el navegador con la misma
+petición: equipo de Pablo guardado con los seis (Delphox @ Delphoxite, Dragonite @ Dragonium Z,
+Glaceon por uso de ZU, Shaymin-Sky @ Choice Scarf, Raichu-Alola @ Psychium Z, Spiritomb @ Leftovers).
+Commits 7e65bf49, 5ba1af37, 42144546; 7000 reiniciado. Sin push.

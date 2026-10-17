@@ -732,8 +732,10 @@ def _stream_timeout(read_timeout) -> httpx.Timeout:
 #: the prompt needs; after it, a server that sends nothing for this long is
 #: generating something it holds back. Live 17-10-2026: vLLM's GLM tool-call
 #: parser held a broken call for nine minutes while the Sparks kept
-#: generating at 130 tokens/s, and the copilot turn showed only "Sending...".
-_STREAM_IDLE_DEFAULT_S = 240.0
+#: generating at 130 tokens/s, and the copilot turn showed only "Sending...". The
+#: same day the cap caught it live (a retry then made the call); vLLM sends
+#: every token it releases, so two minutes of silence is never progress.
+_STREAM_IDLE_DEFAULT_S = 120.0
 _STREAM_STALLED = object()
 
 
