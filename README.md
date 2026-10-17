@@ -3,10 +3,12 @@
 
 Navigation now follows the work: chat actions and document workspaces in Studio, repositories inside each project, specialist apps under Hoards, and five searchable settings areas. All existing tools and saved data remain accessible. See [navigation](docs/ui/navigation.md).
 
-Agora uses the regular Studio chat: Project → Agora opens its conversation list, transcript and composer, with the usual project button and a Tasks shortcut. Attachments, slash commands and composer controls use the native chat harness. Use @mentions and Members to choose models, supported reasoning and discussion settings or inspect each participant's activity. Members can answer each other until the discussion ends; optional round limits remain selectable. Existing conversations, deliberation and coordination tools remain available. [Agora workspace](docs/api/agora.md) · [compatible group API](docs/api/groups.md).
+Agora uses the regular Studio chat: Project → Agora opens its conversation list, transcript and composer, with the usual project button and a Tasks shortcut. Attachments, slash commands and composer controls use the native chat harness. Use @mentions and Members to choose models, supported reasoning and discussion settings or inspect each participant's activity. Members can answer each other until the discussion ends; optional round limits remain selectable. Existing conversations, deliberation and coordination tools remain available. Visible answers remain on screen while a replacement is drafted; stopping a group keeps queued user messages visible with their stopped status. [Agora workspace](docs/api/agora.md) · [compatible group API](docs/api/groups.md).
 </p>
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>
+
+Dictation shares the Studio editor, saves recoverable text before pasting and keeps general/project vocabulary with conservative learning from spelling corrections. Manage vocabulary and recent dictations in Voice settings or MCP. Home's named personal assistants use ordinary persistent chats: create or adopt a chat, reopen the same session on desktop/mobile and keep its project, tools, voice and history. Removing an assistant preserves the chat. [Dictation](docs/api/dictation.md) · [Personal assistants](docs/api/personal-assistants.md).
 
 A temporary retryable Sparks service outage before output keeps the task alive
 on the same configured model. Completed tool results are retained; Stop and

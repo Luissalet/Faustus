@@ -20,6 +20,7 @@ try {
     export * from './studio/src/shell/toolPlacement';
     export * from './studio/src/screens/settings/SettingsNavigation';
     export { SettingsScreen } from './studio/src/screens/Settings';
+    export { SourceControlScreen } from './studio/src/screens/SourceControl';
     export * from './studio/src/screens/studio/commands';
     export { createElement, act, useState } from 'react';
     export { createRoot } from 'react-dom/client';
@@ -90,6 +91,21 @@ try {
   await m.act(async () => { finishAuth(new Response(JSON.stringify({ auth_disabled: true, is_admin: true }), { headers: { 'Content-Type': 'application/json' } })); });
   assert.equal(settingsHost.querySelector('[data-testid="settings-section-models"]')?.getAttribute('aria-current'), 'page', 'late auth does not restore the initial settings section');
   await m.act(async () => settingsRoot.unmount());
+
+  const gitRequests = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input); gitRequests.push(url);
+    const data = url.includes('/api/git/repos') ? { repos: [], git_version: '2.0' } : url.includes('/api/projects') ? [] : {};
+    return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const gitHost = document.createElement('div'); document.body.append(gitHost);
+  const gitRoot = m.createRoot(gitHost);
+  await m.act(async () => gitRoot.render(m.createElement(m.MemoryRouter, { initialEntries: ['/source-control?project=project-one'] }, m.createElement(m.SourceControlScreen))));
+  assert.ok(gitHost.querySelector('[data-testid="source-control"]'), 'project Git full-screen link opens the full screen instead of redirecting back');
+  assert.ok(gitHost.querySelector('[data-testid="source-control-panel"]'));
+  assert.equal(gitHost.querySelector('[data-testid="git-radar"]'), null, 'project Git does not show the installation-wide radar');
+  assert.ok(gitRequests.some(url => url.includes('/api/git/repos?project_id=project-one')), 'full-screen Git retains the project scope at the API');
+  await m.act(async () => gitRoot.unmount());
 
   const shell = readFileSync(join(root, 'studio/src/shell/AppShell.tsx'), 'utf8');
   assert.ok(!shell.includes('tools.map('), 'no permanent tool inventory in the sidebar');

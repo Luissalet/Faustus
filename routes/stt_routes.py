@@ -19,6 +19,7 @@ class DictationEdit(BaseModel):
     text: str = Field(max_length=8000)
     mode: Literal["clean", "revise"] = "clean"
     draft: str = Field(default="", max_length=8000)
+    project: str = Field(default="", max_length=200)
 
 
 def setup_stt_routes(stt_service):
@@ -32,7 +33,12 @@ def setup_stt_routes(stt_service):
         from src.auth_helpers import effective_user
         if body.mode == "revise" and not body.draft.strip():
             raise HTTPException(422, "A draft is required for spoken revision.")
-        return await polish(body.text, body.mode, body.draft, owner=effective_user(request))
+        identity = effective_user(request)
+        result = await polish(body.text, body.mode, body.draft, owner=identity, project=body.project)
+        if body.mode == "clean" and body.text.strip():
+            from src.dictation_vocabulary import remember
+            result["id"] = remember(body.text, result["text"], owner=identity, project=body.project)
+        return result
 
     @router.get("/capabilities")
     async def get_capabilities():

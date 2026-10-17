@@ -1,5 +1,25 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Dictado recuperable y asistentes personales (17-10-2026, #693/#694):**
+El dictado global pasa por el mismo editor fiel de Studio y guarda original y
+texto final antes de pegar; un fallo de pegado devuelve el texto recuperable.
+El vocabulario general o por proyecto y las correcciones conservadoras de nombres
+se editan desde Voz, API y `dictation_workspace`. Las cantidades, negaciones y
+literales no se aprenden como sustituciones. El grabador conserva la ventana al
+recibir su primera señal de grabación y evita dobles atajos mientras procesa.
+No se ha medido precisión ASR ni probado el micrófono físico o el pegado al
+escritorio humano en este lote. Véase [dictado](docs/api/dictation.md).
+
+Inicio permite crear o adoptar asistentes con nombre sobre el ID del chat
+canónico, editar notas descriptivas y abrir la misma conversación en móvil.
+Quitar y restaurar la referencia conserva el chat y los mensajes. El estado se
+deriva del turno real; las notas no sustituyen las instrucciones del proyecto o
+del chat. La API móvil y MCP `personal_assistants` comparten los datos. La
+continuidad se probó con dos turnos reales de las Sparks globales, saliendo de
+Studio durante el primero y recordando una clave sintética en el segundo.
+No añade un relay público, cliente iOS u otro arnés o historial. Véase
+[asistentes personales](docs/api/personal-assistants.md).
+
 **Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
 Proyecto → Ágora abre Studio real: su lista, cabecera, historial y compositor,
 con respuestas completas, herramientas, @menciones y pill de Sparks. Tasks abre
@@ -13011,6 +13031,12 @@ Glaceon por uso de ZU, Shaymin-Sky @ Choice Scarf, Raichu-Alola @ Psychium Z, Sp
 Commits 7e65bf49, 5ba1af37, 42144546; 7000 reiniciado. Sin push.
 
 
+## 17-10-2026 — Navegación por contexto y ajustes agrupados
+
+El menú Tools permanente se sustituye por accesos junto al trabajo y búsqueda global con ratón, teclado y móvil. Studio mantiene Research con `/research` en la misma conversación, y extracción, comparación y contexto en paneles solicitados. Los esquemas, evidencias, validación, datos y APIs/MCP existentes se conservan; extracción añade a la conversación los campos visibles y sus límites. No se afirma una migración de motores o datos a otro Hoard.
+
+Source control se abre dentro del proyecto; los enlaces antiguos piden proyecto y conservan una vista general explícita. Proyectos agrupa detalles secundarios, el panel lateral muestra las pestañas relevantes, y el compositor agrupa sus opciones e información. Ajustes conserva todas sus secciones bajo cinco áreas con búsqueda y enlaces `?s=`; móvil usa selectores de área/sección. Ayuda y visitas guiadas se solicitan desde búsqueda o comandos. Inventario y verificación en `docs/ui/navigation.md`.
+
 ## Silver's Hoard: entrenadores overworld en el público — 17-10-2026
 
 El público de los combates en tiempo real combina Pokémon del catálogo de la generación con 277 diseños de entrenadores overworld: 231 del FRLG Accurate NPC Megapack y 46 del pack de Taiga. Aproximadamente el 40 % de las plazas ocupadas son entrenadores; la semilla conserva sus diseños y posiciones en las repeticiones, sin repetir diseño dentro de la misma arena.
@@ -13019,8 +13045,22 @@ Los entrenadores miran hacia la cancha con sus cuatro orientaciones originales y
 
 La herramienta `credits`, su API y la página de créditos recogen las dos fuentes. Silver conserva las listas originales de autores, el manifiesto de procedencia y el generador del atlas; `docs/CROWD.md` describe el formato y la reconstrucción. Los sprites de aficionados conservan sus créditos y no se relicencian como el código de la aplicación.
 
-## 17-10-2026 — Navegación por contexto y ajustes agrupados
+## Silver: sprites de megas Z-A y hojas direccionales — 17-10-2026
 
-El menú Tools permanente se sustituye por accesos junto al trabajo y búsqueda global con ratón, teclado y móvil. Studio mantiene Research con `/research` en la misma conversación, y extracción, comparación y contexto en paneles solicitados. Los esquemas, evidencias, validación, datos y APIs/MCP existentes se conservan; extracción añade a la conversación los campos visibles y sus límites. No se afirma una migración de motores o datos a otro Hoard.
+Silver conserva el aspecto Mega cuando SpriteCollab solo devuelve la animación de la forma normal. El respaldo cubre las 49 variantes nuevas del catálogo, incluidas Mega Z y las variantes de Meowstic, Magearna y Tatsugiri, normales/variocolor y de frente/espalda. Delphox ya megaevolucionaba en el motor: la corrección cambia su representación, sin modificar daño ni resultados.
 
-Source control se abre dentro del proyecto; los enlaces antiguos piden proyecto y conservan una vista general explícita. Proyectos agrupa detalles secundarios, el panel lateral muestra las pestañas relevantes, y el compositor agrupa sus opciones e información. Ajustes conserva todas sus secciones bajo cinco áreas con búsqueda y enlaces `?s=`; móvil usa selectores de área/sección. Ayuda y visitas guiadas se solicitan desde búsqueda o comandos. Inventario y verificación en `docs/ui/navigation.md`.
+Las herramientas nativas `overworld_import` y `overworld_list`, compartidas por UI, REST y MCP, incorporan el ZIP Z-A y la hoja de la línea Delphox aportados por Luis. Hay diez megas con movimiento en cuatro direcciones, normal y variocolor: 26 entradas y 19 PNG originales únicos, persistentes en `data/overworld`. Los créditos enlazados y las hojas viajan con los HTML jugables de entrenador/gimnasio. No se inventan poses de ataque/daño ni se añaden estas hojas al renderer campal separado.
+
+Activo en Main Silver `d52ea2e`; entregas 699 R2 y 704 R2 aprobadas independientemente. Importación real por MCP y PNG byteexactos; 16 tablas y seis archivos protegidos conservados. Evidencia: `D:/LocalAI/research-inbox/silver-za-20261017/RESULT.txt`.
+
+## Silver: preparación de entrenadores, concursos y bases — 17-10-2026
+
+Las entregas 685–692 están aprobadas independientemente e integradas en Silver Main `89736f5`, conservando las actualizaciones anteriores de megas y público. Desde Combatir se cambia la foto del entrenador y se eligen y ordenan seis Pokémon de sus reservas más amplias. Guardar un equipo sin cambios no duplica candidatos; una edición real se conserva como una variante nueva.
+
+Las fotos de identidad permanecen visibles al preparar un dibujo. «Style references» permite elegir explícitamente imágenes propias, sprites de entrenadores y arte oficial; una selección vacía sigue vacía. Las Poké Balls animan lanzamiento y apertura en ambos modos y páginas jugables, con respaldo si no carga la hoja y respeto a reducir movimiento. El atlas aportado por Luis conserva sus bytes y procedencia; su licencia de redistribución no se da por verificada.
+
+Concursos ofrece presentación, baile de ocho pasos y cuatro exhibiciones ante tres jueces, progreso guardado y cintas. Bases secretas permite decorar y recorrer una sala 8×8, retar al propietario, archivar y recuperar e intercambiar JSON con su equipo. Ambas usan reglas propias de Silver inspiradas en los juegos; no se afirma paridad completa con el cartucho. Las animaciones PMD usan `HitFrame` y `SpAttack` cuando existen, conservando cachés y alternativas si faltan hojas o conexión.
+
+El Especial de Silver es un ataque adicional inventado, de potencia 150 y separado de los cuatro movimientos. Es opcional y viene desactivado en las partidas nuevas (reglas 11); se activa en Ajustes mediante `rt_silver_special`. Cada partida, copa, lote y página exportada conserva su elección. Cambiar Ajustes no reescribe el pasado; las versiones 1–10 conservan sus reglas y las 5–10 su especial. La megaevolución sigue siendo independiente.
+
+UI, REST y MCP comparten 174 herramientas. El servidor registrado de Silver en Faustus se reconectó sin cambiar su configuración o permisos y expone las 174. La composición final pasó 367 pruebas Python (dos omitidas), 398 del motor (una omitida) y ambas compilaciones. MCP y navegador privados comprobaron las fases del concurso, base portátil, reserva de once Pokémon estable, cambio de Pokémon y HTML jugado cuyo código se volvió a verificar con Ajustes contrario. La activación gestionada de Silver conservó los 49 entrenadores, 24 gimnasios, tres ligas, 42 partidas y los 151 archivos protegidos; la migración añadió solo las dos tablas vacías de ocio y su versión de esquema. Evidencia: `D:/LocalAI/research-inbox/silver-expansion-20261017`. Sin push ni reinicio de Faustus, Hub o Sparks.

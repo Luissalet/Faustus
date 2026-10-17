@@ -19,7 +19,7 @@ const {join}=require('node:path');
 // the "media" permission the way Studio's own mic already is — never a
 // data:/file: URL, which the app's permission policy would refuse.
 function startDictation({BrowserWindow,globalShortcut,ipcMain,net},{origin,pollMs=3000,onState=()=>{},logger=console}={}){
-  let registered='',recorderWindow=null,recording=false,polling=true,capturedTarget=null;
+  let registered='',recorderWindow=null,recording=false,processing=false,starting=false,polling=true,capturedTarget=null;
 
   async function fetchSettings(){
     try{
@@ -50,38 +50,44 @@ function startDictation({BrowserWindow,globalShortcut,ipcMain,net},{origin,pollM
   }
 
   async function startRecording(){
+    starting=true;
     try{
       capturedTarget=await captureTarget();
+      const settings=await fetchSettings();
+      const method=settings&&settings.dictation_paste_method||'clipboard';
+      const window=await ensureRecorderWindow();
+      if(window.isDestroyed())return;
+      window.webContents.send('faustus:dictation-start',capturedTarget,method);
+      recording=true;
+      onState({recording:true,target:capturedTarget});
     }catch(error){
-      logger.error?.('Faustus dictation: could not capture the foreground window:',error.message);
+      logger.error?.('Faustus dictation: could not start recording:',error.message);
       onState({recording:false,error:error.message});
-      return;
+    }finally{
+      starting=false;
     }
-    const settings=await fetchSettings();
-    const method=settings&&settings.dictation_paste_method||'clipboard';
-    const window=await ensureRecorderWindow();
-    if(window.isDestroyed())return;
-    window.webContents.send('faustus:dictation-start',capturedTarget,method);
-    recording=true;
-    onState({recording:true,target:capturedTarget});
   }
 
   function stopRecording(){
     recording=false;
+    processing=true;
     if(recorderWindow&&!recorderWindow.isDestroyed())recorderWindow.webContents.send('faustus:dictation-stop');
-    onState({recording:false,target:capturedTarget});
+    onState({recording:false,processing:true,target:capturedTarget});
   }
 
   function onHotkey(){
+    if(starting||processing)return;
     if(recording)stopRecording();else void startRecording();
   }
 
   function resultListener(_event,result){
+    if(result&&result.recording){onState({recording:true,target:capturedTarget});return;}
     // Best-effort feedback only (tray tooltip, logs) — the paste already
     // happened server-side by the time this arrives.
     destroyRecorderWindow();
+    recording=false;processing=false;starting=false;
     if(!result||!result.ok)logger.error?.('Faustus dictation failed:',result&&result.body&&result.body.detail||'unknown error');
-    onState({recording:false,result});
+    onState({recording:false,processing:false,result});
   }
   ipcMain.on('faustus:dictation-result',resultListener);
 
