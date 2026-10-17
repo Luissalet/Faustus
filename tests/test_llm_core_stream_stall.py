@@ -113,7 +113,7 @@ def test_lines_until_stall_yields_the_marker_once():
 
 def test_setting_default_and_bad_values(monkeypatch):
     from src import settings
-    assert settings.DEFAULT_SETTINGS["llm_stream_idle_timeout_s"] == 240
+    assert settings.DEFAULT_SETTINGS["llm_stream_idle_timeout_s"] == 120
     monkeypatch.setattr("src.settings.get_setting", lambda key, default=None: "nonsense")
     assert llm_core._stream_idle_cap() == llm_core._STREAM_IDLE_DEFAULT_S
     monkeypatch.setattr("src.settings.get_setting", lambda key, default=None: -5)
