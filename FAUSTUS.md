@@ -1,5 +1,17 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Asistentes configurables y proactividad (17-10-2026, #724):**
+Studio → conversación nueva → Tus asistentes permite configurar instrucciones
+propias y skills publicadas, aplicadas en Chat, Agente, API sin streaming y
+turnos programados. La misión proactiva usa el programador y arnés nativos con
+el modelo global: horario, zona horaria, avisos, silencio sin novedades, pausa,
+ejecución inmediata y actividad reciente. Los resultados vuelven al mismo chat;
+quitar conserva su historial y restaurar mantiene la programación pausada.
+Faustus debe estar en marcha. Referencias inspeccionadas OpenDots, nanobot y
+Codync, sin dependencia operativa de sus apps. [Contrato](docs/api/personal-assistants.md)
+· [referencias](docs/ASSISTANT_REFERENCES.md). Memory/Brain en Biblioteca →
+Conocimiento queda registrado por separado en Ágora #723, aún sin implementar.
+
 **Inicio unificado en Studio (17-10-2026, #739):**
 Home deja de duplicar el inicio de conversación. Studio conserva el compositor
 habitual y muestra asistentes, decisiones pendientes, resultados fijados y

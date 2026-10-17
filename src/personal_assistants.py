@@ -1,7 +1,7 @@
 """Persistent personal assistants point at ordinary, owned Faustus chats.
 
-Only the name and description live here. Messages, tools, model, project,
-running turns, voice and notifications keep their canonical owners.
+Profiles own instructions and selected skills. Messages, tools, model, project,
+running turns, voice and scheduled work keep their canonical owners.
 """
 from pathlib import Path
 import json
@@ -24,23 +24,43 @@ def session_for_owner(session_id, owner):
         return {"id": row.id, "name": row.name, "project_id": row.project_id or "", "archived": bool(row.archived)}
 
 
-def save(session_id, name, description, owner):
+def save(session_id, name, description, owner, *, instructions=None, skills=None, proactivity=None):
+    from src.assistant_runtime import validate_config, sync_task, pause
     session = session_for_owner(session_id, owner)
+    current = store().get("assistant", session_id, owner=owner) or {}
+    instructions = current.get("instructions", "") if instructions is None else instructions
+    skills = current.get("skills", []) if skills is None else skills
+    config = validate_config(instructions, skills, proactivity)
     name = name.strip()
     if not name:
         raise ValueError("An assistant needs a name.")
     # The session ID is also the assistant ID: adopting a chat twice updates
     # the same assistant rather than forking its history or starting a turn.
-    return store().put("assistant", {"id": session_id, "name": name, "description": description.strip()},
-                       owner=owner, session_id=session_id, project_id=session["project_id"], status="active")
+    result = store().put("assistant", {"id": session_id, "name": name, "description": description.strip(),
+                         "instructions": instructions.strip(), "skills": list(dict.fromkeys(skills)),
+                         "quiet": config["quiet"] if config is not None else current.get("quiet", True)},
+                         owner=owner, session_id=session_id, project_id=session["project_id"], status="active")
+    if current.get("status") == "archived":
+        pause(session_id, owner)
+    sync_task(session_id, owner, name, config)
+    return with_activity(result, owner)
 
 
 def retire(session_id, owner):
+    from src.assistant_runtime import pause
     current = store().get("assistant", session_id, owner=owner)
     if current is None:
         raise KeyError(session_id)
+    pause(session_id, owner)
     return store().put("assistant", current, owner=owner, session_id=session_id,
                        project_id=current["project_id"], status="archived")
+
+
+def with_activity(row, owner):
+    from src.assistant_runtime import proactive_state
+    p = proactive_state(row["session_id"], owner)
+    p["quiet"] = row.get("quiet", True)
+    return {**row, "instructions": row.get("instructions", ""), "skills": row.get("skills", []), "proactivity": p}
 
 
 def list_assistants(owner):
@@ -51,6 +71,7 @@ def list_assistants(owner):
     result = []
     with SessionLocal() as db:
         for row in rows:
+            row = with_activity(row, owner)
             sid = row["session_id"]
             try:
                 session = session_for_owner(sid, owner)
@@ -71,6 +92,6 @@ def list_assistants(owner):
                 elif isinstance(content, list):
                     preview = " ".join(str(p.get("text", "")) for p in content if isinstance(p, dict) and p.get("type") == "text")[:400]
             result.append({**row, "project_id": session["project_id"], "preview": preview,
-                           "state": "running" if sid in active else "archived" if session["archived"] else "ready",
+                           "state": "running" if sid in active or any(r["status"] == "running" for r in row["proactivity"]["runs"]) else "archived" if session["archived"] else "ready",
                            "run_id": agent_runs.get_run_id(sid) if sid in active else None})
     return result
