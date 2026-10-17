@@ -165,6 +165,23 @@ def context_messages(session_id, owner, *, skills_enabled=True):
     return result
 
 
+def apply_chat_profile(messages, session_id, owner, *, skills_enabled=True):
+    """Plain Chat uses the same profile before candidate context compaction."""
+    from routes.prefs_routes import _load_for_user
+    from src.owner_identity import effective_storage_owner
+    owner = effective_storage_owner(owner)
+    enabled = skills_enabled and (_load_for_user(owner) or {}).get("skills_enabled", True)
+    context = context_messages(session_id, owner, skills_enabled=enabled)
+    if not context:
+        return messages
+    result = list(messages)
+    prefix_end = next((i for i, m in enumerate(result) if m.get("role") != "system"), len(result))
+    result[prefix_end:prefix_end] = [m for m in context if m["role"] == "system"]
+    user_index = next((i for i in range(len(result) - 1, -1, -1) if result[i].get("role") == "user"), len(result))
+    result[user_index:user_index] = [m for m in context if m["role"] != "system"]
+    return result
+
+
 def prepare_turn(task, db):
     """Validate a scheduled wake against the current chat and live profile."""
     from core.database import Session, ChatMessage

@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     reasoning_effort: Optional[str] = Field(default=None, description="One of the levels reported by the configured model's reasoning-levels API")
     thinking_enabled: Optional[bool] = Field(default=None, description="Explicit reasoning switch, independent of effort; null keeps automatic mode")
     gen_overrides: Optional[Dict[str, Any]] = Field(default=None, description="Per-turn generation settings")
+    no_skills: bool = Field(default=False, description="Skip skill disclosure for this turn")
     
     @field_validator('message')
     @classmethod

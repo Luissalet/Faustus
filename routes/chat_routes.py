@@ -1987,6 +1987,11 @@ def setup_chat_routes(
             request_messages = ctx.messages
             if foreground_policy.enabled:
                 request_messages = getattr(ctx, "route_messages", ctx.messages)
+            from src.assistant_runtime import apply_chat_profile
+            request_messages = apply_chat_profile(request_messages, session, owner,
+                                                 skills_enabled=not getattr(chat_request, "no_skills", False))
+            candidate_request_state["requests"][0] = request_messages
+            if foreground_policy.enabled:
                 candidate_request_factory, candidate_request_state = _chat_candidate_request_factory(
                     request_messages,
                     selected_context_length,
@@ -3498,6 +3503,9 @@ def setup_chat_routes(
                         context_source, message, getattr(ctx, "context_length", 0) or 0
                     )
                 )
+                if chat_mode == "chat":
+                    from src.assistant_runtime import apply_chat_profile
+                    messages = apply_chat_profile(messages, session, _user, skills_enabled=not no_skills)
 
                 # Auto-compact notification
                 if ctx.was_compacted:
