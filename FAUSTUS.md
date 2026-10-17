@@ -13247,3 +13247,37 @@ no prueba fiabilidad universal del modelo. Main75bf0f52 activado tras comprobar
 turnos/grupos inactivos, configuración exacta y bundle común en seis relays.
 Datos reales sin mutaciones de QA; evidencias research-inbox/copilot-reliability778
 y copilot-review778. [Contrato](docs/api/hoard_copilot.md).
+
+## Silver: sprites en ataques de tiempo real por defecto — 18-10-2026, #787
+
+Los ataques de tiempo real incorporan preparación, recorrido e impacto con los
+sprites aportados sin activar el estilo pixel. Rayos, proyectiles, contacto,
+conos, ondas, ráfagas, caídas, cargas y efectos propios usan la geometría pública
+del combate. Puños, patadas, mordiscos y cortes eligen su material por movimiento
+o contacto; los demás comparten familias por tipo. Los 938 IDs únicos tienen un
+perfil consultable en `leisure_catalog(section="effects")`; no se afirma que sean
+938 coreografías originales distintas ni se da efecto a movimientos que el motor
+de tiempo real declara sin efecto.
+
+El catálogo reúne 655 imágenes de 157 fuentes: conserva exactamente las 584
+entradas anteriores y añade 51 secuencias de Explorers of Sky con 784 cuadros y
+20 texturas de partículas de Pokémon Negro. Hay 99 atlas con 1057 cuadros,
+incluidas esas 20 texturas estáticas. El convertidor propio lee NARC/SPL del
+commit fijado de `squiddonaut/pokeblack`, verifica su SHA-256 y conserva índices y
+créditos; no ejecuta código del repositorio ni necesita sus archivos en runtime.
+Veinte archivos del inventario local siguen sin utilizar. El arte mantiene sus
+derechos y no se atribuye a la licencia MIT del programa.
+
+El reloj público controla la velocidad y la pausa de la repetición; reiniciar
+limpia los efectos y reducir movimiento fija sus animaciones decorativas. La
+cola y los dibujos tienen límites por fotograma. El renderizador campal usa los
+mismos materiales mediante sus eventos existentes. No cambian reglas, daño,
+azar ni entradas del motor. App, página jugable y vídeo llevan las imágenes.
+
+Fuente `9dbfee6`: 10 pruebas Node de área y 22 Python de área correctas;
+435 Node completas correctas y una omitida. HTML de 14 MB con las 71 imágenes
+nuevas exactas, jugado hasta victoria con Thunderbolt y resultado SILVERWIN2
+importado y verificado en tiempo real. MP4 nativo 1280×720/25 s con el puño BW
+visible y final por tiempo conforme al combate original. UI predeterminada,
+pausa asentada y móvil comprobados. Pruebas Python completas, revisión y
+activación pendientes; evidencia `D:/LocalAI/research-inbox/sprites787/`.
