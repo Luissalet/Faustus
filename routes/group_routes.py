@@ -20,6 +20,7 @@ class GroupCreate(BaseModel):
     # Follow-up rounds in which the members answer each other (0 = none).
     discussionRounds: int = Field(default=-1, ge=-1)
     executionOptions: dict[str, Any] = Field(default_factory=dict)
+    debate: bool = False
 
 
 class GroupMessage(BaseModel):
@@ -29,6 +30,7 @@ class GroupMessage(BaseModel):
     executionOptions: dict[str, Any] | None = None
     executionMode: Literal['chat', 'agent'] | None = None
     workspace: str | None = None
+    debate: bool | None = None
 
 
 class GroupUpdate(BaseModel):
@@ -42,6 +44,7 @@ class GroupUpdate(BaseModel):
     projectId: str | None = None
     executionOptions: dict[str, Any] | None = None
     expected_revision: int | None = None
+    debate: bool | None = None
 
 
 class GroupAnswer(BaseModel):
@@ -122,6 +125,7 @@ def setup_group_routes(coordinator):
             definition["space_id"] = body.space_id
             definition["discussionRounds"] = body.discussionRounds
             definition['executionOptions'] = execution_options
+            definition['debate'] = body.debate
             return coordinator.adopt(definition, user)
         except (KeyError, ValueError) as error:
             fail(error)
@@ -144,7 +148,7 @@ def setup_group_routes(coordinator):
     async def send(request: Request, group_id: str, body: GroupMessage):
         try:
             user = owner(request)
-            changes = body.model_dump(exclude_none=True, include={'executionOptions', 'executionMode', 'workspace'})
+            changes = body.model_dump(exclude_none=True, include={'executionOptions', 'executionMode', 'workspace', 'debate'})
             # One native request owns options and queueing. Do not ask a browser
             # to PATCH a revision that streaming progress is constantly changing.
             if changes:

@@ -13,7 +13,6 @@ import {
   GitBranch,
   GitCompare,
   GitFork,
-  Home,
   Library,
   ListChecks,
   Mail,
@@ -35,7 +34,7 @@ import {
 } from 'lucide-react';
 
 /**
- * The six destinations (UI-020).
+ * Studio is the single starting destination (UI-020).
  *
  * The sidebar is navigation of intentions, not a directory of subsystems.
  * The old one had eighteen entries and a new user could not build a mental
@@ -53,7 +52,6 @@ export interface Destination {
 }
 
 export const DESTINATIONS: Destination[] = [
-  { path: '/', label: 'Home', icon: Home },
   { path: '/studio', label: 'Studio', icon: Sparkles },
   { path: '/projects', label: 'Projects', icon: FolderKanban },
   { path: '/library', label: 'Library', icon: Library },
@@ -63,15 +61,11 @@ export const DESTINATIONS: Destination[] = [
 ];
 
 /**
- * The phone bottom bar (lot P-B): five tabs, not six — a thumb-width row
- * has no room for the desktop rail's full list, and "the previous
- * interface replaced by Studio" habits (Home, Studio, Calendar, Notes,
- * Settings) are what people actually reach for one-handed. Settings is a
- * destination here even though on desktop it lives in the rail's separate
- * foot — on a phone there is no foot, just this one row.
+ * The phone bottom bar keeps Studio, Projects and Library. Its fourth
+ * control opens the complete navigation and settings. The former Home URL
+ * remains a compatible entry to Studio, without a second navigation item.
  */
 export const MOBILE_DESTINATIONS: Destination[] = [
-  { path: '/', label: 'Home', icon: Home },
   { path: '/studio', label: 'Studio', icon: Sparkles },
   { path: '/projects', label: 'Projects', icon: FolderKanban },
   { path: '/library', label: 'Library', icon: Library },

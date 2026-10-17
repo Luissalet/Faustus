@@ -14,10 +14,6 @@
 .fs-project-workspace__activity { min-width: 0; }
 .fs-project-navigation { display: flex; align-items: center; gap: var(--fs-space-3); flex-wrap: wrap; }
 .fs-project-navigation > .fs-tabs { flex: 1; min-width: 0; }
-.fs-project-agora-workspace { display: flex; flex-direction: column; block-size: 100%; min-block-size: 0; }
-.fs-project-agora-workspace__nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); padding: var(--fs-space-2) var(--fs-space-4); border-bottom: 1px solid var(--fs-border); }
-.fs-project-agora-workspace__nav > .fs-project-navigation { flex: 1; }
-.fs-project-agora-workspace > .fs-project-agora-shell { flex: 1; block-size: auto; }
 .fs-dialog.fs-project-activity-panel { inset-block: 0; inset-inline: auto 0; translate: none; inline-size: min(760px, 100vw); max-block-size: 100dvh; border-radius: 0; }
 @media (max-width: 767px) {
   .fs-project-navigation > .fs-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex-basis: 100%; overflow: visible; }

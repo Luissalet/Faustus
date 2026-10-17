@@ -3,7 +3,13 @@
 
 La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
 
+Studio es la entrada única al trabajo. Una conversación nueva muestra asistentes personales, decisiones pendientes, resultados fijados y proyectos recientes junto al compositor habitual. El radar de repositorios, la flota y el uso siguen en Resumen del espacio; las herramientas personales conservan correo, calendario, notas y mensajería. Los enlaces antiguos de Inicio conservan sus parámetros. Los chats, identidades de asistentes y resultados usan los mismos almacenes y herramientas. [Inicio de Studio](docs/ui/studio-start.md).
+
 Ágora usa el chat habitual de Studio: Proyecto → Ágora abre su lista de conversaciones, historial y compositor, con el botón habitual del proyecto y un acceso a Tasks. Los adjuntos, comandos y controles del compositor usan el arnés nativo. Puedes usar @menciones y abrir Miembros para elegir modelos, razonamiento compatible y ajustes del debate o consultar la actividad de cada participante. Los miembros se contestan hasta terminar la discusión; los límites opcionales de rondas siguen disponibles. Se conservan las conversaciones, la deliberación y las herramientas de coordinación existentes. [Uso de Ágora](docs/api/agora.md) · [API de grupos compatible](docs/api/groups.md).
+
+Las salas nuevas agrupan las intervenciones en un **Debate** desplegable, muestran quién sigue trabajando y las decisiones necesarias, y publican una única respuesta final del portavoz elegido. **Chat en grupo** sigue disponible en el editor de la sala. Cancelar conserva las instrucciones en cola; las @menciones tienen un color distinto.
+
+El detector de salida existente reconoce también vocabulario muy colapsado aunque varíen las frases y usa el error y la recuperación habituales. Comprueba un patrón concreto, sin garantizar calidad semántica ni diagnosticar el servidor de modelos. [Salida degenerada](docs/OUTPUT_COLLAPSE.md).
 </p>
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>

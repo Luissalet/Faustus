@@ -1,4 +1,36 @@
-/* Inicio (UI-030) — second pass, with character. */
+/* Shared work summaries and Studio's start surface. */
+
+.fs-studio-start {
+  display: grid;
+  gap: var(--fs-space-6);
+  max-inline-size: 860px;
+  margin-inline: auto;
+  padding-block: var(--fs-space-3) var(--fs-space-5);
+  min-inline-size: 0;
+}
+.fs-studio-start__intro { display: grid; gap: var(--fs-space-2); color: var(--fs-text-2); }
+.fs-studio-start__shortcuts { display: flex; flex-wrap: wrap; gap: var(--fs-space-2); min-inline-size: 0; }
+.fs-studio-start__shortcuts .fs-btn { min-block-size: 44px; }
+.fs-studio-start__section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--fs-space-3); }
+.fs-studio-start h2 { font-size: var(--fs-body-size); }
+.fs-studio-start__projects, .fs-studio-start__recent { display: grid; gap: var(--fs-space-3); }
+.fs-studio-start__project { display: inline-flex; align-items: center; min-block-size: 44px; padding: var(--fs-space-2) var(--fs-space-3); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); color: var(--fs-text-1); text-decoration: none; overflow-wrap: anywhere; }
+.fs-studio-start__project:hover { background: var(--fs-surface-1); }
+.fs-studio-start__rows { display: grid; min-inline-size: 0; }
+.fs-studio-start__row { display: flex; align-items: center; justify-content: space-between; gap: var(--fs-space-3); min-block-size: 44px; padding-block: var(--fs-space-2); color: var(--fs-text-1); text-decoration: none; border-block-end: 1px solid var(--fs-border); }
+.fs-studio-start__row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+.fs-studio-start__row small { flex-shrink: 0; color: var(--fs-text-2); }
+.fs-studio-start__recent { display: none; }
+.fs-studio-start__overview > summary { cursor: pointer; min-block-size: 44px; display: list-item; align-content: center; color: var(--fs-text-2); }
+.fs-studio-start__overview-content { display: grid; gap: var(--fs-space-6); padding-block-start: var(--fs-space-4); }
+.fs-studio-start .fs-assistants { margin-block: 0; padding-block: 0; border-block: 0; }
+.fs-studio-start .fs-block__title { letter-spacing: normal; text-transform: none; color: var(--fs-text-1); }
+.fs-studio-start .fs-block__title::before { content: none; }
+@media (max-width: 767px) {
+  .fs-studio-start { gap: var(--fs-space-5); }
+  .fs-studio-start__recent { display: grid; }
+  .fs-studio-start .fs-assistants__heading { flex-wrap: wrap; }
+}
 
 .fs-home {
   display: grid;

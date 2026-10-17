@@ -1,9 +1,10 @@
 import type { HistoryMessage } from '../../adapters/chat';
 import { metricsFrom } from '../../adapters/chat';
 import { attachmentsFromMetadata } from '../../adapters/composer';
-import { isPassText, isPeerTurn, speakerName, type GroupSnapshot, type GroupStep, type Participant } from '../../adapters/group';
+import { groupOrigin, isFinalTurn, isPassText, isPeerTurn, speakerName, type GroupSnapshot, type GroupStep, type Participant } from '../../adapters/group';
 import { blankTurn, restoreFromMetadata, type Turn } from '../studio/model';
 import { t } from '../../i18n';
+import { packDebates } from './debate';
 
 /**
  * A room's transcript in Studio's own turn model, so the chat is drawn by
@@ -71,6 +72,7 @@ function historyTurn(m: HistoryMessage): Turn | null {
     const turn = blankTurn('user', m.content);
     turn.attachments = attachmentsFromMetadata(meta);
     turn.id = 'room-' + String(meta.group_turn_id ?? meta.group_answer_id ?? m.index);
+    turn.historyIndex = m.index;
     turn.streaming = false;
     return turn;
   }
@@ -78,6 +80,7 @@ function historyTurn(m: HistoryMessage): Turn | null {
   const passed = meta.group_pass === true || (typeof meta.group_step_id === 'string' && !meta.group_error && isPassText(m.content));
   let turn = blankTurn('assistant', passed ? t('_Nothing to add._') : m.content);
   turn.id = String(meta.group_step_id ?? 'room-' + m.index);
+  turn.historyIndex = m.index;
   turn.streaming = false;
   turn.live = undefined;
   turn.metrics = metricsFrom(meta);
@@ -110,17 +113,23 @@ export function roomView(history: HistoryMessage[], snapshot: GroupSnapshot | nu
   const turns: Turn[] = [];
   const seenTurns = new Set<string>();
   const seenSteps = new Set<string>();
+  const decorate = (reply: Turn, id: unknown, meta: Record<string,unknown> = {}): Turn => {
+    const source = snapshot?.turns.find(t => t.id === id);
+    if (!source?.debate && meta.group_debate !== true && meta.group_final !== true) return reply;
+    return {...reply, text:reply.text.replace(/\[REPORTER:\s*@?[^\]\n]+\]/gi, '').trimEnd(),
+      groupReply:{origin:source ? groupOrigin(source) : String(meta.group_origin_turn_id ?? id), final:source ? isFinalTurn(source) : meta.group_final === true}};
+  };
   for (const message of history) {
     const meta = message.metadata ?? {};
     if (typeof meta.group_turn_id === 'string' && message.role === 'user') seenTurns.add(meta.group_turn_id);
     if (typeof meta.group_step_id === 'string') seenSteps.add(meta.group_step_id);
     const turn = historyTurn(message);
-    if (turn) turns.push(turn);
+    if (turn) turns.push(message.role === 'assistant' ? decorate(turn, meta.group_turn_id, meta) : turn);
   }
   const members = snapshot?.group.participants ?? [];
   const activity: RoomView['activity'] = Object.fromEntries(members.map((m) => [m.sessionId, { state: 'idle' as const }]));
   for (const turn of snapshot?.turns ?? []) {
-    const peer = isPeerTurn(turn);
+    const peer = isPeerTurn(turn) || isFinalTurn(turn);
     if (!peer && !seenTurns.has(turn.id)) {
       const pending = blankTurn('user', turn.message);
       pending.id = 'room-' + turn.id;
@@ -138,8 +147,24 @@ export function roomView(history: HistoryMessage[], snapshot: GroupSnapshot | nu
       const member = roster.find((p) => p.sessionId === step.member_id) as Member | undefined;
       const streamed = step.status === 'running' ? live[step.id] : undefined;
       const saved = stepTurn(step, member);
-      turns.push(streamed ? { ...streamed, text: streamed.text || saved.text, speaker: saved.speaker ?? streamed.speaker } : saved);
+      turns.push(decorate(streamed ? { ...streamed, text: streamed.text || saved.text, speaker: saved.speaker ?? streamed.speaker } : saved, turn.id));
     }
   }
-  return { turns, activity };
+  // A cancelled queued instruction may not have a history row. Merge it at
+  // its canonical turn position, rather than after newer saved messages.
+  const order = new Map<string, number>();
+  const roots = new Set<string>();
+  for (const [position, turn] of (snapshot?.turns ?? []).entries()) {
+    if (!isPeerTurn(turn) && !isFinalTurn(turn)) {
+      order.set('room-' + turn.id, position); roots.add('room-' + turn.id);
+    }
+    for (const step of snapshot?.steps.filter(s => s.turn_id === turn.id) ?? []) order.set(step.id, position);
+  }
+  let anchor = -1;
+  const ordered = turns.map((turn, sequence) => {
+    const known = order.get(turn.id);
+    if (known !== undefined) anchor = known;
+    return {turn, sequence, position:known ?? anchor, root:roots.has(turn.id)};
+  }).sort((a,b)=>a.position-b.position || Number(b.root)-Number(a.root) || a.sequence-b.sequence).map(item=>item.turn);
+  return { turns:packDebates(ordered, snapshot), activity };
 }

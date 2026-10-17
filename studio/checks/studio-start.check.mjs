@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { Window } from 'happy-dom';
+
+const window = new Window({url:'http://localhost/studio'});
+for (const key of ['window','document','navigator','HTMLElement','Element','Node','MutationObserver','Event','CustomEvent','getComputedStyle']) Object.defineProperty(globalThis,key,{configurable:true,value:key==='getComputedStyle'?window.getComputedStyle.bind(window):key==='window'?window:window[key]});
+globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+globalThis.requestAnimationFrame=callback=>setTimeout(callback,0);
+globalThis.cancelAnimationFrame=clearTimeout;
+const bundle=await build({stdin:{contents:`export {StudioStart} from './studio/src/screens/Home'; export {StudioEntry} from './studio/src/shell/AppShell'; export {DESTINATIONS,MOBILE_DESTINATIONS} from './studio/src/shell/routes'; export {setLang} from './studio/src/i18n'; export {createElement,act,useState} from 'react'; export {createRoot} from 'react-dom/client'; export {MemoryRouter,Routes,Route,useLocation} from 'react-router';`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,format:'esm',platform:'node',write:false,loader:{'.css':'empty'},logLevel:'silent'});
+const m=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+const project={id:'p1',name:'Real project',workspace:'C:/workspace'};
+const assistant={id:'a1',session_id:'assistant-chat',name:'Continuing assistant',description:'Same canonical chat',project_id:'',state:'ready',preview:''};
+const initialCard={task_id:'task-1',name:'Pinned report',result:'Result from its native task',last_status:'success',running:false,schedule:'daily',scheduled_time:'08:00',timezone:'Europe/Madrid'};
+let cards=[initialCard];
+let failCards=false;
+const requests=[];
+globalThis.fetch=async(input,init={})=>{
+  const url=String(input),method=init.method||'GET'; requests.push({url,method});
+  if(url==='/api/projects')return Response.json([project]);
+  if(url==='/api/sessions')return Response.json([{id:'recent-chat',name:'Recent conversation',last_message_at:'2026-10-17T01:00:00Z'}]);
+  if(url==='/api/approvals/pending')return Response.json({pending:[{approval_id:'approval-1',plan:{action:'read_file'}}]});
+  if(url==='/api/mobile/assistants')return Response.json({assistants:[assistant]});
+  if(url==='/api/home/cards')return failCards?Response.json({detail:'Cards unavailable'},{status:503}):Response.json({cards});
+  if(url==='/api/home/cards/task-1'&&method==='DELETE'){cards=[];return Response.json({cards:[]});}
+  if(url==='/api/tasks/task-1/run?force=true')return Response.json({ok:true});
+  if(url.startsWith('/api/git/radar'))return Response.json({attention:[],attention_count:0});
+  if(url.startsWith('/api/hoard/fleet'))return Response.json({ok:true,items:[],brief:{}});
+  if(url.startsWith('/api/usage/recap'))return Response.json({total:{turns:0}});
+  return Response.json({});
+};
+function locationProof(){const location=m.useLocation();return m.createElement('output',{'data-testid':'location'},location.pathname+location.search+location.hash);}
+function harness(){
+  const [draft,setDraft]=m.useState('Existing draft');
+  const location=m.useLocation();
+  if(new URLSearchParams(location.search).get('s'))return m.createElement(locationProof);
+  return m.createElement('div',null,m.createElement(m.StudioStart,{onDraft:text=>setDraft(current=>[current,text].join('\n\n'))}),m.createElement('output',{'data-testid':'draft'},draft));
+}
+const button=(host,label)=>[...host.querySelectorAll('button')].find(node=>node.textContent.trim()===label);
+const host=document.createElement('div');document.body.append(host);const root=m.createRoot(host);
+await m.act(async()=>{root.render(m.createElement(m.MemoryRouter,{initialEntries:['/studio']},m.createElement(harness)));await tick();});
+assert.ok(host.querySelector('[data-testid="studio-start"]'));
+assert.match(host.textContent,/Continuing assistant/,'the existing assistant component is mounted');
+assert.match(host.textContent,/Pinned report/);
+assert.match(host.textContent,/Result from its native task/);
+assert.ok(host.querySelector('a[href="/activity?status=accion&run=approval-approval-1"]'));
+assert.ok(host.querySelector('a[href="/projects/p1"]'));
+assert.ok(host.querySelector('a[href="/studio?s=recent-chat"]'));
+assert.equal(requests.some(request=>/fleet|radar|usage\/recap/.test(request.url)),false,'secondary summaries are not fetched before they are opened');
+await m.act(async()=>button(host,'Write').click());
+assert.match(host.querySelector('[data-testid="draft"]').textContent,/Existing draft\n\nWrite /,'quick starts append without discarding a draft');
+await m.act(async()=>{host.querySelector('details.fs-studio-start__overview').open=true;await tick();});
+assert.ok(requests.some(request=>request.url.includes('/api/hoard/fleet')));
+assert.ok(requests.some(request=>request.url.includes('/api/usage/recap')));
+await m.act(async()=>{host.querySelector('[data-testid="home-card-refresh"]').click();await tick();});
+assert.ok(requests.some(request=>request.method==='POST'&&request.url==='/api/tasks/task-1/run?force=true'));
+await m.act(async()=>button(host,'Unpin').click());
+assert.equal(requests.some(request=>request.method==='DELETE'),false,'the first unpin click only asks inline');
+await m.act(async()=>{button(host,'Yes').click();await tick();});
+assert.ok(requests.some(request=>request.method==='DELETE'&&request.url==='/api/home/cards/task-1'));
+assert.equal(host.querySelector('[data-testid="home-card"]'),null);
+await m.act(async()=>{host.querySelector('a[href="/studio?s=assistant-chat"]').click();await tick();});
+assert.equal(host.querySelector('[data-testid="location"]').textContent,'/studio?s=assistant-chat');
+assert.equal(host.querySelector('[data-testid="studio-start"]'),null,'opening the assistant leaves the start surface and preserves its canonical SID');
+await m.act(async()=>root.unmount());
+
+const aliasHost=document.createElement('div');document.body.append(aliasHost);const aliasRoot=m.createRoot(aliasHost);
+await m.act(async()=>aliasRoot.render(m.createElement(m.MemoryRouter,{initialEntries:['/?s=canonical&project=p1&draft=kept#anchor']},m.createElement(m.Routes,null,m.createElement(m.Route,{path:'/',element:m.createElement(m.StudioEntry)}),m.createElement(m.Route,{path:'/studio',element:m.createElement(locationProof)})))));
+assert.equal(aliasHost.textContent,'/studio?s=canonical&project=p1&draft=kept#anchor','the legacy root preserves every query parameter and fragment');
+assert.equal(m.DESTINATIONS.filter(item=>item.path==='/'||item.path==='/studio').length,1);
+assert.equal(m.MOBILE_DESTINATIONS.filter(item=>item.path==='/'||item.path==='/studio').length,1);
+await m.act(async()=>aliasRoot.unmount());
+
+const emptyHost=document.createElement('div');document.body.append(emptyHost);const emptyRoot=m.createRoot(emptyHost);
+cards=[];failCards=true;
+await m.act(async()=>m.setLang('es',{persist:false}));
+await m.act(async()=>{emptyRoot.render(m.createElement(m.MemoryRouter,null,m.createElement(m.StudioStart,{welcome:false,onDraft:()=>{}})));await tick();});
+assert.match(emptyHost.textContent,/Tus asistentes/);
+assert.match(emptyHost.textContent,/Cards unavailable/);
+assert.equal(emptyHost.querySelector('[data-testid="home-cards-empty"]'),null,'empty pinned cards do not fill the start screen with instructions');
+assert.equal(button(emptyHost,'Escribir'),undefined,'the welcome preference controls only the intro and its shortcuts');
+assert.ok(emptyHost.querySelector('[data-testid="context-tools-personal"]'),'personal tools remain accessible');
+failCards=false;
+await m.act(async()=>{button(emptyHost,'Reintentar').click();await tick();});
+assert.doesNotMatch(emptyHost.textContent,/Cards unavailable/);
+await m.act(async()=>emptyRoot.unmount());
+await window.happyDOM.abort();
+console.log('ALL OK: Studio root alias, shared assistants/SID, pinned reports/run/unpin, pending decisions, draft-safe shortcuts, lazy summaries, ES and error recovery');
+process.exit(0);

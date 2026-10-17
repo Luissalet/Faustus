@@ -225,6 +225,9 @@ export interface Turn {
   thinking: string;
   /** A replacement being drafted; keep the visible answer until it is ready. */
   replacementText?: string;
+  /** Group replies stay inside their debate; its designated final answer is separate. */
+  groupReply?: { origin: string; final: boolean };
+  debate?: { origin: string; state: 'working' | 'waiting_user' | 'done' | 'stopped' | 'error'; finalizing: boolean; speakers: string[]; replies: Turn[] };
   thoughts: Thought[];
   steps: Step[];
   rounds: number;
