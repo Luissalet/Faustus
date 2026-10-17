@@ -18,11 +18,19 @@ server = Server("personal_assistants")
 
 @server.list_tools()
 async def list_tools():
-    return [Tool(name="personal_assistants", description="List, create, adopt, rename or remove persistent Faustus assistants. Each is an ordinary chat with a stable session_id: its history, project, tools, background turn and voice are shared with desktop/mobile Studio. Remove preserves the chat. This tool does not start a generation; use the ordinary chat or voice session for that session_id.",
+    return [Tool(name="personal_assistants", description="Configure persistent Faustus assistants: instructions, selected published skills, and native proactive schedules. Each keeps its ordinary chat/session_id, project, tools, history and voice. list includes next/last runs and recent activity; skills lists available procedures. run executes an enabled proactive mission now. Remove pauses proactive work and preserves the chat. Creation alone starts no generation.",
                  inputSchema={"type": "object", "required": ["action"], "properties": {
-                     "action": {"type": "string", "enum": ["list", "create", "update", "remove"]},
+                     "action": {"type": "string", "enum": ["list", "create", "update", "remove", "skills", "run"]},
                      "name": {"type": "string"}, "description": {"type": "string"},
-                     "session_id": {"type": "string"}, "project_id": {"type": "string"}}},
+                     "session_id": {"type": "string"}, "project_id": {"type": "string"},
+                     "instructions": {"type": "string"}, "skills": {"type": "array", "items": {"type": "string"}},
+                     "proactivity": {"type": "object", "additionalProperties": False, "properties": {
+                         "enabled": {"type": "boolean"}, "prompt": {"type": "string"},
+                         "schedule": {"enum": ["hourly", "daily", "weekly", "cron"]},
+                         "time": {"type": "string", "description": "HH:MM, local to timezone"},
+                         "day": {"type": "integer", "minimum": 0, "maximum": 6},
+                         "timezone": {"type": "string", "description": "IANA zone, e.g. Europe/Madrid"},
+                         "cron": {"type": "string"}, "notifications": {"type": "boolean"}, "quiet": {"type": "boolean"}}}}},
                  annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))]
 
 
@@ -31,17 +39,21 @@ async def call_tool(name, arguments):
     a = dict(arguments or {})
     action = a.pop("action", "list")
     method, path, body = "GET", "/assistants", None
-    if name != "personal_assistants" or action not in ("list", "create", "update", "remove"):
+    if name != "personal_assistants" or action not in ("list", "create", "update", "remove", "skills", "run"):
         result = {"exit_code": 1, "error": "Unknown assistant action"}
     else:
         if action == "create":
             method, body = "POST", a
-        elif action in ("update", "remove"):
+        elif action == "skills":
+            path += "/skills"
+        elif action in ("update", "remove", "run"):
             sid = str(a.pop("session_id", ""))
             if not sid:
                 return [TextContent(type="text", text=json.dumps({"exit_code": 1, "error": "session_id is required"}))]
             path += "/" + quote(sid, safe="")
-            method = "PATCH" if action == "update" else "DELETE"
+            if action == "run":
+                path += "/run"
+            method = "PATCH" if action == "update" else "POST" if action == "run" else "DELETE"
             body = a if action == "update" else None
         try:
             async with httpx.AsyncClient(timeout=45, trust_env=False) as client:

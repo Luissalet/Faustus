@@ -5502,6 +5502,7 @@ def _build_system_prompt(
     session_id: Optional[str] = None,
     schema_tools: Optional[Set[str]] = None,
     project_id: Optional[str] = None,
+    suppress_assistant_skills: Optional[bool] = None,
 ) -> List[Dict]:
     """Build agent system prompt, inject MCP/document context, merge consecutive system msgs.
 
@@ -6298,6 +6299,15 @@ def _build_system_prompt(
         except Exception as _mcp_err:
             logger.debug(f"MCP description injection skipped: {_mcp_err}")
 
+    # Assistant configuration is keyed by the canonical chat, never by the
+    # shared base-prompt cache. Re-read it for interactive and scheduled turns.
+    from src.assistant_runtime import context_messages as _assistant_context
+    _assistant_skills_on = not (suppress_skills if suppress_assistant_skills is None else suppress_assistant_skills) and not suppress_local_context
+    if _assistant_skills_on:
+        from routes.prefs_routes import _load_for_user as _assistant_prefs
+        _assistant_skills_on = (_assistant_prefs(owner) or {}).get("skills_enabled", True)
+    _assistant_messages = _assistant_context(session_id, owner, skills_enabled=_assistant_skills_on)
+
     agent_msg = {
         "role": "system",
         "content": agent_prompt,
@@ -6382,6 +6392,9 @@ def _build_system_prompt(
         last_user_idx += 1
     if _skills_message:
         merged.insert(last_user_idx, _skills_message)
+        last_user_idx += 1
+    for _assistant_message in _assistant_messages:
+        merged.insert(last_user_idx, _assistant_message)
         last_user_idx += 1
     if _memory_message:
         merged.insert(last_user_idx, _memory_message)
@@ -10936,6 +10949,7 @@ async def _stream_agent_loop_body(
             owner=owner,
             suppress_local_context=guide_only,
             suppress_skills=_low_signal_turn or bool(_hopts.get("no_skills")) or _lean,
+            suppress_assistant_skills=bool(_hopts.get("no_skills")),
             suppress_personal_memory=bool(_hopts.get("incognito") or _hopts.get("no_memory")),
             active_email=active_email,
             workspace=workspace,

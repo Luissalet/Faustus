@@ -2637,11 +2637,13 @@ class TaskScheduler:
             # gate is about the in-app/browser channel's chattiness, not
             # whether a phone that is actively watching this task should
             # hear about it.
-            notify_task_finished(
-                task_name=task.name, owner=task.owner, task_id=task_id,
-                status=run.status, result=run.result, error=run.error,
-                action=getattr(task, "action", "") or "",
-            )
+            from src.assistant_runtime import is_assistant_task
+            if not is_assistant_task(task) or task.notifications_enabled or run.status == "error":
+                notify_task_finished(
+                    task_name=task.name, owner=task.owner, task_id=task_id,
+                    status=run.status, result=run.result, error=run.error,
+                    action=getattr(task, "action", "") or "",
+                )
             try:
                 from src import unattended_breaker
                 if run.status == "error":
@@ -2845,6 +2847,9 @@ class TaskScheduler:
 
     def _log_to_assistant(self, db, task, result_text: str):
         """Log a task result to the assistant's chat session."""
+        from src.assistant_runtime import is_assistant_task
+        if is_assistant_task(task):
+            return  # already delivered to its own ongoing chat
         # Don't double-log check-ins (they already save directly)
         if "check-in" in (task.name or "").lower():
             return
@@ -3143,6 +3148,10 @@ class TaskScheduler:
     async def _execute_llm_task(self, task, db) -> str:
         """Execute an LLM task with full tool access via the agent loop."""
         from core.database import Session as DbSession, ChatMessage, CrewMember
+        from src.assistant_runtime import is_assistant_task, prepare_turn, NO_UPDATE
+        _dot = is_assistant_task(task)
+        if _dot:
+            prepare_turn(task, db)
 
         # A06: re-checked here — the agent loop below can call tools with
         # real external effects, so this is the last chokepoint before any
@@ -3318,6 +3327,10 @@ class TaskScheduler:
                 datetime_context_msg=_dt_msg,
             )
         except Exception as e:
+            if _dot:
+                # A tool may already have acted. Preserve the failed native
+                # run; do not replay the mission through a text-only fallback.
+                raise
             logger.warning(f"Agent loop failed for task '{task.name}', falling back to simple call: {e}")
             from src.task_endpoint import task_llm_call_async
             messages: list = [{"role": "system", "content": system_prompt}]
@@ -3345,6 +3358,10 @@ class TaskScheduler:
         except Exception:
             pass
 
+        if (_dot and getattr(task, "_assistant_quiet", False)
+                and re.fullmatch(r"(?:" + re.escape(NO_UPDATE) + r"\s*)+", (result or "").strip())):
+            from src.builtin_actions import TaskNoop
+            raise TaskNoop("No meaningful update")
         return result
 
     async def _deliver_task_result(self, task, result: str, db, model: str = None):
@@ -3356,6 +3373,16 @@ class TaskScheduler:
         """
         from core.database import Session as DbSession, ChatMessage, CrewMember
         from core.models import ChatMessage as MemChatMessage
+
+        from src.assistant_runtime import is_assistant_task
+        if is_assistant_task(task):
+            from src.personal_assistants import store
+            from src.builtin_actions import TaskNoop
+            from src.auth_helpers import owner_filter
+            profile = store().get("assistant", task.session_id, owner=task.owner)
+            chat = owner_filter(db.query(DbSession), DbSession, task.owner).filter(DbSession.id == task.session_id).first()
+            if not profile or profile.get("status") != "active" or not chat or chat.archived:
+                raise TaskNoop("Assistant was removed or chat became unavailable during the turn")
 
         output = task.output_target or "session"
         if (
@@ -3422,6 +3449,8 @@ class TaskScheduler:
                     pass
 
         meta = {}
+        if is_assistant_task(task):
+            meta.update({"source": "assistant_proactivity", "task_id": task.id, "task_name": task.name})
         if model_name:
             meta["model"] = model_name
         if crew and crew.is_default_assistant:
@@ -3539,11 +3568,13 @@ class TaskScheduler:
         from src.agent_loop import stream_agent_loop
 
         system_content = system_prompt or "You are a helpful assistant executing a scheduled task. Use available tools to complete the task thoroughly."
-        user_content = override_user_message or task.prompt
+        from src.assistant_runtime import is_assistant_task, wake_prompt
+        user_content = override_user_message or (wake_prompt(task) if is_assistant_task(task) else task.prompt)
         # Build the message list. The datetime context message (user-role) is
         # inserted immediately before the task prompt so the system prefix stays
         # byte-identical and cacheable across runs (see issue #2927).
         messages: list = [{"role": "system", "content": system_content}]
+        messages.extend(getattr(task, "_assistant_history", []))
         if datetime_context_msg:
             messages.append(datetime_context_msg)
         messages.append({"role": "user", "content": user_content})
@@ -3568,6 +3599,8 @@ class TaskScheduler:
         except Exception:
             pass
         full_text = ""
+        if is_assistant_task(task):
+            headers = getattr(task, "_assistant_headers", headers)
         tool_results = []
         approval_pause = None
         budget_exhausted = None  # set to an Exhausted() if the ledger trips
@@ -3621,6 +3654,14 @@ class TaskScheduler:
             _task_fallbacks = []
         if getattr(task, "_external_global_event", False):
             _task_fallbacks = []
+        _assistant_options = {}
+        if is_assistant_task(task):
+            from services.projects import ProjectStore
+            from src.constants import DATA_DIR
+            project = ProjectStore(DATA_DIR).get(getattr(task, "_assistant_project_id", "") or "", owner=task.owner)
+            if project:
+                _assistant_options = {"workspace": project.get("workspace") or None,
+                                      "harness_options": {"project_id": project["id"]}}
         agen = stream_agent_loop(
             endpoint_url=endpoint_url,
             model=model,
@@ -3633,12 +3674,17 @@ class TaskScheduler:
             relevant_tools=relevant_tools,
             fallbacks=_task_fallbacks,
             workload="background",
+            **_assistant_options,
         )
         try:
             async for event_str in agen:
                 if event_str.startswith("data: ") and not event_str.startswith("data: [DONE]"):
                     try:
                         data = json.loads(event_str[6:])
+                        if is_assistant_task(task) and (data.get("error") or data.get("type") == "error"):
+                            raise RuntimeError(str(data.get("error") or data.get("message") or "Assistant turn failed"))
+                        if is_assistant_task(task) and data.get("type") == "response_replace":
+                            full_text = str(data.get("text") or "")
                         # Capture text from all event types, not just delta
                         if "delta" in data:
                             if data.get("thinking"):
@@ -3728,6 +3774,10 @@ class TaskScheduler:
         # Grace summarization — if the model exhausted rounds on tool calls
         # without producing a final text response, do one last LLM call
         # asking it to summarize what it did. Guarantees output.
+        if is_assistant_task(task) and not full_text.strip():
+            if tool_results:
+                return "\n".join(tool_results[-5:])
+            raise RuntimeError("Assistant turn finished without a response")
         if not full_text.strip():
             try:
                 from src.task_endpoint import task_llm_call_async

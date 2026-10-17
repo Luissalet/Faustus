@@ -72,6 +72,17 @@ class PersonalAssistantInput(BaseModel):
     description: str = Field(default="", max_length=1000)
     project_id: str = Field(default="", max_length=200)
     session_id: str = Field(default="", max_length=200)
+    instructions: str = Field(default="", max_length=30000)
+    skills: list[str] = Field(default_factory=list)
+    proactivity: Optional[Dict[str, Any]] = None
+
+
+class PersonalAssistantPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    instructions: Optional[str] = Field(default=None, max_length=30000)
+    skills: Optional[list[str]] = None
+    proactivity: Optional[Dict[str, Any]] = None
 
 #: Plain text only, capped (contract: "no images/blobs" on the messages
 #: read). A message body beyond this is still real content on the desktop —
@@ -165,6 +176,11 @@ def setup_mobile_routes() -> APIRouter:
         from src.personal_assistants import list_assistants
         return {"assistants": list_assistants(_mobile_owner(request))}
 
+    @router.get("/assistants/skills")
+    def assistant_skills(request: Request):
+        from src.assistant_runtime import skill_catalog
+        return {"skills": [{"name": s["name"], "description": s.get("description", "")} for s in skill_catalog(_mobile_owner(request))]}
+
     @router.post("/assistants")
     async def assistant_create(request: Request, body: PersonalAssistantInput):
         from src.personal_assistants import save
@@ -172,6 +188,11 @@ def setup_mobile_routes() -> APIRouter:
         owner = _mobile_owner(request)
         if not body.name.strip():
             raise HTTPException(422, "An assistant needs a name.")
+        from src.assistant_runtime import validate_config
+        try:
+            validate_config(body.instructions, body.skills, body.proactivity)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         sid = body.session_id
         if not sid:
             settings = load_settings()
@@ -187,33 +208,81 @@ def setup_mobile_routes() -> APIRouter:
                 raise HTTPException(response.status_code, "Could not create the assistant chat: " + response.text[:300])
             sid = response.json()["id"]
         try:
-            return save(sid, body.name, body.description, owner)
+            return save(sid, body.name, body.description, owner,
+                        instructions=body.instructions if "instructions" in body.model_fields_set else None,
+                        skills=body.skills if "skills" in body.model_fields_set else None, proactivity=body.proactivity)
         except KeyError as exc:
             raise HTTPException(404, "Chat not found") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
     @router.patch("/assistants/{sid}")
-    def assistant_update(request: Request, sid: str, body: PersonalAssistantInput):
+    async def assistant_update(request: Request, sid: str, body: PersonalAssistantPatch):
         from src.personal_assistants import save, store
         owner = _mobile_owner(request)
-        if store().get("assistant", sid, owner=owner) is None:
+        current = store().get("assistant", sid, owner=owner)
+        if current is None:
             raise HTTPException(404, "Assistant not found")
         try:
-            return save(sid, body.name, body.description, owner)
+            from src.assistant_runtime import DEFAULT_PROACTIVITY, proactive_state
+            config = None
+            if body.proactivity is not None:
+                existing = proactive_state(sid, owner)
+                config = {**{k: existing.get(k, v) for k, v in DEFAULT_PROACTIVITY.items()},
+                          "quiet": current.get("quiet", True), **body.proactivity}
+            result = save(sid, body.name if body.name is not None else current["name"],
+                        body.description if body.description is not None else current.get("description", ""), owner,
+                        instructions=body.instructions, skills=body.skills, proactivity=config)
+            if config is not None and not config["enabled"]:
+                from src.event_bus import get_task_scheduler
+                from src.assistant_runtime import task_id
+                scheduler = get_task_scheduler()
+                if scheduler:
+                    await scheduler.stop_task(task_id(sid, owner))
+            return result
         except KeyError as exc:
             raise HTTPException(404, "Chat not found") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
     @router.delete("/assistants/{sid}")
-    def assistant_retire(request: Request, sid: str):
+    async def assistant_retire(request: Request, sid: str):
         from src.personal_assistants import retire
         try:
-            retire(sid, _mobile_owner(request))
+            owner = _mobile_owner(request)
+            retire(sid, owner)
         except KeyError as exc:
             raise HTTPException(404, "Assistant not found") from exc
+        from src.event_bus import get_task_scheduler
+        from src.assistant_runtime import task_id
+        scheduler = get_task_scheduler()
+        if scheduler:
+            await scheduler.stop_task(task_id(sid, owner))
         return {"removed": True, "chat_preserved": True}
+
+    @router.post("/assistants/{sid}/run")
+    async def assistant_run(request: Request, sid: str):
+        from src.personal_assistants import store, session_for_owner
+        from src.assistant_runtime import proactive_state
+        from src.event_bus import get_task_scheduler
+        owner = _mobile_owner(request)
+        profile = store().get("assistant", sid, owner=owner)
+        if not profile or profile.get("status") != "active":
+            raise HTTPException(404, "Assistant not found")
+        try:
+            chat = session_for_owner(sid, owner)
+        except KeyError as exc:
+            raise HTTPException(404, "Chat not found") from exc
+        if chat["archived"]:
+            raise HTTPException(409, "Unarchive the chat before running the assistant")
+        state = proactive_state(sid, owner)
+        if not state["enabled"]:
+            raise HTTPException(409, "Enable proactivity before running its mission")
+        scheduler = get_task_scheduler()
+        if scheduler is None:
+            raise HTTPException(503, "The task scheduler is unavailable")
+        started = await scheduler.run_task_now(state["task_id"])
+        return {"started": bool(started), "task_id": state["task_id"], "session_id": sid}
 
     # ------------------------------------------------------------------ #
     # GET /api/mobile/bootstrap
