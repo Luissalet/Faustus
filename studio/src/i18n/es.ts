@@ -9960,5 +9960,6 @@ export const es: Record<string, string> = {
   "…and {n} more.": "…y {n} más.",
   "…or upload a file": "…o sube un archivo",
   "≥ {lower} GB (incomplete: {reason})": "≥ {lower} GB (incompleto: {reason})",
+  "Room settings": "Ajustes de la sala",
   "⟨insert⟩": "⟨insertar⟩",
 };

@@ -1,5 +1,5 @@
 import { MessageSquare, Plus, Target, Users } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, Skeleton } from '../../components';
 import { createSpace, getProjectCoordination, projectSpace, spaces, type CoordinationSpace } from '../../adapters/coordination';
@@ -55,37 +55,18 @@ function CreateAgora({ project, create }: { project: Project; create: () => Prom
 /** Agora tab: the project's rooms as a group chat app filling the window. */
 export function ProjectAgora({ project, selected, onSelect }: { project: Project; selected: string; onSelect: (id: string) => void }) {
   const { space, loading, error, create } = useProjectSpace(project);
-  const frame = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(560);
-  useLayoutEffect(() => {
-    const fit = () => {
-      const top = frame.current?.getBoundingClientRect().top ?? 0;
-      // Small screens scroll the project header away; keep room for the
-      // transcript as well as the controls and composer below it.
-      setHeight(Math.max(window.innerWidth <= 760 ? 760 : 460, Math.floor(window.innerHeight - top - 20)));
-    };
-    fit();
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-  }, [loading]);
   if (loading) return <Skeleton label={t('Loading the agora')} count={3} height="56px" />;
   return (
-    <div className="fs-pj-agora" data-testid="project-agora">
-      <div className="fs-pj-agora__bar">
-        <span className="fs-pj-agora__where">
-          <MessageSquare size={14} aria-hidden="true" />
-          {space ? t('Agora: {name}', { name: space.title }) : t('This project has no agora of its own yet; its rooms are filed here anyway.')}
-        </span>
-        {!space && !error && <CreateAgora project={project} create={create} />}
-        {error && <small className="fs-pj-agora__error" role="alert">{error}</small>}
-        <span className="fs-spacer" />
-        <Link className="fs-chip" to={`/projects/${encodeURIComponent(project.id)}?tab=objetivos`}><Target size={13} aria-hidden="true" /> {t('Task board (Objectives)')}</Link>
-        {space && <Link className="fs-chip" to={`/agora?space_id=${encodeURIComponent(space.id)}&mode=council`}><Users size={13} aria-hidden="true" /> {t('Deliberation')}</Link>}
-      </div>
-      <div className="fs-pj-agora__frame" ref={frame} style={{ blockSize: height }}>
-        <AgoraRooms spaceId={space?.id ?? null} projectId={project.id} selected={selected} onSelect={onSelect}
-          emptyHint={t('No rooms yet. Open one to talk with several models at once about this project.')} />
-      </div>
+    <div className="fs-project-agora-shell" data-testid="project-agora">
+      <AgoraRooms spaceId={space?.id ?? null} projectId={project.id} selected={selected} onSelect={onSelect}
+        sidebarFooter={<nav className="fs-agora-rooms__project-links" aria-label={t('Project sections')}>
+          <Link className="fs-chip" to={`/projects/${encodeURIComponent(project.id)}`}><MessageSquare size={13} aria-hidden="true" /> {project.name}</Link>
+          <Link className="fs-chip" to={`/projects/${encodeURIComponent(project.id)}?tab=objetivos`}><Target size={13} aria-hidden="true" /> {t('Task board (Objectives)')}</Link>
+          {space && <Link className="fs-chip" to={`/agora?space_id=${encodeURIComponent(space.id)}&mode=council`}><Users size={13} aria-hidden="true" /> {t('Deliberation')}</Link>}
+          {!space && !error && <CreateAgora project={project} create={create} />}
+          {error && <small role="alert">{error}</small>}
+        </nav>}
+        emptyHint={t('No rooms yet. Open one to talk with several models at once about this project.')} />
     </div>
   );
 }

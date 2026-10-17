@@ -223,9 +223,10 @@
 /* ══ Agora rooms: list of rooms + the group chat, filling the space given ══ */
 
 .fs-agora-rooms {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   block-size: 100%;
   min-block-size: 0;
   border: 1px solid var(--fs-border);
@@ -252,7 +253,7 @@
   border-block-end: 1px solid var(--fs-border);
 }
 .fs-agora-rooms__mobile-nav > button { min-block-size: 44px; }
-.fs-agora-rooms[data-rooms-open] { grid-template-columns: 248px minmax(0, 1fr); }
+.fs-agora-rooms[data-rooms-open] { grid-template-columns: 264px minmax(0, 1fr); }
 .fs-agora-rooms[data-rooms-open] > .fs-agora-rooms__list { display: flex; }
 
 .fs-agora-rooms__head {
@@ -430,16 +431,17 @@
   z-index: 2;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--fs-space-3);
-  padding: var(--fs-space-3) var(--fs-space-5);
+  flex-wrap: nowrap;
+  gap: var(--fs-space-2);
+  min-block-size: 52px;
+  padding: var(--fs-space-2) var(--fs-space-3);
   border-block-end: 1px solid var(--fs-border);
   background: var(--fs-glass);
   backdrop-filter: blur(14px);
 }
 
 .fs-room__title {
-  flex: 1 1 220px;
+  flex: 1 1 80px;
   min-inline-size: 0;
 }
 
@@ -453,6 +455,7 @@
 }
 
 .fs-room__title p {
+  display: none;
   margin: 2px 0 0;
   max-inline-size: none;
   font-size: 12px;
@@ -1041,4 +1044,56 @@
 /* A group chat reads wider lines than Studio's single column. */
 .fs-room .fs-turn__body :is(p, li, h1, h2, h3, h4, blockquote) {
   max-inline-size: 120ch;
+}
+
+/* A project's Agora uses the conversation viewport, just like Studio.
+   Project navigation lives in the conversation sidebar, outside the chat. */
+.fs-main:has(.fs-project-agora-shell),
+.fs-shell[data-nav='rail'] .fs-main:has(.fs-project-agora-shell) {
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+}
+.fs-main:has(.fs-project-agora-shell) :is(.fs-main__inner, .fs-route) {
+  max-inline-size: none;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+  margin: 0;
+}
+.fs-project-agora-shell { block-size: 100%; min-block-size: 0; }
+.fs-project-agora-shell > .fs-agora-rooms { border: 0; border-radius: 0; }
+.fs-agora-rooms__scrim { display: none; }
+.fs-agora-rooms__project-links { display: grid; gap: var(--fs-space-2); padding: var(--fs-space-3); border-block-start: 1px solid var(--fs-border); }
+.fs-agora-rooms__project-links .fs-chip { justify-content: start; overflow: hidden; text-overflow: ellipsis; }
+.fs-agora-rooms__items .fs-studio__session-name,
+.fs-agora-rooms__items .fs-studio__session-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-room__head > .fs-vitals { flex: 0 1 190px; min-inline-size: 0; max-inline-size: 200px; overflow: hidden; }
+.fs-room__head .fs-vitals__model { max-inline-size: 70px; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 1200px) {
+  .fs-room__conversations-label { display: none; }
+}
+@media (max-width: 760px) {
+  .fs-agora-rooms,
+  .fs-agora-rooms[data-rooms-open] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .fs-agora-rooms__list {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 12;
+    inline-size: min(264px, 88vw);
+    max-block-size: none;
+    background: var(--fs-surface-1);
+  }
+  .fs-agora-rooms[data-rooms-open] > .fs-agora-rooms__scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 11;
+    background: var(--fs-scrim, #0008);
+  }
+  .fs-room__head { flex-wrap: wrap; }
+  .fs-room__title { flex: 1 1 170px; }
+  .fs-room__head > .fs-vitals { flex: 1 1 80px; max-inline-size: 110px; }
 }

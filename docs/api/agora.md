@@ -49,6 +49,11 @@ is shown explicitly and old rooms without activity dates say so.
 
 Use **Rooms** to browse or create conversations without permanently narrowing
 the chat. **Board** opens the same Hub task ledger used in **Objectives**.
+Project group chats use the full conversation viewport with a Conversations-style
+sidebar. The project title and tab bar stay on the project details page; links
+back to that page, Objectives and Deliberation are in the sidebar. Ctrl+B toggles
+the conversation list. The task board starts closed, and discussion settings
+open from the header's settings button.
 The separate project **Board** retains its existing planning cards. Native
 coordination tasks require a saved, usable Hub connection for the project;
 the UI does not create an independent ledger when it is missing.

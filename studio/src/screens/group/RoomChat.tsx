@@ -1,7 +1,7 @@
-import { ExternalLink, Kanban, MessageSquare, PanelRight, Plus, Send, Square, Trash2, Users, X } from 'lucide-react';
+import { ExternalLink, Kanban, MessageSquare, PanelRight, Plus, Send, Settings2, Square, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Button, IconButton, Menu, Skeleton } from '../../components';
+import { Button, IconButton, Menu, Popover, Skeleton } from '../../components';
 import { acknowledgeCoordinationAttempt, coordinationAttempt, useCoordinationDraft } from '../../components/coordinationNavigation';
 import { loadHistory, resumeTurn, type HistoryMessage } from '../../adapters/chat';
 import {
@@ -102,9 +102,9 @@ function phaseText(turn: Turn | undefined): string {
   return live.label || t('Waiting for the model');
 }
 
-export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectId }: {
+export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectId, conversationsOpen, onToggleConversations }: {
   groupId: string; onNewRoom: () => void; onManage: (state: GroupState) => void; onClosed: () => void;
-  say: (text: string, tone?: 'ok' | 'warn') => void; projectId?: string;
+  say: (text: string, tone?: 'ok' | 'warn') => void; projectId?: string; conversationsOpen?: boolean; onToggleConversations?: () => void;
 }) {
   const navigate = useNavigate();
   const [snapshot, setSnapshot] = useState<GroupSnapshot | null>(null);
@@ -114,7 +114,7 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
   const [recipient, setRecipient] = useState('');
   const [sending, setSending] = useState(false);
   const [linkingProject, setLinkingProject] = useState(false);
-  const [side, setSide] = useState<'board' | 'members' | null>(() => (window.innerWidth >= 1200 ? 'board' : null));
+  const [side, setSide] = useState<'board' | 'members' | null>(null);
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
   const signature = useRef('');
@@ -134,6 +134,10 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
       try {
         const current = first ? await openGroup(groupId, controller.signal) : await groupSnapshot(groupId, controller.signal);
         first = false;
+        if (controller.signal.aborted) return;
+        // Controls and observed member state do not wait for a large history.
+        setSnapshot(current);
+        setConnectionError('');
         const finished = current.steps.filter((s) => s.status !== 'queued' && s.status !== 'running');
         const next = current.turns.map((x) => x.id + ':' + x.status).join(',') + '|' + finished.map((s) => s.id + ':' + s.status).join(',');
         if (next !== signature.current) {
@@ -144,10 +148,6 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
             const recorded = new Set(loaded.history.map((m) => String(m.metadata.group_step_id ?? '')));
             if (finished.every((s) => s.status === 'stopped' || recorded.has(s.id))) signature.current = next;
           }
-        }
-        if (!controller.signal.aborted) {
-          setSnapshot(current);
-          setConnectionError('');
         }
       } catch (error) {
         if (!controller.signal.aborted) setConnectionError((error as Error).message);
@@ -275,6 +275,7 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
     <div className="fs-room" data-side={side || undefined} data-testid="room-chat">
       <section className="fs-room__main" aria-label={state.name}>
         <header className="fs-room__head">
+          {onToggleConversations && <button type="button" className="fs-studio__chip" aria-expanded={conversationsOpen} onClick={onToggleConversations} title={t('Show or hide the conversations (Ctrl+B)')}><MessageSquare size={13} aria-hidden="true" /><span className="fs-room__conversations-label">{t('Conversations')}</span></button>}
           <div className="fs-room__title">
             <h2 title={state.name}>{state.name}</h2>
             <p>
@@ -282,18 +283,21 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
               {state.executionMode === 'chat' ? ' · ' + t('Discuss without tools') : ''}
             </p>
           </div>
+          <Popover trigger={<IconButton icon={Settings2} label={t('Room settings')} size="sm" />}>
+          <p className="fs-muted">{state.mode === 'parallel' ? t('All at once') : t('Taking turns')} · {tn(members.length, '{n} participant', '{n} participants')}</p>
           <label className="fs-room__rounds" title={t('How many rounds the members may answer each other after your message')}>
             <span>{t('Between themselves')}</span>
             <select className="fs-field" value={rounds} onChange={(e) => void setRounds(Number(e.target.value))} data-testid="room-rounds">
               {[...new Set([...ROUND_CHOICES, rounds])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n < 0 ? t('Until the discussion ends') : n === 0 ? t('Only answer me') : t('Up to {n} rounds', { n })}</option>)}
             </select>
           </label>
+          </Popover>
           <Vitals busy={busy} />
           <SparkVitals />
           <IconButton icon={Kanban} label={side === 'board' ? t('Hide the board') : t('Show the board')} size="sm" onClick={() => setSide(side === 'board' ? null : 'board')} testId="room-board-toggle" />
           <IconButton icon={PanelRight} label={side === 'members' ? t('Hide the members') : t('Show the members')} size="sm" onClick={() => setSide(side === 'members' ? null : 'members')} />
           <Menu
-            trigger={<Button variant="secondary" size="sm" icon={Users} label={t('Room')} />}
+            trigger={<IconButton size="sm" icon={Users} label={t('Room')} />}
             align="end"
             items={[
               { label: t('Manage members'), icon: Users, onSelect: () => onManage(state) },

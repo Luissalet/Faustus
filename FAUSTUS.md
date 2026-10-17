@@ -13,6 +13,9 @@ entre participantes aparecen en el mismo chat, con el contexto anterior real,
 sin el nuevo tope de tres rondas por defecto; siguen los límites explícitos,
 Stop y las capacidades de Council. El listado de salas se puede plegar para
 ampliar el chat y el tablero tiene cierre accesible en móvil.
+Tras la corrección visual pedida por Luis, el chat del proyecto ocupa toda la
+vista como Studio: conversaciones en el lateral, cabecera compacta y tablero
+cerrado inicialmente. La navegación del proyecto permanece en el lateral.
 Verificación: 64 pruebas Python, checks de componentes, build, API/MCP y navegador
 privados; llamada nativa al tablero con proveedor HTTP controlado. GLM residente
 en Sparks completó propuesta, objeción, acuerdo y cierre natural con dos roles.
