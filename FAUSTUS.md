@@ -1,5 +1,12 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Silver: música del combate (#794):** en Combatir se elige entre48 pistas,
+Automática y Sin música. El control Sonido permite cambiarla durante combate
+clásico y en tiempo real; el navegador recuerda la elección y conserva volúmenes
+y efectos. Reutiliza el catálogo existente. Es preferencia del espectador: el
+grabadorMP4 tiene su propio navegador y el HTML portátil conserva sus efectos.
+No añade herramientas ni configuración global del servidor.
+
 **Procedimientos locales y recursos de skills (#781):** ocho procedimientos
 nuevos cubren ingeniería inversa, assets de Blender, composición de movimiento,
 revisiones de medios, impacto del código, entidades, evidencia histórica y voces.
