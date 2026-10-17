@@ -1,7 +1,7 @@
 import { Users } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Dialog, Popover } from '../../components';
-import { groupOptions, listGroupPresets, type GroupPreset, type GroupSnapshot, type GroupState } from '../../adapters/group';
+import { groupOptions, groupSnapshot, listGroupPresets, updateGroup, type GroupPreset, type GroupSnapshot, type GroupState } from '../../adapters/group';
 import { listPresets, type Preset } from '../../adapters/presets';
 import type { ModelRoute } from '../../adapters/chat';
 import { t } from '../../i18n';
@@ -18,6 +18,7 @@ export function StudioGroupControls({ snapshot, routes, spaceId, projectId, newS
 }) {
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [personas, setPersonas] = useState<Preset[]>([]);
   const [presets, setPresets] = useState<GroupPreset[]>([]);
   const [defaultRoute, setDefaultRoute] = useState<ModelRoute | null>(null);
@@ -36,6 +37,12 @@ export function StudioGroupControls({ snapshot, routes, spaceId, projectId, newS
     </button>}>
       {navigation}
       {snapshot && <MemberActivity snapshot={snapshot} />}
+      {projectId && group && !group.projectId && <Button size="sm" label={t('Work in this project')} loading={linking}
+        onClick={() => {
+          setLinking(true);
+          void groupSnapshot(group.parentId).then((fresh) => updateGroup(fresh.group, {projectId}))
+            .then(() => onChanged()).catch((error: Error) => say(error.message, 'danger')).finally(() => setLinking(false));
+        }} />}
       <Button size="sm" label={t('Edit members')} onClick={() => { setCreating(false); setEditing(true); }} disabled={!group} />
       <Button size="sm" label={t('New room')} onClick={() => { setCreating(true); setEditing(true); }} />
     </Popover>
