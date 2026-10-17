@@ -1630,8 +1630,7 @@ export function SettingsScreen() {
   const [params, setParams] = useSearchParams();
   const rawSection = params.get('s');
   const section: SectionKey = SECTIONS.some(item => item.key === rawSection) ? rawSection as SectionKey : 'general';
-  const setSection = useCallback((next: SectionKey | ((current: SectionKey) => SectionKey)) => {
-    const value = typeof next === 'function' ? next(section) : next;
+  const setSection = useCallback((value: SectionKey) => {
     const changed = new URLSearchParams(params);
     changed.set('s', value);
     setParams(changed);
@@ -1662,9 +1661,11 @@ export function SettingsScreen() {
       const local = isLocalInstallation(st);
       setLocalInstallation(local);
       setAdmin(local || st.is_admin === true);
-      if (local) setSection((current) => current === 'account' || current === 'users' ? 'general' : current);
     }).catch(() => setLocalInstallation(false));
   }, []);
+  useEffect(() => {
+    if (localInstallation === true && (section === 'account' || section === 'users')) setSection('general');
+  }, [localInstallation, section, setSection]);
 
   const say = useCallback((t: string) => {
     setNotice(t);

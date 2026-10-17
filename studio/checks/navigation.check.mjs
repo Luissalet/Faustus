@@ -19,11 +19,12 @@ try {
     export * from './studio/src/shell/routes';
     export * from './studio/src/shell/toolPlacement';
     export * from './studio/src/screens/settings/SettingsNavigation';
+    export { SettingsScreen } from './studio/src/screens/Settings';
     export * from './studio/src/screens/studio/commands';
     export { createElement, act, useState } from 'react';
     export { createRoot } from 'react-dom/client';
     export { MemoryRouter } from 'react-router';
-  `, resolveDir: root, loader: 'tsx' }, bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'silent' });
+  `, resolveDir: root, loader: 'tsx' }, bundle: true, platform: 'node', format: 'esm', outfile, loader: { '.css': 'empty' }, logLevel: 'silent' });
   const m = await import(pathToFileURL(outfile));
   assert.deepEqual(Object.keys(m.TOOL_PLACEMENT).sort(), m.TOOLS.map(tool => tool.path).sort(), 'every former Tool has a working home');
   assert.equal(m.toolsIn('project').filter(tool => tool.path === '/source-control').length, 1);
@@ -66,11 +67,28 @@ try {
   assert.equal(host.querySelector('[data-testid="settings-section-shortcuts"]'), null);
   await m.act(async () => renderer.unmount());
 
+  // A late local-installation response must not undo navigation made while it waited.
+  let finishAuth;
+  const auth = new Promise(resolve => { finishAuth = resolve; });
+  globalThis.fetch = async url => {
+    if (String(url).endsWith('/api/auth/status')) return auth;
+    const value = String(url).endsWith('/api/model-endpoints') ? [] : {};
+    return new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const settingsHost = document.createElement('div'); document.body.append(settingsHost);
+  const settingsRoot = m.createRoot(settingsHost);
+  await m.act(async () => settingsRoot.render(m.createElement(m.MemoryRouter, { initialEntries: ['/settings?s=shortcuts'] }, m.createElement(m.SettingsScreen))));
+  await m.act(async () => settingsHost.querySelector('[data-testid="settings-group-ai"]').click());
+  assert.equal(settingsHost.querySelector('[data-testid="settings-section-models"]').getAttribute('aria-current'), 'page');
+  await m.act(async () => { finishAuth(new Response(JSON.stringify({ auth_disabled: true, is_admin: true }), { headers: { 'Content-Type': 'application/json' } })); });
+  assert.equal(settingsHost.querySelector('[data-testid="settings-section-models"]')?.getAttribute('aria-current'), 'page', 'late auth does not restore the initial settings section');
+  await m.act(async () => settingsRoot.unmount());
+
   const shell = readFileSync(join(root, 'studio/src/shell/AppShell.tsx'), 'utf8');
   assert.ok(!shell.includes('tools.map('), 'no permanent tool inventory in the sidebar');
   assert.ok(!shell.includes('useBadges'), 'sidebar does not poll every repository');
   assert.ok(shell.includes('nav-more') && shell.includes('nav-search'), 'mouse and mobile can reach all destinations');
-  console.log('ALL OK: navigation coverage, project scope, research, settings groups and live settings navigation');
+  console.log('ALL OK: navigation coverage, project scope, research, settings groups, live settings navigation and delayed auth');
 } finally {
   await browser.happyDOM.abort();
   assert.equal(dirname(resolve(temporary)), resolve(tmpdir()));
