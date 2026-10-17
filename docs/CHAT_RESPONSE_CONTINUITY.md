@@ -4,4 +4,6 @@ Studio keeps the currently visible answer while the server drafts a replacement.
 
 Groups reconstruct the visible draft through the existing native full stream replay when reopened. A blank stream handshake keeps the snapshot text. Terminal steps and canonical history supersede the live preview. This does not change server APIs, model execution, retries, stop controls or stored answers, and requires no server restart.
 
+Cancelling a room keeps queued user instructions visible with their stopped status. Their original text remains in the canonical group turn store even when execution never started and there is no user row in session history yet.
+
 Regression check: `node studio/checks/group-continuity.check.mjs`. The regression was observed in a native run replay with three empty replacements followed by its final saved answer.

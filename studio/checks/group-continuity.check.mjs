@@ -42,4 +42,7 @@ step.status = 'done'; step.text = 'Canonical answer';
 assert.equal(roomView([], snapshot, {s:turn}).turns.at(-1).text, 'Canonical answer', 'terminal steps supersede stale live text before history is loaded');
 const history = [{role:'assistant', content:'Canonical answer', index:0, metadata:{group_step_id:'s'}}];
 assert.equal(roomView(history, snapshot, {s:turn}).turns.filter(t=>t.role==='assistant').length, 1);
+const stopped = {group:{parentId:'g',participants:[]},busy:false,turns:[{id:'cancelled',message:'Everything except these three. Add the rest to the Agora.',status:'stopped'}],steps:[]};
+assert.equal(roomView([], stopped, {}).turns[0].text, stopped.turns[0].message, 'Stop must preserve a queued user instruction in the transcript');
+assert.ok(roomView([], stopped, {}).turns[0].note);
 console.log('PASS: drafting, repeated reset, explicit replacement, failure, reopen and canonical handoff.');
