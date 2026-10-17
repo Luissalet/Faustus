@@ -1,5 +1,11 @@
 # Objetivos acordados
 
+## Escritura cómoda en el copilot común — #772
+
+Campo a todo el ancho, cuatro líneas iniciales, crecimiento automático y altura
+ajustable; botones debajo. Verificado con mensajes largos a 390 px de ancho y
+480/844 px de alto, borradores y adjuntos conservados. No requiere decisión de Luis.
+
 ## Asistentes con instrucciones, skills y proactividad — #724
 
 Perfil propio por chat canónico aplicado en Chat, Agente y turnos programados;

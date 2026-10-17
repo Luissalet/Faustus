@@ -1,5 +1,13 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Escritura en los copilotos de los Hoards (#772):** el componente compartido
+usa todo el ancho para el mensaje, con cuatro líneas y 112 px iniciales. Crece
+con el texto hasta el menor valor entre 320 px y el 40% de la altura de pantalla;
+después tiene scroll interno. Permite redimensionado vertical y coloca los botones
+debajo, con 44 px de alto. Los navegadores sin `field-sizing` conservan el campo
+multilínea ajustable. La corrección se distribuye con el bundle de Faustus que
+sirven los relays existentes; no requiere cambiar las APIs/MCP ni los Hoards.
+
 **Asistentes configurables y proactividad (17-10-2026, #724):**
 Studio → conversación nueva → Tus asistentes permite configurar instrucciones
 propias y skills publicadas, aplicadas en Chat, Agente, API sin streaming y

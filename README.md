@@ -810,6 +810,8 @@ panel owns the conversation UI; hosts provide context and transport. Histories
 import idempotently into the canonical database, and native tools keep domain
 edits and undo in their Hoard. Build the shared bundle with
 `node studio/embed/build.mjs`; [API and MCP contract](docs/api/hoard_copilot.md).
+The shared message field occupies the full panel width, starts with four lines,
+grows with the draft and can be resized vertically; action buttons sit below it.
 This is the common foundation; Writer integration and the remaining family
 migration are tracked separately. Global sidebar filters and natural-language
 project recovery are not part of this foundation yet.
