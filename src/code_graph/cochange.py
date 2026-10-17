@@ -68,7 +68,7 @@ def _is_noise_path(path: str) -> bool:
 def _head_sha(root: str, git: str) -> str:
     try:
         proc = subprocess.run(
-            [git, "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True,
+            [git, "rev-parse", "HEAD"], cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True,
             timeout=10, shell=False)
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -88,7 +88,7 @@ def _fetch_history(root: str, *, max_commits: int) -> List[Tuple[str, str, froze
             [git, "log", "--no-merges", "--name-only", "--date=short",
              f"--pretty=format:{_COMMIT_MARK}%h{_RECORD_SEP}%ad",
              "-n", str(max_commits)],
-            cwd=root, capture_output=True, text=True, timeout=30, shell=False)
+            cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, shell=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("code_graph.cochanges: git log failed: %s", exc)
         return []
