@@ -13117,3 +13117,18 @@ El estilo de partículas pixel usa 18 atlas de proyectiles de tipos de Explorers
 Activo en Silver Main `b775d256`, con las fuentes originales 263fa15/8a91364 aprobadas por Cursor CAS2 y el hielo 96b3225 aprobado independientemente. El hielo original añade cuatro fotogramas a lanzas y cabeza de Rayo Hielo en los estilos texturizado/pixel, con alternativa procedural si falta la imagen. La activación gestionada conservó las 18 tablas y 153 archivos protegidos, incluidos ajustes y token; los 49 entrenadores, 24 gimnasios, tres ligas y 42 partidas se mantienen. El servidor MCP de Silver registrado en Faustus se reconectó y expone las cuatro opciones nuevas de leisure_catalog y las 174 herramientas.
 
 Fuente 8a91364: 414 pruebas Python aprobadas (dos omitidas), 403 del motor (una omitida) y compilaciones app/play correctas. La composición final conserva Python y añade el hielo: 406 pruebas del motor aprobadas (una omitida), 19 de área y app/play correctas. MCP nativo paginado completo, bases y concurso guardados, combates clásico/RT y gimnasio HTML jugados; escritorio/móvil sin imágenes rotas ni desbordes. Evidencia: `D:/LocalAI/research-inbox/sprites721/`.
+
+## Biblioteca: Conocimiento — 17-10-2026 (#723)
+
+Biblioteca reúne Memoria y Cerebro en Conocimiento. Ambas vistas conservan sus
+funciones y la navegación de Biblioteca; el chat mantiene el acceso a Memoria.
+Los enlaces `/memory`, `/brain`, sus parámetros y la búsqueda siguen funcionando.
+No se migran datos, identificadores, APIs ni herramientas MCP. Véase
+`docs/ui/library-knowledge.md`.
+
+Comprobado con componentes React montados, navegación, enlaces antiguos,
+castellano, TypeScript, compilación y navegador DOM/AX a 1280 y 390 píxeles.
+MCP nativo: catálogo de memoria e historial de cambios, lectura de una nota de
+Cerebro y contenido sintético conservado. La captura de píxeles no estuvo
+disponible; no se afirma inspección visual. Evidencia en
+`D:/LocalAI/research-inbox/faustus-cleanup-20261017/`.
