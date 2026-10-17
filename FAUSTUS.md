@@ -13018,3 +13018,11 @@ El público de los combates en tiempo real combina Pokémon del catálogo de la 
 Los entrenadores miran hacia la cancha con sus cuatro orientaciones originales y usan los saltos de reacción del público. Su atlas está incluido en la aplicación y en el HTML exportado, por lo que estos espectadores no necesitan el servicio PMD. Se mantienen el interruptor de público, el estilo plain y el mecanismo de carga e imagen de reserva de los Pokémon. El público es presentación: no cambia reglas, daño, entradas de repetición ni azar del motor.
 
 La herramienta `credits`, su API y la página de créditos recogen las dos fuentes. Silver conserva las listas originales de autores, el manifiesto de procedencia y el generador del atlas; `docs/CROWD.md` describe el formato y la reconstrucción. Los sprites de aficionados conservan sus créditos y no se relicencian como el código de la aplicación.
+
+## Silver: sprites de megas Z-A y hojas direccionales — 17-10-2026
+
+Silver conserva el aspecto Mega cuando SpriteCollab solo devuelve la animación de la forma normal. El respaldo cubre las 49 variantes nuevas del catálogo, incluidas Mega Z y las variantes de Meowstic, Magearna y Tatsugiri, normales/variocolor y de frente/espalda. Delphox ya megaevolucionaba en el motor: la corrección cambia su representación, sin modificar daño ni resultados.
+
+Las herramientas nativas `overworld_import` y `overworld_list`, compartidas por UI, REST y MCP, incorporan el ZIP Z-A y la hoja de la línea Delphox aportados por Luis. Hay diez megas con movimiento en cuatro direcciones, normal y variocolor: 26 entradas y 19 PNG originales únicos, persistentes en `data/overworld`. Los créditos enlazados y las hojas viajan con los HTML jugables de entrenador/gimnasio. No se inventan poses de ataque/daño ni se añaden estas hojas al renderer campal separado.
+
+Activo en Main Silver `d52ea2e`; entregas 699 R2 y 704 R2 aprobadas independientemente. Importación real por MCP y PNG byteexactos; 16 tablas y seis archivos protegidos conservados. Evidencia: `D:/LocalAI/research-inbox/silver-za-20261017/RESULT.txt`.
