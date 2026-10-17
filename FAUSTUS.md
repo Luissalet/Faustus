@@ -13290,3 +13290,33 @@ impide abrir `file://`; no se afirma esa comprobación. Evidencia y recibo final
 de activación: `D:/LocalAI/research-inbox/silver-sprites795/`; revisión propia en
 `D:/LocalAI/research-inbox/review-sprites795-r1/`. No hay herramienta MCP nueva,
 datos reales de prueba, cambios de simulación ni llamadas a modelos.
+
+## Silver: formatos de combate y vídeo — 18-10-2026
+
+Activo desde Main 190fdf0, aprobado en la revisión independiente CAS4 de
+8505cb5. El combate y su repetición ofrecen horizontal y vertical sin desmontar
+el reproductor. VideoExport añade vista previa y la opción `aspect=landscape|portrait`
+en UI, REST y MCP: 1080p produce 1920 × 1080 o 1080 × 1920 reales; también hay
+720p. Un mismo combate guardado se exporta a archivos independientes con sonido.
+
+En tiempo real gira la cámara 90 grados con el campo, las rocas y los efectos;
+Pokémon y entrenadores siguen de pie. Las hojas direccionales eligen la dirección
+girada y se aprovechan las espaldas y poses disponibles. El arte sin poses queda
+estático. Los ejes humanos nuevos se convierten antes del registro; las entradas
+guardadas no se remapean. No cambian engine/src, semilla, IA, daño, reglas ni
+resultado. La campal recompone 9:16 sin girar su mundo. No se probó mando físico.
+
+El revisor exportó el mismo RT de rendición en los cuatro formatos y resoluciones:
+90 ticks, p1 se rinde, gana p2; títulos y PS completos, H264/AAC y SAR1:1. Dos MP4
+propios de dobles conservan tick23/KO/PS y el battle_get completo antes y después.
+La duración de captura, introducción y cola no equivale al tiempo de simulación;
+la energía de audio no identifica una pista musical. No se añade subida a redes.
+
+Full propio R1: 526 Python y 2 omitidas (poke-engine opcional), 445 Node y 1 omitida.
+R2/R4 sólo cambian CSS y R3 documentación. La unión final preserva los archivos
+propios de8505 y los entrantes de792/EA9 byte a byte: 448 Node/1 omitida, 27 Python
+del área y build app/play. Un reinicio gestionado sólo de Silver tras siete checks
+idle; 18 tablas, 155 medios, ajustes, token y replay real exactos después de la UI.
+MCP180 y caché de Faustus actualizados con permisos y configuración intactos.
+Manual nativo actualizado, conservando contenido, estructura y estilos ajenos.
+Guía: docs/VIDEO_FORMATS.md; evidencia: research-inbox/silver-portrait776. Sin push.
