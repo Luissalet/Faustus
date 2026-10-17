@@ -97,7 +97,7 @@ const checks: Array<[string, () => Promise<void>]> = [
     const ends: Array<{ reason: string; error?: string }> = [];
     element.addEventListener('faustus:turn-end', event => ends.push((event as CustomEvent).detail));
     element.draft = 'Finish the original request';
-    await element.send(element.draft);
+    element.shadowRoot!.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await until(() => ends.length === 1, 'Turn ends after the terminal error');
     assert.equal(ends[0].reason, 'error');
     assert.equal(ends[0].error, reason);
