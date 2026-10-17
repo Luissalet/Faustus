@@ -11,8 +11,9 @@ de implementación; las skills no se presentan como sustituto de esas funciones.
 
 El índice (#782) ya incorpora resolución por importación/ámbito y actualización
 de llamadas intactas al cambiar definiciones; API/MCP comparten el impacto
-existente. Fuente integrada y revisada. Activación del backend pendiente de que
-termine el turno activo de Faustus; no se detiene la inferencia para actualizar.
+existente. Fuente revisada, integrada y activa; ocho skills instaladas con sus
+referencias. Se ha actualizado sólo el servidor de Faustus, manteniendo los
+modelos disponibles. Recibos en research-inbox/fuentes-local-20261018.
 
 ## Escritura cómoda en el copilot común — #772
 
