@@ -52,6 +52,11 @@ supported. A failed upload keeps its file for retry, and a failed turn keeps the
 same attachment IDs and idempotency key. Removing an attachment detaches it from
 the draft without deleting the uploaded file.
 
+The message field uses the full composer width, with four lines initially and
+the action buttons below it. It grows with the text up to 40% of the viewport
+(320 px maximum), then scrolls internally. It can also be resized vertically;
+browsers without CSS `field-sizing` retain the multiline, resizable field.
+
 ## Isolation
 
 Each `<faustus-chat>` instance:

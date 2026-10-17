@@ -588,13 +588,12 @@ export class FaustusChatElement extends HTMLElement {
     });
     this.#attachBtn = el('button', { type: 'button', class: 'fc-btn fc-attach' }, 'Attach');
     this.#attachBtn.addEventListener('click', () => this.#fileInput.click());
-    composer.append(this.#fileInput, this.#attachBtn);
     this.#textarea = el('textarea', {
       role: 'textbox',
       'aria-label': 'Message',
       'aria-multiline': 'true',
       placeholder: 'Message…',
-      rows: '1',
+      rows: '4',
     }) as HTMLTextAreaElement;
     this.#textarea.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -604,6 +603,7 @@ export class FaustusChatElement extends HTMLElement {
     });
     this.#textarea.addEventListener('input', () => this.#queueDraft());
     composer.appendChild(this.#textarea);
+    composer.append(this.#fileInput, this.#attachBtn);
 
     this.#cancelBtn = el('button', {
       type: 'button',

@@ -231,6 +231,7 @@ export const EMBED_STYLES = `
 .fc-composer {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px;
   padding: 10px 12px;
@@ -238,22 +239,26 @@ export const EMBED_STYLES = `
 }
 
 .fc-composer textarea {
-  flex: 1 1 auto;
+  flex: 1 0 100%;
+  width: 100%;
   min-width: 0;
-  resize: none;
-  min-height: 36px;
-  max-height: 140px;
+  field-sizing: content;
+  resize: vertical;
+  min-height: 112px;
+  max-height: min(320px, 40dvh);
   border: 1px solid var(--fc-border);
   border-radius: 8px;
   padding: 8px 10px;
   font: inherit;
   font-size: 14px;
+  line-height: 1.5;
   color: var(--fc-fg);
   background: var(--fc-bg);
 }
 
 .fc-btn-send {
   flex: 0 0 auto;
+  margin-inline-start: auto;
   appearance: none;
   border: none;
   background: var(--fc-accent);
@@ -264,6 +269,8 @@ export const EMBED_STYLES = `
   font-weight: 600;
   cursor: pointer;
 }
+
+.fc-composer button { min-height: 44px; }
 
 .fc-btn-send:disabled,
 .fc-btn:disabled {
