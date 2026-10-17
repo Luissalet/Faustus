@@ -422,6 +422,8 @@
 }
 
 .fs-room__main > :not(.fs-room__stage) { flex-shrink: 0; }
+.fs-room__side-tabs > [role='tablist'] { display: flex; gap: var(--fs-space-2); }
+.fs-room__side-tabs > .fs-icon-button { margin-inline-start: auto; }
 
 .fs-room__head {
   position: relative;

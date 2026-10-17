@@ -1,4 +1,4 @@
-import { ExternalLink, Kanban, MessageSquare, PanelRight, Plus, Send, Square, Trash2, Users } from 'lucide-react';
+import { ExternalLink, Kanban, MessageSquare, PanelRight, Plus, Send, Square, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Button, IconButton, Menu, Skeleton } from '../../components';
@@ -405,9 +405,12 @@ export function RoomChat({ groupId, onNewRoom, onManage, onClosed, say, projectI
 
       {side && (
         <aside className="fs-room__side" aria-label={side === 'board' ? t('Agora tasks') : t('Participants')}>
-          <div className="fs-room__side-tabs" role="tablist">
+          <div className="fs-room__side-tabs">
+            <div role="tablist" aria-label={t('Room')}>
             <button type="button" role="tab" aria-selected={side === 'board'} onClick={() => setSide('board')}><Kanban size={13} aria-hidden="true" /> {t('Board')}</button>
             <button type="button" role="tab" aria-selected={side === 'members'} onClick={() => setSide('members')}><Users size={13} aria-hidden="true" /> {t('Members')}</button>
+            </div>
+            <IconButton icon={X} label={t('Close')} size="sm" onClick={() => setSide(null)} />
           </div>
           {side === 'board' && (spaceId
             ? <AgoraBoardView spaceId={spaceId} variant="compact" />
