@@ -39,6 +39,17 @@ export function PersonalAssistants() {
   const [project, setProject] = useState('');
   const [session, setSession] = useState('');
   const [busy, setBusy] = useState(false);
+  const showError = (e: Error) => {
+    const translations: Record<string, string> = {
+      'Choose a valid IANA timezone.': 'Elige una zona horaria válida, por ejemplo Europe/Madrid.',
+      'Describe what the assistant should do proactively.': 'Describe qué debe hacer el asistente de forma proactiva.',
+      'Use a five-field cron expression.': 'Usa una expresión cron de cinco campos.',
+      'This schedule has no next occurrence.': 'Este horario no tiene una próxima ejecución. Elige otro.',
+      'An assistant needs a name.': 'El asistente necesita un nombre.',
+      'The task scheduler is unavailable': 'El programador no está disponible. Comprueba que Faustus está en marcha.',
+    };
+    setError(lang === 'es' ? translations[e.message] || e.message : e.message);
+  };
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const data = await getJson<{ assistants: Assistant[] }>('/api/mobile/assistants', signal);
     if (!signal?.aborted) { setAssistants(data.assistants); setLoaded(true); }
@@ -76,7 +87,7 @@ export function PersonalAssistants() {
       e.preventDefault(); setBusy(true); setError('');
       const { enabled, schedule, time, day, timezone, cron, prompt, notifications, quiet } = proactivity;
       void save(editing ? '/' + encodeURIComponent(editing) : '', editing ? 'PATCH' : 'POST', { name, description, instructions, skills, proactivity: { enabled, schedule, time, day, timezone, cron, prompt, notifications, quiet }, ...(!editing ? { project_id: project, session_id: session } : {}) })
-        .then(async () => { setEditing(null); await refresh(); }).catch(e => setError(e.message)).finally(() => setBusy(false));
+        .then(async () => { setEditing(null); await refresh(); }).catch(showError).finally(() => setBusy(false));
     }}>
       <label>{tr('Assistant name', 'Nombre del asistente')}<input className="fs-field" required maxLength={120} value={name} disabled={busy} onChange={e => setName(e.target.value)} /></label>
       <label>{tr('Usage notes', 'Notas de uso')}<textarea className="fs-field" rows={2} maxLength={1000} value={description} disabled={busy} onChange={e => setDescription(e.target.value)} /></label>
