@@ -48,7 +48,10 @@ required fields, conflicts and extraction limits. It does not reinterpret a
 dropped value as data. This is a chat integration, not a migration of records
 or an unimplemented claim that another Hoard now owns the extraction engine.
 
-An old `/source-control?project=…` bookmark opens that project's repositories.
+The project's Open full screen link and old `/source-control?project=…`
+bookmarks open the full repository workspace scoped to that project, with a
+return link to its repository tab. The project filter reaches the Git API;
+the installation-wide radar is absent from this view.
 Without a project, the old URL offers a project picker. The install-wide
 repository overview remains available through an explicit secondary link.
 
