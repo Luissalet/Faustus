@@ -1,5 +1,14 @@
 # Objetivos acordados
 
+## Fuentes incorporadas como capacidades locales — #779–#783
+
+Encargo de Luis: incorporar las funciones útiles de las fuentes investigadas,
+excluyendo Jev, pagos y dependencias de API externas. La biblioteca recibe ocho
+procedimientos y conserva referencias al instalarlos (#781). El estudio de
+ingeniería inversa (#779), el trabajo vivo de Blender (#780), el índice de impacto
+(#782) y los motores de composición, voz y cámara (#783) siguen siendo frentes
+de implementación; las skills no se presentan como sustituto de esas funciones.
+
 ## Escritura cómoda en el copilot común — #772
 
 Campo a todo el ancho, cuatro líneas iniciales, crecimiento automático y altura

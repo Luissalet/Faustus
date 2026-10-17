@@ -1,0 +1,5 @@
+{
+  "brief": "An original articulated desk lamp",
+  "requirements": ["editable scene", "two materials", "extend, turn and fold clips", "GLB export"],
+  "revision": "Make only the shade wider; retain joint motion and base dimensions."
+}

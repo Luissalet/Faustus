@@ -1,0 +1,9 @@
+{
+  "entities": [
+    {"name": "Northstar", "registry_id": "ES-A1", "jurisdiction": "ES"},
+    {"name": "Northstar", "registry_id": "GB-B2", "jurisdiction": "GB"}
+  ],
+  "source": {"id": "document-1", "text": "ES-A1 owns example.test"},
+  "expected_relationship": {"subject": "ES-A1", "predicate": "owns", "object": "example.test"},
+  "must_not_attribute_to": "GB-B2"
+}

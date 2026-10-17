@@ -1,0 +1,6 @@
+{
+  "language": "es",
+  "text": "Iñigo llegó a Zaragoza el miércoles. La entrada cuesta 12,50 euros; ¿quieres reservar dos?",
+  "measurements": ["first_audio_seconds", "total_seconds", "peak_memory_mb", "cold_or_warm"],
+  "listening": ["pronunciation", "missing_words", "repeated_words", "naturalness", "chunk_continuity"]
+}

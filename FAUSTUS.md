@@ -1,5 +1,13 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Procedimientos locales y recursos de skills (#781):** ocho procedimientos
+nuevos cubren ingeniería inversa, assets de Blender, composición de movimiento,
+revisiones de medios, impacto del código, entidades, evidencia histórica y voces.
+La instalación global conserva los recursos de texto que acompañan a SKILL.md,
+incluidos ejemplos JSON, referencias y avisos de procedencia. Se leen a demanda
+con las herramientas existentes; el catálogo MCP del proyecto también los ofrece.
+Los procedimientos no equivalen a motores nuevos ni a aplicaciones terminadas.
+
 **Escritura en los copilotos de los Hoards (#772):** el componente compartido
 usa todo el ancho para el mensaje, con cuatro líneas y 120 px iniciales. Crece
 con el texto hasta el menor valor entre 320 px y el 40% de la altura de pantalla;

@@ -1,0 +1,5 @@
+{
+  "initial_stages": ["scene-a", "scene-b", "narration", "music", "mix", "final"],
+  "experiments": ["change music", "replace scene-b", "change narration"],
+  "compare": ["rebuilt stages", "unchanged hashes", "duration", "audio synchronization"]
+}

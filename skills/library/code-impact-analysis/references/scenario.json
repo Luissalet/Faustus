@@ -1,0 +1,10 @@
+{
+  "modules": {
+    "reports.py": "def export_report(rows): return rows",
+    "jobs.py": "from reports import export_report as emit\ndef run(rows): return emit(rows)",
+    "unrelated.py": "def export_report(): return 'other'"
+  },
+  "change": "Rename reports.export_report",
+  "expected_consumer": "jobs.run",
+  "unrelated_homonym": "unrelated.export_report"
+}

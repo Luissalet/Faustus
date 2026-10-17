@@ -5,6 +5,20 @@ itself — engineering habits (TDD, verification, security review, per-
 language patterns, research, planning) that would otherwise take a while
 for a local model to rediscover on its own.
 
+## Local production and evidence workflows
+
+The library also includes procedures for reverse engineering, editable
+Blender assets, deterministic motion composition, revision-aware media,
+code impact analysis, entity investigation, historical evidence and local
+voice comparison. Each has a small worked scenario in `references/` and
+records its methodological source and revision.
+
+Installation preserves these supporting files beside the installed skill.
+They are read on demand through the existing skill reference tools, rather
+than added to every prompt. The procedures need no paid service or hosted
+API. They describe how to use available tools; installing a procedure does
+not install a renderer, a speech model or a new application capability.
+
 ## Format
 
 Every skill here uses the exact dialect `services/memory/skill_format.py`
@@ -33,7 +47,7 @@ rather than growing past the cap.
 A skill here is inert until a user installs it — nothing runs, and nothing
 is granted a tool, just by shipping in this folder. Installing (`GET /api/
 skills/library`, `POST /api/skills/library/install`, or the Skills tab in
-the UI) copies the file into that user's own skill store
+the UI) copies the procedure and its supporting text files into that user's own skill store
 (`data/skills/<category>/<slug>/SKILL.md`) tagged `library:<slug>`, runs the
 same static pre-scan any other imported skill folder gets
 (`src.skill_import_review.scan_skill_folder`), and refuses outright if that
