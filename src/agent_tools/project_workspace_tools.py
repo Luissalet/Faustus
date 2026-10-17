@@ -25,6 +25,8 @@ def perform(project: dict, args: dict, owner=None) -> dict:
         return {"skills": workspace.list_skills(project)}
     if action == "skill_read":
         return {"skill": workspace.read_skill(project, args["key"])}
+    if action == "skill_write":
+        return {"skill": workspace.write_skill(project, args["key"], args["content"], args.get("digest", ""))}
     if action == "skills_catalog":
         return {"skills": workspace.catalog(owner)}
     if action == "skills_repository":

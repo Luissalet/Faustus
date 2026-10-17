@@ -14,7 +14,7 @@ import threading
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
-from core.atomic_io import atomic_write_json
+from core.atomic_io import atomic_write_json, atomic_write_text
 from services.memory import skill_importer as importer
 from services.memory.skill_format import Skill, slugify
 from services.projects import ProjectError
@@ -99,7 +99,31 @@ def list_skills(project: dict) -> list[dict]:
 
 
 def read_skill(project: dict, key: str) -> dict:
-    return _details(project, key, _match(project, key))
+    found = _match(project, key)
+    row = _details(project, key, found)
+    base = Path(found.path).parent.resolve()
+    files = {}
+    for path in base.rglob("*"):
+        _contained(base, path)
+        if path.is_file():
+            if path.stat().st_size > importer.MAX_FILE_BYTES or len(files) >= importer.MAX_FILES:
+                raise ProjectError("Skill bundle is too large to review.")
+            files[path.relative_to(base).as_posix()] = path.read_text(encoding="utf-8")
+    row["files"] = files
+    return row
+
+
+def write_skill(project: dict, key: str, content: str, expected_digest: str) -> dict:
+    name, _files = _validated_files({"SKILL.md": content})
+    with _LOCK:
+        found = _match(project, key)
+        current = _details(project, key, found)
+        if not expected_digest or current["digest"] != expected_digest:
+            raise ProjectError("The skill changed; reload its content before editing.")
+        if name != slugify(current["name"]):
+            raise ProjectError("Keep the existing skill name when editing its source.")
+        atomic_write_text(found.path, content)
+    return read_skill(project, key)
 
 
 def activate(project: dict, key: str, *, reviewed: bool = False, override: bool = False, actor: str = "", expected_digest: str = "") -> dict:

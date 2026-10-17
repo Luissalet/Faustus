@@ -7,7 +7,7 @@ import { t } from '../../i18n';
 
 const STARTER = '---\nname: my-skill\ndescription: Describe when to use this skill\nversion: "1.0.0"\n---\n\n## Procedure\n\n1. Describe a concrete step.\n\n## Verification\n\n- Describe how to check the result.\n';
 
-async function droppedFiles(transfer: DataTransfer): Promise<File[]> {
+export async function droppedFiles(transfer: DataTransfer): Promise<File[]> {
   const result: File[] = [];
   const walk = async (entry: FileSystemEntry, prefix = ''): Promise<void> => {
     if (result.length >= 64) throw new Error(t('Choose at most 64 skill files.'));
@@ -39,6 +39,7 @@ export function ProjectSkills({ projectId, hasWorkspace, say }: { projectId: str
   const [mode, setMode] = useState<'installed' | 'library' | 'import' | 'manual'>('installed');
   const [source, setSource] = useState(STARTER);
   const [selected, setSelected] = useState<ProjectSkill | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [override, setOverride] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -94,7 +95,7 @@ export function ProjectSkills({ projectId, hasWorkspace, say }: { projectId: str
       {!skills ? <Skeleton label={t('Loading skills')} count={3} height="50px" /> : !skills.length ? <EmptyState title={t('No project skills yet')} body={t('Browse the library, import a skill folder or create a procedure.')} /> : <ul className="fs-project-workspace__list">
         {skills.filter((s) => matches(s.name, s.description)).map((skill) => <li key={skill.key}>
           <div><strong>{skill.name}</strong><p>{skill.description || skill.error}</p><small>{skill.active ? t('Active') : skill.changed ? t('Changed — review required') : t('Inactive')}</small></div>
-          <Button size="sm" variant="secondary" label={t('Review content')} disabled={busy || !!skill.error} onClick={() => { setSelected(skill); setOverride(false); }} testId={`project-skill-review-${skill.name}`} />
+          <Button size="sm" variant="secondary" label={t('Review content')} disabled={busy || !!skill.error} onClick={() => void act(async () => { const data = await workspaceAction<{skill: ProjectSkill}>(projectId, 'skill_read', {key: skill.key}); setSelected(data.skill); setEditing(null); setOverride(false); })} testId={`project-skill-review-${skill.name}`} />
           {skill.active && <Button size="sm" variant="ghost" label={t('Deactivate')} disabled={busy} onClick={() => void act(() => workspaceAction(projectId, 'skill_deactivate', { key: skill.key }))} />}
         </li>)}
         {!!skills.length && !skills.some((s) => matches(s.name, s.description)) && <li>{t('Nothing matches')}</li>}
@@ -134,12 +135,15 @@ export function ProjectSkills({ projectId, hasWorkspace, say }: { projectId: str
     </form>}
     {selected && <section className="fs-panel fs-project-workspace__form" aria-label={t('Review content')} data-testid="project-skill-review">
       <div className="fs-pj__card-head"><h2>{selected.name}</h2><Button size="sm" variant="ghost" label={t('Close')} onClick={() => setSelected(null)} /></div>
-      <p>{selected.description}</p><pre className="fs-context fs-project-workspace__source">{selected.markdown}</pre>
+      <p>{selected.description}</p>
+      {editing === null ? <><pre className="fs-context fs-project-workspace__source">{selected.markdown}</pre><Button size="sm" variant="secondary" label={t('Edit')} onClick={() => setEditing(selected.markdown || '')} /></> : <><textarea className="fs-field fs-project-workspace__source" rows={12} value={editing} onChange={(e) => setEditing(e.target.value)} aria-label="SKILL.md" /><div className="fs-project-workspace__toolbar"><Button size="sm" label={t('Save changes')} loading={busy} onClick={() => void act(async () => { const data = await workspaceAction<{skill: ProjectSkill}>(projectId, 'skill_write', {key: selected.key, digest: selected.digest, content: editing}); setSelected(data.skill); setEditing(null); })} /><Button size="sm" variant="ghost" label={t('Cancel')} onClick={() => setEditing(null)} /></div></>}
+      {Object.entries(selected.files ?? {}).filter(([name]) => name !== 'SKILL.md').map(([name, text]) => <details key={name}><summary>{name}</summary><pre className="fs-context fs-project-workspace__source">{text}</pre></details>)}
       <p>{t('Required tools')}: {selected.tools?.join(', ') || t('None declared')}</p>
+      {selected.review?.permissions && <details><summary>{t('Permissions')}</summary><pre className="fs-context fs-project-workspace__source">{JSON.stringify(selected.review.permissions, null, 2)}</pre></details>}
       {!!selected.review?.privilege_request.length && <p role="alert">{t('This skill requests changes to approval controls and cannot be activated as written.')}</p>}
       {!!selected.review?.security_scan?.findings.length && <ul>{selected.review.security_scan.findings.map((finding, i) => <li key={i}>{finding.severity} · {finding.file}:{finding.line} — {finding.description}</li>)}</ul>}
       {selected.review?.security_scan?.risk_level === 'critical' && <label><input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} /> {t('I have reviewed the findings and want to approve anyway')}</label>}
-      <Button size="sm" label={t('Review and activate')} loading={busy} disabled={!!selected.review?.privilege_request.length || (selected.review?.security_scan?.risk_level === 'critical' && !override)} onClick={() => void act(async () => { await reviewActivateSkill(projectId, selected, override); setSelected(null); }, t('Skill active in this project.'))} testId="project-skill-activate" />
+      <Button size="sm" label={t('Review and activate')} loading={busy} disabled={editing !== null || !!selected.review?.privilege_request.length || (selected.review?.security_scan?.risk_level === 'critical' && !override)} onClick={() => void act(async () => { await reviewActivateSkill(projectId, selected, override); setSelected(null); }, t('Skill active in this project.'))} testId="project-skill-activate" />
     </section>}
     <details className="fs-panel fs-project-workspace__section"><summary>{t('Existing folder import reviews')}</summary><ProjectSkillImports projectId={projectId} say={say} /></details>
   </div>;

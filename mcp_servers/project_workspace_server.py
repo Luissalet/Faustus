@@ -19,8 +19,8 @@ S = {"type": "string"}
 STRINGS = {"type": "array", "items": S}
 TASK = {"title": S, "body_md": S, "type": S, "priority": S, "assignee": S, "labels": STRINGS, "acceptance": STRINGS}
 SPECS = {
-    "project_workspace": ("POST", "/workspace/action", {"action": S, "name": S, "key": S, "kind": S, "url": S, "content": S, "files": {"type": "object", "additionalProperties": S}}, ["action"], False,
-        "Manage project instructions, durable memory and project skills. Actions: instructions_read/write, memory_list/read/write, skills_list/catalog/repository, skill_read/install/import/activate/deactivate. Use exact returned keys. Import never executes scripts. Activation requires an existing human review of the current digest; this tool cannot approve content."),
+    "project_workspace": ("POST", "/workspace/action", {"action": S, "name": S, "key": S, "kind": S, "url": S, "content": S, "digest": S, "files": {"type": "object", "additionalProperties": S}}, ["action"], False,
+        "Manage project instructions, durable memory and project skills. Actions: instructions_read/write, memory_list/read/write, skills_list/catalog/repository, skill_read/write/install/import/activate/deactivate. skill_write requires the digest from skill_read. Use exact returned keys. Import never executes scripts. Activation requires an existing human review of the current digest; this tool cannot approve content."),
     "project_task_list": ("GET", "/board/issues", {"q": S, "label": S, "status": S, "cursor": S}, [], True, "List tasks of one project, with editable free labels, assignees and stable IDs. Follow next_cursor."),
     "project_task_create": ("POST", "/board/issues", TASK, ["type", "title"], False, "Create a project task with free labels and verifiable acceptance criteria. Cite the returned id."),
     "project_task_update": ("PATCH", "/board/issues/{id}", {**TASK, "id": S, "status": S}, ["id"], False, "Edit a task, reassign it, replace labels or acceptance criteria, or change status. Existing history and references remain attached."),

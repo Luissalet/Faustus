@@ -150,3 +150,50 @@ def test_board_migration_preserves_old_rows_and_history(tmp_path):
     assert updated["labels"] == ["new tag"]
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+
+
+def test_native_schema_and_dispatch_use_project_context(setup, monkeypatch):
+    project, store, root = setup
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    from src.tool_schemas import function_call_to_tool_block
+    from src.tool_execution import execute_tool_block, NO_TOOL_SECURITY_CONTEXT
+    block = function_call_to_tool_block("project_workspace", json.dumps({"action": "instructions_write", "content": "Native dispatch persisted this."}))
+    assert block is not None
+    _, result = asyncio.run(execute_tool_block(block, owner="alice", workspace=str(root), security_context=NO_TOOL_SECURITY_CONTEXT, turn_options={"harness_options": {"project_id": project["id"]}}))
+    assert result.get("exit_code") == 0, result
+    assert store.get(project["id"], "alice")["instructions"] == "Native dispatch persisted this."
+
+
+def test_repository_listing_pins_exact_revision(monkeypatch):
+    import httpx
+    monkeypatch.setattr(pw.importer, "_get_checked", lambda *a, **k: httpx.Response(200, json={"sha": "a" * 40, "tree": [{"type": "blob", "path": "skills/test/SKILL.md"}, {"type": "blob", "path": "README.md"}]}))
+    rows = pw.repository_skills("https://github.com/example/skills")
+    assert len(rows) == 1
+    assert rows[0]["url"] == "https://github.com/example/skills/blob/" + "a" * 40 + "/skills/test/SKILL.md"
+
+
+def test_active_skill_body_and_references_are_readable(setup):
+    project, _, _ = setup
+    key = pw.install_files(project, {"SKILL.md": MD, "references/note.md": "Evidence survives"})["key"]
+    assert pw.read_skill(project, key)["files"]["references/note.md"] == "Evidence survives"
+
+
+def test_skill_edit_preserves_references_and_invalidates_activation(setup):
+    project, _, root = setup
+    key = pw.install_files(project, {"SKILL.md": MD, "references/note.md": "Preserved"})["key"]
+    digest = pw.read_skill(project, key)["digest"]
+    pw.activate(project, key, reviewed=True)
+    changed = pw.write_skill(project, key, MD + "\nUpdated procedure.", digest)
+    assert changed["files"]["references/note.md"] == "Preserved"
+    assert not pw.list_skills(project)[0]["active"]
+    with pytest.raises(projects.ProjectError, match="changed"):
+        pw.write_skill(project, key, MD, digest)
+    assert (root / key).read_text(encoding="utf-8").endswith("Updated procedure.")
+
+
+@pytest.mark.parametrize("message", ["Recuerda esto en el proyecto", "Cambia las instrucciones", "Instala una skill", "Edita las etiquetas", "Remember this for the project"])
+def test_chat_requests_discover_real_project_tools(message):
+    from src.agent_loop import _classify_agent_request, _DOMAIN_HOT_TOOLS
+    intent = _classify_agent_request([{"role": "user", "content": message}], message)
+    assert "project_management" in intent["domains"]
+    assert "project_workspace" in _DOMAIN_HOT_TOOLS["project_management"]

@@ -54,10 +54,13 @@ def test_board_adapter_exports_contract_routes():
     assert "BOARD_REFRESH_EVENT" in src and "pingBoardRefresh" in src
 
 
-def test_project_screen_has_board_tab():
+def test_project_screen_keeps_board_in_tasks_and_accepts_old_links():
     src = _read("studio/src/screens/Project.tsx")
-    assert "'board'" in src or '"board"' in src, "Project.tsx must add a 'board' tab id"
-    assert "Board" in src
+    navigation = _read("studio/src/screens/project/ProjectNavigation.tsx")
+    tasks = _read("studio/src/screens/project/Tasks.tsx")
+    assert "ProjectTasks" in src
+    assert "board: 'tasks'" in navigation
+    assert "<BoardPanel projectId={project.id}" in tasks
 
 
 def test_side_panel_board_tab_wired():

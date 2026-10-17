@@ -356,9 +356,10 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["instructions_read", "instructions_write", "memory_list", "memory_read", "memory_write", "skills_list", "skill_read", "skills_catalog", "skills_repository", "skill_install", "skill_import", "skill_activate", "skill_deactivate"]},
+                    "action": {"type": "string", "enum": ["instructions_read", "instructions_write", "memory_list", "memory_read", "memory_write", "skills_list", "skill_read", "skill_write", "skills_catalog", "skills_repository", "skill_install", "skill_import", "skill_activate", "skill_deactivate"]},
                     "name": {"type": "string", "description": "Memory filename, or catalog skill id returned by skills_catalog."},
                     "key": {"type": "string", "description": "Exact project skill key returned by skills_list/install/import."},
+                    "digest": {"type": "string", "description": "For skill_write: the current digest from skill_read; refuses stale edits."},
                     "kind": {"type": "string", "enum": ["bundled", "saved"], "description": "Library source for skill_install."},
                     "url": {"type": "string", "description": "GitHub repository URL to list, or exact skill URL to import."},
                     "content": {"type": "string", "description": "Replacement instructions/memory text, or complete SKILL.md to import."},

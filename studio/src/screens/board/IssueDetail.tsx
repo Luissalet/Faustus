@@ -85,15 +85,21 @@ export function IssueDetail({
 
   useEffect(() => {
     if (!open || !issueId) return;
+    let cancelled = false;
+    setIssue(null);
     setLoading(true);
     setError(null);
+    setConfirmDelete(false);
+    setComment('');
     getIssue(projectId, issueId)
       .then((res) => {
+        if (cancelled) return;
         setIssue(res.issue);
         setDraft({ title: res.issue.title, body_md: res.issue.body_md, labels: res.issue.labels.join(', '), assignee: res.issue.assignee, acceptance: (res.issue.acceptance ?? []).join('\n') });
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e: Error) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [open, projectId, issueId]);
 
   const patch = async (input: Parameters<typeof updateIssue>[2]) => {

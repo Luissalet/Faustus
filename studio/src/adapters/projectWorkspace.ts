@@ -3,7 +3,8 @@ import { ApiError } from './api';
 export interface ProjectSkill {
   key: string; name: string; description?: string; markdown?: string; digest: string;
   active: boolean; changed?: boolean; error?: string; tools?: string[];
-  review?: { privilege_request: string[]; security_scan?: { risk_level: string; findings: { severity: string; file: string; line: number; description: string }[] }; status: { state: string } };
+  files?: Record<string, string>;
+  review?: { permissions?: Record<string, unknown>; privilege_request: string[]; security_scan?: { risk_level: string; findings: { severity: string; file: string; line: number; description: string }[] }; status: { state: string } };
 }
 export interface CatalogSkill { id: string; kind: string; name: string; description: string }
 export interface RepoSkill { name: string; path: string; url: string; revision: string }

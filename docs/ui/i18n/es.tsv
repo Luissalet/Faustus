@@ -10022,3 +10022,49 @@ Panel tools	Herramientas del panel
 Area	Área
 Conversation information	Información de la conversación
 Turn details	Detalles del turno
+Acceptance criteria	Criterios de aceptación
+Agent coordination tasks	Tareas de coordinación de agentes
+Agent defaults	Preferencias del agente
+All labels	Todas las etiquetas
+Back to overview	Volver al resumen
+Browse library	Buscar en la biblioteca
+Browse the library, import a skill folder or create a procedure.	Busca en la biblioteca, importa una carpeta de skill o crea un procedimiento.
+Bundled library	Biblioteca incluida
+Changed — review required	Modificada: necesita revisión
+Choose a working folder	Elige una carpeta de trabajo
+Choose at most 64 skill files.	Elige como máximo 64 archivos de la skill.
+Choose files	Elegir archivos
+Create skill	Crear skill
+Define what must be delivered and how to verify it. Existing requirement decisions, revisions and evidence stay attached.	Define lo que se debe entregar y cómo comprobarlo. Se conservan las decisiones, revisiones y evidencias de los requisitos existentes.
+Drop a skill folder or SKILL.md here. Supporting text files stay with the procedure. Importing does not execute scripts.	Arrastra aquí una carpeta de skill o un SKILL.md. Los archivos de texto de apoyo acompañan al procedimiento. La importación no ejecuta scripts.
+Existing folder import reviews	Revisiones de importaciones existentes
+Find skills in repository	Buscar skills en el repositorio
+GitHub repository or skill URL	Repositorio de GitHub o URL de la skill
+Import skill	Importar skill
+Import this skill URL	Importar esta URL de skill
+Inactive	Inactiva
+Install in project	Instalar en el proyecto
+Installed files stay in the project. Activation adds the reviewed procedure to its chats; changed content needs review again.	Los archivos instalados se guardan en el proyecto. La activación añade el procedimiento revisado a sus chats; si cambia el contenido, se revisa de nuevo.
+No SKILL.md found in this repository.	No se ha encontrado ningún SKILL.md en este repositorio.
+No project skills yet	El proyecto aún no tiene skills
+No rooms yet. Open Agora to start one.	Aún no hay salas. Abre el Ágora para crear una.
+None declared	Ninguna declarada
+One verifiable condition per line	Una condición comprobable por línea
+Open Agora	Abrir el Ágora
+Open Agora to create the project space and work with its agents.	Abre el Ágora para crear el espacio del proyecto y trabajar con sus agentes.
+Project skills are installed inside its working folder. Choose it in Settings, then add skills here.	Las skills del proyecto se instalan en su carpeta de trabajo. Elígela en Ajustes y después añade skills aquí.
+Recent activity	Actividad reciente
+Required tools	Herramientas necesarias
+Requirements and acceptance	Requisitos y aceptación
+Review and activate	Revisar y activar
+Review content	Revisar contenido
+Rules and instructions	Reglas e instrucciones
+Skill actions	Acciones de skills
+Skill active in this project.	Skill activa en este proyecto.
+Skill created. Review its content before activation.	Skill creada. Revisa su contenido antes de activarla.
+Skill installed. Review its content before activation.	Skill instalada. Revisa su contenido antes de activarla.
+Skill library	Biblioteca de skills
+Standing guidance for the agent. Project instructions apply to every chat; file rules can apply to specific paths.	Indicaciones permanentes para el agente. Las instrucciones del proyecto se aplican a todos sus chats; las reglas de archivo pueden aplicarse a rutas concretas.
+This skill requests changes to approval controls and cannot be activated as written.	Esta skill pide cambiar los controles de aprobación y no se puede activar con ese contenido.
+Your saved skills	Tus skills guardadas
+{n} active chats	{n} chats activos

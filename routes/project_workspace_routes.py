@@ -18,6 +18,7 @@ class Action(BaseModel):
     kind: str = ""
     url: str = ""
     content: str = Field("", max_length=400_000)
+    digest: str = ""
     files: dict[str, str] | None = None
 
 

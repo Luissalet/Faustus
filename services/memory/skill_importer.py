@@ -112,6 +112,9 @@ def _resolve_and_check_url(url: str) -> List[ipaddress._BaseAddress]:
 
     pinned_ips = _validated_ips(resolved_ips)
     if not pinned_ips:
+        # IP literals are validated without DNS; pin that approved literal.
+        pinned_ips = _validated_ips([urlparse(url).hostname or ""])
+    if not pinned_ips:
         raise SkillImportError("outbound URL blocked: host did not resolve to a usable address")
     return pinned_ips
 

@@ -1001,6 +1001,8 @@ class Store:
                     issue = self._decode_issue(row)
                     mark = "x" if status in TERMINAL_STATUSES else " "
                     lines.append(f"- [{mark}] {issue['id']} [{issue['priority']}] {issue['type']}: {issue['title']}")
+                    if issue["acceptance"]:
+                        lines.extend(f"  - Acceptance: {criterion}" for criterion in issue["acceptance"])
                 lines.append("")
         return "\n".join(lines) + "\n"
 
