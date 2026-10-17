@@ -829,6 +829,16 @@ tool), while its origin never changes. Each tool call is a single line in the pa
 connection the server had just closed is retried once instead of failing the turn. When Faustus is down the panel says
 so in plain words, keeps the draft and offers to try again.
 
+**The panel's app is connected before the turn (17 October 2026).** A turn from a Hoard whose plugin manifest is
+installed but whose tool server is not connected connects it first, the way Connectors does it: it switches the app's
+connector back on, or adopts the running app (one attempt per app every five minutes). If the app still is not
+connected, the agent is told so and says it, instead of standing in for the app's tools with web searches. A streamed
+answer that goes silent once it has started (a model server holding back a runaway tool call while it keeps generating)
+is closed as degenerate output after `llm_stream_idle_timeout_s` (240 s, 0 = off) and gets the usual recovery, and a
+final answer that only announces an action ("I'll replace Pablo's team with these six.") is nudged to make the call,
+also when the promise follows another sentence and for verbs such as replace, update, create or save; offers ("if you
+want") are left alone.
+
 
 Studio → Skills → Export previews portable skills, project rules and specialist
 instructions for Claude Code, Codex and Cursor, including supporting resources.

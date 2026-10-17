@@ -881,6 +881,54 @@ def _code_intel_family_for(text: str) -> set:
     return set(_CODE_INTEL_FAMILY) if _CODE_INTEL_INTENT_RE.search(str(text or "")) else set()
 
 
+# "I said I would, then didn't" detector, for the intent-without-action
+# supervisor. The pattern that breaks debug loops on weak models
+# (deepseek-v4-flash mid-2026): the model writes "Let me tail the output to
+# see the error" and then ends the turn with no tool_calls. The intent is
+# sincere but the function call gets dropped. A common phrasing plus an action
+# verb that maps to a tool, so harmless transitional text like "let me know
+# what you think" is not nudged. An English promise may start a line or a
+# sentence: live 17-10-2026 a Hoard copilot wrote "The right tool exists:
+# team_popular_sets builds the team ... I'll replace Pablo's team with these
+# six." and stopped, with the change never made.
+ANNOUNCED_ACTION_RE = re.compile(
+    r"(?:^|\n|[.;:!]\s+)\s*(?:let me|i'?ll|i will|i need to|we need to|need to|"
+    r"i should|we should|i must|we must|going to|let's|now i'?ll|next,? i'?ll)\s+"
+    r"(?:tail|check|investigate|look at|see|read|fetch|inspect|"
+    r"verify|diagnose|examine|debug|capture|grab|pull|view|run|call|"
+    r"trigger|launch|start|kick off|stop|kill|restart|adopt|serve|"
+    r"register|list|search|find|query|hit|ping|test|use|perform|do|"
+    r"replace|update|set|change|create|write|edit|save|add|build|make|apply|put|fill|give|"
+    r"delete|remove|rename|install|import|export|send|generate|move|copy|assign|load|open|"
+    r"upload|download|fix|patch|configure|enable|disable|swap|draw|record|schedule)"
+    r"\b[^.\n]{0,140}"
+    # Spanish, the way the models narrate before a call: "Hago zoom para
+    # leer...", "Compruebo el estado", "Voy a pulsar...". Without these a
+    # Spanish turn that announced its next step simply ended there.
+    r"|(?:^|\n|[.;:]\s+)\s*(?:(?:ahora|primero|luego|después)\s+)?"
+    r"(?:voy a|vamos a|déjame|dejame|necesito|tengo que|hay que|"
+    r"hago|compruebo|reviso|ejecuto|pulso|capturo|miro|abro|busco|leo|"
+    r"verifico|lanzo|pruebo|selecciono|despliego|cierro|escribo|edito|"
+    r"consulto|confirmo|activo|cambio|repito|reintento|intento|espero|"
+    r"muevo|quito|sigo|bajo|subo|guardo|vuelvo|paso|elijo|marco|arrastro|"
+    r"pongo|actualizo|sustituyo|reemplazo|añado|relleno|instalo|importo|borro)"
+    r"\b[^.\n]{0,140}",
+    re.IGNORECASE,
+)
+#: An offer is not a promise: "I'll add it if you want", "¿quieres que lo cambie?".
+_OFFER_RE = re.compile(r"\b(?:if you(?:'d)?|would you|want me|shall i|should i|do you want|si quieres|si te parece|"
+                       r"quieres que|te parece)\b", re.IGNORECASE)
+
+
+def announced_action(text: str):
+    """The first action `text` announces (a regex match), unless every one of
+    them is only an offer; None when it announces none."""
+    for match in ANNOUNCED_ACTION_RE.finditer(text or ""):
+        if not _OFFER_RE.search(match.group(0)):
+            return match
+    return None
+
+
 # ── Workspace tool floor (FAUSTUS) ────────────────────────────────────────
 # An agent with a bound workspace that cannot read a file in it is not an
 # agent. It is worth stating as an invariant because the failure mode is
@@ -11305,33 +11353,7 @@ async def _stream_agent_loop_body(
     _intent_nudge_count = 0
     _MAX_INTENT_NUDGES = 6
 
-    # "I said I would, then didn't" detector. The pattern that breaks debug
-    # loops on weak models (deepseek-v4-flash mid-2026): the model writes
-    # "Let me tail the output to see the error" and then ends the turn with
-    # no tool_calls. The intent is sincere but the function call gets dropped.
-    # Match the common phrasings + an action verb that maps to an available
-    # tool, so we don't nudge on harmless transitional text like "let me
-    # know what you think".
-    _INTENT_RE = re.compile(
-        r"(?:^|\n)\s*(?:let me|i'?ll|i will|i need to|we need to|need to|"
-        r"i should|we should|i must|we must|going to|let's)\s+"
-        r"(?:tail|check|investigate|look at|see|tail|read|fetch|inspect|"
-        r"verify|diagnose|examine|debug|capture|grab|pull|view|run|call|"
-        r"trigger|launch|start|kick off|stop|kill|restart|adopt|serve|"
-        r"register|adopt|list|search|find|query|hit|ping|test|use|perform|do)"
-        r"\b[^.\n]{0,140}"
-        # Spanish, the way the models narrate before a call: "Hago zoom para
-        # leer...", "Compruebo el estado", "Voy a pulsar...". Without these a
-        # Spanish turn that announced its next step simply ended there.
-        r"|(?:^|\n|[.;:]\s+)\s*(?:(?:ahora|primero|luego|despu\u00e9s)\s+)?"
-        r"(?:voy a|vamos a|d\u00e9jame|dejame|necesito|tengo que|hay que|"
-        r"hago|compruebo|reviso|ejecuto|pulso|capturo|miro|abro|busco|leo|"
-        r"verifico|lanzo|pruebo|selecciono|despliego|cierro|escribo|edito|"
-        r"consulto|confirmo|activo|cambio|repito|reintento|intento|espero|"
-        r"muevo|quito|sigo|bajo|subo|guardo|vuelvo|paso|elijo|marco|arrastro)"
-        r"\b[^.\n]{0,140}",
-        re.IGNORECASE,
-    )
+    # "I said I would, then didn't": see ANNOUNCED_ACTION_RE / announced_action.
     _awaiting_user = False  # set by ask_user → end the turn and wait for a choice
 
     _doc_stream_create_completed = False
@@ -16495,7 +16517,7 @@ async def _stream_agent_loop_body(
             # _MAX_INTENT_NUDGES so a model that genuinely cannot use the
             # tool doesn't pin us in a forever loop.
             _intent_text = _strip_think_blocks(cleaned_round).strip()
-            _intent_match = _INTENT_RE.search(_intent_text) if _intent_text else None
+            _intent_match = announced_action(_intent_text) if _intent_text else None
             # Only nudge when the round REALLY looks like an unfinished
             # promise: short response (<400 chars), no fenced code/answer,
             # and an action-intent phrase was matched. Long answers that

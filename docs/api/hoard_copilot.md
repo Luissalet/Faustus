@@ -41,6 +41,15 @@ Send through the normal `/api/chat_stream` route with `hoard_context` and
 Closing the panel disconnects its observer without stopping the remote turn.
 Integrated conversations inherit the configured global model for each turn.
 
+Before a turn, an `origin.app_id` (or `tool_server_id`, or app name) that names an
+installed plugin manifest whose tool server is not connected is connected through
+the Connectors routes with the in-process token: `POST /api/app-connectors/{id}/connect`
+for an existing connector, otherwise `POST /api/app-connectors/adopt` with the port
+where discovery finds the running app (`src/hoard_copilot_turn.connect_origin_app`,
+one attempt per app every `CONNECT_RETRY_S` = 300 s; it never fails a turn). When no
+server of the app is connected, the turn's system hint says so and tells the agent
+not to stand in for the app's tools with web searches.
+
 The references database contains external project links, origins, context and
 import mappings. Chat messages are stored only in Faustus's canonical database.
 Apps without projects do not need a workspace. Same-title projects in different
