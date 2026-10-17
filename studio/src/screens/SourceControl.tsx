@@ -1,9 +1,10 @@
 import { GitBranch } from 'lucide-react';
-import { useSearchParams } from 'react-router';
+import { Navigate, useSearchParams } from 'react-router';
 import { SourceControlPanel } from './source-control/SourceControlPanel';
 import { GitRadarStrip } from './source-control/GitRadar';
 import './source-control.css';
 import { t } from '../i18n';
+import { ProjectPicker } from './projects/ProjectPicker';
 
 /**
  * OBJ-4 — Source control: every git repo under the owner's linked project
@@ -22,6 +23,8 @@ import { t } from '../i18n';
 export function SourceControlScreen() {
   const [params] = useSearchParams();
   const projectId = params.get('project') ?? undefined;
+  if (projectId) return <Navigate replace to={`/projects/${encodeURIComponent(projectId)}?tab=repos`} />;
+  if (params.get('scope') !== 'all') return <ProjectPicker />;
 
   return (
     <div className="fs-screen fs-sc" data-testid="source-control">

@@ -2,7 +2,7 @@ import { syncLangFromServer, t, useLang } from '../i18n';
 import { clearThemeAttribute, syncThemeFromServer } from './theme';
 import { applyTheme, getTheme, syncAppearanceFromServer, useAppearance } from './appearance';
 import { useNavSize } from './navSize';
-import { Settings2 } from 'lucide-react';
+import { Search, Settings2 } from 'lucide-react';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { lazyChunk, RouteErrorBoundary } from './lazyChunk';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router';
@@ -12,12 +12,11 @@ import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
 import { NotificationTray } from './notifications-tray';
-import { GlobalApprovalControl } from './GlobalApprovalControl';
-import { DESTINATIONS, MOBILE_DESTINATIONS, TOOLS } from './routes';
-import { useBadges } from './badges';
+import { SphereChip } from '../screens/studio/SphereChip';
+import { DESTINATIONS, MOBILE_DESTINATIONS } from './routes';
+import { ContextualTools } from './contextualTools';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
-import { useCreatorAvailable } from '../adapters/creator';
 import { usePlatform } from './platform';
 
 /* Inicio is the eager bundle; every other screen arrives as a route chunk
@@ -73,16 +72,8 @@ const Tour = lazyChunk(() => import('./Tour').then((m) => ({ default: m.Tour }))
  * the node in every layout: the full sidebar, the collapsed rail, and the
  * horizontal bottom bar on a phone.
  */
-/** Which tool a badge belongs to. Only three have one; the rest get none. */
-function countFor(path: string, badges: { calendar: number; notes: number; git: number }): number {
-  if (path.startsWith('/calendar')) return badges.calendar;
-  if (path.startsWith('/notes')) return badges.notes;
-  if (path.startsWith('/source-control')) return badges.git;
-  return 0;
-}
-
 function Rail() {
-  const badges = useBadges();
+  const setPaletteOpen = useShell(state => state.setPaletteOpen);
   const { pathname } = useLocation();
   const navRef = useRef<HTMLElement>(null);
   // Lot P-B: below 767px (or an installed PWA that narrow) the rail
@@ -94,8 +85,6 @@ function Rail() {
   // confirms `creator_enabled` is on (CONTRATO.md rule 5) -- `null` while
   // that check is in flight is treated as "not yet", same as `false`, so
   // the rail never flashes the entry on and then off.
-  const creatorAvailable = useCreatorAvailable();
-  const tools = creatorAvailable ? TOOLS : TOOLS.filter((tool) => tool.path !== '/creator');
   const [indicator, setIndicator] = useState<{ x: number; y: number } | null>(null);
   const [rail, setRail] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -193,28 +182,15 @@ function Rail() {
         </NavLink>
       ))}
 
-      {platform !== 'mobile' && (
-        <div className="fs-nav__tools" aria-label={t('Tools')}>
-          <p className="fs-nav__tools-head">{t('Tools')}</p>
-          {tools.map((tool) => (
-            <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" title={t(tool.label)} data-testid={`tool-${tool.label.toLowerCase()}`}>
-              <tool.icon size={13} aria-hidden="true" />
-              <span>{t(tool.label)}</span>
-              {countFor(tool.path, badges) > 0 && (
-                <span className="fs-nav__badge" title={tool.path.startsWith('/source-control') ? t('{n} repositories need a commit or push', { n: countFor(tool.path, badges) }) : t('{n} for today', { n: countFor(tool.path, badges) })}>
-                  {countFor(tool.path, badges)}
-                </span>
-              )}
-            </NavLink>
-          ))}
-        </div>
-      )}
+      {platform === 'mobile' && <button type="button" className="fs-nav__item" onClick={() => setPaletteOpen(true)} data-testid="nav-more" aria-label={t('Search and navigate')}>
+        <span className="fs-nav__node"><Search size={14} aria-hidden="true" /></span><span className="fs-nav__label">{t('More')}</span>
+      </button>}
 
       <div className="fs-nav__spacer" />
-      <div className="fs-global-approval-nav"><GlobalApprovalControl variant="nav" /></div>
 
       {platform !== 'mobile' && (
         <div className="fs-nav__foot">
+          <div className="fs-nav__account"><SphereChip /></div>
           <div className="fs-nav__foot-row">
             <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
               <Settings2 size={13} aria-hidden="true" />
@@ -222,7 +198,7 @@ function Rail() {
             </NavLink>
             <NotificationTray side="top" align="start" />
           </div>
-          <p className="fs-nav__hint">{t('Ctrl+K to search and navigate')}</p>
+          <button type="button" className="fs-nav__hint fs-nav__search" onClick={() => setPaletteOpen(true)} data-testid="nav-search" aria-label={t('Search and navigate')} title={t('Search and navigate')}><Search size={13} aria-hidden="true" /><span>{t('Search')}</span><kbd>Ctrl K</kbd></button>
         </div>
       )}
     </nav>
@@ -245,6 +221,7 @@ function RouteStage() {
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">
+        {!['/studio', '/settings', '/agora'].includes(pathname) && !/^\/projects\/[^/]+$/.test(pathname) && !pathname.startsWith('/documents/') && pathname !== '/library/edit' && <ContextualTools />}
         <RouteBody key={pathname} />
       </div>
     </main>

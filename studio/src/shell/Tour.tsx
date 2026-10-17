@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button, IconButton } from '../components';
 import { t } from '../i18n';
-import { markTourSeen, placeTooltip, seenTours, tourById, tourForPath, type Box, type Placed } from '../lib/tours';
+import { markTourSeen, placeTooltip, tourById, type Box, type Placed } from '../lib/tours';
 import { useShell } from './store';
 import './tour.css';
 
@@ -175,54 +175,13 @@ function Runner({ id, onEnd }: { id: string; onEnd: () => void }) {
   );
 }
 
-/** "First time here? Take the tour." Once per tour, and never again. */
-function Offer({ onTake, onDismiss, title }: { onTake: () => void; onDismiss: () => void; title: string }) {
-  return (
-    <aside className="fs-tour__offer" data-testid="tour-offer">
-      <p>{t('First time in {where}? There is a two-minute tour.', { where: t(title) })}</p>
-      <Button variant="secondary" size="sm" label={t('Take it')} onClick={onTake} />
-      <IconButton icon={X} label={t('Not now')} size="sm" onClick={onDismiss} />
-    </aside>
-  );
-}
-
+/** Guided help is requested from search or /demo, never offered over work. */
 export function Tour() {
-  const tourId = useShell((s) => s.tourId);
-  const setTour = useShell((s) => s.setTour);
-  const location = useLocation();
-  const [offered, setOffered] = useState<string | null>(null);
-
+  const tourId = useShell(s => s.tourId);
+  const setTour = useShell(s => s.setTour);
   const end = useCallback(() => {
     if (tourId) markTourSeen(tourId);
     setTour(null);
   }, [tourId, setTour]);
-
-  // The offer waits a moment: a screen that has just loaded is busy enough.
-  useEffect(() => {
-    if (tourId) return;
-    const candidate = tourForPath(location.pathname, location.search);
-    // An offer made for the previous place goes with it: leaving Appearance
-    // for Local models kept "First time in Appearance?" on screen (26-09).
-    setOffered((current) => (current && current === candidate?.id ? current : null));
-    if (!candidate || seenTours().includes(candidate.id)) return;
-    const timer = window.setTimeout(() => setOffered(candidate.id), 1800);
-    return () => window.clearTimeout(timer);
-  }, [location.pathname, location.search, tourId]);
-
-  if (tourId) return <Runner id={tourId} onEnd={end} />;
-  const waiting = offered ? tourById(offered) : null;
-  if (!waiting) return null;
-  return (
-    <Offer
-      title={waiting.title}
-      onTake={() => {
-        setOffered(null);
-        setTour(waiting.id);
-      }}
-      onDismiss={() => {
-        markTourSeen(waiting.id);
-        setOffered(null);
-      }}
-    />
-  );
+  return tourId ? <Runner id={tourId} onEnd={end} /> : null;
 }
