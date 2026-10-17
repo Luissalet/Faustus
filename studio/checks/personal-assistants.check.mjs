@@ -50,4 +50,5 @@ try {
   await m.act(async () => finish(Response.json(rows[0])));
   assert.equal(host.querySelector('form'), null);
   console.log('PASS: mounted assistant configuration, explicit activation, selected skills, pending-save protection and draft recovery');
-} finally { await m.act(async () => root.unmount()); window.happyDOM.abort(); }
+} finally { await m.act(async () => root.unmount()); await window.happyDOM.abort(); }
+process.exit(0);
