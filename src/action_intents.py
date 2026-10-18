@@ -252,6 +252,19 @@ def desktop_action_requested(text: str) -> bool:
     return any(pattern.search(routing_text) for pattern in _DESKTOP_PATTERNS)
 
 
+# Necessary literals for only the three measured expensive negative searches.
+# Keep the full patterns and their order authoritative: a literal's presence
+# permits the original search, while its absence proves that search cannot match.
+# Use the same Unicode IGNORECASE semantics, rather than lower()/casefold().
+_ROUTING_PREFILTERS = {
+    "bare weather lookup request": re.compile(r"weather|forecast", re.I),
+    "rain lookup request": re.compile(r"rain|precipitation|shower", re.I),
+    "current/latest lookup request": re.compile(
+        r"rate|price|news|weather|forecast|score|exchange|market|status", re.I
+    ),
+}
+
+
 def _routing_text(text: str) -> str:
     """Return a stable comparison form for multilingual routing.
 
@@ -290,6 +303,9 @@ def classify_tool_intent(text: str) -> ToolIntent:
     if desktop_action_requested(routing_text):
         return ToolIntent(True, category="desktop", reason="explicit desktop action request")
     for category, reason, pattern in _ROUTING_PATTERNS:
+        prefilter = _ROUTING_PREFILTERS.get(reason)
+        if prefilter is not None and not prefilter.search(routing_text):
+            continue
         if pattern.search(routing_text):
             return ToolIntent(True, category=category, reason=reason)
     return ToolIntent(False, reason="no tool-action pattern matched")
