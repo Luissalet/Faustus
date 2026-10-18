@@ -4960,18 +4960,10 @@ async def llm_call_async(
             on_outcome_unknown=on_outcome_unknown, gen_overrides=gen_overrides,
             _on_observed_usage=_capture_usage,
         )
-        _initial_wait = _sparks_initial_wait(url)
-        if _initial_wait is not None and workload == "foreground":
-            try:
-                result = await asyncio.wait_for(pending, timeout=_initial_wait)
-            except TimeoutError as exc:
-                error = HTTPException(status_code=504, detail="Initial model response wait limit exceeded")
-                error.fallback_eligible = False
-                error.retryable = False
-                error.error_class = "first_token_timeout"
-                raise error from exc
-        else:
-            result = await pending
+        # This transport returns only the complete response, so it cannot
+        # observe a first token. Keep the caller's existing HTTP timeout and
+        # outer turn deadline; streaming owns the initial-response budget.
+        result = await pending
         if isinstance(result, tuple):
             _text, _model_out = result[0], result[1]
         else:
