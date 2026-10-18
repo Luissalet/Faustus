@@ -294,3 +294,81 @@ def test_a_pasted_link_does_not_decide_the_reply_language():
     assert rl.language_of("Descárgame este vídeo de la NASA y guárdalo en el móvil: https://x.com/NASA/status/1") == "es"
     assert rl.language_of("Can you download this video for me and keep it? https://www.youtube.com/watch?v=abc") == "en"
     assert rl.instruction_text_for_language("mira www.example.com/com/com y esto") == "mira   y esto"
+
+
+@pytest.mark.parametrize('text,expected', [
+    ('https://a', ' '), ('http://', 'http://'), ('www.', 'www.'),
+    ('www.a://', ' '), ('foo.www.a://b', ' '),
+    ('_http://a', '_http://a'), ('1http://a', '1http://a'),
+    ('éhttp://a', 'éhttp://a'), ('é+http://a', 'é+ '),
+    ('123+http://a', '123+ '), ('---http://a', '--- '),
+    ('İ://a ı://b ſ://c K://d', '       '),
+    ('中WWW.a', '中WWW.a'), ('\u0301www.a', '\u0301 '),
+    ('(HTTP://a), next', '(  next'),
+    ('a://b://c', ' '), ('a://\u2003www.b', 'a://\u2003 '),
+    ('a://\x1cwww.b', 'a://\x1c '), ('www.a\nwww.b', ' \n '),
+])
+def test_url_scan_retains_boundaries_unicode_and_greedy_punctuation(text, expected):
+    from src.reply_language import _strip_urls
+    assert _strip_urls(text) == expected
+
+
+def test_url_scan_matches_the_previous_regex_on_a_fixed_differential_corpus():
+    import itertools
+    import random
+    import re
+    from src.reply_language import _strip_urls
+
+    previous = re.compile(r'(?i)(?:\b[a-z][a-z0-9+.-]*://|\bwww\.)\S+')
+    # Exhaustive small delimiter strings, plus a fixed grammar that includes
+    # real URL starts, nested schemes, Unicode boundaries and whitespace.
+    for chars in itertools.product('a0-:/w. ', repeat=5):
+        text = ''.join(chars)
+        assert _strip_urls(text) == previous.sub(' ', text), repr(text)
+    rng = random.Random(874)
+    fragments = ['a', 'current-data-', 'http', '://', 'www.', 'WWW.', '+.-',
+                 '_', '0', 'é', '中', 'İ', 'ı', 'ſ', 'K', '\u0301', '/', ':',
+                 ' ', '\n', '\t', '\x1c', '\u2003', '\u00a0', '🙂', '(),']
+    for _ in range(10_000):
+        text = ''.join(rng.choices(fragments, k=rng.randrange(1, 50)))
+        assert _strip_urls(text) == previous.sub(' ', text), repr(text)
+
+
+def test_url_scan_preserves_attachment_and_media_preprocessing():
+    from src.reply_language import instruction_text_for_language
+    text = ('Keep this instruction https://a\n[Image attached: capture.png]\n'
+            'www.example.com\n=== File: long.txt ===\n' + 'current-data-' * 1000)
+    assert instruction_text_for_language(text) == 'Keep this instruction'
+    assert instruction_text_for_language('[Image: capture.png]\nhttp://a') == ''
+
+
+def test_large_url_inputs_finish_without_retrying_every_word_boundary():
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    code = r'''
+import json,socket,sys,time
+def deny(event,args):
+    if event=='socket.connect':raise AssertionError('No network in language regression')
+sys.addaudithook(deny)
+from src.reply_language import instruction_text_for_language
+plain='current-data-'*300000
+cases=[('no_url',plain,plain),('url_first','https://a '+plain,plain),
+       ('url_last',plain+' https://a',plain),
+       ('many_delimiters','0://-'*780000,':|')]
+rows=[]
+for name,text,expected in cases:
+    started=time.perf_counter();actual=instruction_text_for_language(text)
+    if name=='many_delimiters':assert actual==text
+    else:assert actual==expected
+    rows.append({'name':name,'chars':len(text),'seconds':time.perf_counter()-started})
+print(json.dumps(rows))
+'''
+    result = subprocess.run([sys.executable, '-B', '-c', code],
+                            cwd=Path(__file__).resolve().parents[1],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = json.loads(result.stdout)
+    assert len(rows) == 4 and all(row['chars'] >= 3_900_000 for row in rows)

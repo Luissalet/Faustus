@@ -54,7 +54,39 @@ _ATTACHMENT_CHROME_LINE_RE = re.compile(
     r"|Gallery image ID: [A-Za-z0-9_-]{1,128}|Image attached but could not be processed)\]\s*$"
 )
 
-_URL_RE = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*://|\bwww\.)\S+")
+_URL_TOKEN_RE = re.compile(r"\S+")
+_URL_WWW_RE = re.compile(r"(?i)\bwww\.")
+_URL_SCHEME_RUN_RE = re.compile(r"(?i)[a-z0-9+.-]+")
+_URL_SCHEME_START_RE = re.compile(r"(?i)\b[a-z]")
+
+
+def _strip_urls(text: str) -> str:
+    """Replace each URL with a space, scanning each token a fixed number of times.
+
+    Retrying a greedy scheme at every word boundary was quadratic for long
+    hyphenated text. A maximal run has at most one trailing :// to check.
+    Both URL forms consume the rest of their non-whitespace token, so only
+    the earliest valid start matters. The regex character classes retain
+    Python's Unicode IGNORECASE and word-boundary semantics.
+    """
+    parts: List[str] = []
+    previous = 0
+    for token in _URL_TOKEN_RE.finditer(text):
+        www = _URL_WWW_RE.search(text, token.start(), token.end())
+        start = www.start() if www and www.end() < token.end() else None
+        for run in _URL_SCHEME_RUN_RE.finditer(text, token.start(), token.end()):
+            if run.end() + 3 < token.end() and text.startswith("://", run.end()):
+                scheme = _URL_SCHEME_START_RE.search(text, run.start(), run.end())
+                if scheme:
+                    start = min(start, scheme.start()) if start is not None else scheme.start()
+                    break
+        if start is not None:
+            parts.extend((text[previous:start], " "))
+            previous = token.end()
+    if not parts:
+        return text
+    parts.append(text[previous:])
+    return "".join(parts)
 
 # Each directive is written in the language it names.  This is a runtime
 # requirement, not merely descriptive context: weaker wording was easy for
@@ -168,7 +200,7 @@ def instruction_text_for_language(text: Any) -> str:
     # A pasted link is not the user's language: "x.com/..." carries "com",
     # a Portuguese function word, and turned «Descárgame este vídeo: <tweet>»
     # into a reply in Portuguese.
-    value = _URL_RE.sub(" ", value)
+    value = _strip_urls(value)
     return value.strip()
 
 
