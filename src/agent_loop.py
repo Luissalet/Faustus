@@ -919,7 +919,12 @@ ANNOUNCED_ACTION_RE = re.compile(
     r"hago|compruebo|reviso|ejecuto|pulso|capturo|miro|abro|busco|leo|"
     r"verifico|lanzo|pruebo|selecciono|despliego|cierro|escribo|edito|"
     r"consulto|confirmo|activo|cambio|repito|reintento|intento|espero|"
-    r"muevo|quito|sigo|bajo|subo|guardo|vuelvo|paso|elijo|marco|arrastro|"
+    # "Sigo pensando/creyendo..." reports an opinion, not an unfinished
+    # tool call. Only a concrete continued action has that intent.
+    r"sigo\s+(?:leyendo|buscando|revisando|comprobando|verificando|ejecutando|"
+    r"consultando|probando|editando|escribiendo|guardando|instalando|depurando|"
+    r"inspeccionando|capturando|abriendo|actualizando|corrigiendo|reintentando)|"
+    r"muevo|quito|bajo|subo|guardo|vuelvo|paso|elijo|marco|arrastro|"
     r"pongo|actualizo|sustituyo|reemplazo|añado|relleno|instalo|importo|borro)"
     r"\b[^.\n]{0,140}",
     re.IGNORECASE,

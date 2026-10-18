@@ -171,15 +171,30 @@ def test_tests_still_failing_after_fix_round_is_reported_not_looped(project, mon
     events = _run(project)
     statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
     assert statuses.count("tests_failed") == 1, statuses
-    # The card is still emitted (the user sees the red tests) — and then the
-    # hard completion gate refuses to seal the turn `complete`.
-    assert statuses[-2:] == ["verified", "completion_gated"], statuses
-    verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
-    assert verified["tests"]["ok"] is False and verified["gate"] == "tests_failed"
+    # Task 179 keeps the answer and grades its evidence with an advisory;
+    # failed project tests must never turn the outcome into verified.
+    assert statuses[-2:] == ["unverified", "advisory"], statuses
+    checked = next(e for e in events if e.get("type") == "harness_check" and e.get("gate") == "tests_failed")
+    assert checked["tests"]["ok"] is False
+    assert checked["verification"]["outcome"] == "unverified"
+    tests = checked["tests"]
+    failure_ids = lambda values: {f.split(" — ", 1)[0] for f in values}
+    assert failure_ids(tests["failures"]) == {"tests/test_calc.py::test_add"}
+    assert failure_ids(tests["baseline"]["failures"]) == {"tests/test_calc.py::test_add"}
+    assert failure_ids(tests["pre_existing"]) == {"tests/test_calc.py::test_add"}
+    assert tests["exempt"] == [] and not tests.get("pre_existing_only")
+    assert tests["new_failures"] == [] and tests["fixed"] == []
+    advisory = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "advisory")
+    assert advisory["reason"] == "tests_failed" and advisory["advisory"] is True
+    assert not any("DO IT NOW" in m.get("content", "") for messages in calls["messages"] for m in messages)
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert any(n.startswith("tests_failed:") for n in summary["notes"])
     assert summary["stop_reason"] == "complete_unverified"
+    assert summary["tests_fix_rounds"] == 1
+    assert summary["verification"]["outcome"] == "unverified"
     assert calls["n"] == 3
+    from src import scorecard
+    assert scorecard.load()[-1]["verified"] is False
 
 
 def test_no_test_runner_means_no_tests_card(tmp_path, monkeypatch):
@@ -242,7 +257,7 @@ def test_auto_review_flags_a_defect_then_accepts_the_fix(project, monkeypatch):
 def test_pre_existing_test_failures_do_not_cost_a_fix_round(project, monkeypatch):
     """The project already had a failing test before the turn; the agent's
     change is fine → tests are reported as failing-but-pre-existing, no fix
-    round, and the turn ends verified with a note."""
+    round, and the turn ends uncertain with a note, without a false pass."""
     import pathlib
     ws = pathlib.Path(project)
     (ws / "tests" / "test_other.py").write_text(
@@ -255,15 +270,26 @@ def test_pre_existing_test_failures_do_not_cost_a_fix_round(project, monkeypatch
     ])
     events = _run(project)
     statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
-    assert "tests_failed" not in statuses and statuses[-1] == "verified"
+    assert "tests_failed" not in statuses and statuses[-1] == "uncertain"
     assert calls["n"] == 2
-    verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
-    t = verified["tests"]
+    checked = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "uncertain")
+    t = checked["tests"]
     assert t["ok"] is False and t["pre_existing_only"] is True and t["new_failures"] == []
     assert any("test_always_broken" in f for f in t["pre_existing"])
+    failure_ids = lambda values: {f.split(" — ", 1)[0] for f in values}
+    assert failure_ids(t["failures"]) == {"tests/test_other.py::test_always_broken"}
+    assert failure_ids(t["baseline"]["failures"]) == {"tests/test_calc.py::test_add", "tests/test_other.py::test_always_broken"}
+    assert failure_ids(t["pre_existing"]) == {"tests/test_other.py::test_always_broken"}
+    assert failure_ids(t["fixed"]) == {"tests/test_calc.py::test_add"}
+    assert failure_ids(t["exempt"]) == {"tests/test_other.py::test_always_broken"}
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert any(n.startswith("tests_pre_existing:") for n in summary["notes"])
     assert summary["tests_fix_rounds"] == 0
+    assert summary["stop_reason"] == "complete"
+    assert summary["verification"]["outcome"] == "uncertain"
+    assert "tests_preexisting_failures" in {r["kind"] for r in summary["verification"]["reasons"]}
+    from src import scorecard
+    assert scorecard.load()[-1]["verified"] is False
 
 
 def test_review_dispute_when_the_agent_disagrees_and_changes_nothing(project, monkeypatch):

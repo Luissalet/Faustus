@@ -51,3 +51,29 @@ def test_a_retry_announced_after_a_failed_tool_is_still_an_unfinished_action(tex
 ])
 def test_reports_and_offers_about_retries_are_not_unfinished_actions(text):
     assert announced_action(text) is None
+
+
+@pytest.mark.parametrize('text', [
+    'Sigo pensando que src/calc.py está bien así.',
+    'Sigo creyendo que el resultado es correcto.',
+    'Sigo opinando que la solución es suficiente.',
+    'Sigo convencido de que la función está bien.',
+    'Sigo sin poder confirmar el resultado.',
+    'Sigo aquí, pero ya he terminado la revisión.',
+    'He leído el archivo y he corregido la función.',
+    'Ya he ejecutado los tests; todavía fallan.',
+])
+def test_opinions_and_completed_work_are_not_tool_promises(text):
+    assert announced_action(text) is None
+
+
+@pytest.mark.parametrize('text', [
+    'Sigo leyendo src/calc.py para encontrar el fallo.',
+    'Ahora sigo buscando la causa en los logs.',
+    'Sigo comprobando el estado del servidor.',
+    'Sigo ejecutando los tests del proyecto.',
+    'Sigo editando el archivo para corregir la función.',
+    'Sigo reintentando la consulta con el identificador completo.',
+])
+def test_continued_concrete_tool_actions_still_count(text):
+    assert announced_action(text)
