@@ -2344,19 +2344,14 @@ function LiveLine({ live, contextTokens }: { live: LiveRate; contextTokens?: num
         ? t('Thinking')
         : live.phase === 'writing'
           ? t('Writing')
-          // Before the first token the model is reading the whole context
-          // (prefill). On a model spilling to RAM that takes minutes for a
-          // long chat, and "waiting" alone reads as a hang — say what it is
-          // doing once the wait is long enough to wonder.
-          // The server's heartbeat says what the model is really doing when
-          // it knows (loading / reading the context / spilling to RAM / the
-          // VRAM gate); that beats "waiting" every time.
+          // A heartbeat proves the run is alive, and residency describes
+          // memory. Neither proves this request is currently in prefill.
           : live.label
-            ? contextTokens && live.label === t('The model is reading the context')
-              ? t('The model is reading {n} tokens of context', { n: contextTokens.toLocaleString() })
+            ? contextTokens && live.label === t('Model in memory; waiting for output')
+              ? t('Model in memory; waiting for output · context: {n} estimated tokens', { n: contextTokens.toLocaleString() })
               : live.label
             : secs >= 8 && contextTokens
-              ? t('Waiting for the model — reading {n} tokens of context', { n: contextTokens.toLocaleString() })
+              ? t('Waiting for the model · context: {n} estimated tokens', { n: contextTokens.toLocaleString() })
               : t('Waiting for the model');
   return (
     <p className="fs-studio__waiting fs-studio__live" data-phase={live.phase} data-testid="turn-live">

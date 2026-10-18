@@ -8,7 +8,7 @@ def interrupted_response(error):
         and error.get("status") in {502, 504}
         and error.get("error_class") in {
             "transport.incomplete_stream", "transport.connection_reset",
-            "timeout.deadline_exceeded",
+            "timeout.deadline_exceeded", "timeout.inactivity",
         }
     )
 

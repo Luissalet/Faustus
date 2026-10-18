@@ -729,13 +729,10 @@ def _stream_timeout(read_timeout) -> httpx.Timeout:
 
 
 #: Silence cap once a streamed answer has started (setting
-#: `llm_stream_idle_timeout_s`, 0 = off). The first line may take as long as
-#: the prompt needs; after it, a server that sends nothing for this long is
-#: generating something it holds back. Live 17-10-2026: vLLM's GLM tool-call
-#: parser held a broken call for nine minutes while the Sparks kept
-#: generating at 130 tokens/s, and the copilot turn showed only "Sending...". The
-#: same day the cap caught it live (a retry then made the call); vLLM sends
-#: every token it releases, so two minutes of silence is never progress.
+#: `llm_stream_idle_timeout_s`, 0 = off). It starts with meaningful model
+#: output, not an SSE heartbeat or role frame. Initial response deadlines
+#: remain separate. Silence identifies an interrupted transport; it does not
+#: establish whether the model or server is still generating.
 _STREAM_IDLE_DEFAULT_S = 120.0
 _STREAM_STALLED = object()
 
@@ -749,15 +746,65 @@ def _stream_idle_cap() -> float:
     return max(0.0, value)
 
 
+def _stream_line_is_activity(line: str) -> bool:
+    """Recognize released output and final metadata, excluding keepalives."""
+    if not line.startswith("data:"):
+        return False
+    payload = line[5:].strip()
+    if payload == "[DONE]":
+        return True
+    try:
+        data = json.loads(payload)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    if data.get("error") or data.get("usage"):
+        return True
+    choices = data.get("choices")
+    if not isinstance(choices, list):
+        return False
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        if choice.get("finish_reason"):
+            return True
+        delta = choice.get("delta")
+        if not isinstance(delta, dict):
+            continue
+        if any(isinstance(delta.get(key), str) and delta[key]
+               for key in ("content", "reasoning_content", "reasoning", "thinking", "refusal")):
+            return True
+        content = delta.get("content")
+        if isinstance(content, list) and any(
+            isinstance(block, dict) and (block.get("text") or block.get("thinking"))
+            for block in content
+        ):
+            return True
+        calls = delta.get("tool_calls")
+        if isinstance(calls, list):
+            for call in calls:
+                if not isinstance(call, dict):
+                    continue
+                function = call.get("function")
+                if call.get("id") or (isinstance(function, dict)
+                                      and (function.get("name") or function.get("arguments"))):
+                    return True
+    return False
+
+
 async def _lines_until_stall(lines, idle_s: float):
-    """The SSE lines of a response as they arrive; once the first one is in,
-    a gap longer than ``idle_s`` yields ``_STREAM_STALLED`` and stops."""
+    """Bound gaps after meaningful output, without treating keepalives as it."""
     it = lines.__aiter__()
-    started = False
+    last_activity = None
     while True:
         try:
-            if started and idle_s > 0:
-                line = await asyncio.wait_for(it.__anext__(), timeout=idle_s)
+            if last_activity is not None and idle_s > 0:
+                remaining = idle_s - (time.monotonic() - last_activity)
+                if remaining <= 0:
+                    yield _STREAM_STALLED
+                    return
+                line = await asyncio.wait_for(it.__anext__(), timeout=remaining)
             else:
                 line = await it.__anext__()
         except StopAsyncIteration:
@@ -765,20 +812,18 @@ async def _lines_until_stall(lines, idle_s: float):
         except asyncio.TimeoutError:
             yield _STREAM_STALLED
             return
-        started = True
+        if _stream_line_is_activity(line):
+            last_activity = time.monotonic()
         yield line
 
 
-def _stream_stalled_error_chunk(model: str, url: str, idle_s: float) -> str:
-    """Typed `event: error` for a stream that went silent mid-answer. It is
-    tagged as degenerate output: the cause is the model producing something
-    the server will not stream (a runaway tool call), and the agent loop's
-    recovery for degenerate rounds is the right answer to it."""
+def _stream_stalled_error_chunk(model: str, url: str, idle_s: float, *, partial: bool = False) -> str:
+    """Report missing output without inferring model corruption or replaying it."""
     name = model or "model"
     logger.warning("[stream-stall] %s at %s sent nothing for %.0fs mid-answer; closing", name, _host_key(url), idle_s)
-    message = (f"Stopped generation: {name} sent nothing for {int(idle_s)} s in the middle of its answer while the "
-               f"server kept working (usually a tool call it cannot finish). Try again or use another model.")
-    return f'event: error\ndata: {json.dumps({"status": 502, "text": message, "error": message, "error_class": DEGENERATE_OUTPUT_ERROR_CLASS, "fallback_eligible": False, "stalled_s": int(idle_s)})}\n\n'
+    message = (f"The connection to {name} released no meaningful output for {int(idle_s)} s mid-answer. "
+               "The partial response is kept; whether the server is still generating is unknown.")
+    return f'event: error\ndata: {json.dumps({"status": 504, "text": message, "error": message, "error_class": "timeout.inactivity", "timeout_kind": "inactivity", "retryable": False, "partial": partial, "fallback_eligible": False, "stalled_s": int(idle_s)})}\n\n'
 
 
 # Cache for LLM responses
@@ -4915,18 +4960,10 @@ async def llm_call_async(
             on_outcome_unknown=on_outcome_unknown, gen_overrides=gen_overrides,
             _on_observed_usage=_capture_usage,
         )
-        _initial_wait = _sparks_initial_wait(url)
-        if _initial_wait is not None and workload == "foreground":
-            try:
-                result = await asyncio.wait_for(pending, timeout=_initial_wait)
-            except TimeoutError as exc:
-                error = HTTPException(status_code=504, detail="Initial model response wait limit exceeded")
-                error.fallback_eligible = False
-                error.retryable = False
-                error.error_class = "first_token_timeout"
-                raise error from exc
-        else:
-            result = await pending
+        # This transport returns only the complete response, so it cannot
+        # observe a first token. Keep the caller's existing HTTP timeout and
+        # outer turn deadline; streaming owns the initial-response budget.
+        result = await pending
         if isinstance(result, tuple):
             _text, _model_out = result[0], result[1]
         else:
@@ -6765,7 +6802,12 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
     # wider connect budget only affects first contact and stops a brief cold
     # connect blip (offshore/public endpoints) surfacing as a 503 on this stream
     # path, which -- unlike llm_call -- does not retry the connect.
-    stream_timeout = _stream_timeout(timeout)
+    # Honor the managed service's explicit initial-response allowance at the
+    # HTTP layer too: otherwise the default 300 s read cuts a 900 s prefill
+    # budget short before either outer deadline sees a first token. Once
+    # output starts, the separate meaningful-output idle cap still applies.
+    initial_wait = _sparks_initial_wait(url) if is_sparks_url(url) else None
+    stream_timeout = _stream_timeout(max(timeout, initial_wait) if initial_wait is not None else timeout)
 
     if _is_host_dead(target_url):
         yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503})}\n\n'
@@ -7837,9 +7879,12 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             _idle_cap = _stream_idle_cap()
             async for line in _lines_until_stall(r.aiter_lines(), _idle_cap):
                 if line is _STREAM_STALLED:
-                    # Leaving the `async with` closes the connection, which is
-                    # what makes the server stop generating.
-                    yield _stream_stalled_error_chunk(model, target_url, _idle_cap)
+                    # Leaving the context closes this upstream response. The
+                    # server's eventual cancellation outcome is not observed.
+                    yield _stream_stalled_error_chunk(
+                        model, target_url, _idle_cap,
+                        partial=_delta_emitted or _tc_assembler.has_calls(),
+                    )
                     return
                 if not line:
                     continue

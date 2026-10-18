@@ -15,7 +15,8 @@ def test_request_identity_preserves_the_continuation_at_the_end():
 
 
 @pytest.mark.parametrize("cuts", [1, 4])
-def test_plain_chat_preserves_text_through_transport_cuts(monkeypatch, cuts):
+@pytest.mark.parametrize("error_class,status", [("transport.connection_reset", 502), ("timeout.inactivity", 504)])
+def test_plain_chat_preserves_text_through_transport_cuts(monkeypatch, cuts, error_class, status):
     endpoint = _chat_stream_endpoint(monkeypatch, [])
     monkeypatch.setattr(cr, 'get_session_mode', lambda sid: 'chat')
     requests, saves = [], []
@@ -25,7 +26,8 @@ def test_plain_chat_preserves_text_through_transport_cuts(monkeypatch, cuts):
         requests.append(copy.deepcopy(messages))
         yield 'data: ' + json.dumps({'delta': f'Parte {len(requests)}. '}) + '\n\n'
         if len(requests) <= cuts:
-            yield 'event: error\ndata: {"error":"reset","status":502,"error_class":"transport.connection_reset","partial":true}\n\n'
+            yield 'event: error\ndata: ' + json.dumps({"error": "interrupted", "status": status,
+                "error_class": error_class, "partial": True}) + '\n\n'
         else:
             yield 'data: {"type":"finish","finish_reason":"stop"}\n\n'
             yield 'data: [DONE]\n\n'

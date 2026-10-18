@@ -10091,3 +10091,8 @@ Unassigned	Sin asignar
 Talk with several models in one conversation. Open a room to continue its history, manage members or start a debate.	Habla con varios modelos en una conversación. Abre una sala para continuar su historial, gestionar participantes o iniciar un debate.
 Previous history and evidence	Historial y pruebas anteriores
 Some previous records could not be imported	No se han podido incorporar algunos registros anteriores
+The connection ended before the turn completed. What arrived is kept; reconnect to the running turn.	La conexión terminó antes de que acabara el turno. Lo que llegó se conserva; vuelve a conectarte al turno en curso.
+Waiting for the model to load into memory	Esperando a que el modelo se cargue en memoria
+Model in memory; waiting for output	Modelo en memoria; esperando su respuesta
+Model in memory; waiting for output · context: {n} estimated tokens	Modelo en memoria; esperando su respuesta · contexto: {n} tokens estimados
+Waiting for the model · context: {n} estimated tokens	Esperando al modelo · contexto: {n} tokens estimados
