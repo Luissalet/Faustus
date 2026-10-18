@@ -2166,17 +2166,18 @@ _SCHEMA_FIELD_OPENAI = "response_format"
 def _schema_transport(url: str) -> Optional[str]:
     """Which wire field can carry a JSON Schema to `url`, or None.
 
-    Two local backends can decode under a schema, and they take it in
-    different fields:
+    Managed backends declare support through different fields:
 
     * native Ollama `/api/chat` -> ``format``
     * llama-server `/v1/chat/completions` -> ``response_format``
+    * managed Sparks with a verified served OpenAPI -> ``response_format``
 
     Everything else (a hosted API, Ollama's own /v1 surface, an endpoint we
     cannot identify) gets None and keeps the tolerant text parser. The
     llama.cpp side is answered from the managed-engine registry with
     ``probe=False``: a request on the hot path must never pay a network probe
-    to find out how to phrase itself.
+    to find out how to phrase itself. Sparks reads its bounded capability
+    cache, refreshed by native metadata sync, without a generation-time probe.
     """
     if _is_ollama_native_url(url):
         return _SCHEMA_FIELD_OLLAMA
@@ -2184,6 +2185,10 @@ def _schema_transport(url: str) -> Optional[str]:
         from src.model_backend import serving_backend
         if serving_backend(url, probe=False).get("backend") == "llamacpp":
             return _SCHEMA_FIELD_OPENAI
+        if is_sparks_url(url):
+            from src.engine_controls import json_schema_capability
+            if json_schema_capability(url, _endpoint_id_for_url(url)).get('json_schema') is True:
+                return _SCHEMA_FIELD_OPENAI
     except Exception as exc:  # noqa: BLE001
         logger.debug("llm_core: schema transport unknown for %s: %s", url, exc)
     return None
@@ -2210,7 +2215,7 @@ def _apply_openai_response_format(
     payload: Dict, url: str, schema: Optional[Dict], tools: Optional[List] = None,
     *, model: str = "",
 ) -> bool:
-    """Attach `schema` to an OpenAI-shaped payload for llama-server.
+    """Attach `schema` for llama-server or verified managed Sparks.
 
     Returns whether it was attached, so a caller can log the difference rather
     than assume it. The gate lives here and not at the call sites: a schema
@@ -2232,7 +2237,14 @@ def _apply_openai_response_format(
         "type": "json_schema",
         "json_schema": {"name": "response", "strict": True, "schema": schema},
     }
-    _suppress_thinking(payload, model)
+    # llama.cpp's grammar needs its existing thinking policy. A schema on
+    # verified Sparks must preserve the caller's reasoning effort and budget.
+    try:
+        from src.model_backend import serving_backend
+        if serving_backend(url, probe=False).get('backend') == 'llamacpp':
+            _suppress_thinking(payload, model)
+    except Exception as exc:  # registry unavailable: preserve the caller's thinking policy
+        logger.debug('llm_core: schema thinking policy unknown for %s: %s', url, exc)
     return True
 
 

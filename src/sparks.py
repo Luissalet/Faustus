@@ -353,8 +353,25 @@ def sync() -> Dict[str, Any]:
                 endpoint_status = "unavailable"
         if patch:
             _update(patch)
+        # Native metadata refresh owns OpenAPI verification. Generation reads
+        # only the resulting capability cache, with no extra request per call.
+        schema_capabilities = {}
+        try:
+            from src.engine_controls import refresh_json_schema
+            def schema_openapi(api_base):
+                code, document = _request('GET', '/openapi.json', timeout=1, url=api_base[:-len('/v1')])
+                if code != 200:
+                    raise ValueError('OpenAPI metadata unavailable')
+                return document
+            schema_capabilities = refresh_json_schema([
+                {'endpoint_id': ids[e['recipe']], 'base_url': e['base_url'], 'models': e.get('models') or []}
+                for e in running if e.get('recipe') in ids
+            ], fetch_openapi=schema_openapi)
+        except Exception:
+            logger.debug('sparks: schema capabilities unavailable', exc_info=True)
         result = {"ok": True, "running": [e["recipe"] for e in running], "endpoints": ids, "action": action,
-                "default": effective_default(), "aux": {k: [x["recipe"] for x in v] for k, v in aux.items()}}
+                "default": effective_default(), "aux": {k: [x["recipe"] for x in v] for k, v in aux.items()},
+                "schema_capabilities": schema_capabilities}
         if endpoint_status and action != "to_sparks":
             result.update(endpoint_status=endpoint_status,
                 advisory="The selected Sparks model is not serving. Its default was preserved; no PC text model was selected.")
