@@ -1247,6 +1247,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "shrink this long article to the paragraphs about pricing",
     ],
     "blender_scene": [
+        "edita la pieza seleccionada en Blender y conserva el resto de la escena",
+        "crea un asset articulado con tres clips y exporta solo las animaciones de su rig a GLB",
+        "revisa topología, UV y pesos y enséñame vistas de los extremos de la animación",
+        "consulta la API y el manual de Blender instalado antes de modificar Geometry Nodes",
+        "run only the materials stage of this saved Blender recipe",
         "renderiza una escena 3D con un cubo con bisel y una esfera sobre un suelo",
         "build a 3D scene with a camera and a sun light and render it to a PNG",
         "exporta este modelo a STL con Blender sin abrir la interfaz",

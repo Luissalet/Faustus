@@ -20,7 +20,7 @@ from pathlib import Path
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import ImageContent, Tool, TextContent
+from mcp.types import CallToolResult, ImageContent, Tool, TextContent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -47,8 +47,24 @@ def _text_result(text: str) -> list[TextContent]:
     return [TextContent(type="text", text=text)]
 
 
+def live_tools():
+    from src.blender_live.client import OPERATIONS
+    shared = {"port": {"type": "integer", "description": "Optional local bridge port; normally discovered"}}
+    return [
+        Tool(name="blender_live_probe", description="Inspect connection to the open Blender scene through our local Faustus add-on. No external API.", inputSchema={"type":"object", "properties":shared}),
+        Tool(name="blender_live_submit", description="Run native asset work through the official Blender Lab main-thread server. scene(objects?); execute(code,bpy,result); api(identifier:bpy.types.Name or bpy.ops.category.operator, installed RNA); nodes(owner,name,modifier?,ops?:add/remove/set/link/unlink); animation(object, action slots/curves/NLA/drivers); asset_check(objects?, topology/UV/weights/materials/shape keys, read-only); views(objects?,angles?,frames?,width?,height?,sheet); save/load(path); export(path,format,objects?,actions?:{rig:[clips]}); recipe_save(name,steps:[{name,code}]); recipe_list; recipe_run(name,stages?). Returns persistent job ID; read blender_live_job. Python permits full bpy modeling, UV, rigging, baking and scene control; no hosted asset generator.", inputSchema={"type":"object", "properties":{**shared,"operation":{"type":"string","enum":list(OPERATIONS)},"arguments":{"type":"object"}},"required":["operation"]}),
+        Tool(name="blender_live_job", description="Read a live Blender job, frozen recipe, per-stage progress/errors and review contact sheet. Omit job_id to list jobs. Interrupted jobs do not replay automatically.", inputSchema={"type":"object", "properties":{**shared,"job_id":{"type":"string"}}}),
+        Tool(name="blender_live_cancel", description="Cancel queued work, or request cancellation between recipe stages/render views. A single Python operation or render finishes before cancellation is checked; never kills the user's Blender.", inputSchema={"type":"object", "properties":{**shared,"job_id":{"type":"string"}},"required":["job_id"]}),
+    ]
+
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    try:
+        from src.blender_live.official import tools as official_tools
+        official = [tool.model_copy(update={"name": "blender_official_" + tool.name}) for tool in await official_tools()]
+    except RuntimeError:
+        official = []
     return [
         Tool(
             name="blender_probe",
@@ -109,7 +125,7 @@ async def list_tools() -> list[Tool]:
                 "engine": {"type": "string", "enum": ["workbench", "eevee", "cycles"],
                            "description": "Render engine (default workbench, works without a GPU)."}}},
         ),
-    ]
+    ] + live_tools() + official
 
 
 def _context() -> dict:
@@ -118,7 +134,10 @@ def _context() -> dict:
 
 
 async def _dispatch(name: str, args: dict) -> dict:
-    from src.agent_tools.blender_scene_tool import BlenderSceneTool
+    if name.startswith("blender_live_"):
+        from src.blender_live.service import execute_live
+        return await execute_live(name.removeprefix("blender_"), args)
+    from src.blender_scene.tool import BlenderSceneTool
 
     tool = BlenderSceneTool()
     payload = dict(args)
@@ -132,17 +151,28 @@ async def _dispatch(name: str, args: dict) -> dict:
         payload["action"] = "run"
     elif name == "blender_smoke":
         payload["action"] = "smoke"
+    elif name in {"blender_live_probe", "blender_live_submit", "blender_live_job", "blender_live_cancel"}:
+        payload["action"] = name.removeprefix("blender_")
     else:
         raise KeyError(name)
     return await tool.execute(json.dumps(payload), _context())
 
 
-_KNOWN = {"blender_probe", "blender_scene_schema", "blender_scene_validate", "blender_scene_run", "blender_smoke"}
+_KNOWN = {"blender_probe", "blender_scene_schema", "blender_scene_validate", "blender_scene_run", "blender_smoke", "blender_live_probe", "blender_live_submit", "blender_live_job", "blender_live_cancel"}
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Dispatch, and never raise -- an exception here would kill the server."""
+    if name.startswith("blender_official_"):
+        try:
+            from src.blender_live.official import call
+            content = await call(name.removeprefix("blender_official_"), arguments or {})
+            if isinstance(content, tuple) and content[1].get("status") == "error":
+                return CallToolResult(isError=True, content=content[0], structuredContent=content[1])
+            return content
+        except Exception as exc:
+            return CallToolResult(isError=True, content=_text_result(f"Error in {name}: {type(exc).__name__}: {exc}"))
     if name not in _KNOWN:
         return _text_result(f"Unknown tool: {name}")
     args = arguments if isinstance(arguments, dict) else {}
@@ -153,7 +183,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if result.get("error"):
         return _text_result(str(result["error"]))
     payload = {"ok": not result.get("exit_code"), "output": result.get("output")}
-    for key in ("probe", "validation", "run", "reload", "project_root", "schema"):
+    for key in ("probe", "validation", "run", "reload", "project_root", "schema", "live"):
         if key in result:
             payload[key] = result[key]
     if name == "blender_scene_schema" and "schema" in payload:
