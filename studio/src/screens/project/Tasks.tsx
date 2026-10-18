@@ -45,15 +45,15 @@ export function TaskEditor({ projectId, taskId, onClose, onSaved }: {
     {loading ? <Skeleton label={t('Loading task')} count={4} height="44px" /> : <>
       {(taskId === 'new' || detail) && <form className="fs-project-task-form" onSubmit={event => { event.preventDefault(); void save(); }}>
         <fieldset disabled={saving}>
-          <label className="fs-field-label">{t('Title')}<input className="fs-field" autoFocus maxLength={200} required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
+          <label className="fs-field-label">{t('Title')}<input className="fs-field" autoFocus maxLength={300} required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
           <div className="fs-project-task-fields">
             <label className="fs-field-label">{t('Priority')}<select className="fs-field" value={draft.priority} onChange={event => setDraft({ ...draft, priority: Number(event.target.value) })}>
               {[0, 1, 2, 3].map(value => <option key={value} value={value}>P{value} · {t(['Urgent', 'High', 'Medium', 'Low'][value])}</option>)}</select></label>
             <label className="fs-field-label">{t('Assignee')}<input className="fs-field" placeholder={t('Unassigned')} value={draft.owner} maxLength={41} onChange={event => setDraft({ ...draft, owner: event.target.value })} /></label>
             {detail && <p className="fs-muted">{t('Status')}: {t(taskStatusLabel[detail.task.status] || detail.task.status)}{detail.task.reviewer ? ` · ${t('Reviewer')}: ${detail.task.reviewer}` : ''}</p>}
           </div>
-          <label className="fs-field-label">{t('Description and objective')}<textarea className="fs-field" rows={8} maxLength={20000} value={draft.body} onChange={event => setDraft({ ...draft, body: event.target.value })} /></label>
-          <label className="fs-field-label">{t('Acceptance criteria')}<textarea className="fs-field" rows={4} maxLength={20000} value={draft.acceptance} onChange={event => setDraft({ ...draft, acceptance: event.target.value })} /></label>
+          <label className="fs-field-label">{t('Description and objective')}<textarea className="fs-field" rows={8} maxLength={200000} value={draft.body} onChange={event => setDraft({ ...draft, body: event.target.value })} /></label>
+          <label className="fs-field-label">{t('Acceptance criteria')}<textarea className="fs-field" rows={4} maxLength={200000} value={draft.acceptance} onChange={event => setDraft({ ...draft, acceptance: event.target.value })} /></label>
           <label className="fs-field-label">{t('Add clarification')}<textarea className="fs-field" rows={3} maxLength={20000} value={draft.note} onChange={event => setDraft({ ...draft, note: event.target.value })} /></label>
           <div className="fs-project-workspace__toolbar"><Button type="submit" label={t('Save changes')} loading={saving} disabled={!draft.title.trim()} /><Button variant="ghost" label={t('Cancel')} onClick={onClose} /></div>
         </fieldset>
@@ -61,6 +61,12 @@ export function TaskEditor({ projectId, taskId, onClose, onSaved }: {
       {error && <p role="alert" className="fs-notice">{error} {taskId !== 'new' && <Button variant="ghost" label={t('Reload task')} onClick={() => setRevision(value => value + 1)} />}</p>}
       {detail && <section className="fs-project-task-history" aria-label={t('History and clarifications')}><h3>{t('History and clarifications')}</h3>
         {detail.task.origin_snapshot && <details><summary>{t('Previous history and evidence')}</summary><pre className="fs-project-workspace__source">{JSON.stringify(detail.task.origin_snapshot, null, 2)}</pre></details>}
+        {detail.edits?.slice().reverse().map(edit => <details key={edit.revision}><summary>#{edit.revision} · {edit.author} · {new Date(edit.created * 1000).toLocaleString()}</summary>
+          {Object.entries(edit.after).filter(([key, value]) => !edit.before || edit.before[key] !== value).map(([key, value]) => <article key={key}>
+            <strong>{t(({title: 'Title', body: 'Description and objective', acceptance: 'Acceptance criteria', priority: 'Priority', owner: 'Assignee'} as Record<string, string>)[key] || key)}</strong>
+            {edit.before && <p>{t('Before')}: {String(edit.before[key] ?? '')}</p>}<p>{t('After')}: {String(value ?? '')}</p>
+          </article>)}
+        </details>)}
         {detail.messages.map(message => <article key={message.id}><header><strong>{message.author}</strong> · <time>{new Date(message.created * 1000).toLocaleString()}</time></header><p>{message.body}</p></article>)}
       </section>}
     </>}
@@ -70,6 +76,7 @@ export function TaskEditor({ projectId, taskId, onClose, onSaved }: {
 export function ProjectTasks({ project }: { project: Project; focus?: string; say: (message: string) => void }) {
   const [tasks, setTasks] = useState<ProjectTask[] | null>(null);
   const [error, setError] = useState('');
+  const [migrationError, setMigrationError] = useState('');
   const [query, setQuery] = useState('');
   const [owner, setOwner] = useState('');
   const [editing, setEditing] = useState<number | 'new' | null>(() => {
@@ -79,12 +86,14 @@ export function ProjectTasks({ project }: { project: Project; focus?: string; sa
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    let prepared = false;
     const load = () => listProjectTasks(project.id, controller.signal).then(result => {
       if (!controller.signal.aborted) { setTasks(result.tasks); setError(''); }
     }).catch(failure => { if (!controller.signal.aborted) setError(failure.message); });
-    void prepareTasks(project.id).then(() => { if (!controller.signal.aborted) { prepared = true; void load(); } }).catch(failure => { if (!controller.signal.aborted) setError(failure.message); });
-    const timer = window.setInterval(() => { if (prepared) void load(); }, 8000);
+    void load();
+    setMigrationError('');
+    void prepareTasks(project.id).catch(failure => { if (!controller.signal.aborted) setMigrationError(failure.message); })
+      .finally(() => { if (!controller.signal.aborted) void load(); });
+    const timer = window.setInterval(() => { void load(); }, 8000);
     return () => { controller.abort(); window.clearInterval(timer); };
   }, [project.id, tick]);
   const visible = tasks?.filter(task => `${task.id} ${task.title} ${task.body} ${task.acceptance}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (!owner || task.owner === owner));
@@ -96,6 +105,7 @@ export function ProjectTasks({ project }: { project: Project; focus?: string; sa
       <Button icon={Plus} label={t('New task')} onClick={() => setEditing('new')} />
     </header>
     {error && <p className="fs-notice" role="alert">{error}</p>}
+    {migrationError && <p className="fs-notice" role="alert">{t('Some previous records could not be imported')}: {migrationError} <Button variant="ghost" label={t('Retry')} onClick={() => setTick(value => value + 1)} /></p>}
     {!tasks && !error && <Skeleton label={t('Loading the board')} count={3} height="80px" />}
     {tasks && <div className="fs-project-task-columns">
       {taskColumns.map(column => {

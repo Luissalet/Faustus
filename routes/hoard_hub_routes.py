@@ -27,9 +27,9 @@ class ActiveSphere(BaseModel):
 
 class ProjectTaskCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    title: str = Field(min_length=1, max_length=200)
-    body: str = Field('', max_length=20000)
-    acceptance: str = Field('', max_length=20000)
+    title: str = Field(min_length=1, max_length=300)
+    body: str = Field('', max_length=200000)
+    acceptance: str = Field('', max_length=200000)
     priority: StrictInt = Field(2, ge=0, le=3)
     kind: Literal['feature', 'bug', 'research', 'review', 'chore', 'eval', 'docs'] = 'feature'
     owner: str | None = Field(None, max_length=41)
@@ -41,9 +41,9 @@ class ProjectTaskCreate(BaseModel):
 class ProjectTaskEdit(BaseModel):
     model_config = ConfigDict(extra='forbid')
     expected_etag: str = Field(min_length=1, max_length=64)
-    title: str | None = Field(None, max_length=200)
-    body: str | None = Field(None, max_length=20000)
-    acceptance: str | None = Field(None, max_length=20000)
+    title: str | None = Field(None, max_length=300)
+    body: str | None = Field(None, max_length=200000)
+    acceptance: str | None = Field(None, max_length=200000)
     priority: StrictInt | None = Field(None, ge=0, le=3)
     owner: str | None = Field(None, max_length=41)
     note: str = Field('', max_length=20000)

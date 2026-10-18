@@ -6620,6 +6620,7 @@ export const es: Record<string, string> = {
   "Some changes may have been applied. Check the result before trying again.": "Puede que se hayan aplicado algunos cambios. Revisa el resultado antes de volver a intentarlo.",
   "Some fleet sources could not be checked.": "No se pudieron comprobar algunas fuentes de Flota.",
   "Some lines could not be parsed as steps.": "Algunas líneas no se pudieron interpretar como pasos.",
+  "Some previous records could not be imported": "No se han podido incorporar algunos registros anteriores",
   "Some regions were excluded from the comparison and nothing is claimed about them.": "Algunas regiones se excluyeron de la comparación y no se afirma nada sobre ellas.",
   "Some sentences citing this source matched it; the others did not, or could not be checked.": "Algunas frases que citan esta fuente coinciden con ella; las demás no, o no se pudieron comprobar.",
   "Some start information could not be loaded: {sources}.": "No se ha podido cargar parte del inicio: {sources}.",

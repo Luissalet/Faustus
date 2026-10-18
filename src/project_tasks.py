@@ -6,6 +6,7 @@ overwritten on a later visit. No browser-local or second task database.
 """
 import json
 import re
+import sys
 
 from src.shared_coordination import call
 
@@ -46,9 +47,10 @@ def legacy_records(project):
     from services import objectives
     from src import project_board
     from src.requirements import store as requirements
-    dashboard = objectives.dashboard_payload(project, strict=True)
+    dashboard = objectives.dashboard_payload(project, log_limit=sys.maxsize, strict=True)
     for item in dashboard['objectives']:
         yield 'objective', item['id'], {**item,
+            'history': [entry for entry in dashboard.get('log', []) if entry.get('id') == item['id']],
             'relationships': [edge for edge in dashboard.get('edges', []) if item['id'] in (edge.get('from'), edge.get('to'))]}
     for item in requirements.list_requirements(project['id']):
         yield 'requirement', item['key'], {**requirements.get_or_raise(project['id'], item['key']),
@@ -74,16 +76,19 @@ def prepare(project):
         # Retains evidence, decisions, links and old IDs even when their old
         # representation has no equivalent editable field in the shared ledger.
         source = json.dumps(item, ensure_ascii=False, indent=2)
-        if len(str(body)) > 20000 or len(source) > 600000:
+        if len(str(body)) > 200000 or len(acceptance) > 200000 or len(source) > 600000:
             raise TaskError('An original record is too large to import without losing content: ' + str(key))
         status = item.get('status', 'open')
         status = {'accepted': 'done', 'completed': 'done', 'wontfix': 'dropped', 'duplicate': 'dropped',
+                  'rejected': 'dropped', 'superseded': 'dropped',
                   'doing': 'in_progress'}.get(status, status)
         if status not in ('open', 'done', 'dropped', 'in_progress', 'blocked'):
             status = 'open'
         priority = item.get('priority', 2)
         if isinstance(priority, str):
             priority = int(priority.removeprefix('P'))
+        if kind == 'objective':
+            priority -= 1  # Objectives use 1..4; the shared board uses 0..3.
         owner = item.get('assignee') or item.get('owner') or ''
         if not isinstance(owner, str) or not re.fullmatch(r'[a-z][a-z0-9_.-]{1,40}', owner):
             owner = None

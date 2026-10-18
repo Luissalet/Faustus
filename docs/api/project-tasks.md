@@ -36,9 +36,19 @@ Preparation imports prior objectives, requirements and issues using a stable
 project/source ID. Reopening the board cannot overwrite a task subsequently
 edited by a person or agent. Original source records remain intact; imported
 snapshots retain older IDs, relationships, requirement revisions, links and issue
-history. They can be inspected under Previous history and evidence in the task
-modal. Large records are refused explicitly rather than truncated. Older source
+history, including the full available objective audit/evidence log. Rejected and
+superseded requirements remain terminal; objective priorities 1–4 map to 0–3.
+They can be inspected under Previous history and evidence in the task modal.
+Titles accept 300 characters; descriptions and acceptance accept 200,000.
+Larger records are refused explicitly rather than truncated, with an import
+error and retry alongside the still usable canonical board. Older source
 APIs remain compatible; new project task operations use the shared ledger.
+
+Task detail includes `edits`: ordered revisions with author, timestamp, and
+before/after values for title, body, acceptance, priority and owner. Creation
+records the initial criteria; existing tasks receive a labelled baseline when
+upgraded. The modal exposes both values for each changed field. Clarifications
+remain append-only messages in the same conversation.
 
 No model is invoked by editing the board or navigating rooms. This change does
 not repair historic failed model replies or silently resume stopped discussions.

@@ -6,7 +6,8 @@ export interface ProjectTask {
   origin_snapshot?: Record<string, unknown> | null;
 }
 export interface TaskMessage { id: number; author: string; body: string; kind: string; created: number }
-export interface TaskDetail { task: ProjectTask; messages: TaskMessage[] }
+export interface TaskEdit { revision: number; author: string; created: number; kind: string; before: Record<string, unknown> | null; after: Record<string, unknown> }
+export interface TaskDetail { task: ProjectTask; messages: TaskMessage[]; edits?: TaskEdit[] }
 export const taskStatusLabel: Record<string, string> = { open: 'Open', claimed: 'Claimed', in_progress: 'In progress', blocked: 'Blocked', changes: 'Changes requested', review: 'In review', approved: 'Approved', done: 'Done', dropped: 'Dropped' };
 const base = (project: string) => `/api/projects/${encodeURIComponent(project)}/tasks`;
 async function write<T>(path: string, method: string, value = {}): Promise<T> {

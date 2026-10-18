@@ -29,19 +29,22 @@ globalThis.fetch = async (path, init = {}) => {
     task = {...task, ...edits.at(-1), etag:'etag-saved'};
     return Response.json({ok:true,task});
   }
-  if (path.endsWith('/prepare')) return Response.json({ok:true, imported:0});
-  if (path.endsWith('/42')) return Response.json({ok:true,task,messages:[{id:1,author:'builder',body:'Prior clarification',created:1800000000}]});
+  if (path.endsWith('/prepare')) return Response.json({detail:'Old record is too large'}, {status:400});
+  if (path.endsWith('/42')) return Response.json({ok:true,task,messages:[{id:1,author:'builder',body:'Prior clarification',created:1800000000}],edits:[{revision:1,author:'editor',created:1800000000,before:{acceptance:'Original criterion'},after:{acceptance:'Revised criterion'}}]});
   return Response.json({ok:true,space_id:'silver',tasks:[task]});
 };
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 await m.act(async () => { root.render(m.createElement(m.ProjectTasks, {project:{id:'p'},say:()=>{}})); await tick(); });
 assert.equal(host.querySelectorAll('[data-testid="project-task-card"]').length,1,'agent task is visible immediately');
 assert.equal(host.querySelectorAll('details').length,0,'no parallel hidden objectives/requirements/board');
+assert.match(host.textContent,/Old record is too large/,'migration errors are visible without hiding canonical tasks');
 await m.act(async () => { host.querySelector('[data-testid="project-task-card"]').click(); await tick(); });
 let dialog = document.querySelector('[data-testid="project-task-editor"]');
 assert.ok(dialog && !host.querySelector('.fs-project-task-column').contains(dialog),'editor is a modal outside the narrow column');
 assert.equal(dialog.querySelector('textarea').value,original.body,'full description comes from task detail');
 assert.match(dialog.textContent,/Prior clarification/);
+assert.match(dialog.textContent,/Original criterion/);
+assert.match(dialog.textContent,/Revised criterion/);
 const type = (element, value) => {
   const prototype = element.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
   Object.getOwnPropertyDescriptor(prototype,'value').set.call(element,value);

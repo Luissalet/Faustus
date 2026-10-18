@@ -67,7 +67,7 @@ def test_edit_conflict_is_preserved_and_caller_cannot_override_scope(ledger):
 
 
 def test_import_refuses_truncation_and_ambiguous_binding(ledger, monkeypatch):
-    monkeypatch.setattr(tasks, 'legacy_records', lambda project: iter([('issue', 'x', {'title': 'Large', 'body_md': 'a' * 21000})]))
+    monkeypatch.setattr(tasks, 'legacy_records', lambda project: iter([('issue', 'x', {'title': 'Large', 'body_md': 'a' * 200001})]))
     with pytest.raises(tasks.TaskError, match='too large'):
         tasks.prepare(PROJECT)
     assert ledger['tasks'] == {}
@@ -75,3 +75,34 @@ def test_import_refuses_truncation_and_ambiguous_binding(ledger, monkeypatch):
     with pytest.raises(tasks.TaskError) as conflict:
         tasks.listing(PROJECT)
     assert conflict.value.status == 409
+
+
+def test_terminal_requirement_states_and_objective_priority_semantics(ledger, monkeypatch):
+    records = [('requirement', status, {'title': status, 'status': status}) for status in ('rejected', 'superseded')]
+    records += [('objective', str(priority), {'title': str(priority), 'priority': priority}) for priority in range(1, 5)]
+    monkeypatch.setattr(tasks, 'legacy_records', lambda project: iter(records))
+    tasks.prepare(PROJECT)
+    rows = list(ledger['tasks'].values())
+    assert [row['origin_status'] for row in rows[:2]] == ['dropped', 'dropped']
+    assert [row['priority'] for row in rows[2:]] == [0, 1, 2, 3]
+
+
+def test_objective_snapshot_contains_complete_evidence_and_delta_log(ledger, monkeypatch, tmp_path):
+    from services import objectives
+    from src.requirements import store as requirements
+    from src import project_board
+    project = {**PROJECT, 'workspace': str(tmp_path)}
+    applied = objectives.apply_deltas(project, [{'op': 'ADD', 'title': 'Original objective', 'priority': 1}], actor='reviewer')
+    oid = applied['state']['objectives'][0]['id']
+    assert objectives.add_evidence(project, oid, 'test', 'EARLY-EVIDENCE', 1.0, 'Original proof')
+    for index in range(60):
+        objectives.append_log(project, {'id': oid, 'kind': 'evidence', 'ref': f'proof-{index}'})
+    monkeypatch.setattr(requirements, 'list_requirements', lambda pid: [])
+    monkeypatch.setattr(project_board, 'list_issues', lambda *a, **k: ([], None))
+    tasks.prepare(project)
+    import json
+    snapshot = json.loads(ledger['tasks'][1]['origin_snapshot'])
+    assert len(snapshot['history']) == 62
+    assert snapshot['history'][0]['kind'] == 'delta'
+    assert snapshot['history'][1]['ref'] == 'EARLY-EVIDENCE'
+    assert snapshot['history'][-1]['ref'] == 'proof-59'
