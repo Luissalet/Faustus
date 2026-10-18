@@ -413,7 +413,7 @@ def test_brief_spanish_variant():
     tracker = pt.upsert_from_attachment("proj-brief-es", "wp plan", FAUSTUS_CREATOR_PLAN)
     b = pt.brief(tracker, language="es")
     assert "Plan activo" in b
-    assert "no debe volver a pedirse" in b
+    assert "resumen del seguimiento" in b and "plan_task" in b
 
 
 def test_plan_title_heading_is_not_a_task_and_subtasks_stay_inside_their_task():

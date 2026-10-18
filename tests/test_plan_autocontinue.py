@@ -157,8 +157,8 @@ def test_attachments_after_a_pasted_plan_are_kept_by_replace_pasted():
     tracker = pt.upsert_from_attachment("proj", *found)
     text = PASTED + "\n=== File: notes.txt ===\nhello"
     out = pt.replace_pasted(text, tracker)
-    assert "Ejecuta este plan" in out and "=== Plan task" in out
-    assert "=== File: notes.txt ===" in out and out.count("Crear b.txt") <= 1
+    assert out == text
+    assert "=== File: notes.txt ===" in out and "Crear b.txt" in out
 
 
 # ---------------------------------------------------------------- attachments
@@ -473,15 +473,26 @@ def test_stop_during_a_continuation_ends_the_turn_at_once(ws, monkeypatch):
     scope = pt.scope_for("proj-ac", ws)
     _patch_common(monkeypatch, settings=SETTINGS, tool_exec=_plan_exec(scope))
     calls = _scripted_stream(monkeypatch, [("Hecho 1.", "stop")])
-    polls = {"n": 0}
+    peer = {"finished": False}
+    scripted_stream = al.stream_llm_with_fallback
+
+    async def terminal_peer(*args, **kwargs):
+        async for chunk in scripted_stream(*args, **kwargs):
+            if '"finish_reason": "stop"' in chunk:
+                peer["finished"] = True
+            yield chunk
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", terminal_peer)
 
     def pending_cancel():
-        polls["n"] += 1
-        return None if polls["n"] == 1 else "stop"
+        # Preparation also polls: cancel after the peer's terminal response,
+        # not after an arbitrary number of polls before the first generation.
+        return "stop" if peer["finished"] else None
 
     events = _run_loop(ws, THREE, pending_cancel=pending_cancel)
     assert [e for e in events if e.get("type") == "cancelled"]
     assert calls["n"] == 1
+    assert peer["finished"]
 
 
 def test_a_steer_arriving_at_the_end_of_a_round_goes_first_and_the_plan_goes_on_after_it(ws, monkeypatch):

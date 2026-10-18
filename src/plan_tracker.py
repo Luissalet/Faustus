@@ -793,13 +793,13 @@ def brief(tracker: Dict[str, Any], language: str = "en", max_chars: int = 2500) 
 
     if lang == "es":
         lines.append(
-            "Usa plan_status/plan_task/plan_done; el plan completo NO esta en "
-            "este mensaje y no debe volver a pedirse."
+            "Este es un resumen del seguimiento. Usa plan_status/plan_task/plan_done "
+            "para consultar y actualizar tareas; conserva los requisitos del encargo humano completo."
         )
     else:
         lines.append(
-            "Use plan_status/plan_task/plan_done; the full plan is NOT in "
-            "this message and must not be requested again."
+            "This is a tracker summary. Use plan_status/plan_task/plan_done "
+            "to inspect and update tasks; preserve the requirements of the complete human request."
         )
 
     cur_id = cur.get("id") if cur else None
@@ -822,8 +822,7 @@ def replace_attachment(text: str, tracker: Dict[str, Any], max_task_chars: int =
                        authored: Optional[str] = None) -> str:
     """`user_authored_text(text)` + brief + only the current task's text —
     the inlined attachment body (which may be 172 KB) never reaches this
-    output. `authored` replaces the typed part (a pasted plan keeps only its
-    intro there)."""
+    output. `authored` overrides the typed part when provided."""
     if authored is None:
         try:
             from src.agent_harness import user_authored_text
@@ -991,14 +990,12 @@ def is_alternative_policy(tracker: Dict[str, Any]) -> bool:
 
 
 def replace_pasted(text: str, tracker: Dict[str, Any], max_task_chars: int = 6000) -> str:
-    """The prompt copy of a message that carried a pasted plan: the user's
-    intro, the brief and only the current task (like `replace_attachment`);
-    any real attachment blocks that followed are kept."""
-    authored, rest = _split_authored(text or "")
-    intro = _pasted_intro(_normalize(authored))[:6000]
-    if not intro:
-        intro = "(plan pegado en el mensaje, ya registrado en el seguimiento)"
-    return replace_attachment(text, tracker, max_task_chars, authored=intro) + rest
+    """Preserve the complete human message; tracking must not replace its contract.
+
+    The agent loop adds a separate tracker brief. Existing arguments remain
+    compatible; task limits apply to attachments, not this human-authored text.
+    """
+    return text or ""
 
 
 # ---------------------------------------------------------------------------
