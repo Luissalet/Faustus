@@ -18,6 +18,7 @@ import {
   type SubagentPayload,
   type Todo,
   type TurnMetrics,
+  type NativeTurnStatus,
   type WebSource,
   type ContextReceipt,
   type ToolOutcomeFields,
@@ -212,6 +213,8 @@ export interface TurnStrategy {
 
 export interface Turn {
   id: string;
+  /** A runtime error view, never an assistant row written to history. */
+  terminalRun?: { sessionId: string; runId: string };
   /** The message's database id, when the server has one; edits need it. */
   dbId?: string;
   /** Position in the server's history when loaded from it; truncation
@@ -501,6 +504,25 @@ export function blankTurn(role: Turn['role'], text = ''): Turn {
     streaming: role === 'assistant',
     live: role === 'assistant' ? newLive(Date.now()) : undefined,
   };
+}
+
+/** Restore the native error using the same decoder/reducer as its live SSE. */
+export function restoreTerminalStatus(turns: Turn[], sessionId: string, status: NativeTurnStatus | null): Turn[] {
+  if (!status || status.sessionId !== sessionId) return turns;
+  const saved = turns.filter(turn => turn.terminalRun?.sessionId !== sessionId);
+  const raw = status.error;
+  const message = raw?.text ?? raw?.error ?? raw?.message ?? raw?.detail;
+  if (status.active || status.state !== 'error' || typeof message !== 'string' || !message.trim()) return saved;
+  const event = decode(raw!, 'error');
+  if (!event) return saved;
+  const index = saved.findIndex(turn => turn.role === 'assistant'
+    && (turn.metrics?.runId === status.runId || turn.traceId === status.runId));
+  if (index >= 0) {
+    return saved.map((turn, i) => i === index ? apply(apply(turn, event), { type: 'done' }) : turn);
+  }
+  const view = { ...blankTurn('assistant'), id: `terminal-${status.runId}`,
+    terminalRun: { sessionId, runId: status.runId }, live: undefined };
+  return [...saved, apply(apply(view, event), { type: 'done' })];
 }
 
 /* ── Sub-agents ── */

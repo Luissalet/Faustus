@@ -1243,6 +1243,37 @@ export async function loadHistory(
   return { name: raw.name ?? '', model: raw.model ?? '', endpointUrl: raw.endpoint_url ?? '', history };
 }
 
+/** Native runtime result, independent of whether an assistant was saved. */
+export interface NativeTurnStatus {
+  sessionId: string;
+  runId: string;
+  state: string;
+  active: boolean;
+  error?: Record<string, unknown>;
+}
+
+export async function loadTurnStatus(
+  sessionId: string,
+  signal?: AbortSignal,
+  runId?: string,
+): Promise<NativeTurnStatus | null> {
+  const query = runId ? `?run_id=${encodeURIComponent(runId)}` : '';
+  let raw: Record<string, unknown>;
+  try {
+    raw = await getJson(`/api/hoard-copilot/turns/${encodeURIComponent(sessionId)}/status${query}`, signal);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+  const identity = str(raw.run_id);
+  if (raw.session_id !== sessionId || !/^[0-9a-f]{32}$/.test(identity) || (runId && identity !== runId)) return null;
+  return {
+    sessionId, runId: identity, state: str(raw.state ?? raw.status), active: raw.active === true,
+    error: raw.error && typeof raw.error === 'object' && !Array.isArray(raw.error)
+      ? raw.error as Record<string, unknown> : undefined,
+  };
+}
+
 /**
  * The todowrite list the agent keeps for this chat (`GET /api/agent/progress/{id}`).
  * Empty when the session has none yet, or the request fails — the Progress

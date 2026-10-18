@@ -13,6 +13,7 @@ import {
   listModels,
   listSessions,
   loadHistory,
+  loadTurnStatus,
   loadAgentProgress,
   metricsFrom,
   pauseChat,
@@ -110,7 +111,7 @@ import { StudioGroupControls } from './group/StudioGroupControls';
 import { acknowledgeCoordinationAttempt, coordinationAttempt } from '../components/coordinationNavigation';
 import { Composer, type Knobs } from './studio/Composer';
 import { CoordinationStatus } from './studio/CoordinationStatus';
-  import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, appendSteer, type Turn } from './studio/model';
+  import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, restoreTerminalStatus, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
@@ -1306,7 +1307,8 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         }
         return turn;
       });
-      return { ...result, turns: mapped };
+      const terminal = await loadTurnStatus(sid, signal).catch(() => null);
+      return { ...result, turns: restoreTerminalStatus(mapped, sid, terminal) };
     },
     [],
   );
@@ -1364,10 +1366,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       return;
     }
     setTurns(null);
+    const epoch = runEpoch.current;
     const controller = new AbortController();
     turnsFromHistory(sessionId, controller.signal)
       .then((result) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || visibleSession.current !== sessionId || runEpoch.current !== epoch || controllerRef.current) return;
         setTitle(result.name);
         setTurns(result.turns);
         pinnedRef.current = true;
@@ -1908,7 +1911,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           refreshActivity();
           turnsFromHistory(sid)
             .then((result) => {
-              if (!controller.signal.aborted && visibleSession.current === sid && !controllerRef.current) setTurns(result.turns);
+              if (!controller.signal.aborted && visibleSession.current === sid && runEpoch.current === epoch && !controllerRef.current) setTurns(result.turns);
             })
             .catch(() => undefined);
         }
@@ -1919,6 +1922,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
 
   const rejoin = useCallback(
     async (sid: string) => {
+      const epoch = runEpoch.current;
       const controller = new AbortController();
       controllerRef.current = controller;
       let joined = false;
@@ -1965,7 +1969,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           // are the server's and not this screen's reconstruction.
           turnsFromHistory(sid)
             .then((result) => {
-              if (!controller.signal.aborted && visibleSession.current === sid && !controllerRef.current) setTurns(result.turns);
+              if (!controller.signal.aborted && visibleSession.current === sid && runEpoch.current === epoch && !controllerRef.current) setTurns(result.turns);
             })
             .catch(() => undefined);
         } else if (!controller.signal.aborted) {
