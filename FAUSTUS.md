@@ -13379,3 +13379,27 @@ idle; 18 tablas, 155 medios, ajustes, token y replay real exactos después de la
 MCP180 y caché de Faustus actualizados con permisos y configuración intactos.
 Manual nativo actualizado, conservando contenido, estructura y estilos ajenos.
 Guía: docs/VIDEO_FORMATS.md; evidencia: research-inbox/silver-portrait776. Sin push.
+
+
+### Silver: shiny PMD derivados por recolor (18-10-2026, #807)
+
+Activo en Silver 7ee82af0a290a3a9b560de3cb445c9799413d48c; fuente funcional revisada
+17501706b999963c00924afbd74ae37cf13fbf08 (APPROVE CAS2). Si existe PMD normal y falta
+su shiny publicado, Silver deriva hojas shiny de la misma forma con una paleta
+normal/shiny canónica compartida por todas las poses. Conserva transparencia,
+dimensiones, direcciones, anclas y tiempos. Originales intactos; caché separada
+con SHA-256 del original y URLs de la paleta. Se prefiere la referencia de forma;
+variantes sin referencia propia usan la paleta de la especie. No hay un modelo
+generativo ni cambios al simulador, medidor o combates guardados.
+
+Un shiny publicado tiene prioridad, también cuando se publique después de la
+derivación y venza el caché de ausencia. Derivados ya guardados funcionan sin red;
+generarlos exige una referencia descargable o cacheada. Referencias dañadas se
+revalidan y recuperan; si no se pueden recuperar, queda el respaldo de arte de
+combate shiny. App, recorder y salas comparten el resolver normal. Las páginas
+portátiles offline mantienen su respaldo estático habitual.
+
+Verificados Mega Tyranitar, Mega Medicham y Karrablast: 8/9/8 hojas, alpha y
+geometría exactos, dos Megas vistas en combate, API y MCP nativos. Mega Swampert
+no tiene PMD normal ni shiny en el SpriteCollab actual: un recolor no inventa
+esa silueta. Evidencia y recibos finales: research-inbox/silver-pmd807.
