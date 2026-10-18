@@ -193,6 +193,7 @@ def _split_top_level(s: str, sep: str) -> List[str]:
 
 def parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
     """Pull the YAML frontmatter out of a SKILL.md and return (fm, body)."""
+    text = text.removeprefix("\ufeff")
     if not text.startswith("---"):
         return {}, text
     end = text.find("\n---", 3)
