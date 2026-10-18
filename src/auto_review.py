@@ -586,7 +586,7 @@ def _prompt(user_text: str, diff: str, files: List[str], tests: Optional[Dict[st
         "that describe the agent's own workflow (keep a todo list, check the syntax, run the tests, "
         "report back, ask before doing X) are NOT code requirements: never report their absence from "
         "the diff. Line numbers refer to the NEW file when you can tell.\n\n"
-        f"<user_request>\n{(user_text or '')[:3000]}\n</user_request>\n\n"
+        f"<user_request>\n{user_text or ''}\n</user_request>\n\n"
         f"<changed_files>\n{', '.join(files[:40])}\n</changed_files>{test_line}\n\n"
         f"<diff>\n{diff}\n</diff>\n\n"
         "Answer with ONLY a JSON object, no prose before or after:\n"
