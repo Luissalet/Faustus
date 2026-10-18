@@ -207,6 +207,7 @@ class CouncilService:
         self._turn_tasks: Dict[str, "asyncio.Task[Any]"] = {}
         self._turn_rooms: Dict[str, str] = {}
         self._driver_id = uuid.uuid4().hex
+        self._recovery_start_lock = asyncio.Lock()
 
     # -- ownership: the check every method starts with ----------------------
 
@@ -444,6 +445,11 @@ class CouncilService:
             if existing is not None and not existing.done():
                 return False
         store = self._db()
+        if not self._claim_turn(store, session_id, turn_id):
+            return False
+        return self._schedule_turn(orchestrator, session_id, turn_id, store)
+
+    def _claim_turn(self, store, session_id, turn_id):
         stored = store.get_turn(turn_id) if callable(getattr(store, 'get_turn', None)) else None
         if stored is not None and stored.state != 'received':
             # Reconnecting to a settled or interrupted turn does not restart
@@ -459,9 +465,36 @@ class CouncilService:
                 if prior.state not in TERMINAL_TURN_STATES:
                     return False
         claim = getattr(store, 'claim_driver', None)
-        if callable(claim) and not claim(session_id, self._driver_id):
-            return False
+        return not callable(claim) or bool(claim(session_id, self._driver_id))
 
+    async def _start_turn_recovery(self, orchestrator, session_id, turn_id, store):
+        from src.shared_coordination import recovery_io
+        async with self._recovery_start_lock:
+            with self._guard:
+                existing = self._turn_tasks.get(turn_id)
+                if existing is not None and not existing.done():
+                    return False
+            outcome = {}
+            def claim():
+                outcome['claimed'] = self._claim_turn(store, session_id, turn_id)
+                return outcome['claimed']
+            try:
+                claimed = await recovery_io(claim)
+            except asyncio.CancelledError:
+                if outcome.get('claimed') and session_id not in self._turn_rooms.values():
+                    release = getattr(store, 'release_driver', None)
+                    if callable(release):
+                        await recovery_io(release, session_id, self._driver_id)
+                raise
+            with self._guard:
+                existing = self._turn_tasks.get(turn_id)
+                if existing is not None and not existing.done():
+                    return False
+            return self._schedule_turn(orchestrator, session_id, turn_id, store) if claimed else False
+
+    def _schedule_turn(self, orchestrator, session_id, turn_id, store):
+        """Only the owner loop creates and records native turn tasks."""
+        claim = getattr(store, 'claim_driver', None)
         async def _run() -> None:
             current = asyncio.current_task()
             async def renew_driver():
@@ -526,33 +559,59 @@ class CouncilService:
                     if orchestrator is not None:
                         self._start_turn(orchestrator, session.id, turn.id)
 
+    async def resume_pending_async(self) -> None:
+        """Read durable queues in a worker; start native engines on their loop."""
+        from src.shared_coordination import recovery_io
+        def pending():
+            store = self._db()
+            return store, [(session, list(store.list_turns(session.id, state='received', limit=0)))
+                           for session in store.pending_sessions()]
+        store, rows = await recovery_io(pending)
+        for session, turns in rows:
+            for turn in turns:
+                if turn.state == 'received':
+                    orchestrator = self._orchestrator_for(session)
+                    if orchestrator is not None:
+                        await self._start_turn_recovery(orchestrator, session.id, turn.id, store)
+
     async def apply_controls(self, session_id: str) -> None:
-        store = self._db()
-        driver = store.driver(session_id)
+        from src.shared_coordination import recovery_io
+        store = await recovery_io(self._db)
+        driver = await recovery_io(store.driver, session_id)
         if driver.get('identity') != self._driver_id:
             return
-        for control in store.controls(session_id, status='queued'):
-            if not store.begin_control(control['id']):
-                continue
+        for control in await recovery_io(store.controls, session_id, status='queued'):
+            outcome = {}
+            def begin():
+                outcome['begun'] = store.begin_control(control['id'])
+                return outcome['begun']
             try:
+                if not await recovery_io(begin):
+                    continue
                 result = await self.command(session_id, control['command'], owner=control['owner'],
                                             actor=control['actor'], **control['args'])
             except BaseException:
-                store.complete_control(control['id'], {'ok': False, 'outcome_unknown': True,
-                    'command_id': control['id'], 'session_id': session_id, 'reference': control['id'],
-                    'reconcile': 'Read the room and control result before retrying; execution was interrupted'})
+                if outcome.get('begun'):
+                    await recovery_io(store.complete_control, control['id'], {'ok': False, 'outcome_unknown': True,
+                        'command_id': control['id'], 'session_id': session_id, 'reference': control['id'],
+                        'reconcile': 'Read the room and control result before retrying; execution was interrupted'})
                 raise
-            store.complete_control(control['id'], result)
+            await recovery_io(store.complete_control, control['id'], result)
 
     async def recover_controls(self) -> None:
-        store = self._db()
-        for session_id in store.control_sessions():
-            if store.claim_driver(session_id, self._driver_id):
-                try:
+        from src.shared_coordination import recovery_io
+        store = await recovery_io(self._db)
+        for session_id in await recovery_io(store.control_sessions):
+            outcome = {}
+            def claim():
+                outcome['claimed'] = store.claim_driver(session_id, self._driver_id)
+                return outcome['claimed']
+            try:
+                if await recovery_io(claim):
                     await self.apply_controls(session_id)
-                finally:
-                    if session_id not in self._turn_rooms.values():
-                        store.release_driver(session_id, self._driver_id)
+            finally:
+                if outcome.get('claimed') and session_id not in self._turn_rooms.values():
+                    await recovery_io(store.release_driver, session_id, self._driver_id)
 
     def _publish_error(self, session_id: str, turn_id: str, exc: BaseException) -> None:
         """Tell the room its turn died.  A failure nobody can see is a hang."""
@@ -634,7 +693,8 @@ class CouncilService:
             return _fail("unknown_command",
                          f"{name or '(empty)'!r} is not a council command",
                          valid_commands=list(COMMANDS))
-        session = self._visible(session_id, owner)
+        from src.shared_coordination import recovery_io
+        session = await recovery_io(self._visible, session_id, owner)
         if session is None:
             return _fail("not_found", "no such council room here", command=name)
         expected = kw.get("expected_revision")
@@ -649,9 +709,10 @@ class CouncilService:
                              command=name, revision=session.revision)
         if name == "assign_role":
             return self._assign_role(session, kw, actor=_text(actor))
-        driver = self._db().driver(session.id)
+        store = await recovery_io(self._db)
+        driver = await recovery_io(store.driver, session.id)
         if driver and driver.get('identity') != self._driver_id:
-            ident = self._db().queue_control(session.id, name, owner, actor, kw)
+            ident = await recovery_io(store.queue_control, session.id, name, owner, actor, kw)
             return {'ok': True, 'command': name, 'session_id': session.id, 'status': 'queued', 'command_id': ident}
         orchestrator = self._orchestrator_for(session)
         if orchestrator is None:
@@ -671,7 +732,7 @@ class CouncilService:
                          **({'outcome_unknown': True, 'operation': getattr(exc, 'operation', name)}
                             if getattr(exc, 'outcome_unknown', False) else {}))
         if name == 'resume':
-            self.resume_pending()
+            await self.resume_pending_async()
         return {"ok": True, "command": name, "session_id": session.id,
                 "revision": session.revision, "result": _outcome(outcome)}
 

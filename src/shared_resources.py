@@ -47,6 +47,17 @@ def renew():
         item.renew()
 
 
+async def renew_async():
+    """Snapshot owner-held clients on the loop; renew transport in a worker."""
+    from src.shared_coordination import recovery_io
+    snapshot = [(item, tuple(item.holders)) for item in list(_clients)]
+    def refresh():
+        for item, workers in snapshot:
+            for worker in workers:
+                item.call('renew', worker)
+    await recovery_io(refresh)
+
+
 class ClaimsBackend:
     def __init__(self, shared):
         self.shared = shared

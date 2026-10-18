@@ -73,6 +73,9 @@ class GroupCoordinator:
         self.identity = uuid.uuid4().hex
         self.recovery_task = None
         self.control_task = None
+        self._recovery_claims = {}
+        self._recovery_scan_lock = asyncio.Lock()
+        self._active_recovery_scan = None
 
     def adopt(self, definition, owner):
         definition = copy.deepcopy(definition)
@@ -149,6 +152,37 @@ class GroupCoordinator:
             return
         if not self.store.claim_driver(group_id, self.identity):
             return
+        self._schedule_driver(group_id, owner)
+
+    async def _kick_recovery(self, group_id, owner):
+        from src.shared_coordination import recovery_io
+        lock = self._recovery_claims.setdefault(group_id, asyncio.Lock())
+        async with lock:
+            current = self.tasks.get(group_id)
+            if not self.accepting or (current and not current.done()):
+                return
+            store = self.store
+            outcome = {}
+            def claim():
+                outcome['claimed'] = store.claim_driver(group_id, self.identity)
+                return outcome['claimed']
+            try:
+                claimed = await recovery_io(claim)
+            except asyncio.CancelledError:
+                current = self.tasks.get(group_id)
+                if outcome.get('claimed') and not (current and not current.done()):
+                    await recovery_io(store.release_driver, group_id, self.identity)
+                raise
+            current = self.tasks.get(group_id)
+            if current and not current.done():
+                return
+            if claimed and not self.accepting:
+                await recovery_io(store.release_driver, group_id, self.identity)
+            elif claimed:
+                self._schedule_driver(group_id, owner)
+
+    def _schedule_driver(self, group_id, owner):
+        """Owner-loop task state; recovery has already claimed the repository."""
         async def heartbeat():
             while self.accepting:
                 await asyncio.sleep(30)
@@ -356,27 +390,37 @@ class GroupCoordinator:
 
     async def recover(self):
         self.accepting = True
-        def scan():
-            try:
-                from src.shared_coordination import resume_import
-                resume_import(self)
-                from src.shared_resources import renew
-                renew()
-                from src.council.service import service
-                service().resume_pending()
-                if self.control_task is None or self.control_task.done():
-                    self.control_task = asyncio.create_task(service().recover_controls())
-                for group_id, owner in self.store.recoverable():
-                    self.kick(group_id, owner)
-            except Exception as error:
-                # The existing recovery tick retries metadata; it never
-                # switches authority or repeats a turn just because a read failed.
-                logger.warning('Group coordination recovery unavailable: %s', error)
-        scan()
+        async def scan():
+            async with self._recovery_scan_lock:
+                if not self.accepting:
+                    return
+                self._active_recovery_scan = asyncio.current_task()
+                try:
+                    from src.shared_coordination import resume_import_async, recovery_io
+                    await resume_import_async(self)
+                    from src.shared_resources import renew_async
+                    await renew_async()
+                    from src.council.service import service
+                    await service().resume_pending_async()
+                    if not self.accepting:
+                        return
+                    if self.control_task is None or self.control_task.done():
+                        self.control_task = asyncio.create_task(service().recover_controls())
+                    for group_id, owner in await recovery_io(self.store.recoverable):
+                        await self._kick_recovery(group_id, owner)
+                except Exception as error:
+                    # The existing recovery tick retries metadata; it never
+                    # switches authority or repeats a turn just because a read failed.
+                    logger.warning('Group coordination recovery unavailable: %s', error)
+                finally:
+                    self._active_recovery_scan = None
+        await scan()
+        if not self.accepting:
+            return
         async def retry_orphaned_drivers():
             while self.accepting:
                 await asyncio.sleep(30)
-                scan()  # A crashed process's lease expires without another browser request.
+                await scan()  # A crashed process's lease expires without another browser request.
         if self.recovery_task is None or self.recovery_task.done():
             self.recovery_task = asyncio.create_task(retry_orphaned_drivers())
 
@@ -387,6 +431,8 @@ class GroupCoordinator:
             tasks.append(self.recovery_task)
         if self.control_task:
             tasks.append(self.control_task)
+        if self._active_recovery_scan and self._active_recovery_scan is not asyncio.current_task():
+            tasks.append(self._active_recovery_scan)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
