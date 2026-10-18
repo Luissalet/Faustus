@@ -63,11 +63,14 @@ async def report(url: str, model: str, reason: str = "") -> dict[str, Any]:
     # do not say restarted or healthy merely because the transport succeeded.
     if not isinstance(result, dict):
         return {**base, "action": "unknown", "detail": "invalid recovery owner response"}
+    scope = {key: result[key] for key in (
+        "verified_scope", "algorithm_semantics_verified", "canaries_discriminatively_validated",
+    ) if key in result}
     state = result.get("status")
-    if state in ("pending", "confirming", "waiting_idle", "restarting", "verifying"):
-        return {**base, "action": "checking", "recovery_id": result.get("id"),
+    if state in ("pending", "waiting_coordination", "confirming", "waiting_idle", "restarting", "checking", "verifying"):
+        return {**base, **scope, "action": "checking", "recovery_id": result.get("id"),
                 "status": state, "deduplicated": bool(result.get("deduplicated"))}
     if state == "recovered":
-        return {**base, "action": "restarted", "recovery_id": result.get("id"), "status": state}
-    return {**base, "action": "unknown", "recovery_id": result.get("id"), "status": state,
-            "detail": result.get("detail") or "recovery has not confirmed a healthy model"}
+        return {**base, **scope, "action": "restarted", "recovery_id": result.get("id"), "status": state}
+    return {**base, **scope, "action": "unknown", "recovery_id": result.get("id"), "status": state,
+            "detail": result.get("detail") or "recovery has not confirmed structural generation checks"}

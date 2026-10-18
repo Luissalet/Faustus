@@ -30,6 +30,13 @@ estabilidad prolongada: los resultados incluyen el alcance verificado y sus
 limitaciones. El monitor local de `/slots` sigue restringido a loopback; no genera
 sondeos periódicos nuevos contra las Sparks desde Faustus.
 
+Faustus conserva, si el propietario los envía, `verified_scope`,
+`algorithm_semantics_verified` y `canaries_discriminatively_validated` también en
+su historial de recuperación. No inventa estos campos para propietarios antiguos.
+`waiting_coordination` y `checking` indican una comprobación pendiente. Una acción
+`restarted` conserva el alcance declarado por el propietario; no certifica la
+semántica del algoritmo ni presenta el modelo como plenamente sano.
+
 Verificación del cliente: cobertura de URL, propietario ausente, envío pendiente,
 deduplicación concurrente, errores de streaming conservados y ajuste existente de
 autocuración. Las pruebas del ciclo local mantienen la sustitución de un proceso

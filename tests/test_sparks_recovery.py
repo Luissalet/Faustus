@@ -76,3 +76,31 @@ def test_existing_auto_heal_setting_disables_lan_reports(monkeypatch):
     monkeypatch.setattr(model_server_heal,'_settings',lambda:{'enabled':False})
     assert model_server_heal.schedule(URL,'model') is False
     assert asyncio.run(model_server_heal.heal(URL,'model'))['action']=='off'
+
+
+@pytest.mark.parametrize("status,action", [
+    ("waiting_coordination", "checking"), ("checking", "checking"),
+    ("recovered", "restarted"), ("inconclusive", "unknown"),
+])
+def test_owner_scope_survives_reporting_and_heal_history(monkeypatch, status, action):
+    scope = {"verified_scope": "structural_generation_and_literal_manifest",
+             "algorithm_semantics_verified": False, "canaries_discriminatively_validated": False}
+    monkeypatch.setattr(sparks_recovery, "_send", lambda *args: {
+        "ok": True, "data": {"id": "recovery-scope", "status": status, **scope}})
+    monkeypatch.setattr(model_server_heal, "_settings", lambda: {"enabled": True})
+    model_server_heal._INFLIGHT.clear()
+    result = asyncio.run(model_server_heal.heal(URL, "model"))
+    assert result["action"] == action and result["status"] == status
+    assert {key: result[key] for key in scope} == scope
+    assert {key: model_server_heal._EVENTS[-1][key] for key in scope} == scope
+    if status == "inconclusive":
+        assert "structural generation checks" in result["detail"]
+        assert "healthy model" not in result["detail"]
+
+
+def test_absent_owner_scope_is_not_invented(monkeypatch):
+    monkeypatch.setattr(sparks_recovery, "_send", lambda *args: {
+        "ok": True, "data": {"id": "legacy-owner", "status": "recovered"}})
+    result = asyncio.run(sparks_recovery.report(URL, "model"))
+    assert result["action"] == "restarted"
+    assert not {"verified_scope", "algorithm_semantics_verified", "canaries_discriminatively_validated"} & result.keys()
