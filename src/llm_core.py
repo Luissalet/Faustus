@@ -6770,7 +6770,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503})}\n\n'
         return
     note_model_activity(target_url, model)
-    degenerate_guard = _DegenerateStreamGuard(model, target_url)
+    degenerate_guard = _DegenerateStreamGuard(model, _model_list_base(url))
 
     # ── ChatGPT Subscription / Codex Responses streaming ──
     if provider == "chatgpt-subscription":
@@ -8103,7 +8103,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                              or tool_argument_template_loop(call.arguments))
                                                     if _loop:
                                                         yield _degenerate_output_error_chunk(
-                                                            DegenerateOutput(f"{call.name or 'tool call'}: {_loop}", model))
+                                                            DegenerateOutput(f"{call.name or 'tool call'}: {_loop}", model, degenerate_guard.url))
                                                         return
                                             # Stream tool arg deltas for doc tools. Guards against a
                                             # null arguments delta the same way the assembler does
