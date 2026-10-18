@@ -22,6 +22,53 @@ DEFAULT_BUDGET = 6000
 DEFAULT_HEADROOM = 0.85
 
 
+class CurrentRequestCapacityError(ValueError):
+    """The intact current request exceeds a known window or explicit cap."""
+
+
+def current_request_start(messages: List[Dict]) -> Optional[int]:
+    """Latest human request; runtime user-role context is not an anchor."""
+    # The identity/provenance rules of user_request_gate, without running its
+    # language-text extraction on a potentially million-token body.
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if (message.get("role") != "user" or message.get("_agent_injected")
+                or message.get("_harness_note")):
+            continue
+        metadata = message.get("metadata")
+        if isinstance(metadata, Mapping):
+            if (metadata.get("trusted") is False
+                    or str(metadata.get("source") or "").startswith("tool result: ")):
+                continue
+        if str(message.get("content") or "").lstrip()[:40].startswith(("[Harness", "[Runtime")):
+            continue
+        return index
+    return None
+
+
+def current_request_input_budget(
+    soft_budget: int, context_length: int, required_tokens: int, *,
+    output_reserve: int, tool_reserve: int, explicit: bool,
+) -> int:
+    """AUTO budgets history, while an intact request may use available room.
+
+    Counts supplied by the caller may be estimates. This computes an allowance,
+    not a claim of tokenizer accuracy. Unknown windows retain the old policy.
+    Output and schema costs are removed once, before trimming messages.
+    """
+    if context_length <= 0:
+        return soft_budget
+    available = context_length - max(0, output_reserve) - max(0, tool_reserve)
+    allowed = min(soft_budget, available) if explicit else available
+    if required_tokens > allowed:
+        source = "explicit input budget" if explicit and soft_budget <= available else "model context window"
+        raise CurrentRequestCapacityError(
+            f"The intact current request does not fit the {source} after output and tool reserves "
+            f"(estimated required={required_tokens}, available={max(0, allowed)})."
+        )
+    return min(allowed, max(soft_budget, required_tokens))
+
+
 def parse_turn_input_budget(value):
     """An optional per-turn soft budget; never mutate the operator's defaults."""
     if value is None or value == "":

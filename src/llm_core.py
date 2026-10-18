@@ -2939,6 +2939,41 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str, *,
     return automatic_min_p
 
 
+def _openai_stream_output_fields(url: str, model: str, max_tokens, *, native_fallback: bool = True) -> Dict:
+    """The stream builder's output fields, including its native local fallback."""
+    payload = {}
+    if max_tokens and max_tokens > 0:
+        key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
+        payload[key] = max_tokens
+    if native_fallback:
+        _apply_local_generation_stability(payload, url, model, requested_max_tokens=max_tokens)
+    return {key: payload[key] for key in ("max_tokens", "max_completion_tokens") if key in payload}
+
+
+def stream_context_reserves(url: str, model: str, max_tokens, tools, messages=None) -> Optional[Dict]:
+    """Request preparation only; no probe. Counts schema text as an estimate.
+
+    Other protocols retain their existing budgeting until their native output
+    resolution can be supplied. An omitted cap is not an invented output limit.
+    """
+    if not _is_self_hosted_openai_compatible(url) or _is_local_ollama_target(url):
+        return None
+    fields = _openai_stream_output_fields(url, model, max_tokens)
+    wire_tools = _alias_harmony_tools(tools, model) if tools else []
+    if wire_tools and messages is not None:
+        prepared = {"tools": wire_tools}
+        _drop_tools_for_small_talk(prepared, messages)
+        wire_tools = prepared.get("tools") or []
+    schema = json.dumps(wire_tools, ensure_ascii=False, separators=(",", ":")) if wire_tools else ""
+    return {
+        "output_fields": fields,
+        "output_reserve": next(iter(fields.values()), 0),
+        "output_reserve_known": bool(fields),
+        "tool_reserve": int(len(schema) * 0.3),
+        "token_counts_estimated": True,
+    }
+
+
 def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str, str]:
     h = {"Content-Type": "application/json"}
     if isinstance(headers, dict):
@@ -6710,9 +6745,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             payload.pop("temperature", None)
         if provider not in {"openrouter", "groq"}:
             payload["stream_options"] = {"include_usage": True}
-        if max_tokens and max_tokens > 0:
-            tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
-            payload[tok_key] = max_tokens
+        # The native fallback remains at its original post-override stage below.
+        payload.update(_openai_stream_output_fields(target_url, model, max_tokens, native_fallback=False))
         if tools:
             payload["tools"] = _alias_harmony_tools(tools, model)
             _apply_parallel_tool_calls(payload, target_url)
@@ -8400,6 +8434,11 @@ def _request_factory_error_chunk(error: Exception, status: Optional[int]) -> str
         "error": f"Model request preparation failed (HTTP {wire_status})",
         "status": wire_status,
     }
+    from src.context_budget import CurrentRequestCapacityError
+    if isinstance(error.__cause__, CurrentRequestCapacityError):
+        # Our own bounded explanation contains counts, never prompt contents.
+        payload.update(error=str(error.__cause__), error_class="context_length_exceeded",
+                       retryable=False, request_preparation=True)
     override = getattr(error, "fallback_eligible", None)
     if isinstance(override, bool):
         payload["fallback_eligible"] = override

@@ -707,7 +707,8 @@ def _is_essential_system(msg: Dict) -> bool:
     return isinstance(content, str) and content.lstrip().startswith("[Conversation summary")
 
 
-def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: int = 512) -> List[Dict]:
+def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: int = 512, *,
+                     preserve_current_request: bool = False) -> List[Dict]:
     """Trim messages to fit within context_length.
 
     For small-context models, progressively strips:
@@ -773,7 +774,7 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
         return _sanitize_tool_messages(result + protected_msgs + convo_msgs)
 
     # 2. Still too big — truncate the first system message (but keep more than 500 chars)
-    if essential_system:
+    if essential_system and not preserve_current_request:
         sys_text = essential_system[0].get("content", "")
         if isinstance(sys_text, str) and len(sys_text) > 2000:
             truncated_system = dict(essential_system[0])
@@ -789,8 +790,14 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     # function return prompts at ~2x the window and then "compensate" by
     # mangling the user's own message.
     PROTECT_RECENT = 10
-    current_msg = convo_msgs[-1:] if convo_msgs else []
-    prior_convo = list(convo_msgs[:-1]) if convo_msgs else []
+    current_start = len(convo_msgs) - 1
+    if preserve_current_request:
+        from src.context_budget import current_request_start
+        anchor = current_request_start(convo_msgs)
+        if anchor is not None:
+            current_start = anchor
+    current_msg = convo_msgs[current_start:] if convo_msgs else []
+    prior_convo = list(convo_msgs[:current_start]) if convo_msgs else []
     if len(prior_convo) >= PROTECT_RECENT:
         keep = PROTECT_RECENT - 1
         old_msgs = prior_convo[:-keep]
@@ -807,7 +814,7 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     # 4. Everything droppable is gone.  Before touching the user's own words,
     # claw back room from what is still resident (system prompt, primer,
     # summary, pinned document) — the current turn is the request itself.
-    if current_msg and not _fits(convo_msgs):
+    if current_msg and not _fits(convo_msgs) and not preserve_current_request:
         own_tokens = estimate_tokens(current_msg)
         if own_tokens <= budget:
             held = len(essential_system)
@@ -820,6 +827,12 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     # The "too large to paste" notice is reserved for a message that does not
     # fit the budget on its own merits; anything else gets an honest one.
     if current_msg and not _fits(convo_msgs):
+        if preserve_current_request:
+            from src.context_budget import CurrentRequestCapacityError
+            raise CurrentRequestCapacityError(
+                "The intact current request does not fit the prepared input allowance "
+                "after history compaction (token counts are estimated)."
+            )
         prefix = essential_system + protected_msgs + convo_msgs[:-1]
         available_for_current = budget - estimate_tokens(prefix)
         oversized = estimate_tokens(convo_msgs[-1:]) > budget
@@ -834,6 +847,9 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     # 6. Hard invariant. Nothing downstream re-trims, so a prompt that is still
     # over budget here is a prompt the model is asked to reject.
     if estimate_tokens(result) > budget:
+        if preserve_current_request:
+            from src.context_budget import CurrentRequestCapacityError
+            raise CurrentRequestCapacityError("The intact current request exceeds the estimated prepared allowance.")
         result = _sanitize_tool_messages(_force_within_budget(result, budget))
     logger.info(f"Trimmed to {estimate_tokens(result)} tokens ({len(result)} messages)")
     return result

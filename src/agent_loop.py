@@ -39,6 +39,7 @@ from src.llm_core import (
 )
 from src import engine_swap
 from src.model_context import estimate_tokens
+from src.context_budget import CurrentRequestCapacityError
 from src.context_compactor import (
     apply_compaction_state,
     apply_compaction_state_for_session,
@@ -10792,7 +10793,7 @@ async def _stream_agent_loop_body(
     _t2 = time.time()
     _route_context_lengths = {}
 
-    def _trim_route_request_messages(candidate_url, candidate_model, route_messages):
+    def _trim_route_request_messages(candidate_url, candidate_model, route_messages, candidate_tools=None):
         """Apply the candidate route's own context budget to its request."""
         route_messages = _history_for_candidate(route_messages, candidate_url, candidate_model)
 
@@ -10808,6 +10809,8 @@ async def _stream_agent_loop_body(
                 DEFAULT_BUDGET,
                 DEFAULT_HARD_MAX,
                 budget_is_explicit as _budget_is_explicit,
+                current_request_input_budget,
+                current_request_start,
             )
             from src.model_context import budget_context_for_model
 
@@ -10840,7 +10843,35 @@ async def _stream_agent_loop_body(
                 budget_is_explicit,
                 hard_max=hard_max,
             )
-            if budget_is_explicit:
+            from src.llm_core import stream_context_reserves
+            reserves = stream_context_reserves(candidate_url, candidate_model, max_tokens, candidate_tools, route_messages)
+            preserve_current = candidate_context > 0 and reserves is not None
+            if preserve_current and candidate_tools is None:
+                # Preparation/CE may still rebuild the prompt and schemas.
+                # Defer only the supported preservation path until tools are final.
+                return _without_protection(route_messages)
+            if preserve_current:
+                from src.context_compactor import _is_essential_system
+                convo = [m for m in route_messages if m.get("role") != "system" and not m.get("_protected")]
+                anchor = current_request_start(convo)
+                systems = [m for m in route_messages if m.get("role") == "system" and not m.get("_protected")]
+                plain_systems = [m for m in systems if not _is_essential_system(m)]
+                required = (plain_systems[:1]
+                            + [m for m in systems if _is_essential_system(m)]
+                            + [m for m in route_messages if m.get("_protected")]
+                            + (convo[anchor:] if anchor is not None else []))
+                effective_budget = current_request_input_budget(
+                    effective_budget, candidate_context, estimate_tokens(required),
+                    output_reserve=reserves["output_reserve"], tool_reserve=reserves["tool_reserve"],
+                    explicit=budget_is_explicit,
+                )
+                # The message allowance already excludes these costs once.
+                reserve_tokens = 0
+                logger.info(
+                    "[agent] current-request allowance=%s estimated=%s output_reserve_known=%s",
+                    effective_budget, reserves["token_counts_estimated"], reserves["output_reserve_known"],
+                )
+            elif budget_is_explicit:
                 # CTX-01: an explicit cap close to the model's whole window
                 # (compute_input_token_budget's `min(configured, context_length)`
                 # branch) can still leave less room than the request actually
@@ -10896,10 +10927,9 @@ async def _stream_agent_loop_body(
                         candidate_model,
                         e,
                     )
+            trim_options = {"preserve_current_request": True} if preserve_current else {}
             trimmed_messages = trim_for_context(
-                route_messages,
-                effective_budget,
-                reserve_tokens=reserve_tokens,
+                route_messages, effective_budget, reserve_tokens=reserve_tokens, **trim_options,
             )
             after_trim_tokens = estimate_tokens(trimmed_messages)
             if after_trim_tokens < before_trim_tokens:
@@ -10913,6 +10943,13 @@ async def _stream_agent_loop_body(
                     reserve_tokens,
                 )
             return _without_protection(trimmed_messages)
+        except CurrentRequestCapacityError as e:
+            from fastapi import HTTPException
+            error = HTTPException(400, str(e))
+            # No replay on this impossible candidate. A configured candidate
+            # with a different serving window may still satisfy the request.
+            error.fallback_eligible = True
+            raise error from e
         except Exception as e:
             logger.warning(
                 "[agent] Soft context trim skipped for route model=%s: %s",
@@ -13555,21 +13592,11 @@ async def _stream_agent_loop_body(
                 error = HTTPException(409, "Turn budget exhausted during context preparation")
                 error.fallback_eligible = False
                 raise error
-            request_messages = state.get("request_messages")
-            if request_messages is None:
-                request_messages = _trim_route_request_messages(
-                    candidate_url,
-                    candidate_model,
-                    state["messages"],
-                )
-                state["request_messages"] = request_messages
-            _last_route_request_messages = request_messages
             state["context_length"] = _route_context_lengths.get(
                 (candidate_url, candidate_model),
                 context_length,
             )
             _last_route_context_length = state["context_length"]
-            run_security.observe_messages(request_messages)
             candidate_tools = state.get("tools")
             if candidate_tools is None:
                 candidate_tools = _tool_schemas_for_route(state)
@@ -13588,6 +13615,18 @@ async def _stream_agent_loop_body(
             from copy import deepcopy as _copy_prepared_tools
             candidate_tools = _copy_prepared_tools(candidate_tools)
             state["tools"] = candidate_tools
+            # Ignore an earlier prepared-message cache: CE, steering, pressure
+            # and route pinning can change both messages and schemas later.
+            request_messages = _trim_route_request_messages(
+                candidate_url, candidate_model, state["messages"], candidate_tools or [],
+            )
+            state["request_messages"] = request_messages
+            _last_route_request_messages = request_messages
+            _last_route_context_length = _route_context_lengths.get(
+                (candidate_url, candidate_model), state["context_length"],
+            )
+            state["context_length"] = _last_route_context_length
+            run_security.observe_messages(request_messages)
             _prompt_audit.observe_round(round_num, request_messages, candidate_tools,
                                         delivery=_ce_live_previous, candidate=index)
             # Prepared schema receipt only: llm_core may still adapt protocol.
@@ -13934,7 +13973,9 @@ async def _stream_agent_loop_body(
                 # compacts harder and redoes the round; a second in a row
                 # means that did not help, so the turn stops with a clear
                 # message instead of asking the provider the same thing again.
-                _ctx_action = _stuck.observe_provider_error(error_data) if _is_ctx_error(error_data) else "none"
+                _ctx_action = (_stuck.observe_provider_error(error_data)
+                               if _is_ctx_error(error_data) and not error_data.get("request_preparation")
+                               else "none")
                 if _ctx_action == "compact" and round_num < max_rounds and not _force_answer:
                     _context_overflow_hit = True
                     break
