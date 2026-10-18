@@ -1181,11 +1181,21 @@ def _degenerate_output_error_chunk(exc: "DegenerateOutput") -> str:
     failure without string-matching the human-readable message."""
     logger.warning("[degenerate-stream] aborting model=%s reason=%s", exc.model, exc.reason)
     hint = "Try a different model or lower temperature."
+    managed_lan = False
+    # A managed LAN model is checked by its recipe owner. Keep the existing
+    # loopback recovery below; never end remote processes from this client.
+    try:
+        from src import model_server_heal, sparks_recovery
+        managed_lan = bool(sparks_recovery.managed_lan_url(exc.url))
+        if managed_lan and model_server_heal.schedule(exc.url, exc.model, str(exc.reason)):
+            hint = "Faustus has asked the model service owner to check this generation failure."
+    except Exception:  # noqa: BLE001 - reporting must never replace the stream error
+        pass
     # A run of one punctuation symbol from the first tokens ("////", "!!!!")
     # is not a sampling problem: the server's own state is broken (seen with
     # llama-server after a corrupted slot) and every request gets the same
     # until it is restarted.
-    if re.search(r"repeated unit '[^\w\s]'", str(exc.reason or "")):
+    if not managed_lan and re.search(r"repeated unit '[^\w\s]'", str(exc.reason or "")):
         hint = ("A run of one symbol like this usually means the model server itself is in a broken "
                 "state; restarting the server fixes it.")
         # A local server in that state is checked and restarted in the
@@ -3251,9 +3261,9 @@ def _apply_fast_engine_switch(payload: Dict, url: str, model: str, provider: str
         return []
     applied: List[str] = []
     try:
-        cap = int(ov.get("reasoning_budget") or 0)
+        cap = int(ov["reasoning_budget"]) if ov.get("reasoning_budget") is not None else None
     except (TypeError, ValueError):
-        cap = 0
+        cap = None
     if provider == "anthropic":
         return applied
     if provider == "ollama" or _is_local_ollama_target(url):
@@ -3272,11 +3282,12 @@ def _apply_fast_engine_switch(payload: Dict, url: str, model: str, provider: str
             payload["chat_template_kwargs"] = ctk
         ctk["enable_thinking"] = False
         applied.append("enable_thinking")
-        if cap > 0 and "thinking_token_budget" not in payload:
+        from src.engine_controls import glm53_flash
+        if cap is not None and (cap > 0 or glm53_flash(model)):
             payload["reasoning_budget"] = cap
             payload["thinking_budget_tokens"] = cap
             applied.append("cap")
-        elif "reasoning_budget" in payload and cap <= 0:
+        elif "reasoning_budget" in payload and (cap is None or cap <= 0):
             payload.pop("reasoning_budget", None)
             payload.pop("thinking_budget_tokens", None)
         return applied
@@ -5213,7 +5224,7 @@ async def _llm_call_async_impl(
             if _asked.get("think") is True:
                 _ctk["enable_thinking"] = True
                 _budget_asked = _asked.get("reasoning_budget")
-                if _budget_asked and int(_budget_asked) > 0:
+                if _budget_asked is not None:
                     payload["reasoning_budget"] = int(_budget_asked)
             else:
                 _ctk.setdefault("enable_thinking", False)
@@ -5229,8 +5240,8 @@ async def _llm_call_async_impl(
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
         # No `tools` here: this path is the tool-less completion helper.
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
-        _apply_verified_engine_controls(payload, url, model)
         _apply_fast_engine_switch(payload, url, model, provider, _asked)
+        _apply_verified_engine_controls(payload, url, model, _asked)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
@@ -5863,10 +5874,10 @@ def _step_down_reasoning(payload: Dict) -> bool:
     return strip_reasoning(payload)
 
 
-def _apply_verified_engine_controls(payload: Dict, url: str, model: str) -> None:
+def _apply_verified_engine_controls(payload: Dict, url: str, model: str, overrides: Optional[Dict] = None) -> None:
     if _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
         from src.engine_controls import apply_controls
-        apply_controls(payload, url, model)
+        apply_controls(payload, url, model, reasoning_budget=(overrides or {}).get("reasoning_budget"))
 
 
 def _fit_reasoning_effort_to_template(payload: Dict, url: str) -> None:
@@ -6700,7 +6711,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     # `effort: "high"`, src/effort_profile.py) wins over the
                     # saved setting default, the same way `think` itself
                     # already does above.
-                    if "reasoning_budget" in _overrides:
+                    if _overrides.get("reasoning_budget") is not None:
                         try:
                             _reasoning_budget = int(_overrides["reasoning_budget"])
                         except (TypeError, ValueError):
@@ -6710,7 +6721,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             _reasoning_budget = int(_local_sampler_default("local_openai_reasoning_budget_default", 4096))
                         except (TypeError, ValueError):
                             _reasoning_budget = 4096
-                    if _reasoning_budget > 0:
+                    if _overrides.get("reasoning_budget") is not None or _reasoning_budget > 0:
                         payload["reasoning_budget"] = _reasoning_budget
         if _overrides:
             _apply_gen_overrides_openai(payload, _overrides, url)
@@ -6725,8 +6736,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # whole toolset attached. `turn_effort` decides; a conversation that
         # has already run a tool always keeps its reasoning.
         _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
-        _apply_verified_engine_controls(payload, url, model)
         _apply_fast_engine_switch(payload, url, model, provider, _overrides, has_tools=bool(tools))
+        _apply_verified_engine_controls(payload, url, model, _overrides)
         _drop_tools_for_small_talk(payload, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
@@ -6760,7 +6771,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503})}\n\n'
         return
     note_model_activity(target_url, model)
-    degenerate_guard = _DegenerateStreamGuard(model, target_url)
+    degenerate_guard = _DegenerateStreamGuard(model, _model_list_base(url))
 
     # ── ChatGPT Subscription / Codex Responses streaming ──
     if provider == "chatgpt-subscription":
@@ -8093,7 +8104,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                              or tool_argument_template_loop(call.arguments))
                                                     if _loop:
                                                         yield _degenerate_output_error_chunk(
-                                                            DegenerateOutput(f"{call.name or 'tool call'}: {_loop}", model))
+                                                            DegenerateOutput(f"{call.name or 'tool call'}: {_loop}", model, degenerate_guard.url))
                                                         return
                                             # Stream tool arg deltas for doc tools. Guards against a
                                             # null arguments delta the same way the assembler does

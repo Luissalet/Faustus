@@ -172,7 +172,7 @@ def apply_openrouter(payload: Dict[str, Any], overrides: Optional[Dict[str, Any]
 #: Payload keys that carry reasoning, per provider. A 400 that names
 #: reasoning drops these and retries once without them.
 REASONING_KEYS = ("reasoning_effort", "thinking", "output_config", "reasoning",
-                  "reasoning_budget", "thinking_budget_tokens")
+                  "reasoning_budget", "thinking_budget_tokens", "thinking_token_budget")
 
 
 def looks_like_reasoning_error(status: int, text: str) -> bool:
@@ -190,6 +190,9 @@ def strip_reasoning(payload: Dict[str, Any]) -> bool:
             payload.pop(key, None)
             removed = True
     ctk = payload.get("chat_template_kwargs")
+    if isinstance(ctk, dict) and "reasoning_effort" in ctk:
+        ctk.pop("reasoning_effort")
+        removed = True
     if isinstance(ctk, dict) and ctk.get("enable_thinking") is True:
         ctk["enable_thinking"] = False
         removed = True
