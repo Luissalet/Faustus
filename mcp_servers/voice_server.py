@@ -42,6 +42,9 @@ TOOLS = [
          inputSchema={"type": "object", "properties": {}},
          annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)),
     Tool(name="voice_session",
+         # Wait (600), last event read (120), initial status + send + final
+         # status (3 * 120). These are existing observer/read budgets.
+         **{"x-timeout-s": 600.0 + 4 * 120.0},
          description=("Drive a streaming voice session on a Faustus chat. action=start opens one on session_id "
                       "(the chat); utterance sends a recorded clip (audio_path or audio_b64: wav/webm/ogg/mp3 or raw "
                       "PCM16 16 kHz) that is transcribed, filtered and sent ONCE to the ordinary chat turn, whose "

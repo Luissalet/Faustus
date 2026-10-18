@@ -1097,6 +1097,7 @@ TOOLS: List[Tool] = [
     ),
     Tool(
         name="workers_wait",
+        **{"x-timeout-s": _MAX_WAIT + 15},
         description="Block until a dispatched job finishes (up to timeout_s, default 300) and return its compact result: verdict, what changed on disk, the verification Faustus ran, and each worker's status. If it answers `still running`, call it again — never re-dispatch the same task.",
         inputSchema={"type": "object", "properties": {
             "job_id": {"type": "string"},
@@ -1105,6 +1106,7 @@ TOOLS: List[Tool] = [
     ),
     Tool(
         name="workers_wait_for",
+        **{"x-timeout-s": _MAX_WAIT + 15},
         description=(
             "Block until ONE condition holds for a dispatched job and return the moment it does — "
             "not on a poll tick. `condition` is one of: `done` (same as workers_wait), "
@@ -1183,6 +1185,9 @@ TOOLS: List[Tool] = [
     ),
     Tool(
         name="todo_assign_agent",
+        # Initial POST (30), wait loop (600), final sleep (3) and GET
+        # including its existing single read retry (2 * 30).
+        **{"x-timeout-s": _MAX_WAIT + 3 + 3 * _TIMEOUT},
         description=(
             "Hand one of the owner's todos (a note of type todo/checklist in Notas) to a Faustus agent. "
             "It opens a new agent conversation with the todo as the task, starts it in the background and "

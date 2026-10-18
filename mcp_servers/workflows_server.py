@@ -119,6 +119,7 @@ def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None,
 
 def _tool_from_spec(spec: Dict[str, Any]) -> Tool:
     return Tool(name=str(spec["name"]), description=str(spec.get("description") or ""),
+                **{"x-timeout-s": spec.get("x-timeout-s", 300.0 + _TIMEOUT + _WAIT_MARGIN)},
                 inputSchema=spec.get("inputSchema") or {"type": "object", "properties": {}})
 
 
