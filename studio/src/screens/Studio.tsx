@@ -1611,12 +1611,16 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         setTurns((list) => {
           if (!list) return list;
           const out = list.slice();
+          // Runtime error views are not saved messages, on either side of
+          // this match. They must neither shift nor receive database ids.
+          const saved = result.turns.filter((turn) => !turn.terminalRun);
           // Match from the end: our last turns are the server's last turns.
-          for (let i = 0, j = 1; i < out.length && j <= result.turns.length; i++, j++) {
-            const mine = out[out.length - j];
-            const theirs = result.turns[result.turns.length - j];
+          for (let i = out.length - 1, j = saved.length - 1; i >= 0 && j >= 0; i--) {
+            const mine = out[i];
+            if (mine.terminalRun) continue;
+            const theirs = saved[j];
             if (!mine || !theirs || mine.role !== theirs.role) break;
-            out[out.length - j] = {
+            out[i] = {
               ...mine,
               dbId: theirs.dbId,
               historyIndex: theirs.historyIndex,
@@ -1631,6 +1635,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
               behaviorMode: theirs.behaviorMode ?? mine.behaviorMode,
               modeCheck: theirs.modeCheck ?? mine.modeCheck,
             };
+            j--;
           }
           return out;
         });

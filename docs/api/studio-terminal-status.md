@@ -15,6 +15,11 @@ the screen adds a runtime error view with a stable run-derived UI identity and
 no database ID or history index. It writes no assistant message, ledger or local
 storage record. A missing error payload does not create a guessed error.
 
+Runtime error views are excluded from both sides of `syncIds` matching. They
+cannot shift saved-row alignment or acquire database IDs themselves. A rejected
+new input that was never saved therefore cannot borrow the previous user's ID
+or history index; ordinary saved messages still receive their own identities.
+
 The same history hydration serves initial load, active-stream rejoin and
 uncertain-send reconciliation. A terminal view does not become the current Stop
 target. Active/queued runs still follow the existing rejoin and outbox flows;
@@ -31,3 +36,6 @@ with deferred responses. It covers fresh mounts, exact native errors, unknown
 runs, owner failures, session changes and newer-turn races. Set
 `QA881_BASELINE=1` to execute the original Studio hydration from the pinned
 pre-change revision; its user-only history loses the terminal error.
+`QA881_IDS_BASELINE=1` instead exercises the first 881 implementation before
+the identity correction; its real `syncIds` callback incorrectly lends the
+previous user's identity to an unpersisted new input.

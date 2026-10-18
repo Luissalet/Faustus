@@ -83,7 +83,9 @@ Object.defineProperty(globalThis, 'navigator', { value: window.navigator, config
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
-const source = process.env.QA881_BASELINE
+const source = process.env.QA881_IDS_BASELINE
+  ? execFileSync('git', ['show', 'd728e26c735d4c471181bce97f1f724ac459d519:studio/src/screens/Studio.tsx'], { cwd: root, encoding: 'utf8' })
+  : process.env.QA881_BASELINE
   ? execFileSync('git', ['show', '88e863e1579d4b4c4b2c7d11c022bed065da2612:studio/src/screens/Studio.tsx'], { cwd: root, encoding: 'utf8' })
   : readFileSync(join(root, 'studio/src/screens/Studio.tsx'), 'utf8');
 function section(from, to) {
@@ -94,6 +96,7 @@ function section(from, to) {
 const mapping = section('  const turnsFromHistory =', '  /** F1 (CONTRATO_CABLES2)');
 const historyEffect = section('  /* History: whenever', '  /* The gallery sends');
 const recovery = section('  const reconcileOutbox =', '  const ensureSession =');
+const identitySync = section('  const syncIds = useCallback(', '  const sendToGroup =');
 const harnessFile = join(scratch, 'harness.mjs');
 await build({ stdin: { contents: `
 import React, {useState,useEffect,useRef,useCallback} from '${pathToFileURL(join(root, 'node_modules/react/index.js')).href}';
@@ -112,9 +115,10 @@ export function Harness({sessionId,fixture}) {
  const t=x=>x,pickedRouteId=()=>'',routeForSession=()=>null;
  const patchLast=useCallback(fn=>setTurns(list=>list?.map((turn,i)=>i===list.length-1?fn(turn):turn)),[]);
  ${mapping}
+ ${identitySync}
  ${recovery}
  ${historyEffect}
- fixture.screen={turns,title,busy,attachments,loadError,notice,rejoin,reconcileOutbox,runId:runIdRef.current,
+ fixture.screen={turns,title,busy,attachments,loadError,notice,rejoin,reconcileOutbox,syncIds,replaceTurns:setTurns,runId:runIdRef.current,
    startLocal:()=>{runEpoch.current++;controllerRef.current=new AbortController();setBusy(true);setTurns([blankTurn('user','new input'),blankTurn('assistant','new answer')]);},
    finishLocal:()=>{controllerRef.current=null;setBusy(false);}};
  return null;
@@ -224,4 +228,53 @@ console.log('ok: active rejoin and its terminal refresh retain the error and iso
   await app.close();
 }
 console.log('ok: unknown runs invent nothing; outbox preserves its existing id and refresh race guard');
+{
+  const f = fixture(), app = await mount(f); await loaded(f);
+  const [userA, errorA] = f.screen.turns;
+  const userB = blankTurn('user', 'new rejected input B');
+  const assistantB = { ...blankTurn('assistant'), error: 'HTTP rejection before admission', streaming: false };
+  await React.act(async () => f.screen.replaceTurns([userA, errorA, userB, assistantB]));
+  let sync;
+  await React.act(async () => { sync = f.screen.syncIds('A'); });
+  await loaded(f, 1); await React.act(async () => sync);
+  const rejected = f.screen.turns.find(turn => turn.id === userB.id);
+  assert.equal(rejected.dbId, undefined, 'unpersisted B must not borrow the saved user A id');
+  assert.equal(rejected.historyIndex, undefined, 'unpersisted B must not borrow the saved user A index');
+  assert.equal(f.screen.turns.find(turn => turn.id === errorA.id).error, nativeError.text);
+  assert.equal(f.screen.turns.at(-1).error, assistantB.error);
+
+  // A later, genuinely saved B still receives its own ids across the local
+  // runtime view; ordinary edit/delete identity synchronization is preserved.
+  await React.act(async () => { sync = f.screen.syncIds('A'); });
+  await React.act(async () => f.history[2].resolve({ ...history(), history: [...history().history,
+    { role: 'user', content: userB.text, index: 1, metadata: { _db_id: 'saved-user-B' } },
+    { role: 'assistant', content: 'saved answer B', index: 2, metadata: { _db_id: 'saved-assistant-B' } },
+  ] }));
+  await settleStatus(f, 2, status('A', { runId: otherRun, state: 'done', error: undefined }));
+  await React.act(async () => sync);
+  const syncedB = f.screen.turns.find(turn => turn.id === userB.id);
+  assert.equal(syncedB.dbId, 'saved-user-B'); assert.equal(syncedB.historyIndex, 1);
+  assert.equal(f.screen.turns.at(-1).dbId, 'saved-assistant-B');
+  assert.equal(f.screen.turns.at(-1).historyIndex, 2);
+  const runtime = f.screen.turns.find(turn => turn.id === errorA.id);
+  assert.equal(runtime.dbId, undefined); assert.equal(runtime.historyIndex, undefined);
+  assert.equal(runtime.error, nativeError.text); assert.equal(f.sends.length, 0);
+  await app.close();
+}
+{
+  const f = fixture(), app = await mount(f); await loaded(f);
+  const runtimeId = f.screen.turns.at(-1).id;
+  let sync;
+  await React.act(async () => { sync = f.screen.syncIds('A'); });
+  await React.act(async () => f.history[1].resolve({ ...history(), history: [...history().history,
+    { role: 'assistant', content: 'real saved assistant A', index: 1, metadata: { _db_id: 'saved-assistant-A' } },
+  ] }));
+  await settleStatus(f, 1, status('A', { state: 'done', error: undefined }));
+  await React.act(async () => sync);
+  const runtime = f.screen.turns.find(turn => turn.id === runtimeId);
+  assert.equal(runtime.dbId, undefined, 'a local runtime view must never receive a saved assistant identity');
+  assert.equal(runtime.historyIndex, undefined); assert.equal(runtime.error, nativeError.text);
+  await app.close();
+}
+console.log('ok: real syncIds excludes runtime views on both sides and preserves saved B identities');
 console.log('ALL OK');
