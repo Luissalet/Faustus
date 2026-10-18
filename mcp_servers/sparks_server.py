@@ -16,6 +16,8 @@ from src.stdio_guard import guard
 
 server = Server("sparks")
 S = {"type": "string"}
+# Native deployment waits include the controller operation and metadata sync.
+DEPLOY_TIMEOUT_S = {"start": 120.0, "stop": 960.0}
 SPECS = {
     "sparks_status": ("GET", "/status", {"recipes": {"type": "boolean"}}, [], True,
         "Read the configured global Sparks backend, available cluster models, recipes and effective model, including an unavailable service."),
@@ -31,7 +33,9 @@ SPECS = {
 @server.list_tools()
 async def list_tools():
     return [Tool(name=name, description=spec[5], inputSchema={"type": "object", "properties": spec[2], "required": spec[3]},
-                 annotations=ToolAnnotations(readOnlyHint=spec[4], destructiveHint=False)) for name, spec in SPECS.items()]
+                 annotations=ToolAnnotations(readOnlyHint=spec[4], destructiveHint=False),
+                 **({"x-timeout-s": DEPLOY_TIMEOUT_S["stop"] + 15} if name == "sparks_deploy" else {}))
+            for name, spec in SPECS.items()]
 
 
 @server.call_tool()
@@ -51,7 +55,8 @@ async def call_tool(name, arguments):
         internal = os.environ.get("FAUSTUS_INTERNAL_TOOL_TOKEN", "")
         if internal:
             headers["X-Odysseus-Internal-Token"] = internal
-        async with httpx.AsyncClient(timeout=40, trust_env=False) as client:
+        timeout = DEPLOY_TIMEOUT_S.get(str(args.get("action")), 40) if name == "sparks_deploy" else 40
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             response = await client.request(method, base.rstrip("/") + "/api/sparks" + path, headers=headers,
                 **({"params": args} if method == "GET" else {"json": args}))
         payload = response.json()
