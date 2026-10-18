@@ -536,6 +536,28 @@ def agent_cwd() -> str:
     return get_active_workspace() or _AGENT_WORKDIR
 
 
+def _workspace_temp_env(env: Mapping[str, str], session_id: Optional[str] = None,
+                        causal_call: Optional[Any] = None) -> dict[str, str]:
+    """Native children share a temp folder for this workspace and causal run."""
+    from src import run_causality, worker_caches
+
+    # Fan-out workers already own both temporary files and package caches.
+    if worker_caches.active_workspace():
+        return worker_caches.apply_active(env)
+    if causal_call is None:
+        causal_call = run_causality.capture_call(session_id, None)
+    identity = json.dumps([str(session_id or ""), str(causal_call.run_id or "")])
+    key = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+    directory = os.path.join(os.path.abspath(agent_cwd()), ".faustus-tmp", key)
+    os.makedirs(directory, exist_ok=True)
+    result = dict(env)
+    if os.name == "nt":
+        result = {name: value for name, value in result.items()
+                  if name.upper() not in {"TMP", "TEMP", "TMPDIR"}}
+    result.update({name: directory for name in ("TMP", "TEMP", "TMPDIR")})
+    return result
+
+
 def get_mcp_manager():
     from src import agent_tools
     return agent_tools.get_mcp_manager()
@@ -955,6 +977,8 @@ async def _direct_fallback(
     _subproc_env = _worker_caches.apply_active(_subproc_env)
 
     try:
+        if tool in {"bash", "python", "powershell"}:
+            _subproc_env = _workspace_temp_env(_subproc_env, session_id, _causal_call)
         _turn_opts = get_active_turn_options()
         _harness_options = _turn_opts.get("harness_options") or {}
         ctx = {
