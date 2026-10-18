@@ -1,10 +1,4 @@
-"""A streamed answer that goes silent after it started is closed as degenerate.
-
-Live 17-10-2026: a Hoard copilot turn on GLM 5.3 flash (vLLM on the Sparks)
-streamed 1.2k characters of reasoning, then nothing for nine minutes while
-the server kept generating at 130 tokens/s: vLLM's tool-call parser held a
-broken call back. The first line may take as long as the prompt needs; only
-the silence after it counts."""
+"""Silence after meaningful output is an interrupted transport, not corruption."""
 import asyncio
 import json
 
@@ -76,12 +70,13 @@ def _drive(monkeypatch, script, idle=0.2):
     return asyncio.run(run())
 
 
-def test_silence_after_the_first_line_is_cut(monkeypatch):
+def test_silence_after_meaningful_output_is_cut(monkeypatch):
     script = [(0, _sse({"reasoning_content": "Plan: 1. lookup_tools"})), (1.0, _sse({"content": "late"})), (0, "data: [DONE]")]
     events = _drive(monkeypatch, script)
-    errors = [e for e in events if e.get("error_class") == llm_core.DEGENERATE_OUTPUT_ERROR_CLASS]
+    errors = [e for e in events if e.get("error_class") == "timeout.inactivity"]
     assert errors, events
-    assert "sent nothing" in errors[0]["error"] and errors[0]["stalled_s"] == 0
+    assert "no meaningful output" in errors[0]["error"] and errors[0]["stalled_s"] == 0
+    assert errors[0]["partial"] is True
     assert not any(e.get("delta") == "late" for e in events)
 
 
@@ -100,15 +95,15 @@ def test_zero_turns_the_cap_off(monkeypatch):
 
 def test_lines_until_stall_yields_the_marker_once():
     async def lines():
-        yield "one"
+        yield _sse({"content": "one"})
         await asyncio.sleep(0.5)
-        yield "two"
+        yield _sse({"content": "two"})
 
     async def collect():
         return [x async for x in llm_core._lines_until_stall(lines(), 0.1)]
 
     out = asyncio.run(collect())
-    assert out == ["one", llm_core._STREAM_STALLED]
+    assert out == [_sse({"content": "one"}), llm_core._STREAM_STALLED]
 
 
 def test_setting_default_and_bad_values(monkeypatch):

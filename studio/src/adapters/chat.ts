@@ -36,16 +36,13 @@ function checkVersion(response: Response): void {
 }
 
 /**
- * What the model is doing while the turn waits for its first token, from
- * the heartbeat's `model_state` (the server asks Ollama /api/ps). "Waiting
- * for the model" with the model loaded read as a hang (Luis, 09-09-2026:
- * 35 GB in VRAM and PCIe spill at 01:28): the difference between loading
- * it, reading a long context, and spilling to RAM is the whole story.
+ * Memory residency while waiting for the first token, from Ollama /api/ps.
+ * Residency alone does not identify this request's prefill or generation.
  */
 export function modelStateLabel(raw: unknown): string {
   if (!raw || typeof raw !== 'object') return '';
   const s = raw as Record<string, unknown>;
-  if (s.resident === false) return t('Loading the model into memory');
+  if (s.resident === false) return t('Waiting for the model to load into memory');
   if (s.resident !== true) return '';
   const gb = (n: unknown) => (typeof n === 'number' && n > 0 ? (n / 1073741824).toFixed(1) : '');
   if (s.spill === true) {
@@ -55,7 +52,7 @@ export function modelStateLabel(raw: unknown): string {
       ? t('The model is spilling to RAM ({v} of {s} GB in VRAM) — slow', { v: inVram, s: total })
       : t('The model is spilling to RAM — slow');
   }
-  return t('The model is reading the context');
+  return t('Model in memory; waiting for output');
 }
 
 /**
@@ -2156,6 +2153,7 @@ async function* streamEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<C
   const decoder = new TextDecoder();
   let buffer = '';
   let sseEvent: string | null = null;
+  let terminal = false;
 
   try {
     for (;;) {
@@ -2188,6 +2186,10 @@ async function* streamEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<C
           continue;
         }
         if (raw && typeof raw === 'object') {
+          const record = raw as Record<string, unknown>;
+          if (sseEvent === 'error' || ['error', 'agent_terminal', 'chat_terminal', 'paused', 'cancelled'].includes(String(record.type))) {
+            terminal = true;
+          }
           const event = decode(raw as Record<string, unknown>, sseEvent);
           if (event) yield event;
         }
@@ -2196,6 +2198,13 @@ async function* streamEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<C
     }
   } finally {
     reader.releaseLock();
+  }
+  if (!terminal) {
+    yield {
+      type: 'error',
+      errorClass: 'transport.incomplete_stream',
+      message: t('The connection ended before the turn completed. What arrived is kept; reconnect to the running turn.'),
+    };
   }
   yield { type: 'done' };
 }
