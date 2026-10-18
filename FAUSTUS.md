@@ -96,10 +96,10 @@ No añade un relay público, cliente iOS u otro arnés o historial. Véase
 [asistentes personales](docs/api/personal-assistants.md).
 
 **Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
-Proyecto → Ágora abre Studio real: su lista, cabecera, historial y compositor,
-con respuestas completas, herramientas, @menciones y pill de Sparks. Tasks abre
-el tablero del Hub; el botón habitual del proyecto vuelve a sus detalles. Objetivos
-muestra las mismas tareas. La coordinación del proyecto da a sus miembros las
+Proyecto → Chats → Ágora abre Studio real: su lista, cabecera, historial y compositor,
+con respuestas completas, herramientas, @menciones y pill de Sparks. Tareas abre
+el tablero compartido nativo del proyecto y su editor modal amplio; el botón
+habitual del proyecto vuelve a sus detalles. La coordinación del proyecto da a sus miembros las
 herramientas nativas para crearlas y seguirlas. Las salas antiguas se vinculan
 al proyecto sin cambiar identificadores ni historial. Cada participante guarda
 su modelo y los controles de razonamiento admitidos, incluidos en presets y
@@ -13535,3 +13535,33 @@ Python union areas,519 Node/1skip, builds, native MCP189 and browser checks. One
 restart preserved18 tables,161 media files, settings/token and real counts51trainers/24gyms/3leagues/44battles.
 Manual and the Silver project graph updated; task735 remains parked. No push or model/Faustus/Hub restart.
 Evidence: D:/LocalAI/research-inbox/silver-meta728/activation728.json.
+
+
+## Ágora por proyecto: un tablero y las conversaciones originales — 18-10-2026 (#823/#825)
+
+Proyecto → Chats muestra las salas guardadas del Ágora y sus participantes. Abre
+el Studio original: lista lateral de conversaciones, Miembros, compositor, debate
+desplegable y respuesta final. Se conservan IDs, mensajes y controles anteriores;
+no se ha sustituido el motor del chat ni relanzado conversaciones canceladas.
+
+Tareas usa el ancho disponible y un único registro compartido por la persona y
+los agentes. Objetivo, texto y aceptación se editan en un modal amplio, junto con
+estado, tipo, prioridad, responsable, etiquetas y aclaraciones. Mantiene filtros,
+tabla, arrastre, importación y exportación. Las ediciones conservan autor, fecha y
+valores anteriores/nuevos; los conflictos mantienen el borrador para recargar.
+
+La preparación incorpora objetivos, requisitos e incidencias antiguos con sus
+alias, evidencias, revisiones, enlaces y dependencias operativas. Las fuentes
+anteriores permanecen intactas; tras la adopción, los escritores normales de
+objetivos/requisitos/tablero y las herramientas API/MCP proyectan el mismo ledger
+canónico. Una preparación repetida no sobrescribe aclaraciones ni restaura arcos
+retirados después. La adopción se marca sólo al completarse; si falla, se muestra
+el error sin ocultar las tareas canónicas y puede reintentarse. Los proyectos aún
+sin adoptar mantienen sus entradas anteriores hasta prepararse. La persistencia
+existente en agora.db y el transporte compatible del Hub se conservan; la entrada
+de producto es Faustus por proyecto. Véase docs/api/project-tasks.md.
+
+Verificación de fuente R4: 50 pruebas Faustus y 99 HoardLink del área, TypeScript,
+build y checks montados de React; API y MCP reales sobre datos privados compartidos,
+guardado/reapertura del modal en navegador y revisión independiente. Estas pruebas
+no certifican la calidad semántica de nuevas respuestas de los modelos.
