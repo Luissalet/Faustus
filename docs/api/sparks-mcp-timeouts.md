@@ -7,6 +7,11 @@ respectively, to observe the response. Status, sync and settings retain their
 existing 40-second HTTP allowance. Malformed actions still reach normal API
 validation with the existing allowance; the bridge does not invent an action.
 
+The additional 60 seconds are observation margin, not a proven upper bound for
+metadata synchronization. That path can wait for a shared lock, access storage and
+inspect multiple endpoints. The bridge can still time out if those activities
+exceed the margin; it does not report an unfinished operation as completed.
+
 The deployment tool advertises `x-timeout-s: 975` in its MCP catalog, using the
 existing timeout hint convention. A client that supports this hint can allow the
 960-second HTTP observation plus 15 seconds of transport grace. An explicitly
