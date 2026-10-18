@@ -16,6 +16,12 @@ An explicit per-request budget also applies when the caller omits the optional
 `think` override. The adapter does not require a second toggle to preserve it;
 the verified GLM template still chooses its supported reasoning effort normally.
 
+The chat API accepts the `-1` sentinel in JSON and form generation overrides;
+thinking inertia preserves an explicit zero rather than substituting its cap.
+The existing explicit `think_mode` and model effort selections still take
+precedence over generic overrides. To retain a caller-supplied budget, use Auto
+and put the effort in `gen_overrides`; Studio has no dedicated budget input.
+
 The streaming path still honors the existing
 `local_openai_reasoning_budget_default` setting, whose fallback is 4096, when
 thinking is enabled and no per-request budget was supplied. Setting that default
@@ -31,6 +37,8 @@ explicit false choice.
 
 Tests exercise both public async and streaming calls through HTTP MockTransport,
 including 0/-1/128, fast/high, native settings and reasoning/transport retries.
+They also follow JSON request validation or form decoding through the real route
+parser and Auto mode resolution to both model HTTP payload builders.
 The isolated MCP proof uses the production `hoard_turn_start` stdio facade, an API
 stub, real llm_core and a mocked model HTTP transport. This verifies those seams,
 not the complete chat route, agent harness or model quality. No real model

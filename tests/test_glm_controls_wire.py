@@ -64,6 +64,21 @@ async def invoke(route, overrides, *, max_retries=0):
 
 
 @pytest.mark.parametrize("route", ["async", "stream"])
+@pytest.mark.parametrize("as_form", [False, True])
+@pytest.mark.parametrize("budget", [-1, 0, 128])
+async def test_chat_route_parser_budget_reaches_wire(wire, route, as_form, budget):
+    from routes.chat_routes import _parse_gen_overrides, _resolve_think_mode
+    from src.request_models import ChatRequest
+    raw = {"reasoning_effort": "high", "reasoning_budget": budget}
+    ingress = json.dumps(raw) if as_form else ChatRequest(session="qa-project", message="hola", gen_overrides=raw).gen_overrides
+    parsed = _parse_gen_overrides(ingress)
+    resolved, _ = _resolve_think_mode("auto", parsed, "Explain the implementation", model=MODEL,
+                                    endpoint_url=BASE, chat_mode="agent", workspace="qa-project")
+    await invoke(route, resolved)
+    assert wire.sent[0][1]["thinking_token_budget"] == budget
+
+
+@pytest.mark.parametrize("route", ["async", "stream"])
 @pytest.mark.parametrize("think", [False, True])
 @pytest.mark.parametrize("budget", [0, -1, 128])
 async def test_explicit_budget_and_effort_reach_the_http_wire(wire, route, think, budget):
