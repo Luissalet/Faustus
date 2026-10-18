@@ -920,10 +920,15 @@ ANNOUNCED_ACTION_RE = re.compile(
     r"verifico|lanzo|pruebo|selecciono|despliego|cierro|escribo|edito|"
     r"consulto|confirmo|activo|cambio|repito|reintento|intento|espero|"
     # "Sigo pensando/creyendo..." reports an opinion, not an unfinished
-    # tool call. Only a concrete continued action has that intent.
-    r"sigo\s+(?:leyendo|buscando|revisando|comprobando|verificando|ejecutando|"
-    r"consultando|probando|editando|escribiendo|guardando|instalando|depurando|"
-    r"inspeccionando|capturando|abriendo|actualizando|corrigiendo|reintentando)|"
+    # tool call. Keep the continued forms of the concrete Spanish actions
+    # already listed here, plus the inspection/repair and download actions.
+    r"sigo\s+(?:haciendo|comprobando|revisando|ejecutando|pulsando|capturando|mirando|abriendo|"
+    r"buscando|leyendo|verificando|lanzando|probando|seleccionando|desplegando|cerrando|"
+    r"escribiendo|editando|consultando|confirmando|activando|cambiando|repitiendo|"
+    r"reintentando|intentando|esperando|moviendo|quitando|bajando|subiendo|guardando|"
+    r"volviendo|pasando|eligiendo|marcando|arrastrando|poniendo|actualizando|sustituyendo|"
+    r"reemplazando|añadiendo|rellenando|instalando|importando|borrando|descargando|"
+    r"depurando|inspeccionando|corrigiendo)|"
     r"muevo|quito|bajo|subo|guardo|vuelvo|paso|elijo|marco|arrastro|"
     r"pongo|actualizo|sustituyo|reemplazo|añado|relleno|instalo|importo|borro)"
     r"\b[^.\n]{0,140}",

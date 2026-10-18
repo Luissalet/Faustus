@@ -215,6 +215,26 @@ def test_no_test_runner_means_no_tests_card(tmp_path, monkeypatch):
     assert verified["tests"] is None
 
 
+def test_continued_tool_promise_after_an_edit_is_completed(project, monkeypatch):
+    # Independent R1 witness: an earlier mutation satisfies the generic
+    # no-action check, so intent recovery must still execute the next promise.
+    _patch_common(monkeypatch, settings={"agent_project_tests": False}, tool_exec=_real_edit(project))
+    calls = _scripted_stream(monkeypatch, [
+        (_edit_call("src/calc.py", "return a - b", "return a * b"), "tool_calls"),
+        ("Sigo haciendo otro cambio en src/calc.py.", "stop"),
+        (_edit_call("src/calc.py", "return a * b", "return a + b"), "tool_calls"),
+        ("He corregido la función.", "stop"),
+    ])
+    events = _run(project)
+    with open(os.path.join(project, "src/calc.py"), encoding="utf-8") as source:
+        assert "return a + b" in source.read()
+    assert calls["n"] == 4
+    assert any("DO IT NOW" in (m.get("content") or "") for m in calls["messages"][2])
+    summary = next(e["data"] for e in events if e.get("type") == "harness_summary")
+    assert summary["tool_calls"] == 2
+    assert summary["stop_reason"] == "complete"
+
+
 def test_auto_review_flags_a_defect_then_accepts_the_fix(project, monkeypatch):
     _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_auto_review": "same"},
                   tool_exec=_real_edit(project))

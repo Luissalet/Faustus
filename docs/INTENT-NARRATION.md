@@ -7,6 +7,12 @@ retrying. Cognitive statements such as `Sigo pensando que…` do not promise a t
 call. This lexical detector is conservative; it does not prove intent in every
 possible phrasing.
 
+The continued forms cover the concrete Spanish actions already recognized in
+the present tense, including deleting, zooming, moving, importing and selecting,
+plus downloading and the other supported inspection/repair actions. A prior
+edit does not satisfy a later promised action. Regression coverage checks that
+the promised second edit actually happens, rather than only matching a phrase.
+
 Project tests still run against the turn checkpoint. A relevant test that failed
 before the turn can still require repair when it exercises the requested change.
 An unrelated pre-existing failure does not consume a repair round. Failure IDs,

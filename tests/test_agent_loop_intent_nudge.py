@@ -74,6 +74,47 @@ def test_opinions_and_completed_work_are_not_tool_promises(text):
     'Sigo ejecutando los tests del proyecto.',
     'Sigo editando el archivo para corregir la función.',
     'Sigo reintentando la consulta con el identificador completo.',
+    'Sigo borrando el archivo temporal.',
+    'Sigo haciendo zoom para leer el error.',
+    'Sigo descargando el archivo.',
+    'Sigo moviendo los archivos a su carpeta.',
+    'Sigo importando las filas del CSV.',
+    'Sigo seleccionando la opción correcta.',
 ])
 def test_continued_concrete_tool_actions_still_count(text):
     assert announced_action(text)
+
+
+@pytest.mark.parametrize('text', [
+    'Sigo pulsando el botón.', 'Sigo mirando la captura.',
+    'Sigo lanzando el proceso.', 'Sigo desplegando la aplicación.',
+    'Sigo cerrando la ventana.', 'Sigo confirmando el estado.',
+    'Sigo activando el servicio.', 'Sigo cambiando la configuración.',
+    'Sigo repitiendo la consulta.', 'Sigo intentando leer el archivo.',
+    'Sigo esperando al proceso.', 'Sigo quitando el archivo temporal.',
+    'Sigo bajando el archivo.', 'Sigo subiendo el adjunto.',
+    'Sigo guardando el documento.', 'Sigo volviendo a la página.',
+    'Sigo pasando las filas al importador.', 'Sigo eligiendo la opción.',
+    'Sigo marcando las filas.', 'Sigo arrastrando el elemento.',
+    'Sigo poniendo el valor.', 'Sigo sustituyendo el archivo.',
+    'Sigo reemplazando el contenido.', 'Sigo añadiendo las filas.',
+    'Sigo rellenando el formulario.',
+])
+def test_continued_forms_of_existing_spanish_actions_remain_available(text):
+    assert announced_action(text)
+
+
+@pytest.mark.parametrize('text', [
+    'Sigo dudando de que la función sea correcta.',
+    'Después sigo convencido de que ya está resuelto.',
+    'No sigo ejecutando comandos.',
+    'Ya he borrado el archivo temporal.',
+    'Sigo buscando si quieres que continúe.',
+])
+def test_reports_negations_and_offers_do_not_become_continued_promises(text):
+    assert announced_action(text) is None
+
+
+def test_an_opinion_does_not_hide_a_later_real_promise():
+    match = announced_action('Sigo pensando que falla. Sigo haciendo zoom para leer el error.')
+    assert match and 'haciendo zoom' in match.group(0)
