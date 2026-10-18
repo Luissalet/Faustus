@@ -7,6 +7,7 @@ Each server exposes tools that are made available to the agent loop.
 
 import json
 import logging
+import math
 import os
 import re
 import stat
@@ -16,6 +17,7 @@ import httpx
 from copy import deepcopy
 from collections import deque
 from contextlib import contextmanager
+from datetime import timedelta
 from typing import Any, Callable, Deque, Dict, List, Optional, Set, TextIO, Tuple
 from src.database import McpServer, SessionLocal
 from src import safe_mode
@@ -46,11 +48,39 @@ except Exception:  # noqa: BLE001 - standalone use (tests, tooling)
 # pattern src/command_guard.py already uses).
 DATA_DIR = _DEFAULT_DATA_DIR
 
-# Upper bound for one MCP tool call. A server whose child process died mid-call
+# Fallback bound for one MCP tool call. A server whose child process died mid-call
 # never answers; without a bound the agent turn hangs forever instead of taking
 # the reconnect path below. Generous: Playwright's own navigation timeout is
 # 60 s and long pages / slow sites need headroom.
 MCP_CALL_TIMEOUT_S = float(os.environ.get("ODYSSEUS_MCP_CALL_TIMEOUT", "180") or 180)
+
+
+def _tool_timeout_s(tool: Optional[Dict]) -> Optional[float]:
+    """Use the catalog's seconds contract, never guess from tool arguments.
+
+    An explicitly configured process limit remains a ceiling. The ordinary
+    180-second fallback only applies when no valid catalog hint is present.
+    """
+    tool = tool or {}
+    hint = tool.get("x-timeout-s")
+    if hint is None:
+        schema = tool.get("input_schema")
+        hint = schema.get("x-timeout-s") if isinstance(schema, dict) else None
+    if isinstance(hint, bool) or not isinstance(hint, (int, float)):
+        return None
+    try:
+        hint = float(hint)
+    except (OverflowError, ValueError):
+        return None
+    if not math.isfinite(hint) or hint <= 0:
+        return None
+    try:
+        timedelta(seconds=hint)
+    except OverflowError:
+        return None  # cannot be represented by the SDK's timedelta contract
+    if os.environ.get("ODYSSEUS_MCP_CALL_TIMEOUT", "").strip():
+        return min(float(hint), MCP_CALL_TIMEOUT_S)
+    return float(hint)
 
 # How long disconnect waits for the owner task to tear a server down.
 _MCP_CLOSE_TIMEOUT_S = 15.0
@@ -1662,6 +1692,7 @@ class McpManager:
                 # plan-mode read-only gating. Absent on many servers, so we
                 # fall back to a name heuristic in mcp_tool_is_readonly().
                 "annotations": getattr(tool, "annotations", None),
+                "x-timeout-s": getattr(tool, "x-timeout-s", None),
             }
             for tool in tools_raw
         ]
@@ -1712,8 +1743,8 @@ class McpManager:
             # catalog for a session that no longer exists.
             return {"ok": False, "server_id": server_id, "error": "disconnected during refresh", "changed": False}
 
-        old = {t.get("name"): (t.get("description", ""), t.get("input_schema") or {}) for t in before_tools}
-        new = {t.get("name"): (t.get("description", ""), t.get("input_schema") or {}) for t in tools}
+        old = {t.get("name"): (t.get("description", ""), t.get("input_schema") or {}, t.get("x-timeout-s")) for t in before_tools}
+        new = {t.get("name"): (t.get("description", ""), t.get("input_schema") or {}, t.get("x-timeout-s")) for t in tools}
         added = sorted(n for n in new if n not in old)
         removed = sorted(n for n in old if n not in new)
         modified = sorted(n for n in new if n in old and new[n] != old[n])
@@ -1958,6 +1989,8 @@ class McpManager:
                     if k not in volatile}
 
         captured_tool = deepcopy(current_tool())
+        timeout_s = _tool_timeout_s(captured_tool)
+        call_options = {"timeout_s": timeout_s} if timeout_s is not None else {}
         captured_connection = deepcopy(connection_scope())
         captured_connection_present = server_id in self._connections
         captured_oauth = self._oauth_providers.get(server_id)
@@ -2025,7 +2058,7 @@ class McpManager:
             if dead:
                 raise ConnectionError(f"MCP server process for {server_id} has exited")
             dispatched = True
-            result = await self._do_call(session, tool_name, deepcopy(captured_arguments))
+            result = await self._do_call(session, tool_name, deepcopy(captured_arguments), **call_options)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -2057,7 +2090,7 @@ class McpManager:
                     session = self._sessions.get(server_id)
                     if session:
                         try:
-                            result = await self._do_call(session, tool_name, deepcopy(captured_arguments))
+                            result = await self._do_call(session, tool_name, deepcopy(captured_arguments), **call_options)
                         except asyncio.CancelledError:
                             raise
                         except Exception as e2:
@@ -2094,7 +2127,7 @@ class McpManager:
                     self._record_call_outcome(server_id, False, time.time() - call_started)
                     return {"error": f"Reconnected but no session for {server_id}", "exit_code": 1}
                 try:
-                    result = await self._do_call(session, tool_name, deepcopy(captured_arguments))
+                    result = await self._do_call(session, tool_name, deepcopy(captured_arguments), **call_options)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e2:
@@ -2236,10 +2269,16 @@ class McpManager:
             await restart_builtin_devtools(self)
             return True
 
-    async def _do_call(self, session, tool_name: str, arguments: Dict) -> Dict:
+    async def _do_call(self, session, tool_name: str, arguments: Dict,
+                       *, timeout_s: Optional[float] = None) -> Dict:
         """Execute a single MCP tool call and return result dict."""
+        # The SDK also has a request deadline: notifications do not reset it.
+        # Leave its legacy call shape unchanged for tools without a hint.
+        options = ({"read_timeout_seconds": timedelta(seconds=timeout_s)}
+                   if timeout_s is not None else {})
         result = await asyncio.wait_for(
-            session.call_tool(tool_name, arguments), timeout=MCP_CALL_TIMEOUT_S
+            session.call_tool(tool_name, arguments, **options),
+            timeout=MCP_CALL_TIMEOUT_S if timeout_s is None else timeout_s,
         )
         output_parts = []
         images = []
@@ -2532,6 +2571,7 @@ class McpManager:
                 "name": tool.name,
                 "description": tool.description or "",
                 "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+                "x-timeout-s": getattr(tool, "x-timeout-s", None),
             }
             for tool in result.tools
         ]

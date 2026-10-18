@@ -40,6 +40,7 @@ def compute_catalog_hash(tools: List[Dict[str, Any]]) -> str:
                 "name": t.get("name"),
                 "description": t.get("description", ""),
                 "input_schema": t.get("input_schema") or {},
+                "x-timeout-s": t.get("x-timeout-s"),
             }
             for t in tools
         ),
