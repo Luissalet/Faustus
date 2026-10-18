@@ -1,4 +1,9 @@
-"""Bring a local model server back when it is stuck answering garbage.
+"""Bring a managed model service back when it is stuck answering garbage.
+
+LAN endpoints report the typed symptom to Prometheus through the family Hub
+(src.sparks_recovery); the recipe owner confirms and coordinates recovery.
+No LAN process is ended or launched by this module. The loopback flow below
+continues to manage servers on this machine.
 
 Seen live several times (25-09 to 01-10): a `llama-server` on this machine
 starts answering every prompt -- even "say hello" -- with one symbol repeated
@@ -390,7 +395,8 @@ async def _heal_once(url: str, model: str, reason: str) -> Dict[str, Any]:
     if not cfg["enabled"]:
         return {**base, "action": "off", "detail": "model_server_auto_heal is off"}
     if hp is None:
-        return {**base, "action": "skipped", "detail": "not a server on this machine"}
+        from src import sparks_recovery
+        return _record(await sparks_recovery.report(url, model, reason))
     port = hp[1]
     idle = await _server_idle(url)
     if idle is False:
@@ -475,10 +481,14 @@ async def heal(url: str, model: str, *, reason: str = "") -> Dict[str, Any]:
 
 def schedule(url: str, model: str, reason: str = "") -> bool:
     """Start :func:`heal` in the background (from a place that cannot wait
-    for it). False when there is no running event loop or it is not a local
-    server. Never raises."""
-    if _host_port(url) is None or not _settings()["enabled"]:
+    for it). LAN candidates report to their recipe owner. False when there is
+    no running event loop or no supported endpoint. Never raises."""
+    if not _settings()["enabled"]:
         return False
+    if _host_port(url) is None:
+        from src import sparks_recovery
+        if not sparks_recovery.managed_lan_url(url):
+            return False
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

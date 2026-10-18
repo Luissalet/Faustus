@@ -1181,11 +1181,21 @@ def _degenerate_output_error_chunk(exc: "DegenerateOutput") -> str:
     failure without string-matching the human-readable message."""
     logger.warning("[degenerate-stream] aborting model=%s reason=%s", exc.model, exc.reason)
     hint = "Try a different model or lower temperature."
+    managed_lan = False
+    # A managed LAN model is checked by its recipe owner. Keep the existing
+    # loopback recovery below; never end remote processes from this client.
+    try:
+        from src import model_server_heal, sparks_recovery
+        managed_lan = bool(sparks_recovery.managed_lan_url(exc.url))
+        if managed_lan and model_server_heal.schedule(exc.url, exc.model, str(exc.reason)):
+            hint = "Faustus has asked the model service owner to check this generation failure."
+    except Exception:  # noqa: BLE001 - reporting must never replace the stream error
+        pass
     # A run of one punctuation symbol from the first tokens ("////", "!!!!")
     # is not a sampling problem: the server's own state is broken (seen with
     # llama-server after a corrupted slot) and every request gets the same
     # until it is restarted.
-    if re.search(r"repeated unit '[^\w\s]'", str(exc.reason or "")):
+    if not managed_lan and re.search(r"repeated unit '[^\w\s]'", str(exc.reason or "")):
         hint = ("A run of one symbol like this usually means the model server itself is in a broken "
                 "state; restarting the server fixes it.")
         # A local server in that state is checked and restarted in the
