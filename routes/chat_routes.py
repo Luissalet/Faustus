@@ -78,6 +78,7 @@ from routes.chat_helpers import (
 )
 from src import chat_outbox
 from src.action_intents import ToolIntent, classify_tool_intent as _classify_tool_intent
+from src.async_preparation import run_preparation
 from src.image_model_ids import looks_like_image_generation_model
 from src.tool_policy import (
     WEB_TOOL_NAMES,
@@ -2360,7 +2361,10 @@ def setup_chat_routes(
         # its way through a plain chat request (and fail, especially with the
         # shell disabled).
         auto_escalated = False
-        _tool_intent = _classify_tool_intent(message) if isinstance(message, str) else None
+        _tool_intent = (
+            await run_preparation(_classify_tool_intent, message)
+            if isinstance(message, str) else None
+        )
         _workspace_agent_intent = False
         if chat_mode == "chat" and _tool_intent and _tool_intent.needs_tools:
             chat_mode = "agent"

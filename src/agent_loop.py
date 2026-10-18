@@ -40,6 +40,7 @@ from src.llm_core import (
 from src import engine_swap
 from src.model_context import estimate_tokens
 from src.context_budget import CurrentRequestCapacityError
+from src.async_preparation import run_preparation
 from src.context_compactor import (
     apply_compaction_state,
     apply_compaction_state_for_session,
@@ -8764,7 +8765,10 @@ async def _stream_agent_loop_body(
         _guide_documentation_example = bool(
             _tool_documentation_context and _is_tool_documentation_request(_last_user))
     _user_math_context = [text for msg in messages if (text := _user_request_text([msg]))]
-    _answer_only_math_turn = _answer_only_math_request(_last_user, _user_math_context[-7:-1])
+    _answer_only_math_turn = await run_preparation(
+        _answer_only_math_request, _last_user, _user_math_context[-7:-1],
+        pending_cancel=pending_cancel,
+    )
     # Repository map (src/repo_map.py): files + top-level symbols of the
     # workspace, ranked for this request, injected once per turn as reference
     # data right before the user's message. Frozen for the whole turn so the
@@ -9023,10 +9027,15 @@ async def _stream_agent_loop_body(
     # ask_user question; the plain two-argument call stays the common path.
     _typed_freshness_no = bool((_hopts or {}).get("typed_freshness_no"))
     _intent = (
-        _classify_agent_request(messages, _last_user, forced_continuation=True,
-                                 typed_freshness_no=_typed_freshness_no)
+        await run_preparation(
+            _classify_agent_request, messages, _last_user, forced_continuation=True,
+            typed_freshness_no=_typed_freshness_no, pending_cancel=pending_cancel,
+        )
         if (_hopts or {}).get("answers_question")
-        else _classify_agent_request(messages, _last_user, typed_freshness_no=_typed_freshness_no)
+        else await run_preparation(
+            _classify_agent_request, messages, _last_user,
+            typed_freshness_no=_typed_freshness_no, pending_cancel=pending_cancel,
+        )
     )
     _low_signal_turn = bool(_intent.get("low_signal"))
     _casual_low_signal_turn = _is_casual_low_signal(_last_user)
@@ -9876,7 +9885,9 @@ async def _stream_agent_loop_body(
             # explicit desktop screenshot while preventing old plan prose from
             # flooding a local coding model's tool menu.
             _latest_only_domains = (
-                _classify_agent_request([], _last_user).get("domains") or set()
+                (await run_preparation(
+                    _classify_agent_request, [], _last_user, pending_cancel=pending_cancel,
+                )).get("domains") or set()
             )
             for _domain in _latest_only_domains:
                 _relevant_tools.update(_DOMAIN_TOOL_MAP.get(str(_domain), set()))
@@ -10775,8 +10786,9 @@ async def _stream_agent_loop_body(
     _project_objective_unavailable = False
     try:
         from src.action_intents import requires_builtin_project_objective_action
-        _project_objective_requested = requires_builtin_project_objective_action(
-            _last_user, _relevant_tools
+        _project_objective_requested = await run_preparation(
+            requires_builtin_project_objective_action, _last_user, _relevant_tools,
+            pending_cancel=pending_cancel,
         )
         _requires_project_objective_apply = bool(
             _project_objective_requested
