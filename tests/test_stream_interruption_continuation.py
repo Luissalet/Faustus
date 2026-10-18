@@ -12,6 +12,7 @@ from tests.test_agent_harness_loop import _collect, _events, _patch_common
     ("transport.incomplete_stream", 502),
     ("transport.connection_reset", 502),
     ("timeout.deadline_exceeded", 504),
+    ("timeout.inactivity", 504),
 ])
 @pytest.mark.parametrize("cuts", [1, 4])
 def test_partial_transport_failure_continues_without_repeating_prefix(
