@@ -58,6 +58,9 @@ TOOLS = [
              "session_id": {"type": "string", "description": "Chat session id (for start)."},
              "voice_session_id": {"type": "string", "description": "Voice session id returned by start."},
              "language": {"type": "string", "description": "auto, es or en (start)."},
+             "language_hint": {"type": "string", "enum": ["es", "en"],
+                               "description": "Initial context for uncertain short audio in auto mode; does not force the language (start)."},
+             "wake_word": {"type": "boolean", "description": "Require a direct address to Faustus (start; default false)."},
              "read_aloud": {"type": "boolean", "description": "Speak the replies (start; default true)."},
              "send_mode": {"type": "string", "enum": ["server", "client"],
                            "description": "server: the session sends final transcripts to the chat (default)."},
@@ -151,6 +154,7 @@ async def _voice_session(client, a):
         return await _request(client, "GET", "/sessions")
     if action == "start":
         body = {"session_id": str(a.get("session_id") or ""), "language": a.get("language") or "auto",
+                "language_hint": a.get("language_hint") or "", "wake_word": bool(a.get("wake_word", False)),
                 "read_aloud": a.get("read_aloud", True), "send_mode": a.get("send_mode") or "server",
                 "follow_current": bool(a.get("follow_current", False)), "partials": False}
         result = await _request(client, "POST", "/sessions", json=body)

@@ -97,6 +97,9 @@ Servidor integrado `voice` (`mcp_servers/voice_server.py`):
   `say`, `interrupt`, `cancel_turn`, `stop`, `list`. Con `wait=true`, `utterance` y `say` esperan al final
   de la voz de la respuesta y pueden guardar cada frase hablada en `save_audio_dir`.
 
+`start` admite `language_hint: "es" | "en"` y `wake_word: true` opcionales, con
+los mismos efectos que en REST; sin ellos se conservan los valores anteriores.
+
 ## Studio
 
 El panel de voz usa esta sesión cuando el servidor transcribe (no reconocimiento del navegador) y la opción
