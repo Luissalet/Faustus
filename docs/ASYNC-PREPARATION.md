@@ -19,6 +19,15 @@ policy function and the actual transport remain unchanged.
 The route's context preparation also owns its route cache exclusively while
 awaited. The budget/trimming function remains unchanged and its original callers
 receive the completed result before observing that cache or dispatching.
+
+Freshness evaluation also awaits its pure assessment and error fallback through
+the same helper. The optional typed decision, owner lookup, settings and rule
+result construction remain on the event loop. The chat route's workspace
+promotion and memory-selection predicates run in workers after their original
+short-circuit conditions. Their input is the complete message at each caller;
+mode changes and memory-selection updates still happen on the loop after the
+worker returns. Cancellation during this work propagates before those updates
+or a typed decision can start, including when a worker fails during cleanup.
 The worker belongs to its awaiting task. Cancellation waits for that worker to
 finish before propagating, even when cancellation is repeated; it does not
 leave an unobserved worker behind. Agent preparation also polls the existing
@@ -44,3 +53,10 @@ profiled CPU measurements, not a claim about end-to-end API response time.
 `tests/test_async_preparation.py` exercises complete input and results,
 contextvars, exceptions, a real CPU predicate with a concurrent heartbeat,
 authoritative cancellation and repeated task cancellation with worker cleanup.
+`tests/test_chat_route_pure_preparation.py` executes the real route up to its
+next preparation stage, checks the complete input and contextvars in each
+worker, retains workspace/setting short circuits, and uses a held worker to
+verify loop progress and repeated cancellation without a later dispatch.
+The existing synchronous heuristic functions remain available to other callers.
+Other profiled CPU work, including URL stripping and path-token extraction,
+is outside this change; these tests do not establish an end-to-end health result.

@@ -2312,7 +2312,7 @@ def setup_chat_routes(
             except Exception:  # noqa: BLE001
                 try:
                     from src.freshness import looks_time_sensitive
-                    _auto_web = looks_time_sensitive(message)
+                    _auto_web = await run_preparation(looks_time_sensitive, message)
                 except Exception:  # noqa: BLE001
                     _auto_web = False
             if _freshness and _freshness.get("decision"):
@@ -2703,7 +2703,7 @@ def setup_chat_routes(
                 and workspace
                 and isinstance(message, str)
                 and not tool_approval_id
-                and _looks_like_workspace_coding_request(message)
+                and await run_preparation(_looks_like_workspace_coding_request, message)
             ):
                 chat_mode = "agent"
                 auto_escalated = True
@@ -2778,7 +2778,7 @@ def setup_chat_routes(
             try:
                 from src.settings import get_setting as _gs_mem
                 from src.agent_loop import _looks_like_workspace_coding_request as _is_coding
-                if _gs_mem("agent_workspace_no_memory", True) and _is_coding(message):
+                if _gs_mem("agent_workspace_no_memory", True) and await run_preparation(_is_coding, message):
                     no_memory = True
                     logger.info("[gen-overrides] workspace coding turn: memory retrieval skipped")
             except Exception:

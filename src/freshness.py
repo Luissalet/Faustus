@@ -246,10 +246,12 @@ async def decide_freshness(text: str, *, owner=None) -> dict:
     "reasons", "why", "decision": {...} | None}``; ``decision`` is the
     audited typed decision (value, confidence, mass, method, reason, ms)
     whenever one was asked, even if its answer was not used."""
+    from src.async_preparation import run_preparation
+
     try:
-        assessment = freshness_assessment(text)
+        assessment = await run_preparation(freshness_assessment, text)
     except Exception:  # noqa: BLE001
-        assessment = {"time_sensitive": looks_time_sensitive(text), "confident": True,
+        assessment = {"time_sensitive": await run_preparation(looks_time_sensitive, text), "confident": True,
                       "reasons": [], "why": "error"}
     result = {"time_sensitive": bool(assessment["time_sensitive"]), "source": "rule",
               "reasons": list(assessment.get("reasons") or []), "why": assessment.get("why", ""),

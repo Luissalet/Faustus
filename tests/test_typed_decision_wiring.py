@@ -304,4 +304,4 @@ def test_chat_route_uses_the_freshness_decision_on_the_hot_path():
     src = (Path(__file__).resolve().parent.parent / "routes" / "chat_routes.py").read_text(encoding="utf-8")
     block = src[src.index("_auto_web = False"):src.index('logger.info("[freshness] time-sensitive question')]
     assert "await decide_freshness(message" in block
-    assert "looks_time_sensitive(message)" in block  # the fallback
+    assert "await run_preparation(looks_time_sensitive, message)" in block  # the pure fallback
