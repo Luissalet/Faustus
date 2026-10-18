@@ -1880,7 +1880,7 @@ def setup_chat_routes(
         # non-streaming path can't be used to bypass).
         _enforce_chat_privileges(request, sess)
 
-        tool_policy = build_effective_tool_policy(last_user_message=message)
+        tool_policy = await run_preparation(build_effective_tool_policy, last_user_message=message)
         allow_tool_preprocessing = not tool_policy.block_all_tool_calls
 
         # Inline memory command
@@ -2783,7 +2783,8 @@ def setup_chat_routes(
                     logger.info("[gen-overrides] workspace coding turn: memory retrieval skipped")
             except Exception:
                 pass
-        pre_context_tool_policy = build_effective_tool_policy(
+        pre_context_tool_policy = await run_preparation(
+            build_effective_tool_policy,
             last_user_message=message,
         )
         allow_tool_preprocessing = not pre_context_tool_policy.block_all_tool_calls
@@ -2996,7 +2997,8 @@ def setup_chat_routes(
                     1 for _m in (ctx.messages or [])
                     if isinstance(_m, dict) and _m.get("role") in ("user", "assistant")
                 ) - 1)
-                _gen_overrides, _think_mode_event = _resolve_think_mode(
+                _gen_overrides, _think_mode_event = await run_preparation(
+                    _resolve_think_mode,
                     _think_mode_requested, _gen_overrides, message,
                     model=str(getattr(sess, "model", "") or ""),
                     endpoint_url=str(getattr(sess, "endpoint_url", "") or ""),
@@ -3296,7 +3298,8 @@ def setup_chat_routes(
                 if not _IMAGE_CUE_RE.search(message or ""):
                     disabled_tools.add("inspect_image")
 
-            tool_policy = build_effective_tool_policy(
+            tool_policy = await run_preparation(
+                build_effective_tool_policy,
                 disabled_tools=disabled_tools,
                 last_user_message=message,
             )

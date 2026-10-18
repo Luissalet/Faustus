@@ -8732,7 +8732,9 @@ async def _stream_agent_loop_body(
     # a word like "settings" in its brief ("factory settings") must not bring
     # in a dozen session/endpoint/webhook schemas. `lookup_tools` still
     # reaches them if the job really needs one.
-    _needs_admin = _detect_admin_intent(messages) and not (unattended and workspace)
+    _needs_admin = (await run_preparation(
+        _detect_admin_intent, messages, pending_cancel=pending_cancel,
+    )) and not (unattended and workspace)
     _last_user = _extract_last_user_message(messages)
     from src.coordination.continuation import objective as _approval_objective
     _continuation_objective = _approval_objective(_last_user, exact_approval)
@@ -8976,7 +8978,9 @@ async def _stream_agent_loop_body(
     # sufficient evidence of coding intent. Explicit per-turn temperatures
     # and remote endpoints retain their existing precedence.
     _temperature_cap = None
-    _cap_scope = _sampling_cap_scope_from_history(messages, _last_user)
+    _cap_scope = await run_preparation(
+        _sampling_cap_scope_from_history, messages, _last_user, pending_cancel=pending_cancel,
+    )
     if not temperature_explicit and not _ody_qwen_finetune_model and not _managed_sparks and _cap_scope:
         try:
             from src.model_context import is_local_endpoint as _is_local_ep
@@ -9038,7 +9042,9 @@ async def _stream_agent_loop_body(
         )
     )
     _low_signal_turn = bool(_intent.get("low_signal"))
-    _casual_low_signal_turn = _is_casual_low_signal(_last_user)
+    _casual_low_signal_turn = await run_preparation(
+        _is_casual_low_signal, _last_user, pending_cancel=pending_cancel,
+    )
     _existing_conversation = _user_turn_count(messages) > 1
     _active_document_relevant = bool(active_document is not None and active_document_pinned) or \
         _turn_targets_active_document(_intent, _last_user, active_document)
@@ -9712,8 +9718,10 @@ async def _stream_agent_loop_body(
     if not guide_only and not _relevant_tools and _retrieval_query:
         from src.tool_index import ALWAYS_AVAILABLE, ToolIndex
         _relevant_tools = set(ALWAYS_AVAILABLE)
-        _relevant_tools.update(ToolIndex.keyword_tools_for_query(
+        _relevant_tools.update(await run_preparation(
+            ToolIndex.keyword_tools_for_query,
             _retrieval_query, match_substrings=True,
+            pending_cancel=pending_cancel,
         ))
         logger.info(f"[tool-rag] Keyword fallback selected: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
         if _hot_seed is None:
@@ -11523,7 +11531,9 @@ async def _stream_agent_loop_body(
     # (src/extra_round_policy.py): a known cause, a counted budget, a receipt.
     from src.extra_round_policy import ExtraRounds as _ExtraRounds
     _xr = _ExtraRounds(str(get_setting("agent_extra_round_policy", "enforce") or "enforce"))
-    _ledger = _harness.TurnLedger(workspace, _last_user)
+    _ledger = await run_preparation(
+        _harness.TurnLedger, workspace, _last_user, pending_cancel=pending_cancel,
+    )
     # For an explicit count of the user's Links Hoard library, do the exact
     # read before the model sees any untrusted tool result. A 3B repeatedly
     # guessed a count from the tool catalog, while a later retry was blocked

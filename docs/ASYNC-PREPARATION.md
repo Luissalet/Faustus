@@ -5,6 +5,12 @@ predicates through `src.async_preparation.run_preparation`. The complete
 request and routing arguments reach the same predicates; their results and
 exceptions are preserved. No request-size rule changes routing or removes text.
 
+The same worker ownership applies to the pure tool-policy and thinking-mode
+builders, keyword hints, sampling/admin/small-talk predicates and construction
+of the private per-turn evidence ledger. These builders return new local data;
+model calls, tools, writes and existing ledger updates stay in their original
+execution paths. The ledger is handed to the loop only after construction ends.
+
 The helper uses `asyncio.to_thread`, including its contextvars propagation.
 Only pure preparation belongs here: never model calls, tools or mutations.
 The worker belongs to its awaiting task. Cancellation waits for that worker to

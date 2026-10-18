@@ -148,7 +148,8 @@ async def test_repeated_cancellation_joins_worker_and_never_advances(late_failur
 
 
 @pytest.mark.asyncio
-async def test_real_agent_cancel_during_preparation_cannot_dispatch(monkeypatch):
+@pytest.mark.parametrize('stage', ['math', 'ledger'])
+async def test_real_agent_cancel_during_preparation_cannot_dispatch(monkeypatch, stage):
     from src import agent_loop as al
     started = threading.Event()
     release = threading.Event()
@@ -169,7 +170,11 @@ async def test_real_agent_cancel_during_preparation_cannot_dispatch(monkeypatch)
         dispatches.append('dispatch')
         yield 'data: [DONE]\n\n'
 
-    monkeypatch.setattr(al, '_answer_only_math_request', predicate)
+    if stage == 'math':
+        monkeypatch.setattr(al, '_answer_only_math_request', predicate)
+    else:
+        from src import agent_harness
+        monkeypatch.setattr(agent_harness, 'TurnLedger', predicate)
     monkeypatch.setattr(al, 'get_setting', lambda key, default=None: default)
     monkeypatch.setattr(al, 'get_mcp_manager', lambda: None)
     monkeypatch.setattr(al, 'blocked_tools_for_owner', lambda owner: set())
@@ -180,7 +185,7 @@ async def test_real_agent_cancel_during_preparation_cannot_dispatch(monkeypatch)
         async for _ in al.stream_agent_loop(
             'http://127.0.0.1:9/v1', 'fixture/cpu',
             [{'role': 'user', 'content': 'hello'}], max_rounds=1,
-            relevant_tools=set(),
+            relevant_tools={'bash'},
         ):
             pass
 
@@ -200,3 +205,26 @@ async def test_real_agent_cancel_during_preparation_cannot_dispatch(monkeypatch)
         release.set()
         if not task.done():
             await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', [
+    'hola', 'Edit @src/cart.py and tests/área_test.py.',
+    'Explica esto sin herramientas ni comandos.',
+    'Use only MCP tools to add a project objective.',
+])
+async def test_turn_builders_preserve_complete_results(text):
+    from src import agent_loop, agent_harness, think_mode
+    from src.tool_index import ToolIndex
+    from src.tool_policy import build_effective_tool_policy
+
+    expected_policy = build_effective_tool_policy(last_user_message=text)
+    assert await run_preparation(build_effective_tool_policy, last_user_message=text) == expected_policy
+    expected_think = think_mode.resolve_turn('auto', {}, text, model='fixture', agent=True)
+    assert await run_preparation(think_mode.resolve_turn, 'auto', {}, text, model='fixture', agent=True) == expected_think
+    expected_ledger = agent_harness.TurnLedger(None, text)
+    actual_ledger = await run_preparation(agent_harness.TurnLedger, None, text)
+    assert vars(actual_ledger) == vars(expected_ledger)
+    assert actual_ledger.user_text is text
+    assert await run_preparation(ToolIndex.keyword_tools_for_query, text, match_substrings=True) == ToolIndex.keyword_tools_for_query(text, match_substrings=True)
+    assert await run_preparation(agent_loop._sampling_cap_scope_from_history, [], text) == agent_loop._sampling_cap_scope_from_history([], text)
