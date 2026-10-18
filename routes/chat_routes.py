@@ -4364,6 +4364,7 @@ def setup_chat_routes(
                         _max_rounds = max(1, min(_max_rounds, 200))
 
                         _forced_tools = None
+                        _catalog_tools = set()
                         if _hoard_context is not None:
                             _forced_tools = {"lookup_tools"}
                             # The origin app's read tools are offered up front, so "what do I
@@ -4399,9 +4400,8 @@ def setup_chat_routes(
                                 })
                         except Exception:
                             pass
-                        # An unattended run is handed its MCP servers for the job
-                        # (a task container's own service): their tools are the
-                        # job's interface, not something retrieval may leave out.
+                        # Keep every job MCP reachable without forcing every
+                        # schema into each request. Explicit choices above stay hot.
                         if unattended:
                             try:
                                 _job_mcp = {
@@ -4411,7 +4411,7 @@ def setup_chat_routes(
                                 }
                                 _job_mcp.discard("")
                                 if _job_mcp:
-                                    _forced_tools = set(_forced_tools or set()) | _job_mcp
+                                    _catalog_tools.update(_job_mcp)
                             except Exception:
                                 logger.debug("unattended MCP tools not forced", exc_info=True)
                         # /agents (multi-agent delegation) names the tool explicitly;
@@ -4559,6 +4559,7 @@ def setup_chat_routes(
                                 else None
                             ),
                             forced_tools=_forced_tools,
+                            catalog_tools=_catalog_tools,
                             uploaded_files=ctx.uploaded_files,
                             defer_context_shaping=_foreground_policy.enabled,
                             external_untrusted_context_seen=external_untrusted_context_seen,

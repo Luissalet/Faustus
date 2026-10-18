@@ -7179,6 +7179,7 @@ _STICKY_TOOLSET_MAX = 48
 
 def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]],
                     disabled: Set[str], optional: Optional[Set[str]] = None,
+                    catalog_tools: Optional[Set[str]] = None,
                     ) -> Tuple[Set[str], Optional[Set[str]]]:
     """The tools for this turn, kept as close as possible to the last turn's.
 
@@ -7228,6 +7229,12 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
                 out_relevant = union
                 if hot is not None:
                     out_hot = (prev_hot or set()) | hot
+    if catalog_tools:
+        # Older unattended turns stored every job MCP as hot. Keep current
+        # selections hot, but do not inherit that blanket schema exposure.
+        current_hot = set(relevant) if hot is None else set(hot)
+        inherited_hot = set(out_relevant) if out_hot is None else set(out_hot)
+        out_hot = (inherited_hot - (set(catalog_tools) - current_hot)) | current_hot
     logger.info("[tool-rag] chat tool set: %s (previous %s, weak picks %s, now %s tools; added %s, dropped %s)",
                 "new" if prev is None else ("kept" if out_relevant == set(prev[0]) - disabled
                                             and out_hot == (None if prev[1] is None else set(prev[1]) - disabled)
@@ -8378,6 +8385,7 @@ async def _stream_agent_loop_body(
     # (cooperative pause, resumable) since the two are deliberately
     # different things (see routes/chat_routes.py's chat_stop docstring).
     pending_cancel: Optional[Callable[[], Optional[str]]] = None,
+    catalog_tools: Optional[Set[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -10327,6 +10335,15 @@ async def _stream_agent_loop_body(
                     if _hot_seed is not None:
                         _hot_seed |= _fam_add
 
+    _catalog_tools = {t for t in (catalog_tools or ()) if t not in disabled_tools}
+    if relevant_tools:
+        # A caller-pinned selection is a scope ceiling, not a retrieval hint.
+        _catalog_tools.intersection_update(relevant_tools)
+    if _lean or not bool(get_setting("agent_tool_catalog", True)):
+        # Preserve the existing full-schema contract when disclosure is off.
+        forced_tools = set(forced_tools or ()) | _catalog_tools
+        _catalog_tools = set()
+
     # Per-request forced tools are stronger than retrieval. Explicit search
     # settings make web tools visible even when tool RAG misses them;
     # route-level disabled_tools decides what remains allowed.
@@ -10542,9 +10559,10 @@ async def _stream_agent_loop_body(
         try:
             from src import tool_exposure as _exposure
             if bool(get_setting("agent_tool_exposure", True)):
-                _code_only = _exposure.code_only_names(_relevant_tools)
+                _code_only = _exposure.code_only_names(set(_relevant_tools) | _catalog_tools)
                 if _code_only:
                     _relevant_tools -= _code_only
+                    _catalog_tools -= _code_only
                 if _hot_seed is not None and _exposure_pool:
                     _hot_seed, _exposure_demoted = _exposure.demote(
                         _hot_seed, _retrieval_query or _last_user or "",
@@ -10573,7 +10591,14 @@ async def _stream_agent_loop_body(
             None if _hot_seed is None else set(_hot_seed),
             set(disabled_tools or ()),
             optional=_sticky_optional,
+            catalog_tools=_catalog_tools,
         )
+    if not guide_only and _catalog_tools and _relevant_tools is not None:
+        # Freeze the hot selection before adding catalog-only availability.
+        # Lookup promotion later in the turn remains hot for subsequent rounds.
+        if _hot_seed is None:
+            _hot_seed = set(_relevant_tools)
+        _relevant_tools.update(_catalog_tools)
     _schema_tools = None
     _deferred_tools: Set[str] = set()
     if _relevant_tools is not None:
