@@ -1062,7 +1062,9 @@ def _build_plan(run: _Run) -> _Plan:
         stem = target.stem or "untitled"
         key = stem.casefold()
         if key in taken and taken[key] != target.source:
-            base = f"{stem} ({target.idkey[:8]})"
+            # Store IDs may contain Windows path characters (e.g. T:702).
+            token = re.sub(r"[^0-9A-Za-z_-]", "_", target.idkey[:8])
+            base = f"{stem} ({token})"
             stem, n = base, 2
             while stem.casefold() in taken:
                 stem = f"{base} {n}"

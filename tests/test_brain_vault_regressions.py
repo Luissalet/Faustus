@@ -493,6 +493,67 @@ def test_workspace_path_memories_land_in_their_project_and_basenames_are_unique(
     assert [link["path"] for link in mem["links"] if link["target"] == "Bluehaven"] == ["Projects/Bluehaven.md"]
 
 
+def test_objective_collision_ids_export_safe_unique_paths_and_sync_without_rewrites(brain, monkeypatch):
+    import re
+
+    ids = ["T:702", "T/702", "T_702", "é:702", "é/702", "b843a2f6-1234-5678-abcd-123456789abc"]
+    objectives = [{"id": oid, "title": "collision", "status": "open"} for oid in ids]
+    monkeypatch.setattr(vault, "_projects_for_owner",
+                        lambda owner: [{"id": "project915", "name": "COLLISION"}])
+    monkeypatch.setattr(vault, "_objectives_for_project", lambda project: (objectives, True))
+    monkeypatch.setattr(vault, "_concepts_for_project", lambda project: ([], True))
+
+    first = vault.sync(OWNER)
+    assert first["errors"] == []
+    paths = _files()
+    stems = [os.path.splitext(os.path.basename(path))[0].casefold() for path in paths]
+    assert len(stems) == len(set(stems))
+    assert all(not re.search(r'[\\:*?"<>|\x00-\x1f]', path) for path in paths)
+    sources = {}
+    for path in paths:
+        fields, _ = fm.split(_rd(path))
+        if fields.get("kind") == "objective":
+            sources[fields["id"]] = (path, fields["source"])
+    assert set(sources) == set(ids)
+    for oid, (path, source) in sources.items():
+        assert source == f"obj:COLLISION/{oid}"
+        assert path.startswith("Objectives/COLLISION/collision (")
+    assert sources[ids[-1]][0] == "Objectives/COLLISION/collision (b843a2f6).md"
+    assert notes.unresolved(OWNER) == []
+
+    before = {path: (_rd(path), os.stat(vault.abs_path(OWNER, path)).st_mtime_ns) for path in paths}
+    second = vault.sync(OWNER)
+    assert second["errors"] == []
+    assert second["exported"] == 0
+    assert _files() == paths
+    assert {path: (_rd(path), os.stat(vault.abs_path(OWNER, path)).st_mtime_ns)
+            for path in paths} == before
+    assert [obj["id"] for obj in objectives] == ids
+    assert all(obj["title"] == "collision" for obj in objectives)
+
+
+def test_objective_collision_suffix_keeps_a_user_placed_path_and_content(brain, monkeypatch):
+    monkeypatch.setattr(vault, "_projects_for_owner",
+                        lambda owner: [{"id": "project915", "name": "COLLISION"}])
+    monkeypatch.setattr(vault, "_objectives_for_project", lambda project: (
+        [{"id": "T:702", "title": "collision", "status": "open"}], True))
+    monkeypatch.setattr(vault, "_concepts_for_project", lambda project: ([], True))
+    assert vault.sync(OWNER)["errors"] == []
+    path = _only("Objectives/")
+    text = _rd(path)
+    moved = "Notes/Chosen objective.md"
+    os.makedirs(os.path.dirname(vault.abs_path(OWNER, moved)), exist_ok=True)
+    os.replace(vault.abs_path(OWNER, path), vault.abs_path(OWNER, moved))
+    vault.rekey_path(OWNER, path, moved, user_path=True)
+
+    report = vault.sync(OWNER)
+    assert report["errors"] == []
+    assert _rd(moved) == text
+    assert not os.path.exists(vault.abs_path(OWNER, path))
+    assert _only("Notes/") == moved
+    assert notes.unresolved(OWNER) == []
+
+
 # ── finding 15: one bad file never breaks the index ─────────────────────
 
 def test_latin1_file_and_scalar_tags_do_not_break_reindex(brain):
