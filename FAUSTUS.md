@@ -13514,3 +13514,24 @@ require complete consecutive Layer III frames; originals and saved battles are
 unchanged. Archiving removes playlist/queue memberships while retaining the file;
 restoring a song does not reconstruct those memberships. See Silver's
 docs/MUSIC_LIBRARY.md and Agora silver/task/821 for verification and limits.
+
+
+### Silver: reproducible metagame samples and benchmark identities (18 October 2026)
+
+Active in Silver main `2a4d4f2a104e817584d9cae1700f20094506139b`, approved tasks728/820 CAS1.
+Compare teams can test one saved candidate against100 distinct legal teams generated from usage
+and popular sets. It preserves the corpus fingerprint, source formats, full opponents and seeds;
+insufficient or empty samples are explicit. These are generated teams, not observed whole ladder
+rosters. Results include per-opponent outcomes and three threats by attributed KOs/damage and roster
+appearances, with explicit units. Repeat uses the saved sample with current candidate teams.
+Normal/hard/expert opponents and classic/real-time modes share benchmark_start/job_get/UI.
+The A/B benchmark also uses distinct internal seat names when public trainer names coincide.
+No trainers, battle-history rows or hall records are created by benchmarks; win rate describes that sample.
+Native and registered Silver catalogs contain189 tools with identical schemas.
+
+Full578 Python/2skip and503 Node/1skip passed on compositionb01dbb6; final2a4 preserves
+all later active daily challenge, climate, MP4 music and replay-name code, and passes relevant
+Python union areas,519 Node/1skip, builds, native MCP189 and browser checks. One managed Silver
+restart preserved18 tables,161 media files, settings/token and real counts51trainers/24gyms/3leagues/44battles.
+Manual and the Silver project graph updated; task735 remains parked. No push or model/Faustus/Hub restart.
+Evidence: D:/LocalAI/research-inbox/silver-meta728/activation728.json.
