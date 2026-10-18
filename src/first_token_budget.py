@@ -85,6 +85,25 @@ async def scoped_stream(source, seconds):
             pass
 
 
+async def _request_input(request: Request):
+    if "application/json" in request.headers.get("content-type", "").lower():
+        return await request.json()
+    # Chat text is bounded by the selected model's context budget. Starlette's
+    # default 1 MiB text-part limit otherwise rejects it before that calculation.
+    # Keep the parser's file/field counts and upload-file validation unchanged.
+    return await request.form(max_part_size=math.inf)
+
+
+async def request_seconds(request: Request) -> Optional[float]:
+    """Validate the native JSON/form field without FastAPI's early Form parse."""
+    body = await _request_input(request)
+    value = body.get(FIELD) if hasattr(body, "get") else None
+    try:
+        return parse(value)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 def request_budget(endpoint):
     """Parse before any session mutation; reset parent context after dispatch.
 
@@ -93,17 +112,8 @@ def request_budget(endpoint):
     """
     @functools.wraps(endpoint)
     async def wrapped(request: Request, *args, **kwargs):
-        content_type = request.headers.get("content-type", "").lower()
-        if "application/json" in content_type:
-            body = await request.json()
-            value = body.get(FIELD) if isinstance(body, dict) else None
-        else:
-            body = await request.form()
-            value = body.get(FIELD)
-        try:
-            seconds = parse(value)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
+        body = await _request_input(request)
+        seconds = await request_seconds(request)
         from src.project_execution_defaults import for_session, merge
         try:
             preferences = for_session(request, str(body.get("session") or ""), verify=False)

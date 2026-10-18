@@ -45,7 +45,7 @@ class _RouteRequest:
         self.state = SimpleNamespace(current_user="alice")
         self._form = {"message": "hello", "session": "session-budget-exhausted", "mode": "agent"}
 
-    async def form(self):
+    async def form(self, **kwargs):
         return self._form
 
 

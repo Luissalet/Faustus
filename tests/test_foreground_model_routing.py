@@ -86,7 +86,7 @@ class _RouteRequest:
             "compare_mode": "true",
         }
 
-    async def form(self):
+    async def form(self, **kwargs):
         return self._form
 
 

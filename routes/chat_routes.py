@@ -13,7 +13,7 @@ from typing import Dict, Any, AsyncGenerator, List, Optional, Tuple
 
 from src.tool_parsing import clean_reply_for_save
 
-from fastapi import APIRouter, Request, HTTPException, Form, Query
+from fastapi import APIRouter, Request, HTTPException, Form, Query, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
@@ -2135,10 +2135,9 @@ def setup_chat_routes(
     # ------------------------------------------------------------------ #
     # POST /api/chat_stream
     # ------------------------------------------------------------------ #
-    from src.first_token_budget import request_budget
+    from src.first_token_budget import request_budget, request_seconds
 
-    @router.post("/api/chat_stream", openapi_extra={"requestBody": {"content": {
-        "application/json": {"schema": {"type": "object", "required": ["session", "message"], "properties": {
+    _chat_stream_request_schema = {"type": "object", "required": ["session", "message"], "properties": {
             "session": {"type": "string"}, "message": {"type": "string"},
             "mode": {"type": "string", "enum": ["chat", "agent"]},
             "workspace": {"type": "string"}, "model": {"type": "string"},
@@ -2156,13 +2155,13 @@ def setup_chat_routes(
                 "description": "approve_action authorizes only the sealed action once; other scopes retain their existing meaning."},
             "initial_response_timeout_s": {"type": "number", "minimum": 5, "maximum": 900,
                 "description": "Initial response budget for this turn only; includes admission, preparation and queue."},
-        }}}
+        }}
+    @router.post("/api/chat_stream", openapi_extra={"requestBody": {"content": {
+        content_type: {"schema": _chat_stream_request_schema}
+        for content_type in ("application/json", "multipart/form-data", "application/x-www-form-urlencoded")
     }}})
     @request_budget
-    async def chat_stream(request: Request, initial_response_timeout_s: Optional[float] = Form(
-        None, ge=5, le=900,
-        description="Budget for this turn only, including admission, context, queue and first model response. Does not change endpoint preferences.",
-    )) -> StreamingResponse:
+    async def chat_stream(request: Request, initial_response_timeout_s: Optional[float] = Depends(request_seconds)) -> StreamingResponse:
         _initial_request_started = time.monotonic()
         # ARCH-01: reject BEFORE any work when a client identifies itself as
         # older than this server supports, with a message it can act on,
