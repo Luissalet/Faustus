@@ -65,10 +65,42 @@ def test_an_unknown_session_404s(harness):
     assert harness.client.get(f"/api/sessions/{sid}/draft").status_code == 404
 
 
-def test_put_over_the_body_cap_is_413(harness):
+@pytest.mark.parametrize('method', ['PUT', 'PATCH'])
+@pytest.mark.parametrize('text', ['á漢🙂\n' * 20_000 + 'END', 'x' * 3_192_506 + 'END'],
+                         ids=['unicode_over_80K_bytes', 'three_million_chars'])
+def test_long_draft_put_patch_get_preserves_text_and_omitted_attachments(harness, method, text):
+    import hashlib
     sid = _add_session(harness, name="Chat")
-    r = harness.client.put(f"/api/sessions/{sid}/draft", json={"text": "x" * 90_000})
-    assert r.status_code == 413
+    path = f'/api/sessions/{sid}/draft'
+    previous = harness.client.put(path, json={'text': 'previous', 'attachment_ids': ['att1']})
+    assert previous.status_code == 200
+    r = harness.client.request(method, path, json={'text': text})
+    assert r.status_code == 200, r.text
+    result = harness.client.get(path).json()
+    assert len(result['text']) == len(text)
+    assert hashlib.sha256(result['text'].encode()).digest() == hashlib.sha256(text.encode()).digest()
+    assert result['attachment_ids'] == (['att1'] if method == 'PATCH' else [])
+    assert result['updated_at'] >= previous.json()['updated_at'] > 0
+
+
+def test_patch_attachment_only_preserves_long_text_and_clear_keeps_put_semantics(harness):
+    sid = _add_session(harness, name='Chat')
+    path = f'/api/sessions/{sid}/draft'
+    text = 'á漢🙂' * 30_000
+    assert harness.client.put(path, json={'text': text, 'attachment_ids': ['one']}).status_code == 200
+    result = harness.client.patch(path, json={'attachment_ids': ['two']})
+    assert result.status_code == 200 and result.json()['text'] == text
+    assert result.json()['attachment_ids'] == ['two']
+    cleared = harness.client.put(path, json={'text': ' \n\t ', 'attachment_ids': []})
+    assert cleared.status_code == 200 and cleared.json() == {'text': '', 'attachment_ids': [], 'updated_at': 0}
+    assert harness.client.get(path).json() == cleared.json()
+
+
+@pytest.mark.parametrize('method', ['GET', 'PUT', 'PATCH'])
+def test_foreign_owner_long_draft_request_is_still_refused(harness, method):
+    sid = _add_session(harness, name='Foreign', owner='bob')
+    kwargs = {} if method == 'GET' else {'json': {'text': 'x' * 90_000}}
+    assert harness.client.request(method, f'/api/sessions/{sid}/draft', **kwargs).status_code == 404
 
 
 def test_put_with_a_non_object_body_is_a_client_error(harness):

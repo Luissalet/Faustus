@@ -468,11 +468,6 @@ def setup_session_routes(
         from src import session_draft
         _reject_cross_origin(request)
         raw = await request.body()
-        # Slack over session_draft.MAX_TEXT_CHARS for JSON framing and the
-        # attachment_ids array — the module itself is the real cap on the
-        # text field.
-        if len(raw) > 80_000:
-            raise HTTPException(413, "Draft is too large")
         try:
             body = json.loads(raw)
             if not isinstance(body, dict):

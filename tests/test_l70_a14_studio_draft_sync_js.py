@@ -41,7 +41,7 @@ def test_studio_imports_the_session_draft_adapter():
 
 
 def test_the_server_merge_is_most_recent_wins_not_a_blind_overwrite():
-    assert "remote.updatedAt * 1000 > localAt" in _STUDIO
+    assert "remote.updatedAt * 1000 > Math.max(localAt, readDraftUpdatedAtFor(mySession))" in _STUDIO
 
 
 def test_the_server_write_is_debounced_a_second():

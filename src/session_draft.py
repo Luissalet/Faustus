@@ -27,10 +27,6 @@ from typing import Any, Dict, List
 from core.atomic_io import atomic_write_text
 from src.constants import DATA_DIR
 
-#: Same cap the route enforces on the raw request body (COMUN: keep one
-#: number, not two that can drift) — the *text* alone is capped here so a
-#: caller that reads this module directly gets the same guarantee.
-MAX_TEXT_CHARS = 64 * 1024
 MAX_ATTACHMENTS = 64
 MAX_ATTACHMENT_ID_CHARS = 300
 
@@ -49,8 +45,6 @@ def _path(session_id: str, owner: str) -> Path:
 def _validate(text: Any, attachment_ids: Any) -> Dict[str, Any]:
     if not isinstance(text, str):
         raise ValueError("text must be a string")
-    if len(text) > MAX_TEXT_CHARS:
-        raise ValueError(f"Draft text exceeds {MAX_TEXT_CHARS} characters")
     if not isinstance(attachment_ids, list) or len(attachment_ids) > MAX_ATTACHMENTS:
         raise ValueError(f"attachment_ids must be a list of at most {MAX_ATTACHMENTS} ids")
     ids: List[str] = []

@@ -61,9 +61,59 @@ def test_attachments_alone_with_no_text_are_kept(store):
     assert saved["text"] == ""
 
 
-def test_text_over_the_cap_is_refused(store):
-    with pytest.raises(ValueError, match="exceeds"):
-        store.save("session", "alice", "x" * (store.MAX_TEXT_CHARS + 1), [])
+@pytest.mark.parametrize('text', ['á漢🙂\n' * 20_000 + 'END', 'x' * 3_192_506 + 'END'],
+                         ids=['unicode_over_64K', 'three_million_chars'])
+def test_long_text_round_trips_without_an_independent_character_cap(store, text):
+    import hashlib
+    saved = store.save('session', 'alice', text, ['att1'])
+    loaded = store.load('session', 'alice')
+    assert len(loaded['text']) == len(text)
+    assert hashlib.sha256(loaded['text'].encode()).digest() == hashlib.sha256(text.encode()).digest()
+    assert loaded['attachment_ids'] == ['att1'] and loaded['updated_at'] == saved['updated_at']
+
+
+def test_long_text_survives_a_new_python_process(store):
+    import hashlib
+    import json
+    import os
+    import subprocess
+    import sys
+    text = 'á漢🙂\n' * 20_000 + 'END'
+    store.save('session', 'alice', text, ['att1'])
+    env = {**os.environ, 'ODYSSEUS_DATA_DIR': str(store.DATA_DIR)}
+    code = ("import hashlib,json;from src.session_draft import load;d=load('session','alice');"
+            "print(json.dumps({'chars':len(d['text']),'sha256':hashlib.sha256(d['text'].encode()).hexdigest(),"
+            "'ids':d['attachment_ids']}))")
+    result = subprocess.run([sys.executable, '-B', '-c', code], env=env,
+                            capture_output=True, text=True, encoding='utf-8', timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {'chars': len(text), 'sha256': hashlib.sha256(text.encode()).hexdigest(), 'ids': ['att1']}
+
+
+def test_failed_atomic_write_preserves_the_previous_draft(store, monkeypatch):
+    store.save('session', 'alice', 'previous', ['att1'])
+    before = store._path('session', 'alice').read_bytes()
+    def fail(*args, **kwargs):
+        raise OSError('Own fixture write failed')
+    monkeypatch.setattr(store, 'atomic_write_text', fail)
+    with pytest.raises(OSError):
+        store.save('session', 'alice', 'á漢🙂' * 30_000, ['att2'])
+    assert store._path('session', 'alice').read_bytes() == before
+    assert store.load('session', 'alice')['text'] == 'previous'
+
+
+@pytest.mark.parametrize('text', [None, False, 123, [], {}])
+def test_text_still_must_be_a_string(store, text):
+    with pytest.raises(ValueError, match='text must be a string'):
+        store.save('session', 'alice', text, [])
+
+
+def test_attachment_id_length_and_count_boundaries_are_unchanged(store):
+    ids = ['a' * 300] * 64
+    assert store.save('session', 'alice', 'draft', ids)['attachment_ids'] == ids
+    for bad in (['a' * 301], ['   '], ['a'] * 65):
+        with pytest.raises(ValueError):
+            store.save('session', 'alice', 'draft', bad)
 
 
 def test_too_many_attachment_ids_is_refused(store):

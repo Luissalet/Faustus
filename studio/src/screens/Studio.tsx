@@ -560,16 +560,19 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   // back with it; a sent message clears its slot.
   const [draft, setDraft] = useState(() => readDraftFor(sessionId));
   const draftSession = useRef<string | null>(sessionId);
+  const currentDraft = useRef(draft);
+  currentDraft.current = draft;
+  const [draftSync, setDraftSync] = useState<{ sessionId: string | null; ready: boolean } | null>(null);
   useEffect(() => {
-    if (draftSession.current === sessionId) return;
     draftSession.current = sessionId;
-    const local = readDraftFor(sessionId);
-    setDraft(local);
+    let local = readDraftFor(sessionId);
     // B3 (CONTRATO_EXCURSOS.md): a freshly-created excurso's question,
     // seeded by ExploreDialog right before this navigation — takes over the
     // (necessarily empty) local draft for this brand-new session id.
     const excursoSeed = consumeExcursoDraftSeed(sessionId);
-    if (excursoSeed) setDraft(excursoSeed);
+    if (excursoSeed) local = excursoSeed;
+    setDraft(local);
+    setDraftSync({ sessionId, ready: !sessionId || knobs.incognito });
     // UX-01: merge with the server's copy of this draft (src/session_draft.py)
     // — only meaningful for a saved conversation, and never for Nobody mode,
     // whose whole point is that nothing about the chat outlives the tab.
@@ -577,21 +580,35 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     // when it is actually newer than the last local write.
     if (!sessionId || knobs.incognito) return;
     const localAt = readDraftUpdatedAtFor(sessionId);
+    const localAttachmentIds = readAttachmentsFor(sessionId).map((a) => a.id);
     const mySession = sessionId;
+    let cancelled = false;
     void loadSessionDraft(mySession).then((remote) => {
       // Stale by the time this resolved (switched sessions again, or Nobody
       // mode turned on meanwhile) — never clobber what's on screen now.
-      if (draftSession.current !== mySession) return;
-      if (remote.updatedAt * 1000 > localAt && remote.text !== local) setDraft(remote.text);
-    }).catch(() => undefined); // no server draft yet, or this session isn't ours — the local copy stands
+      if (cancelled || draftSession.current !== mySession) return;
+      if (remote.updatedAt * 1000 > Math.max(localAt, readDraftUpdatedAtFor(mySession))
+          && currentDraft.current === local) {
+        setDraft(remote.text);
+        setAttachments((current) => {
+          if (current.length !== localAttachmentIds.length
+              || current.some((a, index) => a.id !== localAttachmentIds[index])) return current;
+          return remote.attachmentIds.map((id) => current.find((a) => a.id === id)
+            ?? attachmentsFromMetadata({ attachments: [id] })[0]);
+        });
+      }
+    }).catch(() => undefined).finally(() => {
+      if (!cancelled) setDraftSync({ sessionId: mySession, ready: true });
+    }); // no server draft yet, or this session isn't ours — the local copy stands
+    return () => { cancelled = true; };
   }, [sessionId, knobs.incognito]);
   useEffect(() => {
     // Only once the draft on screen belongs to this session — the swap above
     // runs in this same commit, and writing the previous chat's text under
     // the new chat's key would be exactly the mix-up this avoids.
-    if (draftSession.current !== sessionId) return;
-    writeDraftFor(sessionId, draft);
-  }, [draft, sessionId]);
+    if (draftSync?.sessionId !== sessionId) return;
+    if (draft !== readDraftFor(sessionId)) writeDraftFor(sessionId, draft);
+  }, [draft, sessionId, draftSync]);
   const [attachments, setAttachments] = useState<Attachment[]>(() => readAttachmentsFor(sessionId));
   useEffect(() => {
     // Same session-boundary guard as the draft-text effect above: only write
@@ -599,21 +616,21 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     // restore in the history-load effect runs in the same commit as the
     // sessionId change), so a fast switch never writes chat A's pending
     // files under chat B's key.
-    if (draftSession.current !== sessionId) return;
+    if (draftSync?.sessionId !== sessionId) return;
     writeAttachmentsFor(sessionId, attachments, knobs.incognito);
-  }, [attachments, sessionId, knobs.incognito]);
+  }, [attachments, sessionId, knobs.incognito, draftSync]);
   useEffect(() => {
     // UX-01: debounced 1s round trip to the server's copy of this draft
     // (src/session_draft.py) — only for a saved conversation, and never for
     // Nobody mode. Same session-boundary guard as the two effects above.
-    if (draftSession.current !== sessionId) return;
+    if (draftSync?.sessionId !== sessionId || !draftSync.ready) return;
     if (!sessionId || knobs.incognito) return;
     const mySession = sessionId;
     const timer = setTimeout(() => {
       void saveSessionDraft(mySession, draft, attachments.map((a) => a.id)).catch(() => undefined);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [draft, sessionId, knobs.incognito, attachments]);
+  }, [draft, sessionId, knobs.incognito, attachments, draftSync]);
   const sendingMessage = useRef(false);
   const [preparingMessage, setPreparingMessage] = useState(false);
   const [ordinaryBusy, setBusy] = useState(false);
