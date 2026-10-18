@@ -23,6 +23,7 @@ from src.llm_core import (
     _normalize_http_status,
     llm_call_async,
     llm_call_async_with_route_fallback,
+    is_sparks_url,
     local_temperature_floor,
     stream_llm,
     stream_llm_with_fallback,
@@ -442,6 +443,8 @@ def _chat_candidate_request_factory(
     *,
     session=None,
     owner: Optional[str] = None,
+    temperature=None,
+    temperature_explicit: Optional[bool] = None,
 ):
     """Shape one route-neutral Chat prompt for each candidate window."""
 
@@ -478,7 +481,13 @@ def _chat_candidate_request_factory(
             "tokens_before": estimate_tokens(messages),
             "tokens_after": estimate_tokens(request_messages),
         }
-        return {"messages": request_messages}
+        result = {"messages": request_messages}
+        if temperature_explicit is not None and (
+            is_sparks_url(candidate_url) or is_sparks_url(getattr(session, "endpoint_url", ""))
+        ):
+            floor = local_temperature_floor(candidate_url, temperature_explicit)
+            result["kwargs"] = {"temperature": floor if floor is not None else temperature}
+        return result
 
     return factory, state
 
@@ -1997,6 +2006,8 @@ def setup_chat_routes(
                     selected_context_length,
                     session=sess,
                     owner=owner,
+                    temperature=ctx.preset.temperature,
+                    temperature_explicit=bool(getattr(ctx.preset, "temperature_explicit", False)),
                 )
             requested_model = sess.model
             # Same local-endpoint temperature floor as the streaming chat
@@ -3558,6 +3569,8 @@ def setup_chat_routes(
                         _selected_context_length,
                         session=sess,
                         owner=_user,
+                        temperature=ctx.preset.temperature,
+                        temperature_explicit=_temperature_explicit if chat_mode == "chat" else None,
                     )
 
                 # Send model name early so the frontend can show it during streaming
@@ -3696,6 +3709,7 @@ def setup_chat_routes(
                     # `_apply_local_generation_stability`'s `setdefault`
                     # never fires (measured live: local endpoint chat turns
                     # ran at temperature=1.0 despite the floor setting).
+                    _chat_original_temperature = ctx.preset.temperature
                     _chat_temp_floor = local_temperature_floor(sess.endpoint_url, _temperature_explicit)
                     if _chat_temp_floor is not None:
                         ctx.preset.temperature = _chat_temp_floor
@@ -3752,6 +3766,8 @@ def setup_chat_routes(
                                         _selected_context_length,
                                         session=sess,
                                         owner=_user,
+                                        temperature=_chat_original_temperature,
+                                        temperature_explicit=_temperature_explicit,
                                     )
                                 yield "data: " + json.dumps({
                                     "type": "context_packet",

@@ -8889,6 +8889,9 @@ async def _stream_agent_loop_body(
             logger.info("[code-refs] windows=%s outside=%s",
                         [f"{r.path}:{r.line}" for r in _code_ref_ctx.get("refs") or []],
                         _code_ref_ctx.get("outside"))
+    from src.llm_core import is_sparks_url as _is_sparks_url
+    _managed_sparks = _is_sparks_url(endpoint_url)
+    _turn_temperature = temperature
     # `local_temperature_default` (settings.py): the engines' own default
     # (1.0, DEFAULT_TEMPERATURE) is what made a local 27B ramble ("But
     # wait… Actually…") for minutes on a simple request. Unless the user
@@ -8912,7 +8915,7 @@ async def _stream_agent_loop_body(
     # factories for fallbacks), so neither direction of a mixed qwen/non-qwen
     # fallback chain inherits the other's value.
     _requested_temperature = temperature
-    if _ody_qwen_finetune_model:
+    if _ody_qwen_finetune_model and not _managed_sparks:
         temperature = _ody_qwen_temperature_cap(temperature)
     # Local models doing tool work at chat-preset temperatures (1.0 is the
     # shipped default) fabricate paths and "done" narratives far more often.
@@ -8924,7 +8927,7 @@ async def _stream_agent_loop_body(
     # and remote endpoints retain their existing precedence.
     _temperature_cap = None
     _cap_scope = _sampling_cap_scope_from_history(messages, _last_user)
-    if not temperature_explicit and not _ody_qwen_finetune_model and _cap_scope:
+    if not temperature_explicit and not _ody_qwen_finetune_model and not _managed_sparks and _cap_scope:
         try:
             from src.model_context import is_local_endpoint as _is_local_ep
             _cap = float(get_setting("agent_local_temperature_cap", 0.4) or 0)
@@ -8937,6 +8940,29 @@ async def _stream_agent_loop_body(
                             _temperature_capped_from, _cap)
         except Exception as _cap_err:
             logger.debug("temperature cap skipped: %s", _cap_err)
+
+    def _candidate_temperature(candidate_url, candidate_model):
+        # A local primary's floor/cap must not become an explicit temperature
+        # on a managed fallback. Conversely a managed primary must not disable
+        # the existing local defaults when its fallback is an ordinary endpoint.
+        if _is_sparks_url(candidate_url):
+            return _turn_temperature
+        candidate_temperature = _requested_temperature
+        if _managed_sparks:
+            candidate_temperature = _turn_temperature
+            floor = _local_temperature_floor(candidate_url, temperature_explicit)
+            if floor is not None:
+                candidate_temperature = floor
+            if not temperature_explicit and not _is_odysseus_qwen_model(candidate_model) and _cap_scope:
+                from src.model_context import is_local_endpoint
+                try:
+                    cap = float(get_setting("agent_local_temperature_cap", 0.4) or 0)
+                    if cap > 0 and is_local_endpoint(candidate_url) and candidate_temperature is not None:
+                        candidate_temperature = min(candidate_temperature, cap)
+                except (TypeError, ValueError):
+                    pass
+        return (_ody_qwen_temperature_cap(candidate_temperature)
+                if _is_odysseus_qwen_model(candidate_model) else candidate_temperature)
     _ody_memory_identity_turn = _looks_like_memory_identity_turn(_last_user)
     # The runtime's approval card is never the assistant's own words: take it
     # out of every replayed assistant message before the model reads them
@@ -9068,11 +9094,7 @@ async def _stream_agent_loop_body(
             return {
                 "messages": candidate_messages,
                 "kwargs": {
-                    "temperature": (
-                        _ody_qwen_temperature_cap(_requested_temperature)
-                        if candidate_is_qwen
-                        else _requested_temperature
-                    ),
+                    "temperature": _candidate_temperature(_url, candidate_model),
                 },
             }
 
@@ -13565,11 +13587,7 @@ async def _stream_agent_loop_body(
                 "kwargs": {
                     "tools": candidate_tools or None,
                     "tool_choice_none": state["ody_doc_finetune_mode"],
-                    "temperature": (
-                        _ody_qwen_temperature_cap(_requested_temperature)
-                        if _is_odysseus_qwen_model(candidate_model)
-                        else _requested_temperature
-                    ),
+                    "temperature": _candidate_temperature(candidate_url, candidate_model),
                 },
             }
 

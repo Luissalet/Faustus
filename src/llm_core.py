@@ -2882,6 +2882,10 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str, *,
     unlimited = requested_max_tokens is not None and requested_max_tokens <= 0
     automatic_min_p = False
     if _is_local_minimax_mlx_request(url, model):
+        if not unlimited and not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
+            payload["max_tokens"] = 2048
+        if is_sparks_url(url):
+            return False
         if "temperature" in payload:
             try:
                 # MiniMax MLX quantized ports are very sensitive to chat/agent
@@ -2900,10 +2904,6 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str, *,
         payload.setdefault("presence_penalty", 0.02)
         payload.setdefault("presence_context_size", 256)
         payload.setdefault("stop", ["<|im_end|>", "<|endoftext|>", "</s>"])
-        # A max_tokens of 0 means "server default/unbounded" for many local
-        # endpoints. Keep simple chats from running forever when the model loops.
-        if not unlimited and not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
-            payload["max_tokens"] = 2048
         return False
 
     if _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
@@ -2913,28 +2913,22 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str, *,
         # branch instead) — the exclusion is a belt-and-braces guard against
         # double-applying the floor if this helper is ever called directly
         # or the reroute is bypassed.
-        payload.setdefault("repeat_penalty", _local_sampler_default("local_repeat_penalty_default", 1.05))
-        automatic_min_p = "min_p" not in payload
-        if automatic_min_p and _min_p_host(url) in _MIN_P_REJECTED_HOSTS:
-            payload["min_p"] = 0.0
-        payload.setdefault("min_p", _local_sampler_default("local_min_p_default", 0.05))
-        # `local_top_p_default`/`local_top_k_default`: same floor as the two
-        # above (`setdefault` only — an explicit `/topp`/`/topk` already
-        # landed in `payload` via `_apply_gen_overrides_openai`, which runs
-        # BEFORE this function, so it always wins). The temperature floor
-        # for this path is applied earlier, in `_stream_agent_loop_body`,
-        # where the explicit/default distinction is tracked (`temperature`
-        # already carries the right value by the time it reaches `payload`
-        # here). 0/empty (`_local_sampler_default_optional` returns None)
-        # means "do not send".
-        if "top_p" not in payload:
-            _top_p = _local_sampler_default_optional("local_top_p_default")
-            if _top_p is not None:
-                payload["top_p"] = _top_p
-        if "top_k" not in payload:
-            _top_k = _local_sampler_default_optional("local_top_k_default")
-            if _top_k is not None:
-                payload["top_k"] = int(_top_k)
+        # Managed recipes own their server sampling defaults. Explicit options
+        # were already applied above; output-budget fallback stays independent.
+        if not is_sparks_url(url):
+            payload.setdefault("repeat_penalty", _local_sampler_default("local_repeat_penalty_default", 1.05))
+            automatic_min_p = "min_p" not in payload
+            if automatic_min_p and _min_p_host(url) in _MIN_P_REJECTED_HOSTS:
+                payload["min_p"] = 0.0
+            payload.setdefault("min_p", _local_sampler_default("local_min_p_default", 0.05))
+            if "top_p" not in payload:
+                _top_p = _local_sampler_default_optional("local_top_p_default")
+                if _top_p is not None:
+                    payload["top_p"] = _top_p
+            if "top_k" not in payload:
+                _top_k = _local_sampler_default_optional("local_top_k_default")
+                if _top_k is not None:
+                    payload["top_k"] = int(_top_k)
         if not unlimited and not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
             try:
                 cap = int(_local_sampler_default("local_openai_max_tokens_default", 8192))
@@ -4417,7 +4411,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         # only apply when the endpoint is already the native one).
         _model_defaults = _clean_gen_overrides(_model_load_defaults(url, model))
         if _model_defaults:
-            _apply_gen_overrides_ollama(payload, _model_defaults)
+            _apply_gen_overrides_ollama(payload, _model_defaults, url=url)
         if num_ctx and int(num_ctx) > 0:
             payload.setdefault("options", {})["num_ctx"] = int(num_ctx)
     else:
@@ -5235,7 +5229,7 @@ async def _llm_call_async_impl(
             response_schema=schema,
         )
         if _all_overrides:
-            _apply_gen_overrides_ollama(payload, _all_overrides)
+            _apply_gen_overrides_ollama(payload, _all_overrides, url=url)
         if _native_think_off:
             payload["think"] = False
         _widen_output_for_reasoning(payload, _asked, key=("options", "num_predict"))
@@ -5766,7 +5760,7 @@ def _model_load_defaults(url: str, model: str) -> Dict:
     # native-only keys) and land in the request either way. An explicit
     # per-model `extra` or per-turn override set later in the merge chain
     # (`_with_model_defaults`: defaults -> caller) still wins over this.
-    if _is_local_ollama_target(url):
+    if _is_local_ollama_target(url) and not is_sparks_url(url):
         # A saved per-model `extra` block (checked here, not just the
         # top-level knobs) already carries these two: don't let the floor
         # shadow it once `_apply_gen_overrides_ollama` applies `extra`
@@ -6021,7 +6015,7 @@ def local_temperature_floor(endpoint_url: str, temperature_explicit: bool) -> Op
     measured-good default (0.6) instead of the engine's own (1.0,
     `LLMConfig.DEFAULT_TEMPERATURE`) before any narrower cap is considered.
     """
-    if temperature_explicit:
+    if temperature_explicit or is_sparks_url(endpoint_url):
         return None
     try:
         from src.model_context import is_local_endpoint
@@ -6035,7 +6029,7 @@ def local_temperature_floor(endpoint_url: str, temperature_explicit: bool) -> Op
     return _local_sampler_default_optional("local_temperature_default")
 
 
-def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
+def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict, *, url: str = "") -> None:
     """Apply pinned sampling params to a native Ollama /api/chat payload.
 
     Also floors `repeat_penalty`/`min_p` to non-degenerate defaults
@@ -6060,9 +6054,9 @@ def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
         payload["think"] = overrides["think"]
     if "keep_alive" in overrides:
         payload["keep_alive"] = overrides["keep_alive"]
-    if "repeat_penalty" not in options:
+    if "repeat_penalty" not in options and not is_sparks_url(url):
         options["repeat_penalty"] = _local_sampler_default("local_repeat_penalty_default", 1.05)
-    if "min_p" not in options:
+    if "min_p" not in options and not is_sparks_url(url):
         options["min_p"] = _local_sampler_default("local_min_p_default", 0.05)
 
 
@@ -6699,7 +6693,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             stream=True, tools=tools, num_ctx=get_context_length(url, model),
         )
         if _overrides:
-            _apply_gen_overrides_ollama(payload, _overrides)
+            _apply_gen_overrides_ollama(payload, _overrides, url=url)
     elif provider == "chatgpt-subscription":
         target_url = _normalize_chatgpt_subscription_url(url)
         h = _provider_headers(provider, headers)
