@@ -212,8 +212,9 @@ export function HarnessCard({
   const [restored, setRestored] = useState(false);
   const verdict = summary.changeset?.verdict;
   const outcomeWords = harnessOutcomeWords(summary.stopReason, permissionAnswered);
-  const unverified = checks.some((c) => c.status === 'unverified') || summary.stopReason === 'complete_unverified';
-  const verified = summary.changeset?.verified === true;
+  const grade = summary.verification?.outcome;
+  const unverified = grade === 'unverified' || checks.some((c) => c.status === 'unverified') || summary.stopReason === 'complete_unverified';
+  const verified = !unverified && (grade === 'verified' || (grade === undefined && summary.changeset?.verified === true));
   const tests = summary.tests;
   const testsLine = tests && typeof tests === 'object' && ('passed' in tests || 'failed' in tests || 'status' in tests)
     ? `tests: ${String(tests.status ?? '')} ${tests.passed !== undefined ? `${tests.passed} ok` : ''} ${tests.failed !== undefined ? t('{n} failed', { n: String(tests.failed) }) : ''}`.replace(/\s+/g, ' ').trim()

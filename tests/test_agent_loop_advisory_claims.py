@@ -71,7 +71,7 @@ def test_factual_advisory_cannot_leave_the_result_marked_verified(tmp_path):
     assert ledger.verify_outcome()["outcome"] == "unverified"
 
 
-def test_wrong_calculation_keeps_the_report_and_appends_checked_evidence(tmp_path, monkeypatch):
+def test_wrong_calculation_keeps_report_and_records_exact_evidence(tmp_path, monkeypatch):
     from src import scorecard
     workspace = _workspace(tmp_path)
     answer = "La letra r aparece 4 veces."
@@ -80,12 +80,23 @@ def test_wrong_calculation_keeps_the_report_and_appends_checked_evidence(tmp_pat
     monkeypatch.setattr(scorecard, "record", rows.append)
     events = _run(workspace, user="¿Cuántas veces aparece la letra r en la palabra strawberry?")
     text = "".join(e.get("delta", "") for e in events if not e.get("thinking"))
-    assert calls["n"] == 1 and answer in text
-    assert "Comprobación de evidencias:" in text and "contiene 3 veces" in text
+    assert calls["n"] == 1
+    assert text == answer
     assert not any(e.get("type") == "response_replace" for e in events)
+    expected = {'kind': 'letter_count', 'value': '3',
+                'explanation': "'strawberry' contiene 3 veces la letra 'r'."}
+    checks = [e for e in events if e.get('type') == 'harness_check']
+    assert any(e.get('advisory') is True and e.get('calculation') == expected
+               and ('wrong_calculation' in (e.get('reasons') or []) or e.get('reason') == 'wrong_calculation')
+               for e in checks)
+    summary = next(e['data'] for e in events if e.get('type') == 'harness_summary')
+    assert any(note.startswith('evidence_notice:') and expected['explanation'] in note for note in summary['notes'])
+    assert summary['verification']['outcome'] == 'unverified'
     metrics = next(e["data"] for e in events if e.get("type") == "metrics")
     assert metrics["harness"]["verification"]["outcome"] == "unverified"
-    assert rows and not rows[0]["verified"] and rows[0]["unverified"]
+    assert rows and rows[0]['verified'] is False and rows[0]['unverified'] is True
+    assert rows[0]['evidence_outcome'] == 'unverified'
+    assert not any(e.get('status') in ('rejected', 'auto_continue', 'completion_gated') for e in checks)
 
 
 def test_deterministic_calculation_does_not_exempt_requested_file_work():

@@ -570,6 +570,7 @@ export interface HarnessSummary {
   mutations: string[];
   stopReason: string;
   notes: string[];
+  verification?: { outcome: 'verified' | 'uncertain' | 'unverified' };
   checkpoint?: string;
   workspace?: string;
   tests?: Record<string, unknown>;
@@ -1693,12 +1694,16 @@ function anchorFrom(raw: unknown): DocSuggestionAnchor | undefined {
 /** `harness_summary` data, and the `harness` block history keeps. */
 export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
   const cs = (data.changeset && typeof data.changeset === 'object' ? data.changeset : null) as Record<string, unknown> | null;
+  const verification = data.verification && typeof data.verification === 'object'
+    ? (data.verification as Record<string, unknown>).outcome : undefined;
   return {
     toolCalls: num(data.tool_calls) ?? 0,
     failedCalls: num(data.failed_calls) ?? 0,
     mutations: asArray<unknown>(data.mutations).map(String),
     stopReason: str(data.stop_reason, 'complete'),
     notes: asArray<unknown>(data.notes).map(String),
+    verification: verification === 'verified' || verification === 'uncertain' || verification === 'unverified'
+      ? { outcome: verification } : undefined,
     checkpoint: str(data.checkpoint) || undefined,
     workspace: str(data.workspace) || undefined,
     tests: data.tests && typeof data.tests === 'object' ? (data.tests as Record<string, unknown>) : undefined,
