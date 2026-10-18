@@ -13662,3 +13662,32 @@ idénticos, sin descargas, escrituras ni exportación de datos reales para proba
 Sólo reinicio gestionado Silver tras comprobar siete frentes inactivos.
 Evidencia: research-inbox/silver-portable840. La tarea 842 de navegación por
 fotogramas de repeticiones sigue en QA; no declararla activa todavía.
+
+
+## Silver: navegación e inspección local de repeticiones — 18-10-2026
+
+La tarea 842 está integrada y activa en Silver Main `4eed0beb0d97`, aprobada
+por revisión independiente CAS 1 sobre eac025d, 1dacccb, 658256e, e0a2c1a y
+4eed0be. Las repeticiones RT terminadas tienen cursor de fotogramas a 30 Hz,
+saltos de cinco segundos y teclas Inicio/Fin/flechas. Saltar pausa y conserva
+velocidad; se reconstruye el registro con los activos históricos y se limpian
+efectos, avisos y debilitados anteriores. Un KO nuevo mantiene su animación.
+La herramienta de solo lectura `battle_rt_inspect` devuelve el mismo estado
+público y un enlace pausado, sin escribir palmarés, partidas ni progreso.
+Admite sólo RT terminadas y limita al final guardado, incluidas rendiciones
+en tick cero; las páginas autónomas también retienen el final al reverlo.
+Cada salto reconstruye desde el principio; puede tardar más en combates largos.
+
+610 Python/2 omitidas y 539 Node/1 omitida en la revisión final; build app+HTML
+correcto y HTML probado idéntico por SHA256 al final. El modo quiet doble
+suprimió resumen Python: salida0, 612 marcas completas y colección612
+confirmadas en suite-final.json. R1 interrumpida no se cuenta. Pruebas reales
+de ratón/teclado, ES/EN, móvil390 sin desbordamiento y HTML autónomo tras
+rendición560ticks/18,66s: End560 terminal, Home0 y salto150 pausado, consola0.
+Main191herramientas, biblioteca51/24/3/44 y6arenas,18tablas/ajustes/token/medios
+exactos tras activación gestionada sóloSilver y siete frentes inactivos.
+Consulta nativa Main de RT existente en0/150/939 sin escritura, y UI Main
+pausada150 con registro y cursor. Datos de biblioteca también exactos después.
+Sin cambios en reglas, RNG, daño, paquetes, APIs externas, modelos, Hub ni push.
+Evidencia: research-inbox/silver-replay842; detalles en docs/RT_REPLAY_SEEK.md
+de Silver.845 Roca sigue en QA y no se considera activa en este registro.

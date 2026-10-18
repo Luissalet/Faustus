@@ -922,3 +922,9 @@ and resolve missing art locally. They need no sprite server while playing;
 ordinary cries/music remain unembedded, and HTML size grows with cached assets.
 Re-export older pages. Task 840 is active at Silver Main18c66ab (608 Python and
 534 Node tests passed). [Scope and limits](docs/silver-offline-20261018.md).
+
+
+Silver's finished real-time replays now have frame seeking, five-second jumps
+and a read-only native inspection tool with paused deep links. Seeking pauses
+and retains speed, without changing records. Active at Silver Main4eed0be;
+191tools. [Verified scope and limits](docs/silver-offline-20261018.md).
