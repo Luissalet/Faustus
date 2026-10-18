@@ -13403,3 +13403,26 @@ Verificados Mega Tyranitar, Mega Medicham y Karrablast: 8/9/8 hojas, alpha y
 geometría exactos, dos Megas vistas en combate, API y MCP nativos. Mega Swampert
 no tiene PMD normal ni shiny en el SpriteCollab actual: un recolor no inventa
 esa silueta. Evidencia y recibos finales: research-inbox/silver-pmd807.
+
+
+### Silver: Mega Swampert de Jhony-Rex normal y shiny (18-10-2026, #812)
+
+La hoja 270×437 aportada por Luis ya se importa mediante `overworld_import`
+(UI/REST/MCP existente), con fuente y crédito Jhony-Rex. Cinco filas de tres
+poses auténticas forman dos atlas transparentes de ocho direcciones; se
+reflejan las tres direcciones ausentes. La fila de espaldas respeta su paso
+de 47 píxeles para no cortar el contorno ni contaminar la pose siguiente.
+El original completo se conserva byte a byte bajo su SHA-256; cabecera y
+poses extra quedan fuera de la animación. El shiny usa la paleta canónica
+de Mega Swampert normal/shiny (referencia de forma 10064), con idénticas
+poses y transparencia. Los atlas se incrustan en las páginas exportadas.
+
+Activo en Silver 47506503e4d6c1fa1d700d74704f93d382f36117, revisión independiente CAS3.
+Datos, ajustes y token preservados; las 26 entradas previas de sprites
+siguen idénticas y sólo se añaden normal/shiny `swampert-mega`. Combates
+originales Pretty Rare Candies/Pink Bois conservan sus datos RT exactos.
+No cambia el simulador ni se inventan animaciones de ataque, daño o caída.
+La importación inicial necesita la referencia canónica descargable o
+cacheada; reimportar funciona con esa referencia ya guardada. SpriteCollab
+sigue sin publicar esta forma: ahora dispone de la hoja importada por Luis.
+Recibos y pruebas: `research-inbox/silver-swampert812`.
