@@ -16133,7 +16133,7 @@ async def _stream_agent_loop_body(
             if (
                 not _ledger.events
                 and _harness_scope_active
-                and (not unattended or _workspace_work)
+                and (_workspace_work or _boundary_echo_only)
                 and not _requires_project_objective_apply
                 and not _project_objective_unavailable
                 and _xr.permits("no_action_nudge", _no_action_nudges, 1)

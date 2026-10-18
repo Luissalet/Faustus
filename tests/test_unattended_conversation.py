@@ -401,3 +401,83 @@ def test_action_on_a_ratio_is_not_an_action_on_a_relative_path(operation):
 def test_relative_delete_support_does_not_change_explanation_classification():
     assert al._looks_like_workspace_coding_request("Delete config/settings")
     assert al._explanation_request("Explain how to delete records")
+
+
+@pytest.mark.parametrize("answer", ['{"net":18}', '{"a":1}\n{"b":2}'])
+def test_normal_mcp_preserves_an_attended_data_answer(answer, tmp_path, monkeypatch):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from mcp_servers import hoard_copilot_server as mcp
+
+    _patch_common(monkeypatch)
+    user_text = "Apply the conversion ratio numerator/denominator. Return only JSON."
+    unexpected = {"error": "unexpected extra provider call", "status": 400}
+    seen = _scripted(monkeypatch, [_text(answer), [f'event: error\ndata: {json.dumps(unexpected)}\n\n']])
+    submitted, chunks = [], []
+
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+
+        @asynccontextmanager
+        async def stream(self, method, url, **kwargs):
+            assert method == "POST" and url.endswith("/api/chat_stream")
+            payload = kwargs["json"]
+            submitted.append(payload)
+            assert payload["mode"] == "agent" and "unattended" not in payload
+            # Protocol mock: bind the existing session's project workspace,
+            # then consume the real loop with the unchanged facade's flags.
+            chunks.extend([chunk async for chunk in al.stream_agent_loop(
+                "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+                [{"role": "user", "content": payload["message"]}],
+                workspace=str(tmp_path), unattended=payload.get("unattended", False),
+                max_rounds=4, relevant_tools={"read_file", "glob"},
+            )])
+            yield SimpleNamespace(headers={"X-Odysseus-Run-Id": "a" * 32}, raise_for_status=lambda: None)
+
+    monkeypatch.setattr(mcp, "httpx", SimpleNamespace(AsyncClient=Client))
+    monkeypatch.setenv("FAUSTUS_URL", "http://127.0.0.1:64216")
+    monkeypatch.setenv("FAUSTUS_TOKEN", "")
+    monkeypatch.setenv("FAUSTUS_TOKEN_FILE", "")
+    result = asyncio.run(mcp.call_tool("hoard_turn_start", {"session_id": "owned", "message": user_text}))
+    events = _events(chunks)
+    assert len(submitted) == 1 and json.loads(result[0].text)["run_id"] == "a" * 32
+    assert len(seen) == 1, events
+    assert not [e for e in events if e.get("status") == "no_action" or e.get("type") in {"error", "response_replace"}], events
+    assert "".join(e.get("delta", "") for e in events) == answer
+
+
+@pytest.mark.parametrize("user_text", ["Fix src/widgets", "Refactor src/widgets", "Write result.json and return JSON."])
+def test_attended_workspace_job_keeps_its_no_action_recovery(user_text, tmp_path, monkeypatch):
+    _patch_common(monkeypatch)
+    seen = _scripted(monkeypatch, [_text('{"status":"done"}'), _text('{"status":"checked"}')])
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": user_text}], workspace=str(tmp_path),
+        unattended=False, max_rounds=2, relevant_tools={"read_file", "glob"},
+    )))
+    assert len(seen) == 2
+    assert len([e for e in events if e.get("reason") == "no_workspace_action"]) == 1, events
+    assert not [e for e in events if e.get("reason") == "completion_audit"]
+
+
+@pytest.mark.parametrize("unattended", [False, True])
+def test_workspace_boundary_echo_still_requires_a_real_answer(tmp_path, monkeypatch, unattended):
+    _patch_common(monkeypatch)
+    answer = '{"value":18}'
+    seen = _scripted(monkeypatch, [_text("<<faustus_ctx_ack>>"), _text(answer)])
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Return the supplied values as JSON."}], workspace=str(tmp_path),
+        unattended=unattended, max_rounds=3, relevant_tools={"read_file", "glob"},
+    )))
+    assert len(seen) == 2
+    assert len([e for e in events if e.get("reason") == "reference_context_echo"]) == 1, events
+    visible = ""
+    for event in events:
+        if event.get("type") == "response_replace":
+            visible = event["text"]
+        else:
+            visible += event.get("delta", "")
+    assert visible.strip() == answer
