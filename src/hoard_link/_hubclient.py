@@ -99,6 +99,21 @@ def hub_url(explicit: Optional[str] = None) -> str:
     return DEFAULT_URL
 
 
+def _opener(request: urllib.request.Request) -> urllib.request.OpenerDirector:
+    if request.type != "http":
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    # build_opener also constructs HTTPSHandler for plain HTTP. On Python 3.13
+    # that loads the Windows certificate stores before any request is sent.
+    # Keep the other default handlers and their order, without unused TLS.
+    opener = urllib.request.OpenerDirector()
+    for handler in (urllib.request.UnknownHandler(), urllib.request.HTTPHandler(),
+                    urllib.request.HTTPDefaultErrorHandler(), urllib.request.FTPHandler(),
+                    urllib.request.FileHandler(), urllib.request.HTTPErrorProcessor(),
+                    urllib.request.DataHandler(), urllib.request.ProxyHandler({}), NoRedirect()):
+        opener.add_handler(handler)
+    return opener
+
+
 def fetch(url: str, body: Optional[dict[str, Any]] = None, *, method: Optional[str] = None,
           timeout: float = 5.0, headers: Optional[dict[str, str]] = None) -> tuple[Optional[int], Any]:
     """``(status, json)``; ``(None, None)`` when nothing answered. Never uses
@@ -107,7 +122,7 @@ def fetch(url: str, body: Optional[dict[str, Any]] = None, *, method: Optional[s
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data is not None else "GET"),
                                  headers={"Content-Type": "application/json", "Accept": "application/json",
                                           "User-Agent": "hoard-link", **(headers or {})})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    opener = _opener(req)
     try:
         with opener.open(req, timeout=timeout) as resp:
             raw, status = resp.read(), resp.status
@@ -133,7 +148,7 @@ def fetch_detailed(url: str, body: Optional[dict[str, Any]] = None, *, method: O
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data is not None else "GET"),
                                  headers={"Content-Type": "application/json", "Accept": "application/json",
                                           "User-Agent": "hoard-link", **(headers or {})})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    opener = _opener(req)
     try:
         with opener.open(req, timeout=timeout) as resp:
             raw, status = resp.read(), resp.status
