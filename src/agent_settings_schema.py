@@ -1409,8 +1409,10 @@ GROUPS: list[dict[str, Any]] = [
     _group(
         "scene_3d", "3D scenes",
         "Typed scene descriptions rendered headless with Blender (blender_scene tool and MCP "
-        "server, src/blender_scene/): the model writes a list of checked operations, never free "
-        "code, and every file stays inside the scene's own folder.",
+        "server, src/blender_scene/). Typed headless operations stay inside the scene folder. "
+        "Connected Blender 5.1+ uses Blender Lab's official MCP extension, API/manual tools, screenshots "
+        "and full bpy. Native jobs add selection, nodes, action slots, topology/UV/weight checks, "
+        "review sheets, staged recipes and clip-scoped exports. Works with Blender Internet access off.",
         [
             _text("blender_path", "Blender executable",
                   "Full path to blender.exe or blender. Empty = look at BLENDER_PATH, the PATH and the "

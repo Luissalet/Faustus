@@ -620,6 +620,10 @@ All require an administrator. A run writes under
 
 ## Settings
 
+For the connected Blender 5.1+ copilot, official MCP tools and native asset jobs,
+see [Connected Blender scenes](blender-live.md). The rules below describe only
+the typed headless scene pipeline.
+
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `blender_path` | `""` | Blender executable or its folder; empty searches `BLENDER_PATH`, `PATH` and the install folders |

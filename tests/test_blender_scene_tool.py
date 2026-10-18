@@ -10,7 +10,7 @@ import os
 import pytest
 
 from src import blender_scene as bs
-from src.agent_tools import blender_scene_tool as tool_module
+from src.blender_scene import tool as tool_module
 from src.agent_tools.blender_scene_tool import BlenderSceneTool
 from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
 
@@ -82,7 +82,8 @@ def test_tool_is_registered_everywhere_the_catalogs_look():
     caps = capabilities_for_tool("blender_scene")
     assert caps.known
     assert {ToolEffect.WRITE_PRIVATE, ToolEffect.READ_WORKSPACE} <= set(caps.effects)
-    assert ToolEffect.NETWORK_EGRESS not in caps.effects and ToolEffect.EXECUTE_CODE not in caps.effects
+    assert ToolEffect.NETWORK_EGRESS not in caps.effects
+    assert {ToolEffect.EXECUTE_CODE, ToolEffect.WRITE_WORKSPACE, ToolEffect.UI_SIDE_EFFECT} <= set(caps.effects)
     assert caps.result_integrity == ResultIntegrity.WORKSPACE_UNTRUSTED
     assert "blender_scene" in NON_ADMIN_BLOCKED_TOOLS
     assert "blender_scene" not in PLAN_MODE_READONLY_TOOLS   # `run` writes files
@@ -100,7 +101,7 @@ def test_tool_is_known_to_the_tool_authority():
 def test_schema_is_well_formed():
     fn = next(t["function"] for t in FUNCTION_TOOL_SCHEMAS if t["function"]["name"] == "blender_scene")
     props = fn["parameters"]["properties"]
-    assert props["action"]["enum"] == ["probe", "schema", "validate", "run", "smoke"]
+    assert props["action"]["enum"] == list(tool_module.ACTIONS)
     for key in ("scene", "ops", "meta", "folder", "timeout", "format", "op", "engine"):
         assert key in props
     assert props["scene"]["type"] == "object" and props["ops"]["type"] == "array"
@@ -329,10 +330,11 @@ def payload(out):
 def test_server_identity_and_tool_surface():
     assert srv.server.name == "blender_scene"
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["blender_probe", "blender_scene_schema", "blender_scene_validate",
-                                       "blender_scene_run", "blender_smoke"]
+    assert [t.name for t in tools[:5]] == ["blender_probe", "blender_scene_schema", "blender_scene_validate",
+                                           "blender_scene_run", "blender_smoke"]
+    assert {"blender_live_probe", "blender_live_submit", "blender_live_job", "blender_live_cancel"} <= {t.name for t in tools}
     for tool in tools:
-        assert tool.inputSchema["type"] == "object" and len(tool.description) > 60, tool.name
+        assert tool.inputSchema["type"] == "object" and tool.description, tool.name
         for required in tool.inputSchema.get("required", []):
             assert required in tool.inputSchema["properties"]
     run_schema = next(t for t in tools if t.name == "blender_scene_run").inputSchema

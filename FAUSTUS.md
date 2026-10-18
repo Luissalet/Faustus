@@ -1,5 +1,18 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de
+Blender Lab 1.0.3 sobre Blender 5.2.2 LTS. El panel Faustus conecta la escena y
+abre el chat común. Hay 35 herramientas MCP: 26 oficiales, cuatro flujos vivos y
+las cinco herramientas tipadas existentes. Permite consultar escena, selección
+y RNA instalada, ejecutar bpy, editar nodos y animación con slots, comprobar
+topología/UV/pesos, revisar ángulos y fotogramas, guardar/reabrir y exportar
+objetos, rig y clips seleccionados. Los trabajos y recetas por etapas conservan
+resultados y errores y admiten cancelación. Funciona con el acceso a Internet
+de Blender desactivado; el razonamiento utiliza las Sparks. Dos assets propios
+con tres clips cada uno verifican operaciones. La calidad del modelado autónomo
+con Sparks sigue sin validar: tres peticiones largas agotaron 600 s sin código.
+Documentación y uso: `docs/api/blender-live.md` e `Install-BlenderBridge.ps1`.
+
 **Silver: música del combate (#794):** en Combatir se elige entre48 pistas,
 Automática y Sin música. El control Sonido permite cambiarla durante combate
 clásico y en tiempo real; el navegador recuerda la elección y conserva volúmenes
@@ -13476,3 +13489,49 @@ La importación inicial necesita la referencia canónica descargable o
 cacheada; reimportar funciona con esa referencia ya guardada. SpriteCollab
 sigue sin publicar esta forma: ahora dispone de la hoja importada por Luis.
 Recibos y pruebas: `research-inbox/silver-swampert812`.
+
+### Silver: personal MP3 library, playlists and listening queue (18 October 2026)
+
+The Music tab imports multiple personal MP3s by file selection or dropping files,
+keeps original bytes in the local service, deduplicates identical content, and
+allows titles to be renamed and songs to be archived/restored. It includes the
+existing catalog alongside personal songs, search, named playlists with ordered
+and repeated entries, and a saved queue with an index, shuffle and repeat modes.
+The shared dock continues playing across ordinary app navigation, with seeking,
+previous/next and the existing volume mixer. Reload restores the queue paused,
+from the selected song's beginning; playback needs an open browser tab.
+
+Personal songs can be chosen in the ordinary battle mixer, which also imports
+MP3s. Starting battle music pauses the listening dock; playing the dock stops
+battle music. Six shared UI/REST/MCP tools expose the same operations:
+music_library, music_import, music_track_update, music_playlist_save,
+music_playlist_delete and music_queue_set. Queue tools persist the desired list,
+not a command to force a closed browser to play. Personal music is not embedded
+in portable HTML and is not propagated to the recorder's separate browser.
+
+Metadata is atomic under data/music, separate from battle data. MP3 uploads
+require complete consecutive Layer III frames; originals and saved battles are
+unchanged. Archiving removes playlist/queue memberships while retaining the file;
+restoring a song does not reconstruct those memberships. See Silver's
+docs/MUSIC_LIBRARY.md and Agora silver/task/821 for verification and limits.
+
+
+### Silver: reproducible metagame samples and benchmark identities (18 October 2026)
+
+Active in Silver main `2a4d4f2a104e817584d9cae1700f20094506139b`, approved tasks728/820 CAS1.
+Compare teams can test one saved candidate against100 distinct legal teams generated from usage
+and popular sets. It preserves the corpus fingerprint, source formats, full opponents and seeds;
+insufficient or empty samples are explicit. These are generated teams, not observed whole ladder
+rosters. Results include per-opponent outcomes and three threats by attributed KOs/damage and roster
+appearances, with explicit units. Repeat uses the saved sample with current candidate teams.
+Normal/hard/expert opponents and classic/real-time modes share benchmark_start/job_get/UI.
+The A/B benchmark also uses distinct internal seat names when public trainer names coincide.
+No trainers, battle-history rows or hall records are created by benchmarks; win rate describes that sample.
+Native and registered Silver catalogs contain189 tools with identical schemas.
+
+Full578 Python/2skip and503 Node/1skip passed on compositionb01dbb6; final2a4 preserves
+all later active daily challenge, climate, MP4 music and replay-name code, and passes relevant
+Python union areas,519 Node/1skip, builds, native MCP189 and browser checks. One managed Silver
+restart preserved18 tables,161 media files, settings/token and real counts51trainers/24gyms/3leagues/44battles.
+Manual and the Silver project graph updated; task735 remains parked. No push or model/Faustus/Hub restart.
+Evidence: D:/LocalAI/research-inbox/silver-meta728/activation728.json.

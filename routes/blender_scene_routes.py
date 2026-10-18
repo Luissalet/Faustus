@@ -31,6 +31,12 @@ class SceneBody(BaseModel):
     timeout: Optional[float] = None
 
 
+class LiveBody(BaseModel):
+    operation: str
+    arguments: Dict[str, Any] = {}
+    port: Optional[int] = None
+
+
 def _scene(body: SceneBody):
     if body.scene is not None:
         return body.scene
@@ -48,6 +54,58 @@ def _root(folder: str) -> str:
 
 def setup_blender_scene_routes():
     router = APIRouter(prefix="/api/blender")
+
+    @router.get("/official/tools")
+    async def official_tools(request: Request):
+        require_admin(request)
+        from src.blender_live.official import tools
+        try:
+            return {"tools": [item.model_dump(mode="json") for item in await tools()]}
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.post("/official/call")
+    async def official_call(request: Request):
+        require_admin(request)
+        from src.blender_live.service import execute_live
+        body = await request.json()
+        try:
+            return await execute_live("official_call", body)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.get("/live/probe")
+    def live_probe(request: Request, port: Optional[int] = None):
+        require_admin(request)
+        from src.blender_live import BridgeClient
+        return BridgeClient(port=port).probe()
+
+    @router.post("/live/jobs")
+    def live_submit(body: LiveBody, request: Request):
+        require_admin(request)
+        from src.blender_live import BridgeClient
+        try:
+            return BridgeClient(port=body.port).submit(body.operation, body.arguments)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.get("/live/jobs")
+    def live_jobs(request: Request, port: Optional[int] = None):
+        require_admin(request)
+        from src.blender_live import BridgeClient
+        return BridgeClient(port=port).jobs()
+
+    @router.get("/live/jobs/{job_id}")
+    def live_job(job_id: str, request: Request, port: Optional[int] = None):
+        require_admin(request)
+        from src.blender_live import BridgeClient
+        return BridgeClient(port=port).job(job_id)
+
+    @router.post("/live/jobs/{job_id}/cancel")
+    def live_cancel(job_id: str, request: Request, port: Optional[int] = None):
+        require_admin(request)
+        from src.blender_live import BridgeClient
+        return BridgeClient(port=port).cancel(job_id)
 
     @router.get("/probe")
     def probe(request: Request):

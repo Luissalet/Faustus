@@ -759,16 +759,16 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
-    # blender_scene (src/blender_scene): `run` starts the Blender executable on
-    # a fixed runner script with a validated, typed scene (no free-form code)
-    # and writes renders/.blend/model files only inside its own per-session
-    # folder under the data directory; probe/schema/validate only read. It also
-    # reads model and .blend files from that same folder. Classed with the other
-    # tools that write generated files into private storage (generate_image),
-    # plus the workspace read.
+    # Typed headless scenes retain their existing private folders. Live asset
+    # operations and the official Blender tools also execute bpy, edit the open
+    # scene and write caller-selected project/export files. Loopback MCP needs
+    # no external service. Full access uses the existing authority policy.
     {"blender_scene"},
     ToolEffect.READ_WORKSPACE,
     ToolEffect.WRITE_PRIVATE,
+    ToolEffect.WRITE_WORKSPACE,
+    ToolEffect.EXECUTE_CODE,
+    ToolEffect.UI_SIDE_EFFECT,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(

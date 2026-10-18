@@ -236,13 +236,17 @@ class SkillsManager:
             if not sk:
                 continue
             owner = (sk.owner or "").strip()
-            if owner == primary_owner:
+            if owner in {primary_owner, GLOBAL_SKILL_OWNER}:
                 continue
             if owner and owner in valid_owners:
                 continue
             sk.owner = primary_owner
             try:
-                self._write_skill(sk)
+                # Owner repair preserves the source path. A legacy folder can
+                # differ from its parsed name; canonicalizing here can replace
+                # a different existing skill with the same fallback slug.
+                from core.atomic_io import atomic_write_text
+                atomic_write_text(path, sk.to_markdown())
                 changed += 1
             except Exception as e:
                 logger.warning("Failed to backfill owner for skill %s: %s", sk.name, e)

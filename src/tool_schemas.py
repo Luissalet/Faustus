@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.agent_tools import ToolBlock, TOOL_TAGS
+from src.blender_live.client import OPERATIONS as BLENDER_LIVE_OPERATIONS
 from src.tool_parsing import _TOOL_NAME_MAP
 from src.tool_security import BUILTIN_EMAIL_TOOLS
 from src.tool_authority import AUTHORITY
@@ -3380,11 +3381,11 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "blender_scene",
-            "description": "Build/render/verify typed JSON 3D scenes headlessly in Blender. Scene: {meta,ops:[...]}. Actions: probe, schema (first), validate, run, smoke. Ops: new_scene, load_blend, save, delete, set_world, add_mesh, set_transform, add_empty, add_material, assign_material, add_modifier, add_light, add_camera, track_to, add_text, set_render, render, compositor_glare, import_model, export_model, assert. No free-form code; files stay in the session folder. Use for renderiza una escena 3D, modela un cubo, export STL.",
+            "description": "Build/render/verify typed JSON 3D scenes headlessly in Blender. Scene: {meta,ops:[...]}. Actions: probe, schema (first), validate, run, smoke. Ops: new_scene, load_blend, save, delete, set_world, add_mesh, set_transform, add_empty, add_material, assign_material, add_modifier, add_light, add_camera, track_to, add_text, set_render, render, compositor_glare, import_model, export_model, assert. Typed headless ops stay in the session folder. Connected Blender 5.1+ uses the official Blender Lab engine. official_tools discovers its tools and schemas; official_call(name,arguments) provides bundled API/manual, screenshots, scene queries and full bpy. Native asset_check observes topology, UV and rig weights without mutation. Native live actions: live_probe, live_submit(operation,arguments), live_job(job_id), live_cancel(job_id). Operations: scene (objects?), execute (code; bpy available; assign result), views (objects?, angles?, frames?, width?, height?; returns contact sheet), save/load (path), export (path,format,objects?,selected_only?), recipe_save(name,steps:[{name,code}]), recipe_list, recipe_run(name,stages?). Live execute runs full Python on the open scene; jobs preserve progress and never silently rerun after restart. Use for Blender copilot, seleccion activa, rig, skin, actions, clips, Geometry Nodes, multiangle review, export GLB/FBX/STL.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["probe", "schema", "validate", "run", "smoke"], "description": "What to do (default: run when a scene is given)"},
+                    "action": {"type": "string", "enum": ["probe", "schema", "validate", "run", "smoke", "live_probe", "live_submit", "live_job", "live_cancel", "official_tools", "official_call"], "description": "official_tools discovers all installed Blender Lab tools and schemas; official_call executes one with name and arguments. Other actions work with native typed scenes or durable live asset jobs."},
                     "scene": {"type": "object", "description": "The scene: {\"meta\": {name, description, stop_on_error}, \"ops\": [...]}. Alternative: pass `ops` (and `meta`) directly."},
                     "ops": {"type": "array", "items": {"type": "object"}, "description": "The list of ops, instead of scene.ops"},
                     "meta": {"type": "object", "description": "Scene metadata when ops is given directly"},
@@ -3392,7 +3393,12 @@ FUNCTION_TOOL_SCHEMAS = [
                     "timeout": {"type": "number", "description": "Seconds Blender may run (default 300 or the blender_timeout_seconds setting)"},
                     "format": {"type": "string", "enum": ["summary", "json_schema"], "description": "schema action: compact text (default) or the full JSON Schema"},
                     "op": {"type": "string", "description": "schema action: show only this op"},
-                    "engine": {"type": "string", "enum": ["workbench", "eevee", "cycles"], "description": "smoke action: render engine (default workbench, works without a GPU)"}
+                    "engine": {"type": "string", "enum": ["workbench", "eevee", "cycles"], "description": "smoke action: render engine (default workbench, works without a GPU)"},
+                    "operation": {"type": "string", "enum": list(BLENDER_LIVE_OPERATIONS), "description": "live_submit operation. api: identifier bpy.types.Name or bpy.ops.category.operator returns installed RNA signatures/enums; nodes: owner/name/modifier?, ops?; animation: object; asset_check: objects?, observes topology/UV/weights/materials/shape keys without mutation; export: actions can map object names to explicit clip names."},
+                    "name": {"type": "string", "description": "Official Blender Lab tool name for official_call; first use official_tools to discover the schema."},
+                    "arguments": {"type": "object", "description": "Live operation arguments; read docs/api/blender-live.md for recipes and rendering"},
+                    "job_id": {"type": "string", "description": "ID returned by a live submission; omit for live_job to list jobs"},
+                    "port": {"type": "integer", "description": "Optional local bridge port; default discovered automatically"}
                 },
                 "required": []
             }

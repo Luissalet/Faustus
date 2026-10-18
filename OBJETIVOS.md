@@ -5,9 +5,16 @@
 Encargo de Luis: incorporar las funciones útiles de las fuentes investigadas,
 excluyendo Jev, pagos y dependencias de API externas. La biblioteca recibe ocho
 procedimientos y conserva referencias al instalarlos (#781). El estudio de
-ingeniería inversa (#779), el trabajo vivo de Blender (#780)
-y los motores de composición, voz y cámara (#783) siguen siendo frentes
+ingeniería inversa (#779) y los motores de composición, voz y cámara (#783) siguen siendo frentes
 de implementación; las skills no se presentan como sustituto de esas funciones.
+
+Blender (#780) tiene ya activo el MCP oficial de Blender Lab 1.0.3 con 35 herramientas sobre
+el 5.2.2 LTS instalado y flujos propios de escena, nodos, animación, vistas, recetas
+y exportación por rig/clips. Mantiene las herramientas tipadas anteriores.
+La calidad del modelado autónomo con Sparks sigue abierta: tres generaciones
+largas agotaron 600 s sin devolver código. Durante la activación apareció un fallo
+previo de migración de skills con BOM; los datos afectados se restauraron exactos
+y su corrección 97159d0a está en revisión R2 antes del siguiente reinicio.
 
 El índice (#782) ya incorpora resolución por importación/ámbito y actualización
 de llamadas intactas al cambiar definiciones; API/MCP comparten el impacto
