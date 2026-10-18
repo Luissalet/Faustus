@@ -62,6 +62,8 @@ Native operations:
 | `nodes` | `owner`: group/material/world/light/compositor/modifier; `name`, optional `modifier`; optional `ops` add/remove/set/link/unlink; stable socket identifiers, links and interface returned |
 | `animation` | `object`; actions with slots, layers, curves and keys, active action, NLA and drivers |
 | `asset_check` | Optional selected object names; base-mesh topology, UV coverage/degenerate faces, rig weight totals, materials, shape keys and units, without mutation |
+| `snapshot` | Optional object names; immutable job-ID snapshot of authored mesh coordinates/topology, UVs, weights, shape keys, transforms, materials/node graphs, rig rest/pose matrices, animation and selection context |
+| `diff` | `snapshot_id`; added/removed/changed objects and field names, shared action changes and context changes, retaining the baseline hash and current observations |
 | `views` | Object names, angles, frames and dimensions; rendered PNGs and contact sheet; restores camera, frame, selection and render settings |
 | `save`, `load` | Explicit local `path`; editable native `.blend` |
 | `export` | `path`, format GLB/glTF/FBX/STL/OBJ, object names, selection; optional `actions: {object: [clip names]}` |
@@ -74,6 +76,27 @@ NLA tracks. Original actions, slots, track mute states and selection are restore
 even after an error. Exporting one rig does not scan every compatible action
 belonging to another rig. Existing active actions and NLA tracks remain usable
 when no explicit clip mapping is supplied.
+
+The sidebar's **Capturar estado de escena** and **Comparar cambios** operate
+locally without a model. Their baseline is kept under the bridge's `snapshots`
+directory; normal jobs expose the same snapshot/diff operations through HTTP and
+MCP. Named scopes compare those objects, including later removals. The default
+scope compares all scene objects, including later additions. A renamed object
+appears as a removal and an addition; snapshots are observations, not undo files.
+
+Mesh digests describe authored object-mode data. This is not a complete binary
+`.blend` comparison: modifier settings, arbitrary constraints/custom properties,
+external textures, evaluated Geometry Nodes output and unflushed edit-mode data
+need their own inspection. Captured animation records use the native action
+reader's documented fields. A matching snapshot establishes equality only for
+the reported fields. The real regression changes one vertex without changing
+topology counts, identifies exactly that object, then restores it and observes
+an unchanged comparison. Original assets and unrelated selection remain intact.
+
+Review rendering freezes Workbench's background color as values before editing
+the RNA array. Cancellation before the first render restores the color, camera,
+frame and context and removes temporary camera datablocks. This path was
+exercised in installed Blender 5.2.2, without generating a model response.
 
 ## Jobs and resources
 

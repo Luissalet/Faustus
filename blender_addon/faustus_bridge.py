@@ -3,7 +3,7 @@
 No socket server or polling loop is duplicated here. Blender Lab owns transport
 and main-thread execution; Faustus owns recipes, persistent jobs and review sheets.
 """
-bl_info = {"name": "Faustus", "author": "Luissalet", "version": (1, 0, 0),
+bl_info = {"name": "Faustus", "author": "Luissalet", "version": (1, 1, 0),
            "blender": (5, 1, 0), "location": "View3D > Sidebar > Faustus",
            "description": "Edit the open scene with the local Faustus copilot", "category": "3D View"}
 
@@ -93,6 +93,76 @@ def execute_code(code, job_id):
         return {"ok": False, "stdout": output.getvalue(), "stderr": errors.getvalue(),
                 "error": traceback.format_exc()}
     return {"ok": True, "stdout": output.getvalue(), "stderr": errors.getvalue(), "value": scope.get("result")}
+
+
+def value_sha(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def scene_snapshot(names=None):
+    """Compare authored mesh data and named scene state; no evaluation or mutation."""
+    import array
+    objects = list(bpy.context.scene.objects) if names is None else [
+        obj for obj in bpy.context.scene.objects if obj.name in names]
+    rows = {}
+    for obj in objects:
+        row = scene_info([obj.name])["objects"][0]
+        row.update(matrix_local=[list(vector) for vector in obj.matrix_local],
+                   hide_render=obj.hide_render, hide_viewport=obj.hide_viewport,
+                   constraints=[{"name": item.name, "type": item.type, "influence": item.influence} for item in obj.constraints])
+        if obj.type == "MESH":
+            mesh = obj.data
+            row["mesh_counts"] = {"vertices": len(mesh.vertices), "edges": len(mesh.edges), "loops": len(mesh.loops), "polygons": len(mesh.polygons)}
+            geometry = hashlib.sha256()
+            for collection, field, count, code in ((mesh.vertices,"co",3,"f"), (mesh.edges,"vertices",2,"i"),
+                    (mesh.loops,"vertex_index",1,"i"), (mesh.polygons,"loop_start",1,"i"),
+                    (mesh.polygons,"loop_total",1,"i"), (mesh.polygons,"material_index",1,"i")):
+                values = array.array(code, [0]) * (len(collection) * count)
+                collection.foreach_get(field, values)
+                geometry.update(values.tobytes())
+            row["mesh_sha256"] = geometry.hexdigest()
+            uv = []
+            for layer in mesh.uv_layers:
+                values = array.array('f', [0]) * (len(layer.data) * 2)
+                layer.data.foreach_get("uv", values)
+                uv.append({"name": layer.name, "sha256": hashlib.sha256(values.tobytes()).hexdigest()})
+            row["uv"] = uv
+            row["weights_sha256"] = value_sha([[(group.group, group.weight) for group in vertex.groups] for vertex in mesh.vertices])
+            row["shape_keys"] = [{"name": block.name, "value": block.value,
+                "sha256": value_sha([list(point.co) for point in block.data])} for block in mesh.shape_keys.key_blocks] if mesh.shape_keys else []
+        if obj.type == "ARMATURE":
+            row["rest_bones_sha256"] = value_sha([{"name": bone.name, "parent": getattr(bone.parent, 'name', None),
+                "matrix": [list(vector) for vector in bone.matrix_local], "length": bone.length} for bone in obj.data.bones])
+            row["pose_sha256"] = value_sha([{"name": bone.name, "matrix": [list(vector) for vector in bone.matrix_basis]} for bone in obj.pose.bones])
+        animation = inspect_animation({"object": obj.name, "include_actions": False})
+        animation.pop("actions")  # Shared action datablocks are compared once below.
+        row["animation_sha256"] = value_sha(animation)
+        row["materials_sha256"] = value_sha([None if not slot.material else {
+            "name": slot.material.name, "diffuse_color": list(slot.material.diffuse_color),
+            "nodes": edit_nodes({"owner": "material", "name": slot.material.name}) if slot.material.use_nodes else None}
+            for slot in obj.material_slots])
+        rows[obj.name] = row
+    actions = inspect_animation({"object": objects[0].name})["actions"] if objects else []
+    return {"schema": "faustus/scene-snapshot-1", "scope": names, "file": bpy.data.filepath,
+            "version": bpy.app.version_string, "frame": bpy.context.scene.frame_current,
+            "mode": bpy.context.mode, "active": getattr(bpy.context.view_layer.objects.active, "name", None),
+            "selected": sorted(obj.name for obj in selected()), "objects": rows,
+            "actions": {action["name"]: value_sha(action) for action in actions}}
+
+
+def compare_snapshot(baseline):
+    current = scene_snapshot(baseline["scope"])
+    left, right = baseline["objects"], current["objects"]
+    changes = [{"name": name, "fields": [key for key in sorted(set(left[name]) | set(right[name]))
+                if left[name].get(key) != right[name].get(key)]} for name in sorted(left.keys() & right.keys())]
+    action_names = baseline["actions"].keys() | current["actions"].keys()
+    result = {"added": sorted(right.keys() - left.keys()), "removed": sorted(left.keys() - right.keys()),
+              "changed": [row for row in changes if row["fields"]],
+              "actions_changed": [name for name in sorted(action_names) if baseline["actions"].get(name) != current["actions"].get(name)],
+              "context_changed": {key: {"before": baseline[key], "after": current[key]} for key in ("file","frame","mode","active","selected") if baseline[key] != current[key]},
+              "scope": baseline["scope"], "current": current}
+    result["unchanged"] = not any(result[key] for key in ("added","removed","changed","actions_changed","context_changed"))
+    return result
 
 
 def output_file(path):
@@ -222,7 +292,7 @@ def inspect_animation(payload):
     obj = bpy.data.objects[payload["object"]]
     data = obj.animation_data
     clips = []
-    for action in bpy.data.actions:
+    for action in (bpy.data.actions if payload.get("include_actions", True) else []):
         layers = []
         for layer in action.layers:
             for strip in layer.strips:
@@ -396,6 +466,7 @@ def render_views(payload, job, service):
     image_format = scene.render.image_settings.file_format
     camera, frame = scene.camera, scene.frame_current
     shading = {key: getattr(scene.display.shading, key) for key in ("light", "color_type", "show_shadows", "show_cavity", "background_type", "background_color")}
+    shading["background_color"] = tuple(shading["background_color"])
     temporary_data = bpy.data.cameras.new("Faustus review")
     temporary = bpy.data.objects.new("Faustus review", temporary_data)
     scene.collection.objects.link(temporary)
@@ -517,6 +588,19 @@ class Job:
         action = job["action"]
         if action == "scene":
             return scene_info(args.get("objects"))
+        if action == "snapshot":
+            if args.get("objects") is not None:
+                selected(args["objects"])  # An initial named scope must exist; a later diff may contain removals.
+            snapshot = scene_snapshot(args.get("objects"))
+            path = self.directory / "snapshots" / (job["id"] + ".json")
+            write_json(path, snapshot)
+            return {"snapshot_id": job["id"], "sha256": sha(path), "snapshot": snapshot}
+        if action == "diff":
+            key = str(args["snapshot_id"])
+            if len(key) != 32 or any(char not in "0123456789abcdef" for char in key):
+                raise ValueError("Expected a snapshot ID")
+            path = self.directory / "snapshots" / (key + ".json")
+            return {"snapshot_id": key, "snapshot_sha256": sha(path), **compare_snapshot(json.loads(path.read_text(encoding="utf-8")))}
         if action == "execute":
             result = execute_code(args["code"], job["id"])
             if not result["ok"]:
@@ -596,6 +680,38 @@ class FAUSTUS_OT_chat(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class FAUSTUS_OT_snapshot(bpy.types.Operator):
+    bl_idname = "faustus.snapshot_scene"
+    bl_label = "Capturar estado de escena"
+    bl_description = "Guardar geometría y contexto para compararlos tras una edición"
+
+    def execute(self, context):
+        key = uuid.uuid4().hex
+        write_json(data_directory() / "snapshots" / (key + ".json"), scene_snapshot())
+        context.window_manager.faustus_snapshot_id = key
+        context.window_manager.faustus_snapshot_result = "Estado guardado. Edita y compara."
+        return {'FINISHED'}
+
+
+class FAUSTUS_OT_diff(bpy.types.Operator):
+    bl_idname = "faustus.compare_scene"
+    bl_label = "Comparar cambios"
+
+    def execute(self, context):
+        key = context.window_manager.faustus_snapshot_id
+        try:
+            path = data_directory() / "snapshots" / (key + ".json")
+            result = compare_snapshot(json.loads(path.read_text(encoding="utf-8")))
+            write_json(data_directory() / "snapshots" / (key + "-diff.json"), result)
+        except (OSError, ValueError) as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+        context.window_manager.faustus_snapshot_result = "Sin cambios" if result["unchanged"] else (
+            f"{len(result['changed'])} objetos modificados, {len(result['added'])} nuevos, {len(result['removed'])} quitados")
+        self.report({'INFO'}, context.window_manager.faustus_snapshot_result)
+        return {'FINISHED'}
+
+
 class FAUSTUS_PT_scene(bpy.types.Panel):
     bl_label = "Faustus"
     bl_idname = "FAUSTUS_PT_scene"
@@ -612,9 +728,16 @@ class FAUSTUS_PT_scene(bpy.types.Panel):
         layout.label(text="Blender MCP · " + bpy.app.version_string)
         layout.operator("faustus.stop_bridge" if connected else "faustus.start_bridge")
         layout.label(text=str(len(selected())) + " objetos seleccionados")
+        layout.separator()
+        layout.operator("faustus.snapshot_scene")
+        row = layout.row()
+        row.enabled = bool(context.window_manager.faustus_snapshot_id)
+        row.operator("faustus.compare_scene")
+        if context.window_manager.faustus_snapshot_result:
+            layout.label(text=context.window_manager.faustus_snapshot_result)
 
 
-CLASSES = (FAUSTUS_OT_start, FAUSTUS_OT_stop, FAUSTUS_OT_chat, FAUSTUS_PT_scene)
+CLASSES = (FAUSTUS_OT_start, FAUSTUS_OT_stop, FAUSTUS_OT_chat, FAUSTUS_OT_snapshot, FAUSTUS_OT_diff, FAUSTUS_PT_scene)
 
 
 def connect_local():
@@ -657,6 +780,8 @@ def register():
     _icons.load("faustus", str(icon), "IMAGE")
     for cls in CLASSES:
         bpy.utils.register_class(cls)
+    bpy.types.WindowManager.faustus_snapshot_id = bpy.props.StringProperty(options={'SKIP_SAVE'})
+    bpy.types.WindowManager.faustus_snapshot_result = bpy.props.StringProperty(options={'SKIP_SAVE'})
     if not bpy.app.background:
         bpy.app.timers.register(auto_connect, first_interval=1, persistent=True)
 
@@ -667,6 +792,8 @@ def unregister():
         bpy.app.timers.unregister(auto_connect)
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
+    del bpy.types.WindowManager.faustus_snapshot_id
+    del bpy.types.WindowManager.faustus_snapshot_result
     if _icons:
         bpy.utils.previews.remove(_icons)
         _icons = None

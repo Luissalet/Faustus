@@ -13565,3 +13565,187 @@ Verificación de fuente R4: 50 pruebas Faustus y 99 HoardLink del área, TypeScr
 build y checks montados de React; API y MCP reales sobre datos privados compartidos,
 guardado/reapertura del modal en navegador y revisión independiente. Estas pruebas
 no certifican la calidad semántica de nuevas respuestas de los modelos.
+
+
+## Blender: comparar ediciones de escena sin consultar al modelo (18-10-2026)
+
+El panel Faustus incorpora Capturar estado de escena y Comparar cambios; las
+operaciones nativas snapshot/diff se comparten con HTTP/MCP. Conservan geometría
+base en modo objeto, UV, pesos, shape keys, transformaciones, materiales/nodos,
+matrices de rig/pose, animación y contexto. Informan objetos añadidos, retirados,
+campos cambiados y acciones compartidas. No sustituyen undo ni comparan todos
+los datos de un .blend: modificadores, geometría evaluada, texturas externas y
+edición sin sincronizar necesitan lectores específicos.
+
+Regresión real Blender5.2.2: mover un vértice identifica exactamente el objeto,
+restaurarlo devuelve igualdad observada y conserva el resto de la escena. La
+cancelación de una revisión restaura también el color Workbench capturado por
+valor, cámara, fotograma y contexto. QAoffline, sin llamadas a Sparks; la calidad
+de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.
+
+### Theseus: reconstrucción local (18-10-2026)
+
+Theseus's Hoard está integrado y activo en `http://127.0.0.1:5217`, Main
+`4b2838a`, con aprobación cruzada CAS2. Sus 33 herramientas MCP y 18 operaciones
+nativas conservan análisis por formatos, sesiones persistentes de Ghidra libre y
+comparaciones de bytes que distinguen constantes diferentes aunque cambien las
+direcciones. La pestaña Reconstrucción relaciona obligaciones, preguntas,
+hallazgos, escenarios y dependencias; congela la entrega al constructor y conserva
+los recibos del oráculo con mutantes y de cada verificación o reintento. La
+cobertura registrada depende del contrato, programas, casos y sensibilidad
+vigentes; las preguntas abiertas no se convierten en verificadas. El documento
+builder-only excluye hallazgos y rutas del lector, sin certificar automáticamente
+la independencia de la prosa del analista.
+
+Pruebas de composición en Main: 40 correctas y dos Ghidra opt-in omitidas en esa
+pasada; esas dos se ejecutaron con el motor real tanto por el autor como por el
+revisor. La activación conservó todas las tablas y el token existentes. La paridad
+completa sigue abierta en `docs/SOURCE-COVERAGE.md` de Theseus. La ampliación
+posterior de transferencia de evidencias está probada en worktree y pendiente de
+revisión propia. Estas operaciones y sus pruebas no han utilizado las Sparks ni
+otro modelo. Manual nativo y grafo actualizados; tarea Ágora 779 abierta.
+
+
+## Silver: análisis de equipos y motivos locales — 18-10-2026
+
+Activos en Silver Main `1357cb5528fd` (Ágora Silver 836 y 838), sin consultas a
+servicios remotos ni paquetes nuevos para estas capacidades. El constructor
+analiza el borrador mediante `team_analysis` en UI, API y MCP: debilidades
+compartidas, resistencias/inmunidades históricas, cobertura ordinaria contra
+tipos puros y velocidades sin modificar calculadas por el simulador. Editar el
+borrador oculta el resultado anterior. No calcula daño ni legalidad; habilidades,
+objetos, Tera y contexto dinámico quedan fuera y los movimientos especiales se
+explican aparte. Se conservan generación, reglas de nivel y preparación Champions.
+
+Once movimientos de Dragón y Veneno seleccionan 117 cuadros de dos hojas PMD
+Time/Darkness suministradas por Luis, con crédito a redblueyellow. Atlas cuadrados,
+transparencia y anclas conservan los píxeles de origen; movimiento reducido usa
+un cuadro estacionario visible. Se comparten en RT, campales, HTML y MP4 sin
+carpetas fuente ni red. Son motivos compuestos con la geometría existente, no
+coreografías de cartucho. Catálogo actual: 774 entradas, 160 fuentes, 218 atlas y
+2777 cuadros. Las 763 entradas/158 fuentes previas y los 179 hashes originales
+siguen exactos. `leisure_catalog` expone los once motivos y su metadata.
+
+Cada fuente tiene suite Python completa (601 correctas/2 omitidas); la unión
+tiene 530 Node correctas/1 omitida y 15 Python del área/1 omitida, sin atribuirle
+una segunda suite Python completa. Ambas entregas tienen revisión independiente
+APPROVE CAS1; el revisor ejecutó sus pruebas del área, sin atribuirse los recibos
+MCP, navegador o vídeo de la autora. Activaciones gestionadas sólo de Silver,
+inactivo antes y justo antes, con las 18 tablas, ajustes, token y medios exactos:
+51 entrenadores, 24 gimnasios, 3 ligas y 44 combates. Catálogo activo: 190 tools.
+No se reiniciaron Hub, Faustus, modelos ni GPU; sin push. El fallback remoto
+preexistente de imágenes ausentes en HTML se detectó y se corrige aparte en 840;
+no se declara aún que todas las páginas antiguas sean completamente offline.
+Detalles: [mejoras de Silver](docs/silver-offline-20261018.md).
+
+
+## Silver: páginas autónomas con caché local — 18-10-2026, 06:45
+
+La tarea 840 ya está integrada y activa en Silver Main `18c66ab0cf52`, tras
+aprobación independiente CAS 1 de f5e01ab, f356d04 y 18c66ab. Actualiza el
+estado pendiente indicado más arriba. Nuevos HTML de entrenadores/gimnasios,
+retos semanales/diarios y campales incrustan los sprites, FX y Reborn existentes
+en caché, sin descargarlos ni pedirlos a un servidor al jugar. Los Pokémon sin
+imagen usan discos locales con iniciales; la decoración ausente queda vacía y
+Reborn conserva el fallback Silver. Cada recurso viaja una vez. Hay que volver
+a exportar páginas antiguas. El tamaño crece con la caché; música y gritos
+habituales siguen sin incrustarse. La app y salas conservan sus proveedores.
+
+Suite final: 608 Python/2 omitidas y 534 Node/1 omitida, builds app+HTML correctos.
+Cuatro clases de HTML probadas en servidor estático externo a Silver sin peticiones
+a APIs ni recursos remotos. Victoria clásica, rendición RT con código importado y
+verificado, campal en ejecución y reto diario iniciado (no siete victorias).
+Main conserva 190 herramientas, 51 entrenadores, 24 gimnasios, 3 ligas, 44 combates
+y las 18 tablas, ajustes/token y medios exactos. Lectura local de 851 archivos
+de caché (730 sprites, 119 FX, 2 Reborn; 17.252.083 bytes originales), todos
+idénticos, sin descargas, escrituras ni exportación de datos reales para probar.
+Sólo reinicio gestionado Silver tras comprobar siete frentes inactivos.
+Evidencia: research-inbox/silver-portable840. La tarea 842 de navegación por
+fotogramas de repeticiones sigue en QA; no declararla activa todavía.
+
+
+## Silver: navegación e inspección local de repeticiones — 18-10-2026
+
+La tarea 842 está integrada y activa en Silver Main `4eed0beb0d97`, aprobada
+por revisión independiente CAS 1 sobre eac025d, 1dacccb, 658256e, e0a2c1a y
+4eed0be. Las repeticiones RT terminadas tienen cursor de fotogramas a 30 Hz,
+saltos de cinco segundos y teclas Inicio/Fin/flechas. Saltar pausa y conserva
+velocidad; se reconstruye el registro con los activos históricos y se limpian
+efectos, avisos y debilitados anteriores. Un KO nuevo mantiene su animación.
+La herramienta de solo lectura `battle_rt_inspect` devuelve el mismo estado
+público y un enlace pausado, sin escribir palmarés, partidas ni progreso.
+Admite sólo RT terminadas y limita al final guardado, incluidas rendiciones
+en tick cero; las páginas autónomas también retienen el final al reverlo.
+Cada salto reconstruye desde el principio; puede tardar más en combates largos.
+
+610 Python/2 omitidas y 539 Node/1 omitida en la revisión final; build app+HTML
+correcto y HTML probado idéntico por SHA256 al final. El modo quiet doble
+suprimió resumen Python: salida0, 612 marcas completas y colección612
+confirmadas en suite-final.json. R1 interrumpida no se cuenta. Pruebas reales
+de ratón/teclado, ES/EN, móvil390 sin desbordamiento y HTML autónomo tras
+rendición560ticks/18,66s: End560 terminal, Home0 y salto150 pausado, consola0.
+Main191herramientas, biblioteca51/24/3/44 y6arenas,18tablas/ajustes/token/medios
+exactos tras activación gestionada sóloSilver y siete frentes inactivos.
+Consulta nativa Main de RT existente en0/150/939 sin escritura, y UI Main
+pausada150 con registro y cursor. Datos de biblioteca también exactos después.
+Sin cambios en reglas, RNG, daño, paquetes, APIs externas, modelos, Hub ni push.
+Evidencia: research-inbox/silver-replay842; detalles en docs/RT_REPLAY_SEEK.md
+de Silver.845 Roca sigue en QA y no se considera activa en este registro.
+
+
+## Silver: cierre de Roca y pausa de efectos — 18-10-2026
+
+Las tareas 845 y 847 están integradas y activas, con revisión independiente
+CAS 1 de sus commits exactos. Silver Main está en `e73a13ed23298e85b06f7d54782263506ee335ee` y conserva
+191 herramientas. Las dos activaciones gestionadas reiniciaron sólo Silver,
+con los siete frentes inactivos, HEAD comprobado y compilaciones idénticas a
+las probadas. Las 18 tablas de biblioteca, ajustes, token y medios protegidos
+se conservaron exactamente: 51 entrenadores, 24 gimnasios, 3 ligas, 44 combates
+y 6 arenas. No se añadieron partidas QA a la biblioteca del usuario.
+
+Roca añade Poder Pasado (6 cuadros), Pedrada (7), Tumba Rocas (9) y Desenrollar
+(7), extraídos de la hoja local PMD Red Rescue Team facilitada por Luis. Se
+descartan extremos sin recuadro claro, separadores y rótulos. Los píxeles se
+conservan; una escala uniforme al dibujar (2,4 para los grupos de piedras y
+1,7 para el cerco) hace visibles los motivos junto al efecto procedural. Las
+774 entradas anteriores conservan su imagen y metadatos. El catálogo queda
+en 778 sprites, 161 fuentes, 222 atlas y 2.806 cuadros. Esta noche se añaden
+15 motivos de movimientos y 146 cuadros entre Dragón/Veneno y Roca; no son
+quince movimientos nuevos en las reglas. Comparten atlas RT, campal, HTML y
+vídeo, sin cambiar físicas, daño, semilla ni entradas.
+
+La pausa congela la edad, posición y emisión automática de partículas del
+Vfx compartido RT, clásico y campal. Se corrigen proyectiles, carga, Fuego
+Fatuo y espuma de las ondas campales. La reproducción original acumulaba
+120 partículas con 120 actualizaciones sin tiempo; revisión independiente
+encontró además 120 de Fuego Fatuo y 480 del campal: ahora todos quedan en
+cero y reanudan correctamente. Siguen llegando snapshots a los sprites y
+los bursts explícitos de eventos siguen disponibles al reconstruir el replay.
+No se promete una imagen idéntica entre dibujos pausados: queda jitter visual
+procedural. No cambia el motor, RNG, daño, controles ni audio.
+
+Validación de Roca: full Python final 611 correctas,
+4 omitidas, cero fallos; Node 541 correctas y una
+omitida, builds app/HTML correctos. La ejecución anterior declaró 612 PASS,
+2 omitidas y un fallo por el recuento antiguo 218; se corrigió a 222 y las
+10 pruebas de ese archivo pasaron. Las seis pruebas de píxeles con originales
+locales también pasaron. Cuatro combates nativos con resumen idéntico al
+replay, cuatro PNG exactos dentro del HTML, catálogo de escala y MP4 vertical
+720×1280 de 23,1 s. Capturas escritorio/móvil 390 px, consola sin errores.
+
+Validación de pausa: seis regresiones nuevas; full Node 547 correctas y una
+omitida; Python de área 16 correctas con originales y ambos builds correctos.
+No se repitió full Python para ese cambio JS: se compone sobre el full de
+Roca anterior. Revisor: 21 Node propias y reproducciones de los dos defectos
+adicionales. Native MCP 191, RT de prueba en cuatro posiciones, campal de 27
+iniciales y hash igual al motor. UI RT en pausa/reanudar/pausa, móvil 390 ES
+con movimiento reducido sin desbordar ni errores; campal mantiene 0:06 en
+pausa y termina igual al motor tras reanudar. MP4 final 1280×720, 25 s y
+1.926.512 bytes, sonido incluido.
+
+Estas mejoras no añaden paquetes, APIs externas ni funciones online. Las
+páginas autónomas exportadas usan su caché embebida y sus sustitutos locales;
+las cuatro pruebas fuera de Silver de la tarea 840 no hicieron solicitudes
+externas ni API. No se afirma que todos los proveedores históricos de la app
+hayan desaparecido. No se tocaron modelos, GPU o Hub ni se hizo push.
+Pruebas detalladas: research-inbox/silver-rock845 y silver-pause847.
