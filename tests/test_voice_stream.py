@@ -127,6 +127,27 @@ def test_silence_and_ignored_background_do_not_change_conversation_language():
     asyncio.run(scenario())
 
 
+def test_client_passes_language_after_its_own_filters_for_each_utterance():
+    async def scenario():
+        seen = []
+        manager, _, _ = make_manager()
+        session = await manager.create(None, "client-context", send_mode="client", language_hint="es")
+        # The UI may discard background after the server transcribes it.
+        session.heard_language = "en"
+        def transcribe(audio, language, metadata):
+            seen.append(metadata["language_hint"])
+            metadata["language"] = "es"
+            return "Sí."
+        manager.transcribe = transcribe
+        session.begin_utterance(language_hint="es")
+        await session._transcribe(pcm(), "pcm16", 16000)
+        session.begin_utterance()
+        await session._transcribe(pcm(), "pcm16", 16000)
+        assert seen == ["es", "en"]  # per-frame context cannot leak into another utterance
+        await manager.close_all()
+    asyncio.run(scenario())
+
+
 def make_manager(stt=None, tts=None, runs=None, frames=None, delay=0.0):
     runs = runs or FakeRuns()
     sent = []

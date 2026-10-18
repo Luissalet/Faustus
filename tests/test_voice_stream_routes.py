@@ -41,6 +41,32 @@ def test_context_language_hint_is_optional_and_can_be_cleared():
         assert client.patch(url, json={"language": "fr"}).json()["language"] == "fr"
 
 
+def test_websocket_utterance_carries_context_without_pinning_session_language():
+    app, manager, _, _ = build()
+    seen = []
+    def transcribe(audio, language, metadata):
+        seen.append((language, metadata.get("language_hint")))
+        metadata["language"] = "en"
+        return "Yes."
+    manager.transcribe = transcribe
+    with TestClient(app) as client:
+        created = client.post("/api/voice/sessions", json={
+            "session_id": "frame-context", "language_hint": "es", "send_mode": "client", "partials": False}).json()
+        with client.websocket_connect(f"/api/voice/sessions/{created['id']}/stream?token={created['token']}") as ws:
+            ws.receive_json()
+            ws.send_json({"type": "utterance_start", "language_hint": "en"})
+            ws.send_bytes(pcm())
+            ws.send_json({"type": "utterance_end"})
+            for _ in range(10):
+                event = ws.receive_json()
+                if event.get("type") == "transcript" and event.get("final"):
+                    break
+            assert event["text"] == "Yes."
+        assert seen == [("", "en")]  # manager normalizes the empty automatic language to "auto"
+        status = client.get("/api/voice/sessions/" + created["id"]).json()
+        assert status["language"] == "auto" and status["language_hint"] == "es"
+
+
 def wait_events(client, voice_id, kind, after=0, timeout=5.0):
     deadline = time.time() + timeout
     seen = []

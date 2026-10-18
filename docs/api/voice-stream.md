@@ -73,6 +73,11 @@ Cliente → servidor: `{"type":"utterance_start","sample_rate":16000,"preroll_ms
 `{"type":"utterance_end","speech_end_at":<epoch s>}`, `utterance_cancel`, `interrupt`, `cancel_turn`,
 `{"type":"say","text":…}`, `{"type":"played","run_id":…}`, `{"type":"options",…}`, `ping`, `stop`.
 
+`utterance_start` admite también `language_hint: "es" | "en"` para esa
+intervención. Studio reenvía el idioma que conserva tras sus propios filtros;
+no se hereda de una grabación descartada ni fija el idioma de la sesión.
+Los clientes que lo omiten mantienen el flujo anterior.
+
 Servidor → cliente: cada evento como JSON (`seq`, `type`, …). Un evento `audio` (`run_id`, `text`,
 `language`, `mime`, `synth_ms`, `audio_bytes`) va seguido de una trama binaria con el audio.
 

@@ -216,7 +216,8 @@ export function streamCapture(stream: VoiceStream, tap: PcmTap, options: Capture
   let language = '', rawText = '', sttServerMs: number | undefined;
   let ended = false, finished = false, voiced = false;
   const start = performance.now();
-  stream.send({ type: 'utterance_start', sample_rate: TARGET_RATE, preroll_ms: tap.bufferedMs });
+  stream.send({ type: 'utterance_start', sample_rate: TARGET_RATE, preroll_ms: tap.bufferedMs,
+    language_hint: options.languageHint?.split('-')[0] || '' });
   tap.begin(samples => stream.sendPcm(samples));
   const off = stream.onEvent(event => {
     if (event.type !== 'transcript') return;

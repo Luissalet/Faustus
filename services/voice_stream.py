@@ -383,6 +383,7 @@ class VoiceSession:
         self._utt: Optional[bytearray] = None
         self._utt_rate = PCM_SAMPLE_RATE
         self._utt_seq = 0
+        self._utt_language_hint = ""
         self._partial_task: Optional[asyncio.Task] = None
         self._spec: Optional[Dict[str, Any]] = None
         self._partial_at = 0.0
@@ -480,10 +481,12 @@ class VoiceSession:
 
     # ── input ──
 
-    def begin_utterance(self, sample_rate: int = PCM_SAMPLE_RATE, preroll_ms: int = 0) -> int:
+    def begin_utterance(self, sample_rate: int = PCM_SAMPLE_RATE, preroll_ms: int = 0,
+                        language_hint: str = "") -> int:
         self._utt = bytearray()
         self._utt_rate = int(sample_rate) if 8000 <= int(sample_rate) <= 48000 else PCM_SAMPLE_RATE
         self._utt_seq += 1
+        self._utt_language_hint = language_hint if language_hint in ("es", "en") else ""
         self._spec = None
         self._partial_at = time.monotonic()
         self._partial_bytes = 0
@@ -582,7 +585,7 @@ class VoiceSession:
         else:
             data = audio
         language = "" if self.language in ("", "auto") else self.language
-        meta: Dict[str, Any] = {"language_hint": self.heard_language or self.language_hint}
+        meta: Dict[str, Any] = {"language_hint": self._utt_language_hint or self.heard_language or self.language_hint}
         stt_lock, _ = _locks()
         async with stt_lock:
             started = time.perf_counter()

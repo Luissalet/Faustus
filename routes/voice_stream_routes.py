@@ -225,7 +225,8 @@ def setup_voice_stream_routes(manager: VoiceSessionManager) -> APIRouter:
                     continue
                 kind = data.get("type")
                 if kind == "utterance_start":
-                    session.begin_utterance(int(data.get("sample_rate") or 16000), int(data.get("preroll_ms") or 0))
+                    session.begin_utterance(int(data.get("sample_rate") or 16000), int(data.get("preroll_ms") or 0),
+                                            str(data.get("language_hint") or ""))
                 elif kind == "utterance_end":
                     spawn(report(session.end_utterance(data.get("speech_end_at"))))
                 elif kind == "speculate":
