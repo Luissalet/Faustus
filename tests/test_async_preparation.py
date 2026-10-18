@@ -247,3 +247,24 @@ async def test_small_talk_policy_owns_only_its_private_payload(message):
     assert await run_preparation(_drop_tools_for_small_talk, actual, actual['messages']) == wanted
     assert actual == expected
     assert original['tools'] == tools and original['tool_choice'] == 'auto'
+
+
+@pytest.mark.parametrize('clear_after_event', [False, True])
+def test_recovery_cancellation_skips_late_advisory_and_keeps_new_turn_check(monkeypatch, clear_after_event):
+    from src import answer_checks
+    from tests.test_recovery_cancellation_terminal import (
+        test_recovery_stop_prevents_later_work_and_explicit_new_invocation_can_run,
+    )
+    calls = []
+    original = answer_checks.saved_links_count_requested
+
+    def links_requested(text):
+        calls.append(text)
+        return original(text)
+
+    monkeypatch.setattr(answer_checks, 'saved_links_count_requested', links_requested)
+    test_recovery_stop_prevents_later_work_and_explicit_new_invocation_can_run(
+        monkeypatch, clear_after_event)
+    # The cancelled invocation must finish without its final advisory. The
+    # explicitly started successful invocation retains the normal links check.
+    assert calls == ['Run the synthetic task']

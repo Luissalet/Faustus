@@ -26,6 +26,10 @@ leave an unobserved worker behind. Agent preparation also polls the existing
 to another stage or model dispatch. Existing cancellation polling errors retain
 the agent loop's behavior.
 
+After recovery has emitted a terminal cancellation, finalization skips the
+saved-links advisory instead of polling cancellation again. The partial response
+still finishes; cancellation checks during ordinary preparation remain active.
+
 This improves event-loop availability between regex searches, without making
 Python regex release the GIL during an individual search. It does not promise
 instant interruption of CPU work or a fixed latency for arbitrary inputs.

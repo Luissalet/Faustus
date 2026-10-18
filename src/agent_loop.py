@@ -19588,7 +19588,9 @@ async def _stream_agent_loop_body(
     _links_evidence_note = ""
     try:
         from src import answer_checks as _links_final_checks
-        if await run_preparation(
+        # Recovery may already have emitted the terminal cancellation event.
+        # Finish that response without polling cancellation again in an advisory.
+        if _ledger.stop_reason != "cancelled" and await run_preparation(
             _links_final_checks.saved_links_count_requested, _last_user or "",
             pending_cancel=pending_cancel,
         ):
