@@ -1,5 +1,6 @@
 """Run-local native temporary files, without changing host mounts or caches."""
 import asyncio
+from collections import namedtuple
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import sys
 import tempfile
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from src import run_causality, tool_execution as te, worker_caches
 from src.native_env import native_host_environment
@@ -192,6 +193,109 @@ class WorkspaceTempTests(unittest.TestCase):
         again = subprocess.run([bash, "-c", 'test -f "$TMPDIR/"probe.*'], env=env,
                                cwd=self.workspace, capture_output=True, text=True, timeout=15)
         self.assertEqual(again.returncode, 0, again.stderr)
+
+    def _normal_dispatch(self, disconnected):
+        """Exercise the public dispatcher; only unused application services stubbed."""
+        facade = types.ModuleType("src.agent_tools")
+        facade.ToolBlock = namedtuple("ToolBlock", "tool_type content")
+        implementations = types.ModuleType("src.tool_implementations")
+        async def unused(*args, **kwargs):
+            raise AssertionError("Unrelated application service invoked")
+        implementations.__getattr__ = lambda name: unused
+        seen = []
+        async def handler(content, ctx):
+            root = Path(ctx["subproc_env"]["TMPDIR"])
+            if content == "create temporary marker":
+                command = [sys.executable, "-c", "import tempfile;from pathlib import Path;r=Path(tempfile.gettempdir());(r/'dispatch-marker').write_text('same-run');print(r)"]
+            elif content == "check PowerShell temporary marker":
+                command = [shutil.which("pwsh") or shutil.which("powershell"), "-NoProfile", "-NonInteractive", "-Command",
+                           "[IO.Path]::GetTempPath();[IO.File]::ReadAllText((Join-Path $env:TMPDIR 'dispatch-marker'))"]
+            else:
+                command = ["C:/Program Files/Git/bin/bash.exe", "-c", 'cygpath -w "$TMPDIR"; cat "$TMPDIR/dispatch-marker"']
+            child = subprocess.run(command, cwd=self.workspace,
+                env=native_host_environment(ctx["subproc_env"]), text=True,
+                capture_output=True, timeout=15)
+            seen.append({"root": root, "ctx": dict(ctx), "rc": child.returncode, "stdout": child.stdout})
+            return {"stdout": child.stdout, "stderr": child.stderr, "exit_code": child.returncode}
+        facade.TOOL_HANDLERS = dict.fromkeys(("python", "powershell", "bash"), handler)
+        class Disconnected:
+            def __init__(self): self.calls = []
+            async def call_tool(self, name, args):
+                self.calls.append((name, args))
+                return {"error": "fixture not connected", "exit_code": 1}
+        manager = Disconnected() if disconnected else None
+        async def run():
+            for run_id in ("normal-run-a", "normal-run-b"):
+                token = run_causality.bind_run("normal-session", run_id)
+                try:
+                    for tool, content in (("python", "create temporary marker"),
+                                          ("powershell", "check PowerShell temporary marker"),
+                                          ("bash", "check Bash temporary marker")):
+                        await te.execute_tool_block(facade.ToolBlock(tool, content),
+                            session_id="normal-session", owner="normal-owner",
+                            workspace=str(self.workspace), security_context=te.NO_TOOL_SECURITY_CONTEXT)
+                finally:
+                    run_causality.reset_run(token)
+        from src import exec_ledger
+        with patch.dict(sys.modules, {"src.agent_tools": facade, "src.tool_implementations": implementations}), \
+                patch.object(te, "get_mcp_manager", return_value=manager), \
+                patch.object(te, "_owner_is_admin", return_value=True), \
+                patch.object(exec_ledger, "enabled", return_value=False):
+            asyncio.run(run())
+        self.assertEqual(len(seen), 6)
+        for index, row in enumerate(seen):
+            run_id = "normal-run-a" if index < 3 else "normal-run-b"
+            expected = Path(self.environment(run=run_id, session="normal-session")["TMPDIR"])
+            with self.subTest(disconnected=disconnected, run=run_id, tool=index % 3):
+                self.assertEqual(row["root"], expected)
+                self.assertEqual(row["ctx"]["session_id"], "normal-session")
+                self.assertEqual(row["ctx"]["owner"], "normal-owner")
+                self.assertEqual(row["ctx"]["_causal_call"].run_id, run_id)
+                self.assertEqual(row["rc"], 0, row["stdout"])
+                if index % 3:
+                    self.assertIn("same-run", row["stdout"])
+        self.assertNotEqual(seen[0]["root"], seen[3]["root"])
+        if manager:
+            self.assertEqual(len(manager.calls), 4)  # python/bash only; PowerShell stays direct.
+
+    @unittest.skipUnless(os.name == "nt", "Windows native dispatcher contract")
+    def test_normal_dispatch_without_mcp_manager_preserves_run_temp(self):
+        self._normal_dispatch(False)
+
+    @unittest.skipUnless(os.name == "nt", "Windows native dispatcher contract")
+    def test_normal_dispatch_disconnected_mcp_preserves_run_temp(self):
+        self._normal_dispatch(True)
+
+    def test_legacy_fallback_preserves_complete_execution_context(self):
+        async def progress(event):
+            return None
+        context = dict(progress_cb=progress, session_id="session-context", owner="owner-context",
+            human_approved=True, disabled_tools={"unused"}, tool_policy=object(),
+            security_context=object(), pdf_call_binding=object(),
+            _causal_call=run_causality.CallOrigin("session-context", "captured-run", "captured-call"))
+        disconnected = types.SimpleNamespace(call_tool=AsyncMock(return_value={
+            "error": "fixture not connected", "exit_code": 1}))
+        for manager in (None, disconnected):
+            with self.subTest(manager=manager is not None):
+                fallback = AsyncMock(return_value={"exit_code": 0, "stdout": "preserved"})
+                with patch.object(te, "get_mcp_manager", return_value=manager), \
+                        patch.object(te, "_direct_fallback", fallback):
+                    result = asyncio.run(te._call_mcp_tool("python", "print('same')", **context))
+                self.assertEqual(result, {"exit_code": 0, "stdout": "preserved"})
+                fallback.assert_awaited_once_with("python", "print('same')", **context)
+
+    def test_connected_legacy_mcp_receives_only_original_tool_arguments(self):
+        expected = {"stdout": "remote result", "exit_code": 0}
+        manager = types.SimpleNamespace(call_tool=AsyncMock(return_value=expected))
+        fallback = AsyncMock(side_effect=AssertionError("Connected MCP must not use direct fallback"))
+        with patch.object(te, "get_mcp_manager", return_value=manager), \
+                patch.object(te, "_direct_fallback", fallback):
+            result = asyncio.run(te._call_mcp_tool("python", "print('same')",
+                session_id="private-session", owner="private-owner",
+                _causal_call=run_causality.CallOrigin("private-session", "private-run", None)))
+        self.assertIs(result, expected)
+        manager.call_tool.assert_awaited_once_with("mcp__python__python", {"code": "print('same')"})
+        fallback.assert_not_awaited()
 
 
 if __name__ == "__main__":
