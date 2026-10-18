@@ -119,7 +119,10 @@ def _probe_local_backend(root: str) -> Optional[str]:
     backend: Optional[str] = None
     try:
         import httpx
-        with httpx.Client(timeout=1.5, trust_env=False) as client:
+        # HTTP probes need no CA store. They never follow redirects onto TLS;
+        # HTTPS roots retain HTTPX's normal certificate verification.
+        with httpx.Client(timeout=1.5, trust_env=False, follow_redirects=False,
+                          verify=urlparse(root).scheme != "http") as client:
             try:
                 resp = client.get(root.rstrip("/") + "/api/version")
                 if resp.status_code == 200:
