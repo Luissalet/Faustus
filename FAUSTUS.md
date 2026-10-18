@@ -13582,3 +13582,25 @@ restaurarlo devuelve igualdad observada y conserva el resto de la escena. La
 cancelación de una revisión restaura también el color Workbench capturado por
 valor, cámara, fotograma y contexto. QAoffline, sin llamadas a Sparks; la calidad
 de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.
+
+### Theseus: reconstrucción local (18-10-2026)
+
+Theseus's Hoard está integrado y activo en `http://127.0.0.1:5217`, Main
+`4b2838a`, con aprobación cruzada CAS2. Sus 33 herramientas MCP y 18 operaciones
+nativas conservan análisis por formatos, sesiones persistentes de Ghidra libre y
+comparaciones de bytes que distinguen constantes diferentes aunque cambien las
+direcciones. La pestaña Reconstrucción relaciona obligaciones, preguntas,
+hallazgos, escenarios y dependencias; congela la entrega al constructor y conserva
+los recibos del oráculo con mutantes y de cada verificación o reintento. La
+cobertura registrada depende del contrato, programas, casos y sensibilidad
+vigentes; las preguntas abiertas no se convierten en verificadas. El documento
+builder-only excluye hallazgos y rutas del lector, sin certificar automáticamente
+la independencia de la prosa del analista.
+
+Pruebas de composición en Main: 40 correctas y dos Ghidra opt-in omitidas en esa
+pasada; esas dos se ejecutaron con el motor real tanto por el autor como por el
+revisor. La activación conservó todas las tablas y el token existentes. La paridad
+completa sigue abierta en `docs/SOURCE-COVERAGE.md` de Theseus. La ampliación
+posterior de transferencia de evidencias está probada en worktree y pendiente de
+revisión propia. Estas operaciones y sus pruebas no han utilizado las Sparks ni
+otro modelo. Manual nativo y grafo actualizados; tarea Ágora 779 abierta.
