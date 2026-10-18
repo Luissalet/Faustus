@@ -928,3 +928,10 @@ Silver's finished real-time replays now have frame seeking, five-second jumps
 and a read-only native inspection tool with paused deep links. Seeking pauses
 and retains speed, without changing records. Active at Silver Main4eed0be;
 191tools. [Verified scope and limits](docs/silver-offline-20261018.md).
+
+
+Silver now also draws four locally supplied Rock attack motifs and freezes
+procedural particle emission during pause across realtime, classic and mass
+battles. The overnight improvements add 15 attack motifs / 146 frames, local
+team analysis, offline portable pages and replay seeking. No new packages,
+external APIs or online features. [Verified scope](docs/silver-offline-20261018.md).

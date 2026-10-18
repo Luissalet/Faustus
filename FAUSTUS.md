@@ -13691,3 +13691,61 @@ pausada150 con registro y cursor. Datos de biblioteca también exactos después.
 Sin cambios en reglas, RNG, daño, paquetes, APIs externas, modelos, Hub ni push.
 Evidencia: research-inbox/silver-replay842; detalles en docs/RT_REPLAY_SEEK.md
 de Silver.845 Roca sigue en QA y no se considera activa en este registro.
+
+
+## Silver: cierre de Roca y pausa de efectos — 18-10-2026
+
+Las tareas 845 y 847 están integradas y activas, con revisión independiente
+CAS 1 de sus commits exactos. Silver Main está en `e73a13ed23298e85b06f7d54782263506ee335ee` y conserva
+191 herramientas. Las dos activaciones gestionadas reiniciaron sólo Silver,
+con los siete frentes inactivos, HEAD comprobado y compilaciones idénticas a
+las probadas. Las 18 tablas de biblioteca, ajustes, token y medios protegidos
+se conservaron exactamente: 51 entrenadores, 24 gimnasios, 3 ligas, 44 combates
+y 6 arenas. No se añadieron partidas QA a la biblioteca del usuario.
+
+Roca añade Poder Pasado (6 cuadros), Pedrada (7), Tumba Rocas (9) y Desenrollar
+(7), extraídos de la hoja local PMD Red Rescue Team facilitada por Luis. Se
+descartan extremos sin recuadro claro, separadores y rótulos. Los píxeles se
+conservan; una escala uniforme al dibujar (2,4 para los grupos de piedras y
+1,7 para el cerco) hace visibles los motivos junto al efecto procedural. Las
+774 entradas anteriores conservan su imagen y metadatos. El catálogo queda
+en 778 sprites, 161 fuentes, 222 atlas y 2.806 cuadros. Esta noche se añaden
+15 motivos de movimientos y 146 cuadros entre Dragón/Veneno y Roca; no son
+quince movimientos nuevos en las reglas. Comparten atlas RT, campal, HTML y
+vídeo, sin cambiar físicas, daño, semilla ni entradas.
+
+La pausa congela la edad, posición y emisión automática de partículas del
+Vfx compartido RT, clásico y campal. Se corrigen proyectiles, carga, Fuego
+Fatuo y espuma de las ondas campales. La reproducción original acumulaba
+120 partículas con 120 actualizaciones sin tiempo; revisión independiente
+encontró además 120 de Fuego Fatuo y 480 del campal: ahora todos quedan en
+cero y reanudan correctamente. Siguen llegando snapshots a los sprites y
+los bursts explícitos de eventos siguen disponibles al reconstruir el replay.
+No se promete una imagen idéntica entre dibujos pausados: queda jitter visual
+procedural. No cambia el motor, RNG, daño, controles ni audio.
+
+Validación de Roca: full Python final 611 correctas,
+4 omitidas, cero fallos; Node 541 correctas y una
+omitida, builds app/HTML correctos. La ejecución anterior declaró 612 PASS,
+2 omitidas y un fallo por el recuento antiguo 218; se corrigió a 222 y las
+10 pruebas de ese archivo pasaron. Las seis pruebas de píxeles con originales
+locales también pasaron. Cuatro combates nativos con resumen idéntico al
+replay, cuatro PNG exactos dentro del HTML, catálogo de escala y MP4 vertical
+720×1280 de 23,1 s. Capturas escritorio/móvil 390 px, consola sin errores.
+
+Validación de pausa: seis regresiones nuevas; full Node 547 correctas y una
+omitida; Python de área 16 correctas con originales y ambos builds correctos.
+No se repitió full Python para ese cambio JS: se compone sobre el full de
+Roca anterior. Revisor: 21 Node propias y reproducciones de los dos defectos
+adicionales. Native MCP 191, RT de prueba en cuatro posiciones, campal de 27
+iniciales y hash igual al motor. UI RT en pausa/reanudar/pausa, móvil 390 ES
+con movimiento reducido sin desbordar ni errores; campal mantiene 0:06 en
+pausa y termina igual al motor tras reanudar. MP4 final 1280×720, 25 s y
+1.926.512 bytes, sonido incluido.
+
+Estas mejoras no añaden paquetes, APIs externas ni funciones online. Las
+páginas autónomas exportadas usan su caché embebida y sus sustitutos locales;
+las cuatro pruebas fuera de Silver de la tarea 840 no hicieron solicitudes
+externas ni API. No se afirma que todos los proveedores históricos de la app
+hayan desaparecido. No se tocaron modelos, GPU o Hub ni se hizo push.
+Pruebas detalladas: research-inbox/silver-rock845 y silver-pause847.
