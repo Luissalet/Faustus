@@ -157,6 +157,29 @@ def setup_hoard_copilot_routes(session_manager):
                 "participants": copilot.get_store().participants(sid),
                 "run_id": agent_runs.get_run_id(sid) if agent_runs.get_active_run(sid) else None}
 
+    @router.get("/turns/{session_id}/status")
+    def turn_status(request: Request, session_id: str, run_id: str = ""):
+        from routes.session_routes import _verify_session_owner
+        from src import agent_runs
+        # Same session/owner contract as the native chat status endpoint,
+        # including authenticated non-admin and single-user instances.
+        _verify_session_owner(request, session_id, session_manager)
+        try:
+            result = agent_runs.run_status_snapshot(session_id, run_id or None)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if result is None:
+            raise HTTPException(404, "Run not found in this session")
+        if result["active"]:
+            from routes import chat_routes
+            # Keep the existing active query/partial fields. A replacement
+            # must not attach the newer stream's fields to an older run ID.
+            current = agent_runs.get_run_id(session_id)
+            active = dict(chat_routes._active_streams.get(session_id) or {})
+            if current == result["run_id"] == agent_runs.get_run_id(session_id):
+                return {**active, **result}
+        return result
+
     @router.post("/imports")
     async def import_conversation(request: Request):
         who = owner(request)

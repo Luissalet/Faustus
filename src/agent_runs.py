@@ -323,6 +323,21 @@ def _finished_marker_path() -> str:
     return os.path.join(DATA_DIR, "finished_runs.json")
 
 
+def _terminal_error(events: List[str]) -> Optional[Dict[str, Any]]:
+    for event in reversed(events):
+        try:
+            payload = json.loads(event.split("data:", 1)[1].strip())
+        except (ValueError, IndexError):
+            continue
+        name = event.partition("\n")[0].partition(":")
+        if isinstance(payload, dict) and (
+            (name[0] == "event" and name[2].strip() == "error")
+            or payload.get("type") == "error"
+        ):
+            return payload
+    return None
+
+
 def _record_finished_marker(session_id: str, run: "_Run") -> None:
     """Best-effort durable write for a run that just reached done/error/
     stopped. Never raises — a marker write must not break the run actually
@@ -349,6 +364,10 @@ def _record_finished_marker(session_id: str, run: "_Run") -> None:
                 "label": run.label,
                 "model": run.model,
             }
+            if run.status == "error":
+                error = _terminal_error(run.buffer)
+                if error is not None:
+                    data[str(session_id)]["error"] = error
             # Bound the file — one entry per SESSION (overwritten on its next
             # run, not appended per-turn), but an instance that runs forever
             # still needs a cap; keep the newest, same shape as
@@ -1324,6 +1343,76 @@ def get_active_run(session_id: str) -> Optional[_Run]:
     """Return the exact active run currently registered for a session."""
     r = _RUNS.get(session_id)
     return r if r and r.status == "running" else None
+
+
+def run_status_snapshot(session_id: str, run_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Observe a run, including its terminal error, without starting or replaying it.
+
+    The caller verifies session ownership. An explicit run ID never falls back
+    to another run, including a newer run of the same session.
+    """
+    if run_id is not None and not re.fullmatch(r"[0-9a-f]{32}", run_id):
+        raise ValueError("invalid runtime run id")
+
+    def snapshot(ident, state, source, error=None, **fields):
+        return {"session_id": session_id, "run_id": ident,
+                "status": "streaming" if state == "running" else state,
+                "state": state, "active": state == "running", "source": source,
+                **fields, **({"error": error} if state == "error" and error is not None else {})}
+
+    run = _RUNS.get(session_id)
+    if run is not None and (run_id is None or run.run_id == run_id):
+        return snapshot(run.run_id, run.status, "registry",
+                        _terminal_error(run.buffer) if run.status == "error" else None,
+                        label=run.label, model=run.model, started_at=run.started_at)
+
+    marker = finished_marker(session_id)
+    if (not isinstance(marker, dict)
+            or not re.fullmatch(r"[0-9a-f]{32}", str(marker.get("run_id") or ""))
+            or marker.get("status") not in ("done", "error", "stopped")
+            or (run_id is not None and marker.get("run_id") != run_id)):
+        marker = None
+    paths = _session_log_paths(session_id)
+    if run_id is not None:
+        paths = [path for path in paths if path.endswith("-" + run_id + ".jsonl")
+                 or path == _legacy_log_path(session_id)]
+    path = paths[0] if paths else None
+    if marker is not None and path is not None and not path.endswith("-" + marker["run_id"] + ".jsonl"):
+        stamp = re.search(r"-([0-9]{20})-[0-9a-f]{32}\.jsonl$", path)
+        try:
+            if stamp and int(stamp[1]) / 1_000_000 <= float(marker["finished_at"]):
+                # A later run can finish with persistence disabled, leaving
+                # only the marker and an older run's journal on disk.
+                path = None
+        except (KeyError, TypeError, ValueError):
+            pass
+    # Current markers include the exact error frame. Avoid opening a possibly
+    # large journal merely to answer a status poll. A newer journal means the
+    # marker belongs to an older run and cannot stand in for the latest one.
+    if marker is not None:
+        ident = marker.get("run_id")
+        matching_path = path is None or path.endswith("-" + str(ident) + ".jsonl")
+        if matching_path and (marker["status"] != "error" or isinstance(marker.get("error"), dict)):
+            return snapshot(ident, marker["status"], "finished_marker", marker.get("error"),
+                            **{key: marker[key] for key in ("finished_at", "label", "model") if key in marker})
+    if path is None:
+        if marker is not None:
+            return snapshot(marker.get("run_id"), marker.get("status"), "finished_marker")
+        return None
+    header = _log_header(path)
+    if header.get("session_id") != session_id or (run_id is not None and header.get("run_id") != run_id):
+        return None
+    record = _read_log(path)
+    if (record.get("session_id") != session_id or record.get("run_id") != header.get("run_id")
+            or record.get("status") not in ("running", *_TERMINAL_STATUSES)):
+        return None
+    # A journal that ended while marked running is evidence of an unfinished
+    # run, not evidence that a task is alive in this process. Startup recovery
+    # may later record it as interrupted; this read does not change the log.
+    state = "unknown" if record["status"] == "running" else record["status"]
+    return snapshot(record["run_id"], state, "journal",
+                    _terminal_error(record["events"]) if record["status"] == "error" else None,
+                    label=record.get("label"), started_at=record.get("ts"))
 
 
 # ---------------------------------------------------------------------------

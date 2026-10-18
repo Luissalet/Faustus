@@ -28,7 +28,7 @@ OPERATIONS = {
     "hoard_draft_get": ("GET", "/api/sessions/{session_id}/draft", "Read the canonical unsent message and its attachment IDs shared by Studio and Hoard panels.", {"session_id": {"type": "string"}}),
     "hoard_draft_save": ("PATCH", "/api/sessions/{session_id}/draft", "Update the canonical draft; omitted attachment_ids preserves existing files, and an empty list explicitly detaches them.", {"session_id": {"type": "string"}, "text": {"type": "string"}, "attachment_ids": {"type": "array", "items": {"type": "string"}}}),
     "hoard_turn_start": ("POST", "/api/chat_stream", "Start the normal Faustus agent turn with Hoard context and optional uploaded attachment IDs; closing the observer leaves the run executing on the server.", {"session_id": {"type": "string"}, "message": {"type": "string"}, "context": CONTEXT, "client_message_id": {"type": "string"}, "attachments": {"type": "array", "items": {"type": "string"}}}),
-    "hoard_turn_status": ("GET", "/api/chat/stream_status/{session_id}", "Read the actual state of the shared Faustus execution without starting or repeating it.", {"session_id": {"type": "string"}}),
+    "hoard_turn_status": ("GET", "/turns/{session_id}/status", "Read the active or finished Faustus turn, including its terminal error, without starting or repeating it. Pass run_id to keep observing that exact turn.", {"session_id": {"type": "string"}, "run_id": {"type": "string"}}),
     "hoard_turn_stop": ("POST", "/api/chat/stop/{session_id}", "Stop the shared Faustus turn; domain changes already applied remain in their Hoard.", {"session_id": {"type": "string"}, "scope": {"type": "string", "enum": ["generation", "task", "work"]}}),
 }
 
