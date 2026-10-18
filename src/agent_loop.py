@@ -13615,11 +13615,17 @@ async def _stream_agent_loop_body(
             from copy import deepcopy as _copy_prepared_tools
             candidate_tools = _copy_prepared_tools(candidate_tools)
             state["tools"] = candidate_tools
-            # Ignore an earlier prepared-message cache: CE, steering, pressure
-            # and route pinning can change both messages and schemas later.
-            request_messages = _trim_route_request_messages(
-                candidate_url, candidate_model, state["messages"], candidate_tools or [],
-            )
+            request_messages = state.get("request_messages")
+            from src.llm_core import stream_context_reserves
+            preserve_current = (state["context_length"] > 0 and stream_context_reserves(
+                candidate_url, candidate_model, max_tokens, candidate_tools, state["messages"],
+            ) is not None)
+            # Preservation needs the final schemas after CE/steering/pressure.
+            # Other protocols and unknown windows keep their existing cache.
+            if request_messages is None or preserve_current:
+                request_messages = _trim_route_request_messages(
+                    candidate_url, candidate_model, state["messages"], candidate_tools or [],
+                )
             state["request_messages"] = request_messages
             _last_route_request_messages = request_messages
             _last_route_context_length = _route_context_lengths.get(
