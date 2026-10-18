@@ -118,9 +118,14 @@ def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None,
 
 
 def _tool_from_spec(spec: Dict[str, Any]) -> Tool:
+    schema = spec.get("inputSchema") or {"type": "object", "properties": {}}
+    hint = spec.get("x-timeout-s")
+    if hint is None and isinstance(schema, dict):
+        hint = schema.get("x-timeout-s")
+    if hint is None:
+        hint = 300.0 + _TIMEOUT + _WAIT_MARGIN
     return Tool(name=str(spec["name"]), description=str(spec.get("description") or ""),
-                **{"x-timeout-s": spec.get("x-timeout-s", 300.0 + _TIMEOUT + _WAIT_MARGIN)},
-                inputSchema=spec.get("inputSchema") or {"type": "object", "properties": {}})
+                **{"x-timeout-s": hint}, inputSchema=schema)
 
 
 def fetch_tools() -> List[Tool]:

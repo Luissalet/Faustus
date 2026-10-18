@@ -41,9 +41,14 @@ async def test_paginated_discovery_refresh_and_cache_preserve_hint():
     manager = mm.McpManager()
     class Session:
         hint = 900
+        fail = False
         async def list_tools(self, cursor=None):
+            if self.fail:
+                raise RuntimeError("private fixture disconnected")
+            if cursor:
+                return SimpleNamespace(tools=[Tool(name="other", inputSchema={})], nextCursor=None)
             return SimpleNamespace(tools=[Tool(name="long_wait", inputSchema={},
-                **{"x-timeout-s": self.hint})], nextCursor=None)
+                **{"x-timeout-s": self.hint})], nextCursor="second")
     session = Session()
     manager._sessions["fixture"] = session
     manager._connections["fixture"] = {"transport": "stdio"}
@@ -59,6 +64,11 @@ async def test_paginated_discovery_refresh_and_cache_preserve_hint():
     assert manager._tools["fixture"][0]["x-timeout-s"] == 14400
     page = await manager.list_tools_page("fixture")
     assert page["tools"][0]["x-timeout-s"] == 14400
+    cache = mcp_tool_cache.get("fixture")
+    session.fail = True
+    assert not (await manager.refresh_server_tools("fixture"))["ok"]
+    assert mcp_tool_cache.get("fixture") == cache
+    assert mcp_tool_cache.get("fixture")["tools"][0]["x-timeout-s"] == 14400
 
 
 def test_native_wait_hints_and_dynamic_workflow_contract():
@@ -70,6 +80,7 @@ def test_native_wait_hints_and_dynamic_workflow_contract():
     assert "x-timeout-s" not in tools["dispatch_workers"]  # returns job ID
     assert workflows_server._tool_from_spec({"name": "wf_test"}).model_dump()["x-timeout-s"] == 360
     assert workflows_server._tool_from_spec({"name": "wf_test", "x-timeout-s": 14400}).model_dump()["x-timeout-s"] == 14400
+    assert workflows_server._tool_from_spec({"name": "wf_test", "inputSchema": {"x-timeout-s": 900}}).model_dump()["x-timeout-s"] == 900
     assert next(t for t in voice_server.TOOLS if t.name == "voice_session").model_dump()["x-timeout-s"] == 1080
 
 

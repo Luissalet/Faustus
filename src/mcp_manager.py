@@ -48,7 +48,7 @@ except Exception:  # noqa: BLE001 - standalone use (tests, tooling)
 # pattern src/command_guard.py already uses).
 DATA_DIR = _DEFAULT_DATA_DIR
 
-# Upper bound for one MCP tool call. A server whose child process died mid-call
+# Fallback bound for one MCP tool call. A server whose child process died mid-call
 # never answers; without a bound the agent turn hangs forever instead of taking
 # the reconnect path below. Generous: Playwright's own navigation timeout is
 # 60 s and long pages / slow sites need headroom.
