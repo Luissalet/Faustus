@@ -19,15 +19,39 @@ _VERB = (r"(?:escrib\w*|guard\w*|crea\w*|genera\w*|entreg\w*|deja\w*|redact\w*|r
          r"write|writes|save|create|produce|generate|deliver|put)")
 _ASK = re.compile(_VERB + r"[^.\n]{0,80}?\b(" + _FILE + r")", re.IGNORECASE)
 _ASK_AFTER = re.compile(r"\b(" + _FILE + r")[^.\n]{0,40}?\b(?:con|with|que contenga|containing)\b", re.IGNORECASE)
+_PATH_RUN = re.compile(r"[\w./\\-]+")
+_FILE_END = re.compile(r"(?<=[\w-])\." + _EXTS + r"\b", re.IGNORECASE)
+_BOUNDARY = re.compile(r"\b")
+_AFTER_TAIL = re.compile(r"[^.\n]{0,40}?\b(?:con|with|que contenga|containing)\b", re.IGNORECASE)
 _WRITE_TOOLS = {"write_file", "edit_file", "apply_patch", "append_file"}
+
+
+def _files_before_description(text: str) -> Iterable[str]:
+    """Match _ASK_AFTER without retrying a whole path at every word boundary."""
+    cursor = 0
+    for run in _PATH_RUN.finditer(text):
+        start = _BOUNDARY.search(text, max(cursor, run.start()), run.end())
+        if start is None:
+            continue
+        chosen = None
+        for ending in _FILE_END.finditer(text, start.start() + 1, run.end()):
+            tail = _AFTER_TAIL.match(text, ending.end())
+            if tail is not None:
+                # _FILE is greedy: the last eligible extension wins, even
+                # when an earlier extension already has a valid description.
+                chosen = ending.end(), tail.end()
+        if chosen is not None:
+            end, cursor = chosen
+            yield text[start.start():end]
 
 
 def requested_files(text: str) -> List[str]:
     """Basenames of the files the text asks to be written, in order."""
     out: List[str] = []
-    for rx in (_ASK, _ASK_AFTER):
-        for m in rx.finditer(str(text or "")):
-            name = re.split(r"[\\/]", m.group(1))[-1]
+    text = str(text or "")
+    for files in ((m.group(1) for m in _ASK.finditer(text)), _files_before_description(text)):
+        for file in files:
+            name = re.split(r"[\\/]", file)[-1]
             if name and name.lower() not in (n.lower() for n in out):
                 out.append(name)
     return out
