@@ -39,27 +39,37 @@ def controls_for(base_url: str, model: str) -> dict[str, Any] | None:
         # NVIDIA GLM-5.3-Flash's published template: low / high, else max.
         return {"levels": ["low", "high", "max"], "default": "max",
                 "source": "verified_model_template", "engine": "vllm",
-                "thinking_supported": True, "thinking_toggle": True}
+                "thinking_supported": True, "thinking_toggle": True,
+                "thinking_off_behavior": "low_effort"}
     return None
 
 
-def apply_controls(payload: dict[str, Any], base_url: str, model: str) -> None:
+def apply_controls(payload: dict[str, Any], base_url: str, model: str, *, reasoning_budget: Any = None) -> None:
     caps = controls_for(base_url, model)
     if not caps:
         return
-    template = payload.get("chat_template_kwargs") or {}
+    template = dict(payload.get("chat_template_kwargs") or {})
     thinking = template.get("enable_thinking", True)
-    effort = str(payload.get("reasoning_effort") or "max").lower()
+    native_effort = template.pop("reasoning_effort", None)
+    effort = str(payload.get("reasoning_effort") or native_effort or "max").lower()
     if effort not in caps["levels"]:
         # Fit generic Faustus effort profiles to the model's actual levels.
         effort = "low" if effort in ("none", "minimal", "medium") else "max"
+    if not thinking:
+        # GLM-5.3-Flash always reasons. Its supported fast path is Low; an
+        # artificially empty think block is outside its training template.
+        effort = "low"
+    template["enable_thinking"] = True
+    template.setdefault("clear_thinking", True)
+    payload["chat_template_kwargs"] = template
     payload["reasoning_effort"] = effort
-    budget = payload.pop("reasoning_budget", 4096)
-    try:
-        budget = max(0, int(budget))
-    except (TypeError, ValueError):
-        budget = 4096
-    payload["thinking_token_budget"] = budget if thinking else 0
-    # This model's template ignores enable_thinking; only the native budget
-    # controls its reasoning. Do not pass llama-server's spelling to vLLM.
+    budget = payload.pop("reasoning_budget", None)
+    if reasoning_budget is not None:
+        budget = reasoning_budget  # an explicit budget does not require a separate think toggle
+    if budget is not None:
+        # Honor the caller's existing budget, including -1 (unlimited), and
+        # leave validation to the engine. Never invent a default cap or
+        # replace an explicitly supplied native budget when no override exists.
+        payload["thinking_token_budget"] = budget
+    # Do not pass llama-server's spelling to vLLM.
     payload.pop("thinking_budget_tokens", None)

@@ -938,7 +938,7 @@ def _parse_gen_overrides(raw) -> Dict[str, Any]:
         # it used to be dropped right here, so a client could never set it.
         if data.get("reasoning_budget") not in (None, "") and not isinstance(data.get("reasoning_budget"), bool):
             rb = int(data["reasoning_budget"])
-            if 0 <= rb <= 262144:
+            if -1 <= rb <= 262144:
                 out["reasoning_budget"] = rb
     except (TypeError, ValueError):
         pass
@@ -1006,7 +1006,7 @@ def _resolve_think_mode(requested, gen_overrides: Optional[Dict[str, Any]], mess
             try:
                 from src import thinking_inertia as _ti
                 _cap = _ti.cap_for(model)
-                if _cap and not new_overrides.get("reasoning_budget"):
+                if _cap and new_overrides.get("reasoning_budget") is None:
                     new_overrides["reasoning_budget"] = _cap
                     event = {**event, "thinking_cap": _cap}
             except Exception:  # noqa: BLE001

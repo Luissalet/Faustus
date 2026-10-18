@@ -28,7 +28,7 @@ def test_parse_gen_overrides_keeps_reasoning_budget():
     assert out == {"think": True, "reasoning_budget": 8192}
 
 
-@pytest.mark.parametrize("bad", [-1, 10 ** 9, "lots", True])
+@pytest.mark.parametrize("bad", [-2, 10 ** 9, "lots", True])
 def test_parse_gen_overrides_rejects_bad_budgets(bad):
     assert "reasoning_budget" not in _parse_gen_overrides({"reasoning_budget": bad})
 
@@ -74,6 +74,22 @@ def test_gen_think_wins_over_auto(settings):
     ov, ev = _resolve("auto", {"think": True}, "hola")
     assert ov == {"think": True}
     assert ev["source"] == "override" and ev["mode"] == "think"
+
+
+@pytest.mark.parametrize("budget", [0, -1, 128])
+def test_inertia_preserves_explicit_budget(settings, monkeypatch, budget):
+    from src import thinking_inertia
+    monkeypatch.setattr(thinking_inertia, "cap_for", lambda model: 64)
+    parsed = _parse_gen_overrides({"think": False, "reasoning_budget": budget})
+    ov, _ = _resolve("auto", parsed, "hola")
+    assert ov["reasoning_budget"] == budget
+
+
+def test_inertia_adds_cap_when_no_budget_was_provided(settings, monkeypatch):
+    from src import thinking_inertia
+    monkeypatch.setattr(thinking_inertia, "cap_for", lambda model: 64)
+    ov, ev = _resolve("auto", {"think": False}, "hola")
+    assert ov["reasoning_budget"] == ev["thinking_cap"] == 64
 
 
 def test_auto_decides_by_rule(settings):

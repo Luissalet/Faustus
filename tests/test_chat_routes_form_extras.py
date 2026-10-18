@@ -2,8 +2,21 @@
 generation overrides and the /agents delegation payload."""
 
 import json
+import pytest
 
 from routes.chat_routes import _parse_gen_overrides, _parse_delegate_tasks, _delegation_instruction
+
+
+@pytest.mark.parametrize("budget", [-1, 0, 128, 262144])
+@pytest.mark.parametrize("as_form", [False, True])
+def test_reasoning_budget_preserves_explicit_values(budget, as_form):
+    raw = {"reasoning_budget": budget}
+    assert _parse_gen_overrides(json.dumps(raw) if as_form else raw) == raw
+
+
+@pytest.mark.parametrize("budget", [-2, 262145, True, False, "invalid", None, ""])
+def test_reasoning_budget_retains_existing_validation(budget):
+    assert "reasoning_budget" not in _parse_gen_overrides({"reasoning_budget": budget})
 
 
 def test_gen_overrides_validation():
