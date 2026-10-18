@@ -143,6 +143,41 @@ def json_schema_capability(base_url: str, endpoint_id: str) -> dict[str, Any]:
     return {'json_schema': False, 'status': 'unverified', 'source': 'served_openapi'}
 
 
+def _openapi_native_thinking(document, api_base: str) -> bool:
+    """Typed vLLM controls on the served chat route, checked only by sync."""
+    if not isinstance(document, dict) or not isinstance(document.get('paths'), dict):
+        return False
+    api_path = urlsplit(api_base).path.rstrip('/') + '/chat/completions'
+    for path in dict.fromkeys((api_path, '/v1/chat/completions')):
+        route = document['paths'].get(path)
+        post = route.get('post') if isinstance(route, dict) else None
+        if not isinstance(post, dict):
+            continue
+        for body in _schema_variants(post.get('requestBody'), document):
+            content = body.get('content')
+            media = content.get('application/json') if isinstance(content, dict) else None
+            if not isinstance(media, dict):
+                continue
+            for request in _schema_variants(media.get('schema'), document):
+                fields = _schema_properties(request)
+                if fields is not None and _schema_type(fields.get('thinking_token_budget'), 'integer', document) and _schema_type(fields.get('chat_template_kwargs'), 'object', document):
+                    return True
+    return False
+
+
+def interleaved_history_capability(base_url: str, model: str) -> dict[str, Any]:
+    """Cache-only template policy for an identity supplied by Sparks.sync()."""
+    base = _schema_base(base_url)
+    for (identity, cached_base), cached in list(_schema_cache.items()):
+        if (base and base == cached_base and model in cached['models'] and
+                time.monotonic() - cached['at'] < _SCHEMA_TTL and cached.get('native_thinking')):
+            profile = _model_template_controls(model)
+            if profile and profile.get('interleaved_history'):
+                return {'interleaved_history': True, 'scope': 'current_user_turn',
+                        'source': profile['source'], 'endpoint_id': identity, 'model': model}
+    return {'interleaved_history': False, 'status': 'unverified'}
+
+
 def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) -> dict[str, dict[str, Any]]:
     """Refresh identities supplied by the native managed-Sparks metadata sync.
 
@@ -167,7 +202,7 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
                 continue
             _schema_cache.pop(key, None)  # no stale proof while a changed identity is checked
             base = key[1]
-            status, supported = 'unavailable', False
+            status, supported, native_thinking = 'unavailable', False, False
             try:
                 if fetch_openapi is not None:
                     document = fetch_openapi(base)
@@ -176,11 +211,12 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
                     with opener.open(base[:-len('/v1')] + '/openapi.json', timeout=1) as response:
                         document = json.load(response)
                 supported = _openapi_json_schema(document, base)
+                native_thinking = _openapi_native_thinking(document, base)
                 status = 'verified' if supported else 'unsupported'
             except Exception:
                 pass
             _schema_cache[key] = {'at': time.monotonic(), 'models': models, 'json_schema': supported,
-                                  'status': status, 'source': 'served_openapi'}
+                                  'status': status, 'source': 'served_openapi', 'native_thinking': native_thinking}
             while len(_schema_cache) > _SCHEMA_MAX_ENDPOINTS:
                 _schema_cache.pop(min(_schema_cache, key=lambda item: _schema_cache[item]['at']))
     return {identity: json_schema_capability(base, identity) for identity, base in active}
@@ -210,14 +246,19 @@ def glm53_flash(model: str) -> bool:
     return bool(re.search(r"(?:^|/)glm-5-3-flash(?:-|$)", normalized))
 
 
-def controls_for(base_url: str, model: str) -> dict[str, Any] | None:
-    if glm53_flash(model) and vllm_thinking_budget(base_url):
+def _model_template_controls(model: str) -> dict[str, Any] | None:
+    if glm53_flash(model):
         # NVIDIA GLM-5.3-Flash's published template: low / high, else max.
         return {"levels": ["low", "high", "max"], "default": "max",
                 "source": "verified_model_template", "engine": "vllm",
                 "thinking_supported": True, "thinking_toggle": True,
-                "thinking_off_behavior": "low_effort"}
+                "thinking_off_behavior": "low_effort", "interleaved_history": True}
     return None
+
+
+def controls_for(base_url: str, model: str) -> dict[str, Any] | None:
+    profile = _model_template_controls(model)
+    return profile if profile and vllm_thinking_budget(base_url) else None
 
 
 def apply_controls(payload: dict[str, Any], base_url: str, model: str, *, reasoning_budget: Any = None) -> None:

@@ -7259,13 +7259,41 @@ def _save_session_toolsets() -> None:
         logger.debug("session toolsets not saved", exc_info=True)
 
 
-def _template_keeps_turn_reasoning(model: Optional[str]) -> bool:
+def _template_keeps_turn_reasoning(model: Optional[str], endpoint_url: Optional[str] = None) -> bool:
     """Does this model's chat template itself keep the reasoning of the
-    current turn's assistant messages (and drop earlier turns')? True for the
-    Qwen3 family (its official template); False otherwise (Nemotron's
-    re-injects every prior reasoning, see `_append_tool_results`)."""
+    current turn's assistant messages? Preserve the existing Qwen policy and
+    consult the managed endpoint's cached template capability for other models.
+    Earlier-turn clearing remains the provider template's responsibility."""
     name = str(model or "").lower()
-    return "qwen3" in name or "qwq" in name
+    if "qwen3" in name or "qwq" in name:
+        return True
+    from src.engine_controls import interleaved_history_capability
+    return bool(interleaved_history_capability(endpoint_url or "", model or "").get("interleaved_history"))
+
+
+def _reasoning_route(endpoint_url: Optional[str], model: Optional[str]):
+    from src.engine_controls import _schema_base
+    base = _schema_base(endpoint_url or "")
+    return {"base": base, "model": model or ""} if base else None
+
+
+def _history_for_candidate(messages: List[Dict], endpoint_url: str, model: str) -> List[Dict]:
+    """Do not carry another route's private reasoning into a fallback.
+
+    Keep the private origin on internal messages so later candidates can make
+    the same decision. The provider projection removes it before the wire.
+    Caller-supplied historical messages without this internal marker retain
+    their previous behavior, including explicit preserved-thinking histories.
+    """
+    route = _reasoning_route(endpoint_url, model)
+    result = []
+    for message in messages:
+        item = dict(message)
+        if item.get("_reasoning_origin") and item["_reasoning_origin"] != route:
+            item.pop("reasoning_content", None)
+            item.pop("_reasoning_origin", None)
+        result.append(item)
+    return result
 
 
 def _append_tool_results(
@@ -7325,13 +7353,13 @@ def _append_tool_results(
             logger.warning("[agent] tool image could not be attached: %s", _img_err)
             return []
     # Strip reasoning_content from earlier assistant turns; only the newest keeps it.
-    # Qwen3-family templates are the exception: they render the reasoning of
-    # every assistant message after the last user question themselves (and
+    # Qwen3-family templates and verified interleaved profiles are exceptions:
+    # they render the reasoning after the last user question themselves (and
     # drop older turns'), so stripping round 1's reasoning on round 3 changed
     # a message the server had already processed -- a prompt-cache miss from
     # that point on every round -- and took from the model reasoning its own
     # template expects to see.
-    if not _template_keeps_turn_reasoning(model):
+    if not _template_keeps_turn_reasoning(model, endpoint_url):
         for _m in messages:
             if _m.get("role") == "assistant":
                 _m.pop("reasoning_content", None)
@@ -7347,6 +7375,8 @@ def _append_tool_results(
         assistant_msg["content"] = round_response if round_response.strip() else None
         if round_reasoning:
             assistant_msg["reasoning_content"] = round_reasoning
+            if origin := _reasoning_route(endpoint_url, model):
+                assistant_msg["_reasoning_origin"] = origin
         assistant_msg["tool_calls"] = [
             {
                 "id": tc.get("id", f"call_{round_num}_{j}"),
@@ -7423,6 +7453,8 @@ def _append_tool_results(
             msg = {"role": "assistant", "content": round_response}
             if round_reasoning:
                 msg["reasoning_content"] = round_reasoning
+                if origin := _reasoning_route(endpoint_url, model):
+                    msg["_reasoning_origin"] = origin
             messages.append(msg)
         # Tool output (shell/python stdout, file reads, fetched pages, email
         # bodies, MCP results) is sourced from outside the server. Wrap it as
@@ -10752,6 +10784,7 @@ async def _stream_agent_loop_body(
 
     def _trim_route_request_messages(candidate_url, candidate_model, route_messages):
         """Apply the candidate route's own context budget to its request."""
+        route_messages = _history_for_candidate(route_messages, candidate_url, candidate_model)
 
         def _without_protection(items):
             # Route markers remain internal for later prompt rebuilding;
@@ -10881,7 +10914,8 @@ async def _stream_agent_loop_body(
     async def _build_route_request_state(candidate_url, candidate_model, candidate_headers, source_messages):
         compaction_state: Dict = {}
         from src.context_compactor import refresh_compaction_approvals
-        compacted_source = refresh_compaction_approvals(list(source_messages))
+        compacted_source = refresh_compaction_approvals(
+            _history_for_candidate(source_messages, candidate_url, candidate_model))
         if _continuity.settings_mode() == _continuity.MODE_ANNOTATE:
             compacted_source = _continuity.annotate_narrative_consent(compacted_source)
         was_compacted = False
