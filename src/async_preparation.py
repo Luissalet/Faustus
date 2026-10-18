@@ -16,7 +16,9 @@ def _check_cancel(pending_cancel: Optional[Callable]) -> None:
 async def run_preparation(function, *args, pending_cancel=None, **kwargs):
     """Await a pure predicate, preserving context and owning its worker to exit.
 
-    Callers must not pass model/tool execution or mutations. A running Python
+    Callers must not pass model/tool execution or shared-state mutations.
+    A preparation builder may own a private payload until this await finishes.
+    A running Python
     thread cannot be forcibly stopped: cancellation waits for this predicate
     to finish, including after repeated cancellation, and never advances the
     caller to its next stage. ``to_thread`` carries the caller's contextvars.

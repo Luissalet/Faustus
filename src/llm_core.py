@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from typing import Any, Optional, Dict, List, Tuple, Callable, Mapping
 from src.model_context import get_context_length, DEFAULT_CONTEXT, is_local_endpoint
+from src.async_preparation import run_preparation
 from src.tool_call_assembler import ToolCallAssembler
 from src.retry_policy import (
     RetryClass, RetryBudget, classify_http, parse_retry_after,
@@ -6815,7 +6816,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
         _apply_fast_engine_switch(payload, url, model, provider, _overrides, has_tools=bool(tools))
         _apply_verified_engine_controls(payload, url, model, _overrides)
-        _drop_tools_for_small_talk(payload, messages_copy)
+        await run_preparation(_drop_tools_for_small_talk, payload, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale. `tools` is known

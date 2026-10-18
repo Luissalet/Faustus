@@ -148,7 +148,7 @@ async def test_repeated_cancellation_joins_worker_and_never_advances(late_failur
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('stage', ['math', 'ledger'])
+@pytest.mark.parametrize('stage', ['math', 'ledger', 'trim'])
 async def test_real_agent_cancel_during_preparation_cannot_dispatch(monkeypatch, stage):
     from src import agent_loop as al
     started = threading.Event()
@@ -172,9 +172,12 @@ async def test_real_agent_cancel_during_preparation_cannot_dispatch(monkeypatch,
 
     if stage == 'math':
         monkeypatch.setattr(al, '_answer_only_math_request', predicate)
-    else:
+    elif stage == 'ledger':
         from src import agent_harness
         monkeypatch.setattr(agent_harness, 'TurnLedger', predicate)
+    else:
+        from src import llm_core
+        monkeypatch.setattr(llm_core, 'stream_context_reserves', predicate)
     monkeypatch.setattr(al, 'get_setting', lambda key, default=None: default)
     monkeypatch.setattr(al, 'get_mcp_manager', lambda: None)
     monkeypatch.setattr(al, 'blocked_tools_for_owner', lambda owner: set())
@@ -228,3 +231,19 @@ async def test_turn_builders_preserve_complete_results(text):
     assert actual_ledger.user_text is text
     assert await run_preparation(ToolIndex.keyword_tools_for_query, text, match_substrings=True) == ToolIndex.keyword_tools_for_query(text, match_substrings=True)
     assert await run_preparation(agent_loop._sampling_cap_scope_from_history, [], text) == agent_loop._sampling_cap_scope_from_history([], text)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('message', ['hello', 'Fix src/cart.py', 'Use the calendar tool.'])
+async def test_small_talk_policy_owns_only_its_private_payload(message):
+    import copy
+    from src.llm_core import _drop_tools_for_small_talk
+    tools = [{'type': 'function', 'function': {'name': 'fixture'}}]
+    original = {'messages': [{'role': 'user', 'content': message}], 'tools': tools,
+                'tool_choice': 'auto', 'max_tokens': 777}
+    expected = copy.deepcopy(original)
+    wanted = _drop_tools_for_small_talk(expected, expected['messages'])
+    actual = copy.deepcopy(original)
+    assert await run_preparation(_drop_tools_for_small_talk, actual, actual['messages']) == wanted
+    assert actual == expected
+    assert original['tools'] == tools and original['tool_choice'] == 'auto'

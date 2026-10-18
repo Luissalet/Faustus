@@ -9738,7 +9738,7 @@ async def _stream_agent_loop_body(
     if not guide_only and _relevant_tools is not None and _retrieval_query:
         try:
             from src.plugins import named_in as _plugins_named_in
-            if _plugins_named_in(_retrieval_query):
+            if await run_preparation(_plugins_named_in, _retrieval_query, pending_cancel=pending_cancel):
                 _names_a_plugin = True
                 _relevant_tools.update({"plugins_list", "plugin_app"})
                 if _hot_seed is not None:
@@ -11197,10 +11197,12 @@ async def _stream_agent_loop_body(
     prep_timings["prompt_build"] = time.time() - _t2
 
     _t3 = time.time()
-    _initial_route_request_messages = _trim_route_request_messages(
+    _initial_route_request_messages = await run_preparation(
+        _trim_route_request_messages,
         endpoint_url,
         model,
         messages,
+        pending_cancel=pending_cancel,
     )
     _initial_route_context_length = _route_context_lengths.get(
         (endpoint_url, model),
@@ -11542,7 +11544,10 @@ async def _stream_agent_loop_body(
     try:
         from src import answer_checks as _prefetch_checks
         if (not guide_only and mcp_mgr is not None
-                and _prefetch_checks.saved_links_count_requested(_last_user or "")):
+                and await run_preparation(
+                    _prefetch_checks.saved_links_count_requested, _last_user or "",
+                    pending_cancel=pending_cancel,
+                )):
             _links_candidates = [t for t in mcp_mgr.get_all_tools(_mcp_disabled_map)
                                  if str(t.get("server_name") or "").casefold().startswith("links hoard")
                                  and t.get("name") == "list_links" and not t.get("is_disabled")]
@@ -13129,8 +13134,10 @@ async def _stream_agent_loop_body(
                 # turn) must be in the request the model gets and in what the tool gate
                 # observes: round 1 reuses the request built before the loop, which
                 # predates it. Without this the message would reach neither.
-                _initial_route_request_messages = _trim_route_request_messages(
-                    endpoint_url, model, messages)
+                _initial_route_request_messages = await run_preparation(
+                    _trim_route_request_messages, endpoint_url, model, messages,
+                    pending_cancel=pending_cancel,
+                )
                 run_security.observe_messages(_initial_route_request_messages)
             if _steer_affected_ids:
                 logger.info("[steer] marked %d plan step(s) needs_review: %s",
@@ -13642,14 +13649,18 @@ async def _stream_agent_loop_body(
             state["tools"] = candidate_tools
             request_messages = state.get("request_messages")
             from src.llm_core import stream_context_reserves
-            preserve_current = (state["context_length"] > 0 and stream_context_reserves(
+            preserve_current = (state["context_length"] > 0 and await run_preparation(
+                stream_context_reserves,
                 candidate_url, candidate_model, max_tokens, candidate_tools, state["messages"],
+                pending_cancel=pending_cancel,
             ) is not None)
             # Preservation needs the final schemas after CE/steering/pressure.
             # Other protocols and unknown windows keep their existing cache.
             if request_messages is None or preserve_current:
-                request_messages = _trim_route_request_messages(
+                request_messages = await run_preparation(
+                    _trim_route_request_messages,
                     candidate_url, candidate_model, state["messages"], candidate_tools or [],
+                    pending_cancel=pending_cancel,
                 )
             state["request_messages"] = request_messages
             _last_route_request_messages = request_messages
@@ -14500,10 +14511,12 @@ async def _stream_agent_loop_body(
                                     headers,
                                     _drop_foreign_opaque_tool_extras(messages, endpoint_url),
                                 )
-                                answering_state["request_messages"] = _trim_route_request_messages(
+                                answering_state["request_messages"] = await run_preparation(
+                                    _trim_route_request_messages,
                                     endpoint_url,
                                     model,
                                     answering_state["messages"],
+                                    pending_cancel=pending_cancel,
                                 )
                                 answering_state["context_length"] = _route_context_lengths.get(
                                     (endpoint_url, model),
@@ -14996,9 +15009,11 @@ async def _stream_agent_loop_body(
         # silently ending with an empty answer.
         if (_is_api_model and not guide_only and not _ody_doc_finetune_mode
                 and not native_tool_calls and not tool_blocks):
-            _fenced_names = _scoped_fenced_tool_names(
+            _fenced_names = await run_preparation(
+                _scoped_fenced_tool_names,
                 round_response, set(_tool_names_sent),
                 user_request=_user_request_text(messages),
+                pending_cancel=pending_cancel,
             )
             if _fenced_names:
                 full_response = _full_response_before_round
@@ -19573,7 +19588,10 @@ async def _stream_agent_loop_body(
     _links_evidence_note = ""
     try:
         from src import answer_checks as _links_final_checks
-        if _links_final_checks.saved_links_count_requested(_last_user or ""):
+        if await run_preparation(
+            _links_final_checks.saved_links_count_requested, _last_user or "",
+            pending_cancel=pending_cancel,
+        ):
             _links_total = _links_final_checks.saved_links_total(tool_events)
             _links_answer = (f"Tienes {_links_total} enlaces guardados en Links Hoard."
                              if _links_total is not None else

@@ -12,7 +12,13 @@ model calls, tools, writes and existing ledger updates stay in their original
 execution paths. The ledger is handed to the loop only after construction ends.
 
 The helper uses `asyncio.to_thread`, including its contextvars propagation.
-Only pure preparation belongs here: never model calls, tools or mutations.
+Only preparation belongs here: never model calls, tools or shared mutations.
+Builders may own a private payload exclusively until the await finishes. The
+streaming small-talk policy still changes that payload exactly as before; its
+policy function and the actual transport remain unchanged.
+The route's context preparation also owns its route cache exclusively while
+awaited. The budget/trimming function remains unchanged and its original callers
+receive the completed result before observing that cache or dispatching.
 The worker belongs to its awaiting task. Cancellation waits for that worker to
 finish before propagating, even when cancellation is repeated; it does not
 leave an unobserved worker behind. Agent preparation also polls the existing
