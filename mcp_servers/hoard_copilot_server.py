@@ -29,7 +29,7 @@ OPERATIONS = {
     "hoard_draft_save": ("PATCH", "/api/sessions/{session_id}/draft", "Update the canonical draft; omitted attachment_ids preserves existing files, and an empty list explicitly detaches them.", {"session_id": {"type": "string"}, "text": {"type": "string"}, "attachment_ids": {"type": "array", "items": {"type": "string"}}}),
     "hoard_turn_start": ("POST", "/api/chat_stream", "Start the normal Faustus agent turn with Hoard context and optional uploaded attachment IDs; closing the observer leaves the run executing on the server.", {"session_id": {"type": "string"}, "message": {"type": "string"}, "context": CONTEXT, "client_message_id": {"type": "string"}, "attachments": {"type": "array", "items": {"type": "string"}}}),
     "hoard_turn_status": ("GET", "/turns/{session_id}/status", "Read the active or finished Faustus turn, including its terminal error, without starting or repeating it. Pass run_id to keep observing that exact turn.", {"session_id": {"type": "string"}, "run_id": {"type": "string"}}),
-    "hoard_turn_stop": ("POST", "/api/chat/stop/{session_id}", "Stop the shared Faustus turn; domain changes already applied remain in their Hoard.", {"session_id": {"type": "string"}, "scope": {"type": "string", "enum": ["generation", "task", "work"]}}),
+    "hoard_turn_stop": ("POST", "/api/chat/stop/{session_id}", "Stop the shared Faustus turn; pass run_id to select the exact turn. Without it, observe the current identity once before stopping. Domain changes already applied remain in their Hoard.", {"session_id": {"type": "string"}, "run_id": {"type": "string"}, "scope": {"type": "string", "enum": ["generation", "task", "work"]}}),
 }
 
 
@@ -49,7 +49,8 @@ async def call_tool(name, arguments):
         path = path.replace('{project_link_id}', quote(str(payload.pop('project_link_id')), safe=''))
     if "{session_id}" in path:
         from urllib.parse import quote
-        path = path.replace("{session_id}", quote(str(payload.pop("session_id")), safe=""))
+        session_id = str(payload.pop("session_id"))
+        path = path.replace("{session_id}", quote(session_id, safe=""))
     token = os.environ.get("FAUSTUS_TOKEN", "")
     token_file = os.environ.get("FAUSTUS_TOKEN_FILE", "")
     if token_file:
@@ -58,6 +59,15 @@ async def call_tool(name, arguments):
     base = os.environ.get("FAUSTUS_URL", "http://127.0.0.1:7000").rstrip("/")
     url = base + (path if path.startswith("/api/") else "/api/hoard-copilot" + path)
     async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+        if name == "hoard_turn_stop":
+            run_id = payload.pop("run_id", None)
+            if not run_id:
+                observed = await client.request("GET", base + "/api/hoard-copilot/turns/" + quote(session_id, safe="") + "/status", headers=headers)
+                if observed.status_code != 404:
+                    observed.raise_for_status()
+                    run_id = observed.json().get("run_id")
+            if run_id:
+                headers = {**headers, "X-Odysseus-Run-Id": str(run_id)}
         if name == "hoard_attachment_upload":
             paths = [Path(path) for path in payload.pop('paths', [])]
             if not paths:

@@ -3325,7 +3325,8 @@ def setup_chat_routes(
                 web_sources = ctx.web_sources
 
                 # Register active stream for partial-save safety net
-                _active_streams[session] = {"status": "streaming", "partial": "", "query": message, "is_research": effective_do_research, "mode": _effective_mode}
+                from src.run_causality import capture_call
+                _active_streams[session] = {"run_id": capture_call(session, None).run_id, "status": "streaming", "partial": "", "query": message, "is_research": effective_do_research, "mode": _effective_mode}
 
                 # The client sent a workspace the server refused to bind (deleted
                 # folder, file path, sensitive dir, filesystem root). Tell it up

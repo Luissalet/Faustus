@@ -176,7 +176,7 @@ def setup_hoard_copilot_routes(session_manager):
             # must not attach the newer stream's fields to an older run ID.
             current = agent_runs.get_run_id(session_id)
             active = dict(chat_routes._active_streams.get(session_id) or {})
-            if current == result["run_id"] == agent_runs.get_run_id(session_id):
+            if current == result["run_id"] == active.get("run_id") == agent_runs.get_run_id(session_id):
                 return {**active, **result}
         return result
 

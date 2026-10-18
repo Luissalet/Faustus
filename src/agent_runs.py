@@ -1377,10 +1377,15 @@ def run_status_snapshot(session_id: str, run_id: Optional[str] = None) -> Option
         paths = [path for path in paths if path.endswith("-" + run_id + ".jsonl")
                  or path == _legacy_log_path(session_id)]
     path = paths[0] if paths else None
+    legacy_header = _log_header(path) if path == _legacy_log_path(session_id) else {}
     if marker is not None and path is not None and not path.endswith("-" + marker["run_id"] + ".jsonl"):
         stamp = re.search(r"-([0-9]{20})-[0-9a-f]{32}\.jsonl$", path)
         try:
-            if stamp and int(stamp[1]) / 1_000_000 <= float(marker["finished_at"]):
+            started = int(stamp[1]) / 1_000_000 if stamp else None
+            if (legacy_header.get("session_id") == session_id
+                    and legacy_header.get("run_id") != marker["run_id"]):
+                started = float(legacy_header["ts"])
+            if started is not None and started <= float(marker["finished_at"]):
                 # A later run can finish with persistence disabled, leaving
                 # only the marker and an older run's journal on disk.
                 path = None
@@ -1391,7 +1396,8 @@ def run_status_snapshot(session_id: str, run_id: Optional[str] = None) -> Option
     # marker belongs to an older run and cannot stand in for the latest one.
     if marker is not None:
         ident = marker.get("run_id")
-        matching_path = path is None or path.endswith("-" + str(ident) + ".jsonl")
+        matching_path = (path is None or path.endswith("-" + str(ident) + ".jsonl")
+                         or legacy_header.get("run_id") == ident)
         if matching_path and (marker["status"] != "error" or isinstance(marker.get("error"), dict)):
             return snapshot(ident, marker["status"], "finished_marker", marker.get("error"),
                             **{key: marker[key] for key in ("finished_at", "label", "model") if key in marker})
