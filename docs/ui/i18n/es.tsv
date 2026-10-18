@@ -10078,3 +10078,15 @@ Some start information could not be loaded: {sources}.	No se ha podido cargar pa
 Start a conversation below or continue with an assistant.	Escribe abajo o continúa con un asistente.
 View all	Ver todos
 Workspace overview	Resumen del espacio de trabajo
+Description and objective	Descripción y objetivo
+Add clarification	Añadir aclaración
+History and clarifications	Historial y aclaraciones
+Reload task	Recargar tarea
+Task #{id}	Tarea #{id}
+Loading task	Cargando tarea
+Search tasks	Buscar tareas
+All assignees	Todas las asignaciones
+New task	Nueva tarea
+Unassigned	Sin asignar
+Talk with several models in one conversation. Open a room to continue its history, manage members or start a debate.	Habla con varios modelos en una conversación. Abre una sala para continuar su historial, gestionar participantes o iniciar un debate.
+Previous history and evidence	Historial y pruebas anteriores

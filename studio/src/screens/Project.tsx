@@ -61,6 +61,7 @@ import './home.css';
 import { t, tn } from '../i18n';
 import { ProjectNavigation, projectSection, type ProjectSection } from './project/ProjectNavigation';
 import { ProjectTasks } from './project/Tasks';
+import { ProjectGroupChats } from './project/GroupChats';
 import { ProjectSkills } from './project/Skills';
 import { ProjectOverviewActivity, ProjectOverviewAgora } from './project/Overview';
 import './project/workspace.css';
@@ -1101,6 +1102,8 @@ export function ProjectScreen() {
       )}
 
       {tab === 'chats' && (
+        <div className="fs-project-workspace">
+        <ProjectGroupChats project={project} onOpen={openAgora} />
         <div className="fs-panel">
           <div className="fs-pj__card-head">
             <h3>{chats ? tn(chats.length, '{n} conversation in {folder}', '{n} conversations in {folder}', { folder: project.folder ?? '' }) : t('Conversations')}</h3>
@@ -1135,6 +1138,7 @@ export function ProjectScreen() {
               })}
             </div>
           )}
+        </div>
         </div>
       )}
 

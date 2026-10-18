@@ -9,13 +9,13 @@ nothing else in Faustus depends on the hub being there.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from urllib.parse import urlencode
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, StrictInt
 
 from core.middleware import require_admin
 from src import hoard_hub
@@ -23,6 +23,30 @@ from src import hoard_hub
 
 class ActiveSphere(BaseModel):
     id: str = Field(default="", max_length=64)
+
+
+class ProjectTaskCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field('', max_length=20000)
+    acceptance: str = Field('', max_length=20000)
+    priority: StrictInt = Field(2, ge=0, le=3)
+    kind: Literal['feature', 'bug', 'research', 'review', 'chore', 'eval', 'docs'] = 'feature'
+    owner: str | None = Field(None, max_length=41)
+    note: str = Field('', max_length=20000)
+    repo: str = Field('', max_length=120)
+    request_id: str | None = Field(None, pattern=r'^[a-zA-Z0-9-]{1,64}$')
+
+
+class ProjectTaskEdit(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_etag: str = Field(min_length=1, max_length=64)
+    title: str | None = Field(None, max_length=200)
+    body: str | None = Field(None, max_length=20000)
+    acceptance: str | None = Field(None, max_length=20000)
+    priority: StrictInt | None = Field(None, ge=0, le=3)
+    owner: str | None = Field(None, max_length=41)
+    note: str = Field('', max_length=20000)
 
 
 # The Hub's own board groups: what is waiting, what is moving, what waits for
@@ -67,6 +91,51 @@ def compact_board(board, *, done_limit=40):
 
 def setup_hoard_hub_routes() -> APIRouter:
     router = APIRouter(tags=["hoard-hub"])
+
+    def project_for_tasks(project_id, request):
+        require_admin(request)
+        from services.projects import get_store
+        from src.auth_helpers import effective_user
+        project = get_store().get(project_id, effective_user(request))
+        if not project:
+            raise HTTPException(404, 'Project not found')
+        return project
+
+    async def task_call(function, *args):
+        from src.project_tasks import TaskError
+        try:
+            return await asyncio.to_thread(function, *args)
+        except TaskError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/api/projects/{project_id}/tasks/prepare')
+    async def prepare_tasks(project_id: str, request: Request):
+        from src.project_tasks import prepare
+        return await task_call(prepare, project_for_tasks(project_id, request))
+
+    @router.get('/api/projects/{project_id}/tasks')
+    async def project_tasks(project_id: str, request: Request):
+        from src.project_tasks import listing
+        return await task_call(listing, project_for_tasks(project_id, request))
+
+    @router.post('/api/projects/{project_id}/tasks')
+    async def create_task(project_id: str, request: Request, body: ProjectTaskCreate):
+        from src.project_tasks import command
+        allowed = body.model_dump(exclude={'request_id'})
+        if body.request_id:
+            allowed['origin_ref'] = f"faustus:{project_id}:request:{body.request_id}"
+        return await task_call(command, project_for_tasks(project_id, request), 'task_add', allowed)
+
+    @router.get('/api/projects/{project_id}/tasks/{task_id}')
+    async def project_task(project_id: str, task_id: int, request: Request):
+        from src.project_tasks import command
+        return await task_call(command, project_for_tasks(project_id, request), 'task', {'task_id': task_id})
+
+    @router.patch('/api/projects/{project_id}/tasks/{task_id}')
+    async def edit_task(project_id: str, task_id: int, request: Request, body: ProjectTaskEdit):
+        from src.project_tasks import command
+        allowed = body.model_dump(exclude_unset=True)
+        return await task_call(command, project_for_tasks(project_id, request), 'task_edit', {**allowed, 'task_id': task_id})
 
     @router.get('/api/hoard/coordination')
     def coordination_status():

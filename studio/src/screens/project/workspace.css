@@ -14,6 +14,36 @@
 .fs-project-workspace__activity { min-width: 0; }
 .fs-project-navigation { display: flex; align-items: center; gap: var(--fs-space-3); flex-wrap: wrap; }
 .fs-project-navigation > .fs-tabs { flex: 1; min-width: 0; }
+.fs-project-tasks-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--fs-space-2); }
+.fs-project-tasks-search { display: flex; align-items: center; gap: var(--fs-space-2); flex: 1 1 260px; }
+.fs-project-tasks-toolbar > select { width: auto; max-width: 260px; }
+.fs-project-task-columns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--fs-space-3); align-items: start; }
+.fs-project-task-column { min-width: 0; background: var(--fs-surface-2); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-panel); padding: var(--fs-space-3); }
+.fs-project-task-column h2 { display: flex; justify-content: space-between; font-size: var(--fs-label-size); }
+.fs-project-task-column h2 span { color: var(--fs-text-3); }
+.fs-project-task-column > ul { display: grid; gap: var(--fs-space-2); list-style: none; margin: 0; padding: 0; }
+.fs-project-task-card { display: grid; gap: var(--fs-space-2); width: 100%; padding: var(--fs-space-3); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); background: var(--fs-surface-1); color: var(--fs-text-1); text-align: start; cursor: pointer; overflow-wrap: anywhere; font: inherit; }
+.fs-project-task-card:hover { border-color: var(--fs-text-2); }
+.fs-project-task-card-meta, .fs-project-task-card-status { font-size: 12px; color: var(--fs-text-3); }
+.fs-project-task-card[data-status='blocked'] { border-inline-start: 3px solid var(--fs-warning); }
+.fs-project-task-dialog.fs-dialog { inline-size: min(1100px, calc(100vw - 32px)); max-block-size: calc(100dvh - 32px); overflow-y: auto; }
+.fs-project-task-form fieldset { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--fs-space-4); border: 0; padding: 0; margin: 0; min-width: 0; }
+.fs-project-task-form label { display: grid; gap: var(--fs-space-2); align-content: start; min-width: 0; }
+.fs-project-task-form .fs-field { inline-size: 100%; max-inline-size: 100%; box-sizing: border-box; }
+.fs-project-task-form fieldset > label:first-child, .fs-project-task-form .fs-project-task-fields, .fs-project-task-form .fs-project-workspace__toolbar { grid-column: 1 / -1; }
+.fs-project-task-form fieldset > label:nth-child(3) { grid-row: span 2; }
+.fs-project-task-form textarea.fs-field { height: auto; min-height: 100px; resize: vertical; line-height: 1.5; }
+.fs-project-task-form textarea[rows='8'] { min-height: 270px; }
+.fs-project-tasks-search .fs-field { inline-size: min(100%, 32rem); }
+.fs-project-task-fields { display: flex; align-items: center; gap: var(--fs-space-4); flex-wrap: wrap; }
+.fs-project-task-fields > label { flex: 1 1 200px; }
+.fs-project-task-history article { border-block-start: 1px solid var(--fs-border); padding-block: var(--fs-space-3); }
+.fs-project-task-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fs-project-group-link { display: flex; gap: var(--fs-space-3); align-items: center; width: 100%; text-align: start; color: var(--fs-text-1); background: transparent; border: 0; cursor: pointer; min-height: 44px; font: inherit; }
+.fs-project-group-link small { display: block; color: var(--fs-text-3); margin-block-start: var(--fs-space-1); }
+@media (max-width: 1000px) { .fs-project-task-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 580px) { .fs-project-task-columns { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .fs-project-task-form fieldset { grid-template-columns: minmax(0, 1fr); } .fs-project-task-form fieldset > label:nth-child(3) { grid-row: auto; } .fs-project-task-form textarea[rows='8'] { min-height: 160px; } }
 .fs-dialog.fs-project-activity-panel { inset-block: 0; inset-inline: auto 0; translate: none; inline-size: min(760px, 100vw); max-block-size: 100dvh; border-radius: 0; }
 @media (max-width: 767px) {
   .fs-project-navigation > .fs-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex-basis: 100%; overflow: visible; }

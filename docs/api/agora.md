@@ -43,10 +43,11 @@ preservation and verification in Main remain pending before closure.
 
 ## Project coordination
 
-Open **Project → Agora** for the project's group conversations in the actual
+Open **Project → Chats → Agora** for the project's group conversations in the actual
 Studio screen: the same Conversations pane, header, transcript and composer.
-The usual project chip returns to project details; **Tasks** opens its Hub
-task ledger in **Objectives**. There is no project title, tab bar or room toolbar
+The usual project chip returns to project details; **Tasks** opens the project’s
+single native task board. **Project → Chats** lists its existing group rooms
+with their participants; opening one returns to this same Studio interface. There is no project title, tab bar or room toolbar
 above the chat. Ctrl+B toggles the regular conversation list, which becomes
 a drawer on mobile. Its plus button creates a group conversation.
 
@@ -125,3 +126,7 @@ The actual Main browser shows all three modes at1440/390 with the selected title
 Consistent backups precede activation. All6330 original Agora messages retain IDs and field values;552 original threads and519 tasks retain IDs, with only subsequent coordination/doc activity changed. Native412 sessions and35 MCP configurations remain exact; original9 Council tables,3 Group tables and6 native coordination-cache tables are unchanged. Hub configuration/token and project/session/connector/key/controller files retain hashes; settings differ only in three existing runtime metadata fields, with Full/global Sparks selection and execution preferences preserved. All25 child Python processes of the previous Hub survive. The owned watcher pause is removed, its scheduled watcher restarted on reviewed all-space source and original SID preserved. No production QA room/model generation, model stop/load or push.
 
 Evidence: research-inbox/council-agora-20261013/main-browser494.json, main-mcp494.json, history494-proof.json, activation-preservation494.json, activation-delta494.json and RESULT-494.md. Private model fixtures establish integration behaviour; global-model quality and universal comparative superiority remain unmeasured. Manual CAS/readback preserves161 paragraphs/158 other paragraphs and4 tables; the project graph adds only the owned feature node without embeddings. Final subsequent commits containing documentation only do not require another runtime reload.
+
+## Shared project tasks
+
+The project task board is native Faustus UI, API and MCP; it does not embed or redirect to the Hub prototype. Each task carries its objective, description and acceptance criteria. Open a card for a wide modal with priority, assignee and clarifications. Native coordination IDs, leases and review history remain shared with existing agent clients. Earlier local records are imported idempotently with their original payloads retained. Existing global coordination views remain compatible. See [project tasks](project-tasks.md).
