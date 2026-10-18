@@ -1206,7 +1206,7 @@ For LONG-running commands (package installs, pip/npm, ffmpeg, model downloads, t
 pip install openai-whisper
 ```
 NO TTY: stdin/stdout are pipes, so interactive prompts (`input()`, `curses`) will hang — don't use those. This is the user's machine, not a Linux jail: after a visual change (UI, layout, window, page) call `desktop_screenshot` and report what you SEE. Do not tell the user you cannot look, and do not hand them a command "because this sandbox cannot". Verify code here (tests, `py_compile`, import, entry point with arguments).
-NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats real newlines and `\\n` arrives as literal backslash-n, which Python parses as a line-continuation error on line 1. To run multi-line code, either use the dedicated `python` tool block above, or save to a file first with a quoted HEREDOC (`cat > /tmp/x.py << 'EOF' ... EOF`) and then `python /tmp/x.py`.""",
+NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats real newlines and `\\n` arrives as literal backslash-n, which Python parses as a line-continuation error on line 1. To run multi-line code, use the dedicated `python` tool block above, or read the inherited temporary directory (`cygpath -w "$TMPDIR"` in Git Bash; `printf '%s\\n' "$TMPDIR"` on POSIX), use `write_file` to save `x.py` under that returned directory, then run `python "$TMPDIR/x.py"`. Native tools share that temporary directory within the run; Git Bash's literal `/tmp` is a separate, shared MSYS mount.""",
 
     "python": """\
 ```python
@@ -1214,7 +1214,8 @@ NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats re
 ```
 Execute Python code. Use for computation, data processing, scripting. NOT for writing code for the user (use create_document for that). stdin is a pipe so `input()` will hang; for anything visual, launch it and call `desktop_screenshot` rather than claiming there is no GUI.
 Prefer a dedicated tool whenever one fits the job (reading, searching, or writing files); use python only for computation/processing no dedicated tool covers - not for reading or writing files.
-Do NOT use Python/requests for web lookup/search/latest/current requests when `web_search` or `web_fetch` is available.""",
+Do NOT use Python/requests for web lookup/search/latest/current requests when `web_search` or `web_fetch` is available.
+For temporary computation files, Python's `tempfile` uses the inherited run/workspace temporary directory; `tempfile.gettempdir()` returns its path.""",
 
     "powershell": """\
 ```powershell
@@ -1222,7 +1223,8 @@ Do NOT use Python/requests for web lookup/search/latest/current requests when `w
 ```
 Run a PowerShell script on this Windows host (pwsh or Windows PowerShell), starting in the workspace. Use it for anything Windows-native: `.bat`/`.cmd` launchers, `winget`/`choco`, `Start-Process`, services, registry, WMI, paths with backslashes, the project's `.venv\\Scripts\\python.exe`.
 Write the script exactly as you would type it in a PowerShell window: no outer quoting, no `powershell -Command "..."`, no escaping for a second shell. A `.bat`/`.cmd` runs with `& cmd.exe /c "thing.bat"` — PowerShell's `-File` only accepts `.ps1` and refuses a `.bat`.
-`bash` on Windows is Git Bash (POSIX syntax) and REFUSES to launch `powershell`/`cmd` for you; come here instead. Same rules as bash: not for creating or editing files (use the file tools). For LONG-running scripts (`.bat`, `winget`, installs) make the FIRST line `#!bg` to run detached — same job card as bash. Never start a foreground server.""",
+`bash` on Windows is Git Bash (POSIX syntax) and REFUSES to launch `powershell`/`cmd` for you; come here instead. Same rules as bash: not for creating or editing files (use the file tools). For LONG-running scripts (`.bat`, `winget`, installs) make the FIRST line `#!bg` to run detached — same job card as bash. Never start a foreground server.
+For native temporary paths use `[IO.Path]::GetTempPath()` or `[IO.Path]::GetTempFileName()`; these use the inherited run/workspace temporary directory.""",
 
     "web_search": """\
 ```web_search
@@ -1549,6 +1551,12 @@ def _execution_environment_block(tool_names: Optional[set] = None) -> str:
         lines.append(
             "- `python` runs the PROJECT's interpreter (its `.venv`/`venv` if present, else the host's "
             "`python`), not a separate environment: what the project installed is importable.")
+        lines.append(
+            "- Native command temporary files use the inherited TMP/TEMP/TMPDIR directory for this "
+            "workspace/run (isolated workers keep their own cache/temp directories). In Git Bash read "
+            "`cygpath -w \"$TMPDIR\"` for the native file-tool path and run a saved helper with `python \"$TMPDIR/x.py\"`; "
+            "Python uses `tempfile`, PowerShell uses `[IO.Path]::GetTempPath()`/`GetTempFileName()`. "
+            "Git Bash's literal `/tmp` is a separate, shared MSYS mount.")
         lines.append(
             "- Absolute paths (`C:\\...`) are accepted by every file tool as long as they are inside "
             "the workspace; relative paths resolve from the workspace root.")
