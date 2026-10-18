@@ -12094,6 +12094,13 @@ async def _stream_agent_loop_body(
         schemas = _local_mcp_schemas(route_mcp_schemas, route_schema_tools, _last_user)
         return _filter_route_tool_schemas(schemas)
 
+    def _promote_tool_names(names):
+        """Keep permission-checked promotions hot across rounds and routes."""
+        for selected in (_relevant_tools, _base_relevant_tools, _schema_tools, _base_schema_tools):
+            if selected is not None:
+                selected.update(names)
+        _deferred_tools.difference_update(names)
+
     _approved_result_injected = False
     _approval_echo_retries = 0  # the card question as an answer: bounce it, twice at most
     # "Continúa" after a turn that stopped at its time or round limit: history
@@ -12730,8 +12737,13 @@ async def _stream_agent_loop_body(
                     # Offer the plan tools alongside whatever the retriever
                     # picked: the brief tells the model to use them.
                     if _relevant_tools is not None and not guide_only and _plan_ac_armed:
-                        _relevant_tools = set(_relevant_tools) | (
-                            {"plan_status", "plan_task", "plan_done", "plan_skip", "plan_next"} - set(disabled_tools))
+                        from src.tool_discovery import permitted_names as _permitted_plan_tools
+                        from src.tool_security import owner_is_admin_or_single_user as _plan_owner_is_admin
+                        _plan_tools = _permitted_plan_tools(
+                            ("plan_status", "plan_task", "plan_done", "plan_skip", "plan_next"),
+                            disabled_tools=disabled_tools, tool_policy=tool_policy,
+                            admin=bool(_plan_owner_is_admin(owner)))
+                        _promote_tool_names(_plan_tools)
                     _cur = _pt.current_task(_plan_tracker) or {}
                     _prog = _pt.progress(_plan_tracker)
                     yield (
@@ -18094,15 +18106,7 @@ async def _stream_agent_loop_body(
                 )
                 _promoted = set(_td_audit.resolved)
                 if _promoted:
-                    if _relevant_tools is not None:
-                        _relevant_tools.update(_promoted)
-                    if _base_relevant_tools is not None:
-                        _base_relevant_tools.update(_promoted)
-                    if _schema_tools is not None:
-                        _schema_tools.update(_promoted)
-                    if _base_schema_tools is not None:
-                        _base_schema_tools.update(_promoted)
-                    _deferred_tools -= _promoted
+                    _promote_tool_names(_promoted)
                     logger.info("[tool-catalog] lookup_tools promoted for next round: %s", sorted(_promoted))
                 elif _lt_query:
                     logger.info(
