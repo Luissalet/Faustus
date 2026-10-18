@@ -13182,8 +13182,18 @@ Thunderbolt y resultado SILVERWIN2 importado y verificado en tiempo real.
 MP4 nativo 1280×720/25 s con el puño BW visible y final por tiempo conforme al
 combate original. La campal confirma el mismo resultado que el motor. UI
 predeterminada, pausa asentada y móvil comprobados en R1; la parte modificada
-de R2 se comprueba con regresiones cardinales. Activación pendiente de la unión
-con Main actual aprobado. Evidencia `D:/LocalAI/research-inbox/sprites787/`.
+de R2 se comprueba con regresiones cardinales. Activa en Silver Main `ddc19cdd`, conservando las entregas aprobadas de
+sprites iniciales/megas, revanchas, música, formatos y copilot. La composición
+final aprueba 475 Node (una omitida), 41 Python de área y ambas compilaciones;
+sus archivos/hunks y las adiciones documentales de ambos lados se verifican.
+La activación gestionada conserva exactamente 18 tablas, 155 archivos de
+contenido, ajustes y token: 51 entrenadores, 24 gimnasios, tres ligas,
+44 partidas y seis arenas. La repetición real Pretty Rare Candies vs Pink Bois
+muestra Lanzallamas con Textured (Kenney), sin cambiar la preferencia pixel ni
+los datos guardados. El vídeo vertical de la composición muestra el puño BW en
+720×1280/24,9 s. MCP nativo y el servidor de Silver registrado en Faustus
+comparten 180 herramientas, el esquema effects y el catálogo completo de
+655 imágenes, 157 fuentes y 938 perfiles. La reconexión conserva su configuración. Evidencia `D:/LocalAI/research-inbox/sprites787/`.
 
 ## Biblioteca: Conocimiento — 17-10-2026 (#723)
 
