@@ -1393,6 +1393,11 @@ class _DegenerateStreamGuard:
         self.tail = ""
         self.script_tail = ""
         self.vocabulary_tail = ""
+        self._sentence_buf = ""
+        self._sentence_truncated = False
+        self._reasoning_units: List[str] = []
+        self._reasoning_positions: Dict[str, List[int]] = {}
+        self._reasoning_unit_chars = 0
         self._gibberish_window, self._gibberish_threshold = _gibberish_guard_settings()
 
     def _raw_repeat_reason(self) -> Optional[str]:
@@ -1504,40 +1509,77 @@ class _DegenerateStreamGuard:
         same five paragraphs verbatim four or five times until the reasoning
         budget cut it (~250 s of GPU for nothing). Each cycle is hundreds of
         tokens long, far beyond the 96-token window above, so none of the
-        token/phrase rules could see it. A long sentence (>= 60 chars) that
-        comes back word for word a third time is a wedged plan, not thought.
+        token/phrase rules could see it. Long repeated sentences are anchors;
+        only identical complete intervals between their recent occurrences
+        confirm a cycle. Short intervening progress must remain in the comparison.
         Reasoning only: content can legitimately repeat long lines (tables,
         code, JSON rows)."""
         self.check(text)
         if not text:
             return
-        buf = getattr(self, "_sentence_buf", "") + text
+        buf = self._sentence_buf + text
         parts = _REASONING_SENTENCE_SPLIT_RE.split(buf)
         self._sentence_buf = parts.pop() if parts else ""
+        if self._sentence_truncated and parts:
+            # The prefix of this unit was discarded, so its suffix cannot
+            # establish equality with a complete earlier unit.
+            parts.pop(0)
+            self._sentence_truncated = False
+        for sentence in parts:
+            if len(sentence) > 4000:
+                # Match the unfinished-unit storage bound even when a provider
+                # sends the complete oversized unit in one chunk.
+                self._reset_reasoning_cycles()
+                continue
+            norm = " ".join(sentence.lower().split())
+            if norm:
+                self._check_reasoning_unit(norm)
         if len(self._sentence_buf) > 4000:
             self._sentence_buf = self._sentence_buf[-4000:]
-        counts = getattr(self, "_sentence_counts", None)
-        if counts is None:
-            counts = self._sentence_counts = {}
-        for sentence in parts:
-            norm = " ".join(sentence.lower().split())
-            if len(norm) < _REASONING_LOOP_MIN_CHARS:
-                continue
-            counts[norm] = counts.get(norm, 0) + 1
-            if counts[norm] >= _reasoning_loop_repeats(norm):
-                raise DegenerateOutput(
-                    f"reasoning loop: the same sentence came back {counts[norm]} times "
-                    f"('{norm[:60]}…')",
-                    self.model, self.url,
-                )
-        if len(counts) > 4000:
-            for key in list(counts)[:2000]:
-                counts.pop(key, None)
+            self._sentence_truncated = True
+            self._reset_reasoning_cycles()
+
+    def _reset_reasoning_cycles(self) -> None:
+        self._reasoning_units = []
+        self._reasoning_positions = {}
+        self._reasoning_unit_chars = 0
+
+    def _check_reasoning_unit(self, norm: str) -> None:
+        if len(norm) > _REASONING_LOOP_HISTORY_CHARS:
+            self._reset_reasoning_cycles()
+            return
+        if (len(self._reasoning_units) >= _REASONING_LOOP_HISTORY_UNITS
+                or self._reasoning_unit_chars + len(norm) > _REASONING_LOOP_HISTORY_CHARS):
+            # Forget the whole comparison window rather than joining units
+            # across discarded progress and inventing an identical interval.
+            self._reset_reasoning_cycles()
+        index = len(self._reasoning_units)
+        self._reasoning_units.append(norm)
+        self._reasoning_unit_chars += len(norm)
+        if len(norm) < _REASONING_LOOP_MIN_CHARS:
+            return
+        repeats = _reasoning_loop_repeats(norm)
+        positions = self._reasoning_positions.setdefault(norm, [])
+        positions.append(index)
+        del positions[:-repeats]
+        if len(positions) < repeats:
+            return
+        interval = self._reasoning_units[positions[0]:positions[1]]
+        if all(self._reasoning_units[a:b] == interval
+               for a, b in zip(positions[1:], positions[2:])):
+            raise DegenerateOutput(
+                f"reasoning loop: identical complete intervals between {repeats} recent occurrences "
+                f"('{norm[:60]}…')",
+                self.model, self.url,
+            )
 
 
 _REASONING_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 _REASONING_LOOP_MIN_CHARS = 60
 _REASONING_LOOP_REPEATS = 3
+# Internal comparison storage only, never a limit on model input or generation.
+_REASONING_LOOP_HISTORY_UNITS = 4000
+_REASONING_LOOP_HISTORY_CHARS = 64000
 #: A model that drafts code in its reasoning rewrites the function, the test or
 #: the JSON fixture it is working on, and most lines come back unchanged on
 #: each draft. Three copies of a code line is a third draft, not a wedge: on
