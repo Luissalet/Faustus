@@ -45,3 +45,23 @@ sin partidas/trabajos activos y hashes de tablas, medios, ajustes y token exacto
 Fuentes de implementación: docs/TEAM_ANALYSIS.md, docs/DRAGON_POISON_SPRITES.md y
 docs/SUPPLIED_SPRITES.md del repositorio Silver's Hoard. Evidencia local:
 D:/LocalAI/research-inbox/silver-offline836 y D:/LocalAI/research-inbox/silver-dragon838. Sin push.
+
+
+## Actualización: recursos autónomos activos (840)
+
+Desde Main `18c66ab0cf52`, 840 está integrada y sustituye el estado pendiente
+indicado al principio. Al exportar un entrenador, gimnasio, reto semanal/diario
+o campal, los archivos existentes de la caché de sprites, FX y Reborn viajan en
+un mapa de recursos incrustados con aliases; cada archivo aparece una vez.
+No se descarga material al exportar. Las imágenes de Pokémon ausentes usan un
+disco con iniciales; la decoración ausente queda vacía y se mantienen los efectos
+Silver disponibles. Los sonidos Reborn cacheados sí viajan. Música y gritos
+habituales siguen sin incrustarse. El HTML crece con la caché y las páginas
+antiguas requieren una nueva exportación. App y salas mantienen sus proveedores.
+
+608 Python/2 omitidas y 534 Node/1 omitida en la revisión final, app+HTML compilados,
+aprobación independiente CAS 1. Pruebas de navegador fuera de Silver en cuatro
+clases de página: sólo su HTML local, sin API ni servidor externo, consola limpia.
+Main mantuvo biblioteca, ajustes/token y medios exactos; una lectura sin escritura
+verificó 851 recursos cacheados, 17.252.083 bytes originales. No se promete arte
+completo cuando no está cacheado. Evidencia: research-inbox/silver-portable840.

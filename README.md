@@ -915,3 +915,10 @@ attack coverage and unmodified Speed locally through the UI, API and MCP.
 Eleven Dragon/Poison move motifs add 117 supplied PMD frames, shared by real-time
 battles, mass battles, portable HTML and MP4, with visible reduced-motion frames.
 [Verified scope and limits](docs/silver-offline-20261018.md).
+
+
+New standalone Silver HTML exports now carry the existing presentation cache
+and resolve missing art locally. They need no sprite server while playing;
+ordinary cries/music remain unembedded, and HTML size grows with cached assets.
+Re-export older pages. Task 840 is active at Silver Main18c66ab (608 Python and
+534 Node tests passed). [Scope and limits](docs/silver-offline-20261018.md).

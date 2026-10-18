@@ -13637,3 +13637,28 @@ No se reiniciaron Hub, Faustus, modelos ni GPU; sin push. El fallback remoto
 preexistente de imágenes ausentes en HTML se detectó y se corrige aparte en 840;
 no se declara aún que todas las páginas antiguas sean completamente offline.
 Detalles: [mejoras de Silver](docs/silver-offline-20261018.md).
+
+
+## Silver: páginas autónomas con caché local — 18-10-2026, 06:45
+
+La tarea 840 ya está integrada y activa en Silver Main `18c66ab0cf52`, tras
+aprobación independiente CAS 1 de f5e01ab, f356d04 y 18c66ab. Actualiza el
+estado pendiente indicado más arriba. Nuevos HTML de entrenadores/gimnasios,
+retos semanales/diarios y campales incrustan los sprites, FX y Reborn existentes
+en caché, sin descargarlos ni pedirlos a un servidor al jugar. Los Pokémon sin
+imagen usan discos locales con iniciales; la decoración ausente queda vacía y
+Reborn conserva el fallback Silver. Cada recurso viaja una vez. Hay que volver
+a exportar páginas antiguas. El tamaño crece con la caché; música y gritos
+habituales siguen sin incrustarse. La app y salas conservan sus proveedores.
+
+Suite final: 608 Python/2 omitidas y 534 Node/1 omitida, builds app+HTML correctos.
+Cuatro clases de HTML probadas en servidor estático externo a Silver sin peticiones
+a APIs ni recursos remotos. Victoria clásica, rendición RT con código importado y
+verificado, campal en ejecución y reto diario iniciado (no siete victorias).
+Main conserva 190 herramientas, 51 entrenadores, 24 gimnasios, 3 ligas, 44 combates
+y las 18 tablas, ajustes/token y medios exactos. Lectura local de 851 archivos
+de caché (730 sprites, 119 FX, 2 Reborn; 17.252.083 bytes originales), todos
+idénticos, sin descargas, escrituras ni exportación de datos reales para probar.
+Sólo reinicio gestionado Silver tras comprobar siete frentes inactivos.
+Evidencia: research-inbox/silver-portable840. La tarea 842 de navegación por
+fotogramas de repeticiones sigue en QA; no declararla activa todavía.
