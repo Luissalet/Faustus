@@ -131,7 +131,8 @@ Synthetic assets verify operations, not artistic quality or autonomous modeling
 quality from a live Sparks evaluation.
 
 The live global Sparks evaluation attempted a complete articulated robot and
-three clips twice. Both long generation requests reached their 600-second
+three clips three times, using JSON and plain Python response formats. The long
+generation requests reached their 600-second
 timeout without returning code; a separate short request returned coherent
 text. These attempts do not establish autonomous asset quality. They did not
 load a fallback text model or change the existing QA scene.

@@ -1,5 +1,18 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de
+Blender Lab 1.0.3 sobre Blender 5.2.2 LTS. El panel Faustus conecta la escena y
+abre el chat común. Hay 35 herramientas MCP: 26 oficiales, cuatro flujos vivos y
+las cinco herramientas tipadas existentes. Permite consultar escena, selección
+y RNA instalada, ejecutar bpy, editar nodos y animación con slots, comprobar
+topología/UV/pesos, revisar ángulos y fotogramas, guardar/reabrir y exportar
+objetos, rig y clips seleccionados. Los trabajos y recetas por etapas conservan
+resultados y errores y admiten cancelación. Funciona con el acceso a Internet
+de Blender desactivado; el razonamiento utiliza las Sparks. Dos assets propios
+con tres clips cada uno verifican operaciones. La calidad del modelado autónomo
+con Sparks sigue sin validar: tres peticiones largas agotaron 600 s sin código.
+Documentación y uso: `docs/api/blender-live.md` e `Install-BlenderBridge.ps1`.
+
 **Silver: música del combate (#794):** en Combatir se elige entre48 pistas,
 Automática y Sin música. El control Sonido permite cambiarla durante combate
 clásico y en tiempo real; el navegador recuerda la elección y conserva volúmenes

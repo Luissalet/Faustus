@@ -1,15 +1,17 @@
 """blender_scene_server.py
 
-MCP server for typed 3D scenes rendered headless with Blender
-(src/blender_scene). Tools: `blender_probe`, `blender_scene_schema`,
-`blender_scene_validate`, `blender_scene_run`, `blender_smoke`.
+MCP server for typed headless scenes and official Blender Lab live workflows.
+Preserves the five typed tools, and exposes four persistent live workflow tools
+plus the tools discovered from the installed official distribution.
 
 * **stdout is the JSON-RPC stream.** `src/stdio_guard.py` is raised before
   anything else is imported, like the other built-in servers.
-* A scene is typed JSON, validated before Blender starts; there is no op that
-  runs code. `blender_scene_run` and `blender_smoke` write files, but only
+* The typed scene format is validated before Blender starts. Its operations do
+  not run arbitrary code. `blender_scene_run` and `blender_smoke` write files only
   inside this server's own folder under the data directory
   (`BLENDER_SCENES_DIR/mcp[/<folder>]`); paths in a scene cannot leave it.
+* The separate live/official operations provide full bpy execution through
+  Blender Lab's own local protocol, with persistent native jobs and recipes.
 * No owner-scoped store, so no owner environment variable.
 """
 
