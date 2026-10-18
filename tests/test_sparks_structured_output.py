@@ -121,7 +121,7 @@ def test_real_metadata_refresh_and_generation_cache_reads(http_backend):
 @pytest.mark.parametrize('mutation', ['name_type', 'schema_type', 'strict_type', 'selector_type', 'enum_types',
     'wrong_route', 'missing_ref', 'cycle', 'ref_type_sibling', 'union_type_sibling',
     'required_type', 'unknown_required', 'schema_not_arbitrary_object', 'name_const',
-    'schema_enum', 'strict_const'])
+    'schema_enum', 'strict_const', 'ambiguous_oneof'])
 def test_malformed_or_unsupported_contract_is_not_verified(mutation):
     doc = copy.deepcopy(OPENAPI)
     components = doc['components']['schemas']
@@ -143,6 +143,8 @@ def test_malformed_or_unsupported_contract_is_not_verified(mutation):
     elif mutation == 'name_const': envelope['name']['const'] = 'unusable-name'
     elif mutation == 'schema_enum': envelope['schema'] = {'type': 'object', 'enum': [{}]}
     elif mutation == 'strict_const': envelope['strict'] = {'type': 'boolean', 'const': False}
+    elif mutation == 'ambiguous_oneof':
+        fmt['json_schema'] = {'oneOf': [{'$ref': '#/components/schemas/JsonSchemaResponseFormat'}] * 2}
     assert not engine_controls._openapi_json_schema(doc, 'http://fixture.invalid/v1'), mutation
 
 

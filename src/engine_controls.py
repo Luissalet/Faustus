@@ -52,7 +52,9 @@ def _schema_variants(node, document, seen=()):
                 return []
             target = target.get(token.replace('~1', '/').replace('~0', '~'))
         return _schema_variants(target, document, (*seen, ref))
-    for union in ('anyOf', 'oneOf'):
+    # oneOf requires proving branch exclusivity, beyond this narrow protocol
+    # check. Treat it as unverified rather than accepting overlapping branches.
+    for union in ('anyOf',):
         if union in node:
             if set(node) - {union} - _SCHEMA_ANNOTATIONS:
                 return []
