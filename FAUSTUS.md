@@ -13476,3 +13476,28 @@ La importación inicial necesita la referencia canónica descargable o
 cacheada; reimportar funciona con esa referencia ya guardada. SpriteCollab
 sigue sin publicar esta forma: ahora dispone de la hoja importada por Luis.
 Recibos y pruebas: `research-inbox/silver-swampert812`.
+
+### Silver: personal MP3 library, playlists and listening queue (18 October 2026)
+
+The Music tab imports multiple personal MP3s by file selection or dropping files,
+keeps original bytes in the local service, deduplicates identical content, and
+allows titles to be renamed and songs to be archived/restored. It includes the
+existing catalog alongside personal songs, search, named playlists with ordered
+and repeated entries, and a saved queue with an index, shuffle and repeat modes.
+The shared dock continues playing across ordinary app navigation, with seeking,
+previous/next and the existing volume mixer. Reload restores the queue paused,
+from the selected song's beginning; playback needs an open browser tab.
+
+Personal songs can be chosen in the ordinary battle mixer, which also imports
+MP3s. Starting battle music pauses the listening dock; playing the dock stops
+battle music. Six shared UI/REST/MCP tools expose the same operations:
+music_library, music_import, music_track_update, music_playlist_save,
+music_playlist_delete and music_queue_set. Queue tools persist the desired list,
+not a command to force a closed browser to play. Personal music is not embedded
+in portable HTML and is not propagated to the recorder's separate browser.
+
+Metadata is atomic under data/music, separate from battle data. MP3 uploads
+require complete consecutive Layer III frames; originals and saved battles are
+unchanged. Archiving removes playlist/queue memberships while retaining the file;
+restoring a song does not reconstruct those memberships. See Silver's
+docs/MUSIC_LIBRARY.md and Agora silver/task/821 for verification and limits.
