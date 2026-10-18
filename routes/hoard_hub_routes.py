@@ -31,9 +31,10 @@ class ProjectTaskCreate(BaseModel):
     body: str = Field('', max_length=200000)
     acceptance: str = Field('', max_length=200000)
     priority: StrictInt = Field(2, ge=0, le=3)
-    kind: Literal['feature', 'bug', 'research', 'review', 'chore', 'eval', 'docs'] = 'feature'
-    owner: str | None = Field(None, max_length=41)
-    note: str = Field('', max_length=20000)
+    kind: Literal['feature', 'bug', 'research', 'review', 'chore', 'eval', 'docs', 'task', 'idea'] = 'feature'
+    labels: list[str] = Field(default_factory=list, max_length=40)
+    owner: str | None = Field(None, max_length=120)
+    note: str = Field('', max_length=200000)
     repo: str = Field('', max_length=120)
     request_id: str | None = Field(None, pattern=r'^[a-zA-Z0-9-]{1,64}$')
 
@@ -45,8 +46,11 @@ class ProjectTaskEdit(BaseModel):
     body: str | None = Field(None, max_length=200000)
     acceptance: str | None = Field(None, max_length=200000)
     priority: StrictInt | None = Field(None, ge=0, le=3)
-    owner: str | None = Field(None, max_length=41)
-    note: str = Field('', max_length=20000)
+    owner: str | None = Field(None, max_length=120)
+    note: str = Field('', max_length=200000)
+    kind: Literal['feature', 'bug', 'research', 'review', 'chore', 'eval', 'docs', 'task', 'idea'] | None = None
+    status: str | None = None
+    labels: list[str] | None = Field(None, max_length=40)
 
 
 # The Hub's own board groups: what is waiting, what is moving, what waits for

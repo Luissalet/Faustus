@@ -51,3 +51,4 @@
   .fs-project-workspace__toolbar .fs-btn { min-height: 44px; }
   .fs-project-workspace__list > li > div { flex-basis: 100%; }
 }
+.fs-project-task-table { overflow: auto; } .fs-project-task-table table { width: 100%; border-collapse: collapse; text-align: left; } .fs-project-task-table th, .fs-project-task-table td { padding: var(--fs-space-3); border-bottom: 1px solid var(--fs-border); } .fs-project-task-table button { text-align: left; color: inherit; }

@@ -172,6 +172,9 @@ def load_state(project: Dict[str, Any], *, strict: bool = False) -> Dict[str, An
     read on the chat hot path and must never raise. Strict writers and mirror
     snapshots instead refuse corrupt data without moving the original.
     """
+    from src.project_task_compat import active, objective_state
+    if project.get('id') and active(project['id']):
+        return objective_state(project)
     if not strict and not os.path.lexists(objectives_path(project)):
         return {"objectives": {}, "edges": []}
     try:
@@ -303,6 +306,9 @@ def append_log(project: Dict[str, Any], record: Dict[str, Any]) -> bool:
     Swallow-and-log: a failed audit write must never fail the apply that
     produced it.
     """
+    from src.project_task_compat import active, objective_log
+    if project.get('id') and active(project['id']):
+        return objective_log(project, record)
     try:
         with _store_guard(project):
             return _append_log(project, record)
@@ -339,6 +345,9 @@ def _rotate_log(path: str) -> None:
 
 def read_log(project: Dict[str, Any], limit: int = 50) -> List[Dict[str, Any]]:
     """The last `limit` audit records, oldest first. Never raises."""
+    from src.project_task_compat import active, objective_log
+    if project.get('id') and active(project['id']):
+        return objective_log(project, limit=limit)
     if not os.path.lexists(log_path(project)):
         return []
     try:
@@ -478,6 +487,9 @@ def apply_deltas(
     Apply order: all ADDs (input order), then all EDITs, then all KILLs.
     Returns ``{"applied":[...], "conflicts":[...], "state":{...}}``.
     """
+    from src.project_task_compat import active, objective_apply
+    if project.get('id') and active(project['id']):
+        return objective_apply(project, deltas, actor, session_id)
     try:
         with _store_guard(project):
             return _apply_deltas(project, deltas, actor, session_id)

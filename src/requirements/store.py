@@ -747,3 +747,7 @@ def all_requirement_keys(project_id: str) -> List[str]:
 
 def read_sidecar(workspace: str) -> Dict[str, Any]:
     return Store().read_sidecar(workspace)
+
+
+from src.project_task_compat import wrap_requirements
+wrap_requirements(globals())

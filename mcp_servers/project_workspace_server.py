@@ -17,14 +17,14 @@ from src.stdio_guard import guard
 server = Server("project_workspace")
 S = {"type": "string"}
 STRINGS = {"type": "array", "items": S}
-TASK = {"title": S, "body": S, "kind": S, "priority": {"type": "integer", "minimum": 0, "maximum": 3}, "owner": {"type": ["string", "null"]}, "acceptance": S, "note": S}
+TASK = {"title": S, "body": S, "kind": S, "labels": STRINGS, "priority": {"type": "integer", "minimum": 0, "maximum": 3}, "owner": {"type": ["string", "null"]}, "acceptance": S, "note": S}
 SPECS = {
     "project_workspace": ("POST", "/workspace/action", {"action": S, "name": S, "key": S, "kind": S, "url": S, "content": S, "digest": S, "files": {"type": "object", "additionalProperties": S}}, ["action"], False,
         "Manage project instructions, durable memory and project skills. Actions: instructions_read/write, memory_list/read/write, skills_list/catalog/repository, skill_read/write/install/import/activate/deactivate. skill_write requires the digest from skill_read. Use exact returned keys. Import never executes scripts. Activation requires an existing human review of the current digest; this tool cannot approve content."),
     "project_task_list": ("GET", "/tasks", {}, [], True, "List the project's shared Agora task ledger, also used by the person in Faustus. Objectives and acceptance belong to these tasks."),
     "project_task_get": ("GET", "/tasks/{id}", {"id": S}, ["id"], True, "Read a shared task with its full history and etag before editing."),
     "project_task_create": ("POST", "/tasks", {**TASK, "request_id": S}, ["title"], False, "Create a task in the same project board used by the person and the other agents. Acceptance criteria are text. Cite the returned id."),
-    "project_task_update": ("PATCH", "/tasks/{id}", {**TASK, "id": S, "expected_etag": S}, ["id", "expected_etag"], False, "Edit task text, acceptance, priority, assignment or add a clarification. Send etag from project_task_get; stale writes are rejected. Agent workflow reviews and leases remain canonical."),
+    "project_task_update": ("PATCH", "/tasks/{id}", {**TASK, "status": S, "id": S, "expected_etag": S}, ["id", "expected_etag"], False, "Edit task text, acceptance, priority, assignment, type, labels or status, or add a clarification. Send etag from project_task_get; stale writes are rejected. Pending submission reviews cannot be bypassed by marking done."),
 }
 
 

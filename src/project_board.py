@@ -1186,3 +1186,9 @@ def import_sources(project: Mapping[str, Any], key: str, *, sources: Sequence[st
 
 def export_markdown(project_id: str, key: str, project_name: str) -> str:
     return Store().export_markdown(project_id, key, project_name)
+
+
+# After adoption these compatibility entry points project the same canonical
+# records as Faustus Tasks and agent clients. Store remains the raw importer.
+from src.project_task_compat import wrap_board
+wrap_board(globals())

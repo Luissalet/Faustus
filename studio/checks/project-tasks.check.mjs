@@ -18,7 +18,7 @@ writeFileSync(output, bundled.outputFiles[0].text);
 const m = await import(pathToFileURL(output));
 const host = document.createElement('div'); document.body.append(host);
 const root = m.createRoot(host);
-const original = {id: 42, title: 'Original objective', body: 'Full description '.repeat(100), acceptance: 'Verify result', priority: 2, owner: 'builder', status: 'claimed', etag: 'etag-read', thread_id: 7};
+const original = {id: 42, title: 'Original objective', body: 'Full description '.repeat(100), acceptance: 'Verify result', priority: 2, owner: 'builder', status: 'claimed', kind:'feature', labels:[], etag: 'etag-read', thread_id: 7};
 let task = {...original};
 let conflict = true;
 let edits = [];
@@ -51,9 +51,21 @@ const type = (element, value) => {
   element.dispatchEvent(new window.Event('input',{bubbles:true}));
 };
 await m.act(async () => type(dialog.querySelector('textarea'), 'Luis clarified the goal'));
+await m.act(async () => {
+  for (const [name, value] of [['Status','done'], ['Type','idea']]) {
+    const select = [...dialog.querySelectorAll('label')].find(el => el.textContent.startsWith(name)).querySelector('select');
+    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype,'value').set.call(select,value);
+    select.dispatchEvent(new window.Event('change',{bubbles:true}));
+  }
+  const labels = [...dialog.querySelectorAll('label')].find(el => el.textContent.startsWith('Labels')).querySelector('input');
+  type(labels, 'review, clarified');
+});
 await m.act(async () => { dialog.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick(); });
 assert.equal(edits[0].expected_etag,'etag-read');
 assert.equal(edits[0].body,'Luis clarified the goal');
+assert.equal(edits[0].status,'done');
+assert.equal(edits[0].kind,'idea');
+assert.deepEqual(edits[0].labels,['review','clarified']);
 assert.ok(document.querySelector('[role="alert"]'));
 assert.equal(dialog.querySelector('textarea').value,'Luis clarified the goal','conflict retains the unsaved draft');
 conflict = false;

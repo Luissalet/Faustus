@@ -44,6 +44,12 @@ def space(project, *, create=False):
 
 
 def legacy_records(project):
+    from src.project_task_compat import sources
+    with sources():
+        yield from _legacy_records(project)
+
+
+def _legacy_records(project):
     from services import objectives
     from src import project_board
     from src.requirements import store as requirements
@@ -95,10 +101,15 @@ def prepare(project):
         result = rpc('task_add', {'agent': 'faustus', 'space_id': sid, 'title': item['title'], 'body': body,
             'acceptance': acceptance, 'priority': min(3, max(0, priority)),
             'owner': owner,
-            'kind': 'bug' if item.get('type') == 'bug' else 'feature',
+            'kind': item.get('type', 'feature'), 'labels': item.get('labels', []),
+            'context': {'aliases': {kind: str(key)}, 'source': item.get('source', 'human'),
+                        'proposed_by': item.get('proposed_by', 'human'),
+                        'requirement_status': item.get('status') if kind=='requirement' else None},
             'repo': project['name'], 'origin_ref': f"faustus:{project['id']}:{kind}:{key}", 'origin_status': status,
             'origin_snapshot': source})
         imported += not result.get('existing', False)
+    from src.project_task_compat import adopt
+    adopt(project)
     return {'ok': True, 'space_id': sid, 'imported': imported}
 
 

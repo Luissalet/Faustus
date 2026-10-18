@@ -5,6 +5,10 @@ Objectives, descriptions and acceptance criteria belong to each task. Clicking
 the entire card opens a wide modal with title, priority, assignee, text,
 acceptance, clarifications and the existing task conversation. The board fills
 the available workspace width. Search and assignment filters use the same tasks.
+Status, type and free labels are editable in the same modal. Kanban supports
+dragging between normal work states; a table, filters, Markdown export and the
+existing file-import preview also operate on these shared records. Pending
+reviews use the submission workflow and cannot be bypassed by marking done.
 
 Projects → Chats includes its saved Agora rooms and their participants. Opening
 a room returns to the existing Studio interface, conversation selector, Members,
@@ -39,10 +43,19 @@ snapshots retain older IDs, relationships, requirement revisions, links and issu
 history, including the full available objective audit/evidence log. Rejected and
 superseded requirements remain terminal; objective priorities 1–4 map to 0–3.
 They can be inspected under Previous history and evidence in the task modal.
-Titles accept 300 characters; descriptions and acceptance accept 200,000.
+Titles accept 300 characters; descriptions, acceptance and clarifications accept 200,000.
 Larger records are refused explicitly rather than truncated, with an import
 error and retry alongside the still usable canonical board. Older source
 APIs remain compatible; new project task operations use the shared ledger.
+
+After preparation the project durably adopts this ledger. The normal `board_*`,
+`project_objectives`, `req_*` and meeting action writers then project the same
+records, including comments, statuses, dependencies and evidence. Original issue,
+objective and requirement IDs remain usable aliases; new compatibility IDs are
+`T:<canonical_id>`. Legacy source databases/files are retained as migration
+sources, without mirroring later edits back into another task authority. This
+also keeps the agent's ordinary board/objective context aligned with user edits.
+Projects not yet adopted retain their older API behavior until preparation.
 
 Task detail includes `edits`: ordered revisions with author, timestamp, and
 before/after values for title, body, acceptance, priority and owner. Creation

@@ -4,7 +4,9 @@ from src import project_tasks as tasks
 
 
 @pytest.fixture
-def ledger(monkeypatch):
+def ledger(monkeypatch, tmp_path):
+    from src import project_task_compat
+    monkeypatch.setattr(project_task_compat, 'marker', lambda pid: tmp_path / (pid + '.json'))
     state = {'spaces': [{'id': 'silver', 'project_id': 'p', 'title': 'Silver'}], 'tasks': {}, 'calls': []}
     def call(tool, args):
         state['calls'].append((tool, copy.deepcopy(args)))

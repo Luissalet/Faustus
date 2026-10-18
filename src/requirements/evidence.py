@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 #: matrix only ever sets `verified` from a `kind == "evidences"` link (see
 #: module docstring). English + Spanish spelling both scanned for symmetry
 #: with `project_board._CLOSE_RE`.
-_IMPLEMENTS_COMMENT_RE = re.compile(r"@implements\s+(REQ-\d+)", re.IGNORECASE)
+_IMPLEMENTS_COMMENT_RE = re.compile(r"@implements\s+(REQ-\d+|T:\d+)", re.IGNORECASE)
 
 
 def scan_implements_comments(text: str) -> List[str]:
@@ -225,7 +225,7 @@ def matrix(project_id: str, key: str, *, workspace: str = "", persist: bool = Tr
         resolved.append(row)
         if persist and state != link.get("state"):
             try:
-                req_store.Store().set_link_state(link["id"], state)
+                req_store.set_link_state(link["id"], state)
             except req_store.RequirementsError:
                 logger.debug("evidence.matrix: could not persist link state for %s", link["id"], exc_info=True)
 

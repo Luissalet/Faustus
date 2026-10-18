@@ -2,7 +2,7 @@ import { getJson, responseReason } from './api';
 export interface ProjectTask {
   id: number; title: string; body: string; acceptance: string; status: string; priority: number;
   owner: string | null; reviewer: string | null; kind: string; etag: string; thread_id: number;
-  updated: number; origin_ref?: string | null;
+  updated: number; labels?: string[]; origin_ref?: string | null;
   origin_snapshot?: Record<string, unknown> | null;
 }
 export interface TaskMessage { id: number; author: string; body: string; kind: string; created: number }
