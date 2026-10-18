@@ -19,6 +19,7 @@ import { ResponseSources } from '../../components/ResponseSources';
 import { issueIdRegex } from '../../adapters/board';
 import { IssueChip, renderIssueSegments } from '../board/IssueChips';
 import { splitMentions } from '../../lib/mentions';
+import { LARGE_MESSAGE_THRESHOLD, completeMessageEdit, findInMessage, messageContext, messageSections, sectionAt, startMessageEdit, textareaChange, textareaOffset, updateMessageEdit } from '../../lib/large-message';
 import { hueIndex, initials } from '../../lib/mail';
 import { writeClipboardText } from '../../lib/clipboard-write';
 import { safeExternal } from '../../lib/markdown';
@@ -1177,6 +1178,7 @@ function Editor({
   onSave: (text: string, regenerate: boolean) => void;
 }) {
   const [text, setText] = useState(initial);
+  if (text.length > LARGE_MESSAGE_THRESHOLD) return <SectionEditor initial={text} onCancel={onCancel} onSave={onSave} />;
   return (
     <div className="fs-studio__edit" data-testid="turn-editor">
       <textarea
@@ -1185,6 +1187,13 @@ function Editor({
         rows={3}
         aria-label={t('Edit message')}
         onChange={(event) => setText(event.target.value)}
+        onPaste={(event) => {
+          const pasted = event.clipboardData.getData('text/plain');
+          const first = textareaOffset(text, event.currentTarget.selectionStart);
+          const last = textareaOffset(text, event.currentTarget.selectionEnd);
+          const next = text.slice(0, first) + pasted + text.slice(last);
+          if (next.length > LARGE_MESSAGE_THRESHOLD) { event.preventDefault(); setText(next); }
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') onCancel();
           if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) onSave(text, true);
@@ -1195,6 +1204,111 @@ function Editor({
         <Button variant="primary" icon={RefreshCw} label={t('Save and regenerate')} size="sm" disabled={!text.trim()} onClick={() => onSave(text, true)} />
         <Button label={t('Just save')} size="sm" disabled={!text.trim()} onClick={() => onSave(text, false)} />
         <Button variant="ghost" label={t('Cancel')} size="sm" onClick={onCancel} />
+      </div>
+    </div>
+  );
+}
+
+function MessagePager({ index, count, onPage }: { index: number; count: number; onPage: (index: number) => void }) {
+  const [number, setNumber] = useState(String(index + 1));
+  useEffect(() => setNumber(String(index + 1)), [index]);
+  const go = () => {
+    const value = Number(number);
+    if (Number.isInteger(value) && value >= 1 && value <= count) onPage(value - 1);
+    else setNumber(String(index + 1));
+  };
+  return (
+    <form className="fs-large-message__pager" onSubmit={(event) => { event.preventDefault(); go(); }}>
+      <IconButton icon={ChevronLeft} label={t('Previous section')} size="sm" disabled={index === 0} onClick={() => onPage(index - 1)} />
+      <span aria-live="polite">{t('Section {n} of {total}', { n: index + 1, total: count })}</span>
+      <IconButton icon={ChevronRight} label={t('Next section')} size="sm" disabled={index === count - 1} onClick={() => onPage(index + 1)} />
+      <input className="fs-studio__input fs-large-message__number" type="number" min={1} max={count}
+        aria-label={t('Section number')} value={number} onChange={(event) => setNumber(event.target.value)} />
+      <Button type="submit" size="sm" variant="ghost" label={t('Go to section')} />
+    </form>
+  );
+}
+
+/** The editing buffer holds one section; saving always joins the complete original. */
+function SectionEditor({ initial, onCancel, onSave }: { initial: string; onCancel: () => void; onSave: (text: string, regenerate: boolean) => void }) {
+  const [edit, setEdit] = useState(() => startMessageEdit(initial));
+  const input = useRef<HTMLTextAreaElement>(null);
+  const caret = useRef<number | null>(null);
+  const { start, end } = edit.sections[edit.index];
+  const outsideHasText = useMemo(() => Boolean(edit.text.slice(0, start).trim() || edit.text.slice(end).trim()), [edit.text, start, end]);
+  const empty = !outsideHasText && !edit.draft.trim();
+  useEffect(() => {
+    if (caret.current === null || !input.current) return;
+    const offset = edit.draft.slice(0, caret.current).replace(/\r\n?/g, '\n').length;
+    input.current.setSelectionRange(offset, offset);
+    caret.current = null;
+  }, [edit]);
+  const change = (draft: string, position: number) => {
+    const next = updateMessageEdit(edit, draft, position);
+    caret.current = next.caret ?? position;
+    setEdit(next.edit);
+  };
+  const save = (regenerate: boolean) => { if (!empty) onSave(completeMessageEdit(edit), regenerate); };
+  return (
+    <div className="fs-studio__edit fs-large-message" data-testid="turn-editor">
+      <MessagePager index={edit.index} count={edit.sections.length}
+        onPage={(index) => setEdit(startMessageEdit(completeMessageEdit(edit), index))} />
+      <textarea ref={input} className="fs-studio__input fs-studio__edit-input fs-large-message__edit" rows={10}
+        aria-label={t('Edit message section')} value={edit.draft} autoFocus
+        onChange={(event) => {
+          const draft = textareaChange(edit.draft, event.target.value);
+          change(draft, textareaOffset(draft, event.target.selectionStart));
+        }}
+        onPaste={(event) => {
+          const text = event.clipboardData.getData('text/plain');
+          if (!text) return;
+          event.preventDefault();
+          const first = textareaOffset(edit.draft, event.currentTarget.selectionStart);
+          const last = textareaOffset(edit.draft, event.currentTarget.selectionEnd);
+          change(edit.draft.slice(0, first) + text + edit.draft.slice(last), first + text.length);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onCancel();
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) save(true);
+        }} />
+      <p className="fs-large-message__hint">{t('Changes apply to the complete message.')}</p>
+      <div className="fs-studio__ask-actions">
+        <Button variant="primary" icon={RefreshCw} label={t('Save and regenerate')} size="sm" disabled={empty} onClick={() => save(true)} />
+        <Button label={t('Just save')} size="sm" disabled={empty} onClick={() => save(false)} />
+        <Button variant="ghost" label={t('Cancel')} size="sm" onClick={onCancel} />
+      </div>
+    </div>
+  );
+}
+
+function LargeMessage(props: Parameters<typeof Said>[0]) {
+  const { text } = props;
+  const sections = useMemo(() => messageSections(text), [text]);
+  const [index, setIndex] = useState(0);
+  const [query, setQuery] = useState('');
+  const [match, setMatch] = useState<number | null>(null);
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => { setIndex(0); setMatch(null); }, [text]);
+  const current = Math.min(index, sections.length - 1);
+  const section = sections[current];
+  useEffect(() => { if (body.current) body.current.scrollTop = 0; }, [current, match]);
+  return (
+    <div className="fs-large-message" data-testid="large-message">
+      <MessagePager index={current} count={sections.length} onPage={(page) => { setIndex(page); setMatch(null); }} />
+      <form className="fs-large-message__search" onSubmit={(event) => {
+        event.preventDefault();
+        const found = findInMessage(text, query, match === null || match < 0 ? 0 : match + 1);
+        setMatch(found);
+        if (found >= 0) setIndex(sectionAt(sections, found));
+      }}>
+        <input className="fs-studio__input" type="search" aria-label={t('Search entire message')}
+          placeholder={t('Search entire message')} value={query}
+          onChange={(event) => { setQuery(event.target.value); setMatch(null); }} />
+        <Button type="submit" size="sm" variant="ghost" label={t('Find next')} disabled={!query} />
+      </form>
+      {match !== null && <span className="fs-large-message__hint" role="status">{match < 0 ? t('No matches') : t('Match in section {n}', { n: sectionAt(sections, match) + 1 })}</span>}
+      <div ref={body} className="fs-large-message__text" tabIndex={0} role="region" aria-label={t('Message section')}>
+        <Said {...props} text={match !== null && match >= 0 ? messageContext(text, match) : text.slice(section.start, section.end)} />
       </div>
     </div>
   );
@@ -1591,7 +1705,7 @@ function UserTurn({
   if (turn.agentMessage) return <AgentMessageTurn message={turn.agentMessage} id={turn.id} dbId={turn.dbId} enter={enter} />;
   return (
     <article className="fs-turn fs-turn--user" data-enter={enter || undefined} data-nav-id={turn.id} data-db-id={turn.dbId} data-testid="turn-user">
-      <div className="fs-turn__user-wrap">
+      <div className={`fs-turn__user-wrap${turn.text.length > LARGE_MESSAGE_THRESHOLD ? ' fs-turn__user-wrap--large' : ''}`}>
         {editing ? (
           <Editor
             initial={turn.text}
@@ -1621,7 +1735,9 @@ function UserTurn({
                   ))}
                 </ul>
               )}
-              <Said text={turn.text} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
+              {turn.text.length > LARGE_MESSAGE_THRESHOLD
+                ? <LargeMessage text={turn.text} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
+                : <Said text={turn.text} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />}
               {turn.edited && <span className="fs-turn__edited">{t('edited')}</span>}
               {turn.note && <p className="fs-notice" role="status">{turn.note}</p>}
             </div>

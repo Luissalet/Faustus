@@ -10096,3 +10096,14 @@ Waiting for the model to load into memory	Esperando a que el modelo se cargue en
 Model in memory; waiting for output	Modelo en memoria; esperando su respuesta
 Model in memory; waiting for output · context: {n} estimated tokens	Modelo en memoria; esperando su respuesta · contexto: {n} tokens estimados
 Waiting for the model · context: {n} estimated tokens	Esperando al modelo · contexto: {n} tokens estimados
+Previous section	Sección anterior
+Next section	Sección siguiente
+Section {n} of {total}	Sección {n} de {total}
+Section number	Número de sección
+Go to section	Ir a la sección
+Edit message section	Editar sección del mensaje
+Changes apply to the complete message.	Los cambios se aplican al mensaje completo.
+Search entire message	Buscar en todo el mensaje
+Find next	Buscar siguiente
+Match in section {n}	Coincidencia en la sección {n}
+Message section	Sección del mensaje

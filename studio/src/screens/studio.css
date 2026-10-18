@@ -2145,6 +2145,75 @@ button.fs-studio__git-chip:hover {
   background: var(--fs-surface-1);
 }
 
+/* Large messages keep their full source; only the current section is mounted. */
+.fs-turn__user-wrap--large {
+  inline-size: min(72%, 60ch);
+  min-inline-size: 0;
+  justify-items: stretch;
+}
+
+.fs-large-message {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  white-space: normal;
+}
+
+.fs-large-message__pager,
+.fs-large-message__search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-large-message__pager > span {
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-large-message .fs-studio__input {
+  min-inline-size: 0;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-large-message .fs-large-message__number {
+  inline-size: 5.5em;
+}
+
+.fs-large-message__search > input {
+  flex: 1 1 12ch;
+  inline-size: 12ch;
+}
+
+.fs-large-message__text {
+  max-block-size: 24rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fs-large-message .fs-large-message__edit {
+  block-size: min(40vh, 20rem);
+  max-block-size: 24rem;
+  overflow: auto;
+}
+
+.fs-large-message .fs-studio__input:focus-visible,
+.fs-large-message__text:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+}
+
+.fs-large-message__hint {
+  margin: 0;
+  color: var(--fs-text-2);
+  font-size: 0.875rem;
+}
+
 /* ── Workspace dialog and session dialog ── */
 
 .fs-ws__path {
