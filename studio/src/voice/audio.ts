@@ -114,6 +114,8 @@ export interface CaptureOptions {
   eagerMs?: number;
   /** Reuse an already-open microphone (see `openMic`) instead of requesting a fresh one: skips the permission/device round trip. Not applicable to browser speech recognition. */
   mic?: OpenMic;
+  /** Recent conversation language, used only for uncertain short local audio. */
+  languageHint?: string;
   onPartial?: (text: string) => void;
   onTranscribing?: () => void;
   /** Another recorder with the same contract (the streaming voice session, ./stream.ts); default: record and POST. */
@@ -248,6 +250,8 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
       fd.append('file', blob, recorder.mimeType.includes('mp4') ? 'voice.mp4' : 'voice.webm');
       fd.append('expected_provider', config.provider);
       if (options.lang) fd.append('language', options.lang);
+      const hint = options.languageHint?.split('-')[0];
+      if (hint === 'es' || hint === 'en') fd.append('language_hint', hint);
       const response = await fetch('/api/stt/transcribe', { method: 'POST', body: fd, credentials: 'same-origin', signal: AbortSignal.any([signal, extra, AbortSignal.timeout(120000)]) });
       if (!response.ok) throw new Error(t('Transcription failed. Check Settings → Voice and try again.'));
       const result = await response.json() as { text?: string; language?: string; server_ms?: number };

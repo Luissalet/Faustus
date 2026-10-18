@@ -54,14 +54,15 @@ def setup_stt_routes(stt_service):
             raise HTTPException(status_code=500, detail=str(e))
 
     @router.post("/transcribe")
-    async def transcribe_audio(file: UploadFile = File(...), expected_provider: str = Form(""), language: str = Form("", max_length=20, pattern=r"^[a-zA-Z-]*$")):
+    async def transcribe_audio(file: UploadFile = File(...), expected_provider: str = Form(""), language: str = Form("", max_length=20, pattern=r"^[a-zA-Z-]*$"),
+                               language_hint: Literal["", "es", "en"] = Form("")):
         """Transcribe uploaded audio file to text"""
         try:
             audio_bytes = await read_upload_limited(file, STT_MAX_AUDIO_BYTES, "Audio file")
             if not audio_bytes:
                 raise HTTPException(status_code=400, detail={"message": "Empty audio file"})
 
-            metadata = {}
+            metadata = {"language_hint": language_hint} if language_hint else {}
             def transcribe():
                 if expected_provider:
                     config = stt_service._load_settings()
@@ -72,8 +73,8 @@ def setup_stt_routes(stt_service):
                 if not stt_service.available:
                     raise HTTPException(503, "STT unavailable. Check the configured provider.")
                 kwargs = {"expected_provider": expected_provider} if expected_provider else {}
-                if language:
-                    kwargs.update(language_override=language, metadata=metadata)
+                if language or language_hint:
+                    kwargs.update(language_override=language or "auto", metadata=metadata)
                 return stt_service.transcribe(audio_bytes, **kwargs)
 
             started = time.perf_counter()

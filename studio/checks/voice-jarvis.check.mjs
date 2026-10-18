@@ -21,6 +21,22 @@ assert.equal(isEcho('you can order pizza online', 'You can order pizza online.',
 assert.equal(isEcho('you can order pizza online', 'You can order pizza online.', 1500, 4000), false);
 // Genuinely different utterance shortly after playback: not an echo.
 assert.equal(isEcho('what time is it', 'You can order pizza online.', 1500, 400), false);
+// A correction can share almost every word with playback and still change the action.
+for (const [heard, spoken] of [
+  ['Turn off the lights in the living room.', 'Turn on the lights in the living room.'],
+  ['Apaga las luces de la sala de estar.', 'Enciende las luces de la sala de estar.'],
+  ['Do not delete the files in this folder.', 'Do delete the files in this folder.'],
+  ['No borres los archivos de esta carpeta.', 'Borra los archivos de esta carpeta.'],
+  ['Set the timer for twenty minutes please.', 'Set the timer for ten minutes please.'],
+  ['Pon el temporizador en veinte minutos por favor.', 'Pon el temporizador en diez minutos por favor.'],
+  ['Move Alice before Bob in the list.', 'Move Bob before Alice in the list.'],
+  ['Mueve a Ana antes de Luis en la lista.', 'Mueve a Luis antes de Ana en la lista.'],
+  ['Yes.', 'Yes.'], ['Sí.', 'Sí.'], ['No.', 'No.'], ['Gracias.', 'Gracias.'],
+]) assert.equal(isEcho(heard, spoken, 1500, 400), false, `keep real reply: ${heard}`);
+// A complete contiguous tail of playback remains echo, including punctuation variants.
+assert.equal(isEcho('puedes abrir el informe', 'Ya está listo; puedes abrir el informe.', 1500, 400), true);
+assert.equal(isEcho('you can open the report', 'All done. You can open the report.', 1500, 400), true);
+assert.equal(isEcho('', 'All done.', 1500, 400), false);
 
 // --- stop phrases ------------------------------------------------------------
 for (const phrase of STOP_PHRASES) assert.equal(isStopPhrase(phrase), true, `expected stop phrase: ${phrase}`);
@@ -56,6 +72,14 @@ assert.deepEqual(stripWakeWord('Fausto dime la hora'), { matched: true, text: 'd
 assert.deepEqual(stripWakeWord('Faust us what time is it'), { matched: true, text: 'what time is it' });
 assert.deepEqual(stripWakeWord('what time is it Faustus'), { matched: false, text: 'what time is it Faustus' });
 assert.deepEqual(stripWakeWord('what time is it'), { matched: false, text: 'what time is it' });
+for (const text of ['Fosters, abre el informe.', 'Foustas: abre el informe.', 'Hola Foustas, abre el informe.']) {
+  assert.equal(stripWakeWord(text).matched, true, text);
+  assert.ok(!/fosters|foustas/i.test(stripWakeWord(text).text), text);
+}
+for (const text of ['Foster sent the report.', 'Foster ha enviado el informe.', 'Fosters makes beer.',
+  'I read Fosters, yesterday.', 'Fosters abre el informe.', "Foster's, open the report."]) {
+  assert.deepEqual(stripWakeWord(text), { matched: false, text }, text);
+}
 
 // --- normalize ------------------------------------------------------------
 assert.equal(normalizeUtterance('¡CÁLLATE, por favor!'), 'callate por favor');

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.parametrize("check", ["voice", "voice-audio", "voice-jarvis", "voice-revision", "voice-speculation", "voice-timeline"])
+@pytest.mark.parametrize("check", ["voice", "voice-audio", "voice-jarvis", "voice-revision", "voice-speculation", "voice-timeline", "voice-bilingual"])
 def test_voice_engine_checks(check):
     root = Path(__file__).resolve().parent.parent
     if not shutil.which("node") or not (root / "node_modules/esbuild").exists():

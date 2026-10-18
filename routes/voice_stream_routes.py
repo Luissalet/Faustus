@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 class VoiceSessionCreate(BaseModel):
     session_id: str = Field(min_length=1, max_length=200)
     language: str = Field(default="auto", max_length=20, pattern=r"^[a-zA-Z-]*$")
+    language_hint: Literal["", "es", "en"] = ""
     read_aloud: bool = True
     partials: bool = True
     send_mode: str = Field(default="server", pattern=r"^(server|client)$")
@@ -43,6 +44,7 @@ class VoiceOptions(BaseModel):
     read_aloud: Optional[bool] = None
     partials: Optional[bool] = None
     language: Optional[str] = Field(default=None, max_length=20, pattern=r"^[a-zA-Z-]*$")
+    language_hint: Optional[Literal["", "es", "en"]] = None
     wake_word: Optional[bool] = None
 
 
@@ -57,6 +59,8 @@ def _apply_options(session: Any, options: Dict[str, Any]) -> None:
             setattr(session, key, bool(options[key]))
     if options.get("language"):
         session.language = str(options["language"]).lower()
+    if options.get("language_hint") in ("", "es", "en"):
+        session.language_hint = options["language_hint"]
 
 
 def setup_voice_stream_routes(manager: VoiceSessionManager) -> APIRouter:
@@ -82,7 +86,7 @@ def setup_voice_stream_routes(manager: VoiceSessionManager) -> APIRouter:
             session = await manager.create(_owner(request), body.session_id, language=body.language,
                                            read_aloud=body.read_aloud, partials=body.partials,
                                            send_mode=body.send_mode, wake_word=body.wake_word,
-                                           follow_current=body.follow_current)
+                                           follow_current=body.follow_current, language_hint=body.language_hint)
         except KeyError as exc:
             raise HTTPException(404, str(exc).strip("'"))
         return {**session.snapshot(), "token": session.token,

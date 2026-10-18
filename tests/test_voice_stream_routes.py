@@ -27,6 +27,20 @@ def build():
     return app, manager, runs, sent
 
 
+def test_context_language_hint_is_optional_and_can_be_cleared():
+    app, manager, _, _ = build()
+    with TestClient(app) as client:
+        created = client.post("/api/voice/sessions", json={
+            "session_id": "bilingual", "language": "auto", "language_hint": "es"}).json()
+        assert created["language_hint"] == "es" and created["language"] == "auto"
+        url = "/api/voice/sessions/" + created["id"]
+        assert client.patch(url, json={"language_hint": ""}).json()["language_hint"] == ""
+        assert client.post("/api/voice/sessions", json={
+            "session_id": "other", "language_hint": "invalid"}).status_code == 422
+        # The existing explicit language field still accepts other languages.
+        assert client.patch(url, json={"language": "fr"}).json()["language"] == "fr"
+
+
 def wait_events(client, voice_id, kind, after=0, timeout=5.0):
     deadline = time.time() + timeout
     seen = []

@@ -99,6 +99,22 @@ def test_language_override_is_per_request(monkeypatch, override, expected):
     assert seen == [expected] and metadata["language"] == "en"
 
 
+def test_automatic_transcription_passes_recent_language_without_forcing_it():
+    seen = []
+
+    def transcribe(data, **kwargs):
+        seen.append(kwargs)
+        kwargs["metadata"]["language"] = "en"
+        return "Yes."
+
+    with client("stt", service("stt", transcribe=transcribe)) as c:
+        response = c.post("/api/stt/transcribe", data={"language_hint": "es"},
+                          files={"file": ("a.webm", b"audio")})
+        assert response.status_code == 200 and response.json()["language"] == "en"
+    assert seen[0]["language_override"] == "auto"
+    assert seen[0]["metadata"]["language_hint"] == "es"
+
+
 def test_windows_speech_sends_text_as_data_not_code(monkeypatch):
     import base64
     import json

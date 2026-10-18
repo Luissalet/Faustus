@@ -90,6 +90,43 @@ def replace(text):
 DONE = "data: [DONE]\n\n"
 
 
+def test_context_hint_follows_detected_language_without_pinning_auto():
+    async def scenario():
+        seen = []
+
+        class RecordingSTT(FakeSTT):
+            def transcribe(self, audio, language_override="", metadata=None):
+                seen.append((language_override, metadata.get("language_hint")))
+                return super().transcribe(audio, language_override, metadata)
+
+        stt = RecordingSTT()
+        manager, _, sent = make_manager(stt=stt)
+        session = await manager.create(None, "bilingual", language="auto", language_hint="es", send_mode="client")
+        for detected in ("en", "es", "en"):
+            stt.language = detected
+            await session.submit_clip(vs.pcm16_to_wav(pcm()))
+        assert seen == [("auto", "es"), ("auto", "en"), ("auto", "es")]
+        assert session.snapshot()["language"] == "auto" and not sent
+        await manager.close_all()
+    asyncio.run(scenario())
+
+
+def test_silence_and_ignored_background_do_not_change_conversation_language():
+    async def scenario():
+        stt = FakeSTT(text="Faustus, abre el informe.", language="es")
+        manager, _, _ = make_manager(stt=stt)
+        session = await manager.create(None, "context", language="auto", language_hint="es",
+                                       send_mode="client", wake_word=True)
+        await session.submit_clip(vs.pcm16_to_wav(pcm()))
+        assert session.heard_language == "es"
+        for text in ("", "thanks for watching", "a conversation in the background"):
+            stt.text, stt.language = text, "en"
+            result = await session.submit_clip(vs.pcm16_to_wav(pcm()))
+            assert result["verdict"] != "ok" and session.heard_language == "es"
+        await manager.close_all()
+    asyncio.run(scenario())
+
+
 def make_manager(stt=None, tts=None, runs=None, frames=None, delay=0.0):
     runs = runs or FakeRuns()
     sent = []

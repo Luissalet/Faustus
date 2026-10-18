@@ -18,6 +18,32 @@ transcripciones y voz alrededor de ese chat.
 - **Interrumpir** vacía la cola y deja de hablar esa respuesta; **no** cancela el trabajo del agente.
   `cancel_turn` es la acción separada y explícita que detiene el turno.
 
+En modo automático, `language_hint: "es" | "en"` aporta el idioma inicial de la
+conversación sin fijarlo. Las siguientes intervenciones usan el idioma de la
+última intervención aceptada; el silencio y las frases ignoradas no lo cambian.
+El proveedor local solo lo considera al volver a decodificar audio
+muy breve cuya detección sea incierta; una detección clara o `language` explícito
+prevalecen. El mismo hint opcional se admite en `/api/stt/transcribe` como campo
+de formulario. El modelo configurado se conserva y la transcripción no fuerza
+la aparición del nombre del asistente.
+
+Solo al exigir la palabra de activación, se admiten además las variantes de
+reconocimiento `Fosters, …` y `Foustas, …` con coma o dos puntos y en posición de
+vocativo directo, también tras un saludo. Una mención como «Fosters makes beer»
+o «I read Fosters, yesterday» no activa el asistente. No se reemplazan esos
+nombres en el dictado normal; es tolerancia textual de activación, no un
+detector acústico ni una garantía ante todos los vocativos ambiguos.
+
+El selector de voz aprovecha también las respuestas cortas en inglés y español.
+Los nombres, números o empates sin indicios suficientes conservan el idioma de
+entrada. Esto no garantiza identificar el idioma de un homófono aislado.
+
+El filtro de eco de Studio exige ahora un fragmento literal normalizado de tres
+o más palabras del texto reproducido, dentro de su ventana de 1,5 segundos.
+Cambios de números, negación u orden no se descartan por similitud de vocabulario.
+Los asentimientos cortos se conservan. Es una heurística textual: no sustituye
+la cancelación acústica de eco del navegador.
+
 Descubrir capacidades no carga modelos. Las sesiones viven en memoria (máx. 4 por usuario, 15 min sin
 actividad) y el audio no se guarda en disco. Un cambio de chat abre otra sesión; reconectar el WebSocket con
 `after=<seq>` retoma los eventos sin mezclar nada.
@@ -27,7 +53,7 @@ actividad) y el audio no se guarda en disco. Un cambio de chat abre otra sesión
 | Método | Ruta | Qué hace |
 |---|---|---|
 | GET | `/api/voice/capabilities` | STT/TTS configurados y lo que admite el streaming (`streaming.available`, `speech_output`, `input_formats`, `pcm_sample_rate`, `send_modes`, `interrupt_cancels_turn: false`). |
-| POST | `/api/voice/sessions` | `{session_id, language: auto|es|en, read_aloud, partials, send_mode: server|client, wake_word, follow_current}` → estado + `token` + `stream_url`. |
+| POST | `/api/voice/sessions` | `{session_id, language: auto|es|en, language_hint: es|en, read_aloud, partials, send_mode: server|client, wake_word, follow_current}` → estado + `token` + `stream_url`. |
 | GET | `/api/voice/sessions` | Sesiones abiertas del usuario. |
 | GET | `/api/voice/sessions/{id}` | Estado, últimas métricas por intervención. |
 | GET | `/api/voice/sessions/{id}/events?after=N&timeout=S&audio=bool` | Eventos posteriores al cursor (espera larga ≤ 30 s); `audio=true` añade `audio_b64`. |
@@ -36,7 +62,7 @@ actividad) y el audio no se guarda en disco. Un cambio de chat abre otra sesión
 | POST | `/api/voice/sessions/{id}/interrupt` | Deja de hablar (el turno sigue). |
 | POST | `/api/voice/sessions/{id}/cancel_turn` | Detiene el turno del agente. |
 | POST | `/api/voice/sessions/{id}/played` | `{run_id, at}`: el cliente empezó a reproducir (métrica de primer audio oído). |
-| PATCH | `/api/voice/sessions/{id}` | `{read_aloud, partials, language, wake_word}`. |
+| PATCH | `/api/voice/sessions/{id}` | `{read_aloud, partials, language, language_hint, wake_word}`; `language_hint: ""` borra la preferencia inicial. |
 | DELETE | `/api/voice/sessions/{id}` | Cierra la sesión (el turno sigue). |
 
 Con token API hace falta el alcance `sessions` (el mismo que `/api/chat_stream`).

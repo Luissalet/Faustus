@@ -5,11 +5,11 @@ export type VoicePhase = 'idle' | 'starting' | 'listening' | 'transcribing' | 'r
 export function speechLanguage(text: string, fallback = 'en'): 'es' | 'en' {
   const words = new Set(spokenText(text).toLowerCase().match(/[a-záéíóúüñ]+/g) || []);
   const score = (list: string[]) => list.filter(w => words.has(w)).length;
-  const es = score(['hola', 'gracias', 'puedes', 'tienes', 'quieres', 'para', 'una', 'está', 'están', 'los', 'las', 'del', 'esto', 'aquí', 'he', 'con', 'que', 'pero', 'como', 'español']);
-  const en = score(['hello', 'thanks', 'please', 'you', 'your', 'the', 'this', 'that', 'with', 'have', 'has', 'can', 'will', 'are', 'and', 'but', 'from', 'here', 'english']);
-  if (words.size <= 3 && (words.has('hello') || words.has('thanks'))) return 'en';
-  if (words.size <= 3 && (words.has('hola') || words.has('gracias'))) return 'es';
-  if (es !== en && Math.max(es, en) >= 2) return es > en ? 'es' : 'en';
+  // Match services/voice_stream.py. Short replies still have useful evidence;
+  // requiring two matches made the previous turn's language win unnecessarily.
+  const es = score(['hola', 'gracias', 'sí', 'puedes', 'tienes', 'quieres', 'para', 'una', 'un', 'el', 'la', 'lo', 'está', 'están', 'los', 'las', 'del', 'esto', 'aquí', 'he', 'con', 'que', 'pero', 'como', 'español', 'por', 'sin', 'y', 'de', 'al', 'es', 'son', 'hay', 'guardado', 'guardada', 'completado', 'completada', 'espera']);
+  const en = score(['hello', 'thanks', 'yes', 'please', 'you', 'your', 'the', 'this', 'that', 'with', 'have', 'has', 'can', 'will', 'are', 'and', 'but', 'from', 'here', 'english', 'is', 'it', 'of', 'to', 'for', 'an', 'was', 'were', 'not', 'do', 'would', 'saved', 'completed', 'wait']);
+  if (es !== en) return es > en ? 'es' : 'en';
   return fallback.startsWith('es') ? 'es' : 'en';
 }
 
@@ -96,10 +96,18 @@ export function isHallucination(text: string): boolean {
 /** true when a just-heard utterance is really the tail of what Faustus itself was saying (mic re-heard the speaker). */
 export function isEcho(heard: string, recentlySpoken: string, thresholdMs: number, msSinceSpeechStarted: number): boolean {
   if (msSinceSpeechStarted > thresholdMs) return false;
-  return similarity(heard, recentlySpoken) >= 0.8;
+  const clean = normalizeUtterance(heard);
+  // Bag-of-words similarity hides changed numbers, negation and word order.
+  // Only a verbatim span is evidence of echo. Short acknowledgements remain
+  // valid replies even if the assistant just said the same word.
+  if (clean.split(' ').filter(Boolean).length < 3) return false;
+  return ` ${normalizeUtterance(recentlySpoken)} `.includes(` ${clean} `);
 }
 
 const WAKE_WORDS = ['faustus', 'faustos', 'fausto', 'faust'];
+// These ASR variants also occur as ordinary names/words: require a direct
+// vocative, never a mention inside a sentence or a global spelling change.
+const WAKE_VOCATIVES = ['foustas', 'fosters'];
 /** Strips a leading wake word (within the first 3 words) when present; `matched` tells the caller whether to forward the rest. */
 export function stripWakeWord(text: string): { matched: boolean; text: string } {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -108,7 +116,9 @@ export function stripWakeWord(text: string): { matched: boolean; text: string } 
     if (clean === 'faust' && words[i + 1] && normalizeUtterance(words[i + 1]) === 'us') {
       return { matched: true, text: [...words.slice(0, i), ...words.slice(i + 2)].join(' ').trim() };
     }
-    if (WAKE_WORDS.includes(clean)) {
+    const vocative = WAKE_VOCATIVES.includes(clean) && /[,:]$/.test(words[i]) &&
+      (i === 0 || (i === 1 && ['hola', 'hello', 'hey', 'hi', 'oye'].includes(normalizeUtterance(words[0]))));
+    if (WAKE_WORDS.includes(clean) || vocative) {
       return { matched: true, text: [...words.slice(0, i), ...words.slice(i + 1)].join(' ').trim() };
     }
   }

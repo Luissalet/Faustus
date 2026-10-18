@@ -161,6 +161,7 @@ def is_hallucination(text: str) -> bool:
 
 
 _WAKE_WORDS = ("faustus", "faustos", "fausto", "faust")
+_WAKE_VOCATIVES = ("foustas", "fosters")
 
 
 def strip_wake_word(text: str) -> Tuple[bool, str]:
@@ -169,15 +170,21 @@ def strip_wake_word(text: str) -> Tuple[bool, str]:
         clean = normalize_utterance(words[i])
         if clean == "faust" and i + 1 < len(words) and normalize_utterance(words[i + 1]) == "us":
             return True, " ".join(words[:i] + words[i + 2:]).strip()
-        if clean in _WAKE_WORDS:
+        vocative = clean in _WAKE_VOCATIVES and re.search(r"[,:]$", words[i]) and \
+            (i == 0 or (i == 1 and normalize_utterance(words[0]) in ("hola", "hello", "hey", "hi", "oye")))
+        if clean in _WAKE_WORDS or vocative:
             return True, " ".join(words[:i] + words[i + 1:]).strip()
     return False, str(text or "").strip()
 
 
-_ES_WORDS = {"hola", "gracias", "puedes", "tienes", "quieres", "para", "una", "está", "están", "los", "las", "del",
-             "esto", "aquí", "he", "con", "que", "pero", "como", "español"}
-_EN_WORDS = {"hello", "thanks", "please", "you", "your", "the", "this", "that", "with", "have", "has", "can", "will",
-             "are", "and", "but", "from", "here", "english"}
+# Match studio/src/voice/engine.ts; shared/ambiguous words (e.g. "no") are
+# deliberately absent so a tie retains the current utterance's language.
+_ES_WORDS = {"hola", "gracias", "sí", "puedes", "tienes", "quieres", "para", "una", "un", "el", "la", "lo", "está",
+             "están", "los", "las", "del", "esto", "aquí", "he", "con", "que", "pero", "como", "español", "por",
+             "sin", "y", "de", "al", "es", "son", "hay", "guardado", "guardada", "completado", "completada", "espera"}
+_EN_WORDS = {"hello", "thanks", "yes", "please", "you", "your", "the", "this", "that", "with", "have", "has", "can",
+             "will", "are", "and", "but", "from", "here", "english", "is", "it", "of", "to", "for", "an", "was",
+             "were", "not", "do", "would", "saved", "completed", "wait"}
 
 
 def speech_language(text: str, fallback: str = "en") -> str:
@@ -185,11 +192,7 @@ def speech_language(text: str, fallback: str = "en") -> str:
     words = set(re.findall(r"[a-záéíóúüñ]+", spoken_text(text).lower()))
     es = len(words & _ES_WORDS)
     en = len(words & _EN_WORDS)
-    if len(words) <= 3 and ({"hello", "thanks"} & words):
-        return "en"
-    if len(words) <= 3 and ({"hola", "gracias"} & words):
-        return "es"
-    if es != en and max(es, en) >= 2:
+    if es != en:
         return "es" if es > en else "en"
     return "es" if str(fallback or "").lower().startswith("es") else "en"
 
@@ -356,7 +359,7 @@ class VoiceSession:
 
     def __init__(self, manager: "VoiceSessionManager", *, sid: str, owner: Optional[str], language: str = "auto",
                  read_aloud: bool = True, partials: bool = True, send_mode: str = "server",
-                 wake_word: bool = False, follow_current: bool = False) -> None:
+                 wake_word: bool = False, follow_current: bool = False, language_hint: str = "") -> None:
         self.manager = manager
         self.id = uuid.uuid4().hex
         self.token = secrets.token_urlsafe(24)
@@ -364,6 +367,7 @@ class VoiceSession:
         self.owner = owner
         self.turn_owner = owner
         self.language = (language or "auto").lower()
+        self.language_hint = language_hint if language_hint in ("es", "en") else ""
         self.read_aloud = bool(read_aloud)
         self.partials = bool(partials)
         self.send_mode = send_mode if send_mode in SEND_MODES else "server"
@@ -418,7 +422,8 @@ class VoiceSession:
     def snapshot(self) -> Dict[str, Any]:
         return {
             "id": self.id, "session_id": self.sid, "state": self.state, "closed": self.closed,
-            "language": self.language, "heard_language": self.heard_language, "read_aloud": self.read_aloud,
+            "language": self.language, "language_hint": self.language_hint,
+            "heard_language": self.heard_language, "read_aloud": self.read_aloud,
             "partials": self.partials, "send_mode": self.send_mode, "wake_word": self.wake_word,
             "created_at": self.created_at, "last_activity": self.last_activity, "last_seq": self._seq,
             "speaking_run_id": self._speaking_run, "queued_sentences": self._tts_queue.qsize(),
@@ -577,7 +582,7 @@ class VoiceSession:
         else:
             data = audio
         language = "" if self.language in ("", "auto") else self.language
-        meta: Dict[str, Any] = {}
+        meta: Dict[str, Any] = {"language_hint": self.heard_language or self.language_hint}
         stt_lock, _ = _locks()
         async with stt_lock:
             started = time.perf_counter()
@@ -603,8 +608,6 @@ class VoiceSession:
             return {"verdict": "error", "text": ""}
         self.metrics["transcript_ready"] = time.time()
         self.metrics["stt_ms"] = meta.get("server_ms")
-        if meta.get("language"):
-            self.heard_language = str(meta["language"])
         text = raw
         verdict = "ok"
         if not raw:
@@ -623,6 +626,8 @@ class VoiceSession:
                     verdict = "empty"
         if verdict == "stop_phrase":
             await self.interrupt("stop_phrase")
+        if verdict in ("ok", "stop_phrase") and meta.get("language"):
+            self.heard_language = str(meta["language"])
         result: Dict[str, Any] = {"verdict": verdict, "text": text, "raw": raw, "utterance": seq,
                                   "language": self.heard_language, "stt_ms": meta.get("server_ms")}
         record = dict(self.metrics)
@@ -973,6 +978,7 @@ class VoiceSessionManager:
                 "partial_transcripts": bool(server_stt),
                 "send_modes": list(SEND_MODES),
                 "interrupt_cancels_turn": False,
+                "language_hints": ["es", "en"],
             },
             "models_loaded_by_discovery": False,
             "active_sessions": sum(1 for s in self.sessions.values() if not s.closed),

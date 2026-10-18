@@ -3,6 +3,7 @@
 
 import io
 import logging
+import re
 import httpx
 import tempfile
 import time
@@ -152,17 +153,38 @@ class STTService:
             if language:
                 kwargs["language"] = language
 
+            def decode(options):
+                try:
+                    segments, info = model.transcribe(tmp_path, vad_filter=True, **options)
+                    raw = [{"start": seg.start, "end": seg.end, "text": seg.text.strip()} for seg in segments]
+                except Exception as vad_error:  # noqa: BLE001 — VAD is optional on some installs
+                    logger.warning("Local STT: VAD unavailable (%s); transcribing without it", vad_error)
+                    segments, info = model.transcribe(tmp_path, **options)
+                    raw = [{"start": seg.start, "end": seg.end, "text": seg.text.strip()} for seg in segments]
+                return raw, info
+
             started = time.perf_counter()
-            try:
-                segments, info = model.transcribe(tmp_path, vad_filter=True, **kwargs)
-                raw = [{"start": seg.start, "end": seg.end, "text": seg.text.strip()} for seg in segments]
-            except Exception as vad_error:  # noqa: BLE001 — the VAD needs an extra runtime some installs lack
-                logger.warning("Local STT: VAD unavailable (%s); transcribing without it", vad_error)
-                segments, info = model.transcribe(tmp_path, **kwargs)
-                raw = [{"start": seg.start, "end": seg.end, "text": seg.text.strip()} for seg in segments]
+            raw, info = decode(kwargs)
+            detected_language, detection_probability = info.language, info.language_probability
+            hint = str((metadata or {}).get("language_hint") or "").split("-")[0].lower()
+            words = re.findall(r"\w+", " ".join(segment["text"] for segment in raw))
+            # A short sound cannot reliably identify its language. Prefer the
+            # conversation's recent language only for uncertain short audio;
+            # clear language switches and explicit choices still win.
+            if not language and hint in ("es", "en") and hint != info.language and \
+                    info.language_probability < 0.8 and 0 < len(words) <= 2:
+                try:
+                    retry, retry_info = decode({**kwargs, "language": hint})
+                    if any(segment["text"] for segment in retry):
+                        raw, info = retry, retry_info
+                        metadata["language_hint_used"] = hint
+                except Exception:
+                    logger.debug("Local STT: contextual language retry unavailable", exc_info=True)
             logger.info("Local STT took %.2fs", time.perf_counter() - started)
             if metadata is not None:
                 metadata["language"] = info.language
+                metadata["language_detected"] = detected_language
+                metadata["language_probability"] = detection_probability
 
             char_count = sum(len(s["text"]) for s in raw)
             logger.info(f"Local STT: {char_count} chars, lang={info.language}, prob={info.language_probability:.2f}")

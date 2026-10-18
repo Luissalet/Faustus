@@ -225,7 +225,7 @@ export default function VoicePanel(props: Props) {
       onError: e => { if (alive.current) setError(e.message); },
     });
     player.current = playing;
-    VoiceStream.open(sid, { language, readAloud: readAloud && !!streamCaps.speech_output, partials: true }, controller.signal)
+    VoiceStream.open(sid, { language, languageHint: heardLanguage.current.split('-')[0], readAloud: readAloud && !!streamCaps.speech_output, partials: true }, controller.signal)
       .then(opening => {
         if (controller.signal.aborted || !alive.current) { opening.close(); return; }
         opened = opening; stream.current = opening;
@@ -284,7 +284,7 @@ export default function VoicePanel(props: Props) {
       ? (options: CaptureOptions) => streamCapture(stream.current!, tap.current!, options) : undefined;
     try {
       const cap = await capture(configs.stt, {
-        signal: controller.signal, deviceId, autoStop: true, lang: language, raw: viaStream,
+        signal: controller.signal, deviceId, autoStop: true, lang: language, languageHint: heardLanguage.current, raw: viaStream,
         mic: openedMic ?? undefined, silenceMs, natural, project: props.projectId,
         onPartial: text => { if (!controller.signal.aborted) setTranscript(text); },
         onTranscribing: () => { if (!controller.signal.aborted) { timing.current.endOfSpeech = performance.now(); utteranceMarks.current = { speech_end: Date.now() }; setPhase('transcribing'); setAnalyser(null); } },
@@ -295,7 +295,6 @@ export default function VoicePanel(props: Props) {
       const text = await cap.done;
       if (controller.signal.aborted || !alive.current) return;
       recording.current = null; setAnalyser(null);
-      heardLanguage.current = cap.language || (language === 'auto' ? locale() : language);
       timing.current.heardMs = timing.current.endOfSpeech ? performance.now() - timing.current.endOfSpeech : 0;
       if (utteranceMarks.current.speech_end) {
         utteranceMarks.current.transcript_ready = Date.now();
@@ -318,6 +317,7 @@ export default function VoicePanel(props: Props) {
         toSend = stripWakeWord(text).text || stripped.text || text;
       }
       setOriginal(wakeWord ? stripWakeWord(rawText).text || rawText : rawText);
+      heardLanguage.current = cap.language || (language === 'auto' ? locale() : language);
       setTranscript(toSend);
       if (latest.current.autoSend && !latest.current.busy) commit(toSend);
       else setPhase('review');
@@ -337,7 +337,7 @@ export default function VoicePanel(props: Props) {
     try {
       const openedMic = await ensureMic(controller.signal);
       const cap = await capture(configs.stt, {
-        signal: controller.signal, deviceId, autoStop: true, lang: language,
+        signal: controller.signal, deviceId, autoStop: true, lang: language, languageHint: heardLanguage.current,
         mic: openedMic ?? undefined, silenceMs, natural: false,
         onPartial: text => { if (!controller.signal.aborted) setRevisionInstruction(text); },
         onTranscribing: () => { if (!controller.signal.aborted) { setPhase('transcribing'); setAnalyser(null); } },

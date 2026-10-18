@@ -39,7 +39,7 @@ export interface VoiceStreamEvent {
 }
 export interface StreamAudio { seq: number; runId: string; text: string; language: string; mime: string; synthMs: number; blob: Blob; receivedAt: number }
 
-interface OpenOptions { language: string; readAloud: boolean; partials: boolean }
+interface OpenOptions { language: string; readAloud: boolean; partials: boolean; languageHint?: string }
 
 /** One voice session bound to a chat, with its WebSocket. Reconnects resume from the last event seen. */
 export class VoiceStream {
@@ -54,10 +54,11 @@ export class VoiceStream {
   private constructor(readonly id: string, private readonly token: string, readonly sessionId: string) {}
 
   static async open(sessionId: string, options: OpenOptions, signal?: AbortSignal): Promise<VoiceStream> {
+    const hint = options.languageHint?.split('-')[0];
     const response = await fetch('/api/voice/sessions', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId, language: options.language, read_aloud: options.readAloud,
-        partials: options.partials, send_mode: 'client' }),
+        partials: options.partials, send_mode: 'client', language_hint: hint === 'es' || hint === 'en' ? hint : '' }),
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
     });
     if (!response.ok) throw new Error(t('Could not open the voice stream.'));
