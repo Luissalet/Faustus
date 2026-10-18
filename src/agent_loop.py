@@ -2736,10 +2736,10 @@ def _asks_for_a_text(text: str) -> bool:
 
 
 _RELATIVE_FILE_ACTION_RE = re.compile(
-    r"\b(?:read|open|edit|write|save|rename|move|copy|delete|"
-    r"lee|abre|edita|escribe|guarda|renombra|mueve|copia|borra)\s+"
-    r"(?:(?:the|el|la)\s+)?[`\"']?(?:[\w.-]+[/\\])+[\w.-]+\b",
-    re.IGNORECASE,
+    # Reuse the coding verbs; delete retains its existing direct-path support.
+    r"(?:" + _WORKSPACE_CODE_ACTION_RE.pattern + r"|\bdelete\b)"
+    + r"\s+(?:(?:the|el|la)\s+)?[`\"']?(?:[\w.-]+[/\\])+[\w.-]+\b",
+    _WORKSPACE_CODE_ACTION_RE.flags,
 )
 
 

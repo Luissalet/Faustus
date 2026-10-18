@@ -363,3 +363,41 @@ def test_prepared_workspace_intent_survives_an_explicit_continuation():
     assert al._classify_agent_request(messages, "continue")["workspace_work"]
     text = "Read the ratio a/b and return JSON."
     assert not al._classify_agent_request([{"role": "user", "content": text}], text)["workspace_work"]
+
+
+@pytest.mark.parametrize("operation", ["Fix", "Refactor", "Update", "Review", "Inspect"])
+def test_relative_package_operation_keeps_audit_without_tools(operation, tmp_path, monkeypatch):
+    _patch_common(monkeypatch)
+    package = tmp_path / "src" / "widgets"
+    package.mkdir(parents=True)
+    source = package / "__init__.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    user_text = operation + " src/widgets"
+    seen = _scripted(monkeypatch, [_text('{"status":"done"}'), _text('{"status":"checked"}')])
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": user_text}], workspace=str(tmp_path),
+        unattended=True, max_rounds=2, relevant_tools={"read_file", "glob"},
+    )))
+    assert al._looks_like_workspace_coding_request(user_text)
+    assert len([event for event in events if event.get("reason") == "completion_audit"]) == 1, events
+    assert len(seen) == 2
+    assert source.read_text(encoding="utf-8") == "value = 1\n"
+
+
+@pytest.mark.parametrize("operation", [
+    "Debug", "Implement", "Build", "Test", "Compile", "Run", "Change", "Convert",
+    "Remove", "Delete", "Corrige", "Actualiza", "Revisa", "Refactoriza", "Implementa",
+])
+def test_relative_operations_share_the_existing_action_vocabulary(operation):
+    assert al._looks_like_workspace_coding_request(operation + " config/settings")
+
+
+@pytest.mark.parametrize("operation", ["Update", "Inspect", "Change", "Convert"])
+def test_action_on_a_ratio_is_not_an_action_on_a_relative_path(operation):
+    assert not al._looks_like_workspace_coding_request(operation + " the ratio numerator/denominator")
+
+
+def test_relative_delete_support_does_not_change_explanation_classification():
+    assert al._looks_like_workspace_coding_request("Delete config/settings")
+    assert al._explanation_request("Explain how to delete records")

@@ -31,6 +31,13 @@ filesystem operation. For example, `Read the ratio a/b` is an answer request;
 `Lee la carpeta foo/bar`, `/etc/hosts` and `C:\work\LICENSE` remain supported.
 This is a deterministic routing hint, not a general language parser.
 
+Direct relative-path operations use the existing workspace action vocabulary,
+so code operations such as `Fix src/widgets`, `Refactor src/widgets` and
+`Review config/settings` keep their work obligations even without a filename
+extension. A separate partial verb list would silently lose those obligations.
+The path must still be the direct operand; `Inspect the ratio a/b` does not
+become a filesystem request.
+
 The regression tests drive `stream_agent_loop` with scripted provider SSE.
 A valid nonempty JSON STOP response is followed by a provider error that must
 never be requested. Both direct STOP and LENGTH followed by STOP end without
