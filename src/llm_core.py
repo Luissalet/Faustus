@@ -3261,9 +3261,9 @@ def _apply_fast_engine_switch(payload: Dict, url: str, model: str, provider: str
         return []
     applied: List[str] = []
     try:
-        cap = int(ov.get("reasoning_budget") or 0)
+        cap = int(ov["reasoning_budget"]) if ov.get("reasoning_budget") is not None else None
     except (TypeError, ValueError):
-        cap = 0
+        cap = None
     if provider == "anthropic":
         return applied
     if provider == "ollama" or _is_local_ollama_target(url):
@@ -3282,11 +3282,12 @@ def _apply_fast_engine_switch(payload: Dict, url: str, model: str, provider: str
             payload["chat_template_kwargs"] = ctk
         ctk["enable_thinking"] = False
         applied.append("enable_thinking")
-        if cap > 0 and "thinking_token_budget" not in payload:
+        from src.engine_controls import glm53_flash
+        if cap is not None and (cap > 0 or glm53_flash(model)):
             payload["reasoning_budget"] = cap
             payload["thinking_budget_tokens"] = cap
             applied.append("cap")
-        elif "reasoning_budget" in payload and cap <= 0:
+        elif "reasoning_budget" in payload and (cap is None or cap <= 0):
             payload.pop("reasoning_budget", None)
             payload.pop("thinking_budget_tokens", None)
         return applied
@@ -5223,7 +5224,7 @@ async def _llm_call_async_impl(
             if _asked.get("think") is True:
                 _ctk["enable_thinking"] = True
                 _budget_asked = _asked.get("reasoning_budget")
-                if _budget_asked and int(_budget_asked) > 0:
+                if _budget_asked is not None:
                     payload["reasoning_budget"] = int(_budget_asked)
             else:
                 _ctk.setdefault("enable_thinking", False)
@@ -5239,8 +5240,8 @@ async def _llm_call_async_impl(
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
         # No `tools` here: this path is the tool-less completion helper.
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
-        _apply_verified_engine_controls(payload, url, model)
         _apply_fast_engine_switch(payload, url, model, provider, _asked)
+        _apply_verified_engine_controls(payload, url, model)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
@@ -6710,7 +6711,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     # `effort: "high"`, src/effort_profile.py) wins over the
                     # saved setting default, the same way `think` itself
                     # already does above.
-                    if "reasoning_budget" in _overrides:
+                    if _overrides.get("reasoning_budget") is not None:
                         try:
                             _reasoning_budget = int(_overrides["reasoning_budget"])
                         except (TypeError, ValueError):
@@ -6720,7 +6721,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             _reasoning_budget = int(_local_sampler_default("local_openai_reasoning_budget_default", 4096))
                         except (TypeError, ValueError):
                             _reasoning_budget = 4096
-                    if _reasoning_budget > 0:
+                    if _overrides.get("reasoning_budget") is not None or _reasoning_budget > 0:
                         payload["reasoning_budget"] = _reasoning_budget
         if _overrides:
             _apply_gen_overrides_openai(payload, _overrides, url)
@@ -6735,8 +6736,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # whole toolset attached. `turn_effort` decides; a conversation that
         # has already run a tool always keeps its reasoning.
         _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
-        _apply_verified_engine_controls(payload, url, model)
         _apply_fast_engine_switch(payload, url, model, provider, _overrides, has_tools=bool(tools))
+        _apply_verified_engine_controls(payload, url, model)
         _drop_tools_for_small_talk(payload, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
