@@ -13604,3 +13604,36 @@ completa sigue abierta en `docs/SOURCE-COVERAGE.md` de Theseus. La ampliación
 posterior de transferencia de evidencias está probada en worktree y pendiente de
 revisión propia. Estas operaciones y sus pruebas no han utilizado las Sparks ni
 otro modelo. Manual nativo y grafo actualizados; tarea Ágora 779 abierta.
+
+
+## Silver: análisis de equipos y motivos locales — 18-10-2026
+
+Activos en Silver Main `1357cb5528fd` (Ágora Silver 836 y 838), sin consultas a
+servicios remotos ni paquetes nuevos para estas capacidades. El constructor
+analiza el borrador mediante `team_analysis` en UI, API y MCP: debilidades
+compartidas, resistencias/inmunidades históricas, cobertura ordinaria contra
+tipos puros y velocidades sin modificar calculadas por el simulador. Editar el
+borrador oculta el resultado anterior. No calcula daño ni legalidad; habilidades,
+objetos, Tera y contexto dinámico quedan fuera y los movimientos especiales se
+explican aparte. Se conservan generación, reglas de nivel y preparación Champions.
+
+Once movimientos de Dragón y Veneno seleccionan 117 cuadros de dos hojas PMD
+Time/Darkness suministradas por Luis, con crédito a redblueyellow. Atlas cuadrados,
+transparencia y anclas conservan los píxeles de origen; movimiento reducido usa
+un cuadro estacionario visible. Se comparten en RT, campales, HTML y MP4 sin
+carpetas fuente ni red. Son motivos compuestos con la geometría existente, no
+coreografías de cartucho. Catálogo actual: 774 entradas, 160 fuentes, 218 atlas y
+2777 cuadros. Las 763 entradas/158 fuentes previas y los 179 hashes originales
+siguen exactos. `leisure_catalog` expone los once motivos y su metadata.
+
+Cada fuente tiene suite Python completa (601 correctas/2 omitidas); la unión
+tiene 530 Node correctas/1 omitida y 15 Python del área/1 omitida, sin atribuirle
+una segunda suite Python completa. Ambas entregas tienen revisión independiente
+APPROVE CAS1; el revisor ejecutó sus pruebas del área, sin atribuirse los recibos
+MCP, navegador o vídeo de la autora. Activaciones gestionadas sólo de Silver,
+inactivo antes y justo antes, con las 18 tablas, ajustes, token y medios exactos:
+51 entrenadores, 24 gimnasios, 3 ligas y 44 combates. Catálogo activo: 190 tools.
+No se reiniciaron Hub, Faustus, modelos ni GPU; sin push. El fallback remoto
+preexistente de imágenes ausentes en HTML se detectó y se corrige aparte en 840;
+no se declara aún que todas las páginas antiguas sean completamente offline.
+Detalles: [mejoras de Silver](docs/silver-offline-20261018.md).

@@ -908,3 +908,10 @@ including authored mesh/UV/weight digests, rig/animation observations and contex
 See `docs/api/blender-live.md` for scope and limits. These controls do not call
 the reasoning service. Review cancellation restores Workbench background color,
 camera and frame, with a real Blender 5.2.2 regression.
+
+
+Silver's team builder can analyse generation-specific type weaknesses, ordinary
+attack coverage and unmodified Speed locally through the UI, API and MCP.
+Eleven Dragon/Poison move motifs add 117 supplied PMD frames, shared by real-time
+battles, mass battles, portable HTML and MP4, with visible reduced-motion frames.
+[Verified scope and limits](docs/silver-offline-20261018.md).
