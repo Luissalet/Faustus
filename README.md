@@ -899,3 +899,39 @@ Silver can show saved changes before the reply ends. It refreshes in place and
 keeps unfinished trainer edits. Native tools and turn execution are unchanged.
 See Silver's `docs/COPILOT_LIVE_REFRESH.md`; other hosts require their ordinary
 vendor synchronization and refresh callbacks.
+
+## Connected scene comparisons
+
+The Blender sidebar can capture scene state and compare a later edit locally.
+The same `snapshot` and `diff` operations are available through live jobs and MCP,
+including authored mesh/UV/weight digests, rig/animation observations and context.
+See `docs/api/blender-live.md` for scope and limits. These controls do not call
+the reasoning service. Review cancellation restores Workbench background color,
+camera and frame, with a real Blender 5.2.2 regression.
+
+
+Silver's team builder can analyse generation-specific type weaknesses, ordinary
+attack coverage and unmodified Speed locally through the UI, API and MCP.
+Eleven Dragon/Poison move motifs add 117 supplied PMD frames, shared by real-time
+battles, mass battles, portable HTML and MP4, with visible reduced-motion frames.
+[Verified scope and limits](docs/silver-offline-20261018.md).
+
+
+New standalone Silver HTML exports now carry the existing presentation cache
+and resolve missing art locally. They need no sprite server while playing;
+ordinary cries/music remain unembedded, and HTML size grows with cached assets.
+Re-export older pages. Task 840 is active at Silver Main18c66ab (608 Python and
+534 Node tests passed). [Scope and limits](docs/silver-offline-20261018.md).
+
+
+Silver's finished real-time replays now have frame seeking, five-second jumps
+and a read-only native inspection tool with paused deep links. Seeking pauses
+and retains speed, without changing records. Active at Silver Main4eed0be;
+191tools. [Verified scope and limits](docs/silver-offline-20261018.md).
+
+
+Silver now also draws four locally supplied Rock attack motifs and freezes
+procedural particle emission during pause across realtime, classic and mass
+battles. The overnight improvements add 15 attack motifs / 146 frames, local
+team analysis, offline portable pages and replay seeking. No new packages,
+external APIs or online features. [Verified scope](docs/silver-offline-20261018.md).
