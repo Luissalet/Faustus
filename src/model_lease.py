@@ -132,6 +132,7 @@ def _current_id() -> str:
 # ── lifecycle ────────────────────────────────────────────────────────────────
 
 _LOCK = threading.Lock()
+_WRITE_LOCK = threading.Lock()
 _state: Dict[str, Any] = {"started": False, "record": {}, "last_write": 0.0}
 _HEARTBEAT_TASK: Optional[asyncio.Task] = None
 
@@ -186,31 +187,48 @@ async def _heartbeat_loop() -> None:
             return
         with _LOCK:
             _state["record"]["heartbeat"] = time.time()
-        _flush(force=True)
+        worker = asyncio.create_task(asyncio.to_thread(_flush, force=True))
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # The thread cannot be cancelled: stop must join it before it
+            # removes the lease, including after repeated cancellation.
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not worker.cancelled():
+                worker.exception()
+            raise
 
 
 async def stop() -> None:
     """Cancel the heartbeat task and delete this instance's own file."""
     global _HEARTBEAT_TASK
     task = _HEARTBEAT_TASK
-    _HEARTBEAT_TASK = None
     if task is not None:
         task.cancel()
         try:
             await task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
-    path = None
-    with _LOCK:
-        if _state["started"]:
-            path = _lease_path(str(_state["record"].get("instance_id") or ""))
-        _state["started"] = False
-        _state["record"] = {}
-    if path:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+    if _HEARTBEAT_TASK is task:
+        _HEARTBEAT_TASK = None
+    with _WRITE_LOCK:
+        path = None
+        with _LOCK:
+            if _state["started"]:
+                path = _lease_path(str(_state["record"].get("instance_id") or ""))
+            _state["started"] = False
+            _state["record"] = {}
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 def reset_for_tests() -> None:
@@ -247,18 +265,21 @@ def _atomic_write(path: str, data: Dict[str, Any]) -> None:
 
 
 def _flush(force: bool = False) -> None:
-    with _LOCK:
-        if not _state["started"]:
-            return
-        now = time.time()
-        if not force and now - float(_state["last_write"] or 0.0) < 1.0:
-            return
-        record = copy.deepcopy(_state["record"])
-        _state["last_write"] = now
-    try:
-        _atomic_write(_lease_path(str(record.get("instance_id") or "")), record)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("model_lease: write failed: %s", exc)
+    # Take the snapshot only after earlier writers finish. A slow heartbeat
+    # must not overwrite a newer note_* update with its older snapshot.
+    with _WRITE_LOCK:
+        with _LOCK:
+            if not _state["started"]:
+                return
+            now = time.time()
+            if not force and now - float(_state["last_write"] or 0.0) < 1.0:
+                return
+            record = copy.deepcopy(_state["record"])
+            _state["last_write"] = now
+        try:
+            _atomic_write(_lease_path(str(record.get("instance_id") or "")), record)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("model_lease: write failed: %s", exc)
 
 
 def note_default(root: str, model: str) -> None:
