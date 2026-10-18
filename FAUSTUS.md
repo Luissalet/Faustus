@@ -13195,6 +13195,56 @@ los datos guardados. El vídeo vertical de la composición muestra el puño BW e
 comparten 180 herramientas, el esquema effects y el catálogo completo de
 655 imágenes, 157 fuentes y 938 perfiles. La reconexión conserva su configuración. Evidencia `D:/LocalAI/research-inbox/sprites787/`.
 
+## Silver: motivos de movimientos RT y estados PMD — 18-10-2026, #811
+
+Activo en Silver Main `53dcac688adb`, aprobado por Cursor en CAS3.
+La segunda ampliación asigna material específico a 386 movimientos compatibles
+(117 antes de 811, +269); los 467 restantes conservan familias de tipo y 85 IDs no
+tienen efecto mecánico RT. No son 386 coreografías únicas de cartucho. Espadas,
+engranajes, monedas, huesos, pétalos, lodo y meteoros, además de distintas
+secuencias de agua/hielo/psíquico, se componen sobre la forma real del ataque.
+Hay órbitas para buffs, espirales de área, caída de monedas/meteoros y una cabeza
+triple para Tri Attack. No se cambia simulación, daño, RNG ni entradas guardadas.
+
+La hoja PMD Red Rescue Team aporta ocho atlas completos y 78 cuadros: llamas,
+chispas, hielo, calaveras, Z, interrogantes, cruces y escudos. Brn/par/frz/psn/
+tox/slp vienen del Pokémon activo y confusión/mofa/protección de su unidad.
+Veneno y tóxico comparten la calavera original; sueño mantiene la regla de
+somnolencia de RT. Los indicadores se derivan del view actual, sin temporizador
+de eventos: cura, cambio, puesto vacante, debilitado, final y salto de replay se
+reflejan en el siguiente frame. Dobles cubre ambos puestos y campal las unidades
+visibles; el formato vertical mantiene los iconos derechos con upright. Pausa
+congela la secuencia y reducir movimiento usa un cuadro quieto, compartiendo el
+límite existente de 256 sellos. Se ven en todos los estilos, incluido Textured.
+
+El inventario reúne 763 imágenes, 158 fuentes, 207 atlas y 2660 cuadros; añade 100
+secuencias Sky y 8 filas PMD. Los 655 objetos / 157 fuentes previos y los 179 archivos
+originales conservan sus hashes. Solo cambia connected de la hoja ahora usada;
+quedan 19 archivos locales sin conectar. leisure_catalog effects expone nueve
+descriptores de estado, PNG y fuentes con las mismas 180 herramientas MCP.
+
+R1 omitía dos holds finales de Z. La fuente R2 los completa (10 cuadros) y el
+constructor comprueba que no queden píxeles sin extraer al final de ninguna fila.
+R2 pasa 545 pruebas Python completas y dos omitidas (663,47s), 482 Node y una
+omitida, 10 Python del área y ambas compilaciones. MCP recorre 763/938/158 sin
+truncar; siete replays de estados reproducen logs idénticos al original: hielo
+0,8–3,8s, somnolencia 1,667–11,667s y confusión 1,667–7,667s. El HTML R2 incorpora
+las 108 imágenes nuevas exactas; MP4 vertical nativo 720×1280/24,9s muestra la llama
+PMD. El HTML se jugó con Danza Espada en R1; no se atribuye una nueva partida
+completa a R2, que solo cambia dos cuadros de sueño. UI de quemadura/hielo en
+horizontal/vertical y sueño R2 comprobadas. Evidencias en
+`D:/LocalAI/research-inbox/sprites811/`; fuentes b369234 y cffdaf1, CAS3.
+
+Unión final con los sprites importados de 812: 483 Node pasadas/1 omitida,
+28 Python del área y compilaciones de app/HTML. Los 12 blobs funcionales propios
+son exactos a la fuente y los 689 blobs ajenos a Main quedan intactos; tres docs
+conservan el contenido anterior fuera de las métricas y el añadido propio.
+No se atribuye una segunda suite Python completa a esta unión: la completa es
+la fuente R2, con el mismo backend de efectos. Activación con siete comprobaciones
+idle antes y justo antes del único reinicio gestionado de Silver. Las 18 tablas,
+medios de contenido, settings y token conservan sus hashes; 51 entrenadores,
+24 gimnasios, 3 ligas y 44 combates permanecen. Sin reiniciar Hub/Faustus/modelos.
+
 ## Biblioteca: Conocimiento — 17-10-2026 (#723)
 
 Biblioteca reúne Memoria y Cerebro en Conocimiento. Ambas vistas conservan sus
