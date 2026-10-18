@@ -5241,7 +5241,7 @@ async def _llm_call_async_impl(
         # No `tools` here: this path is the tool-less completion helper.
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
         _apply_fast_engine_switch(payload, url, model, provider, _asked)
-        _apply_verified_engine_controls(payload, url, model)
+        _apply_verified_engine_controls(payload, url, model, _asked)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
@@ -5874,10 +5874,10 @@ def _step_down_reasoning(payload: Dict) -> bool:
     return strip_reasoning(payload)
 
 
-def _apply_verified_engine_controls(payload: Dict, url: str, model: str) -> None:
+def _apply_verified_engine_controls(payload: Dict, url: str, model: str, overrides: Optional[Dict] = None) -> None:
     if _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
         from src.engine_controls import apply_controls
-        apply_controls(payload, url, model)
+        apply_controls(payload, url, model, reasoning_budget=(overrides or {}).get("reasoning_budget"))
 
 
 def _fit_reasoning_effort_to_template(payload: Dict, url: str) -> None:
@@ -6737,7 +6737,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # has already run a tool always keeps its reasoning.
         _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
         _apply_fast_engine_switch(payload, url, model, provider, _overrides, has_tools=bool(tools))
-        _apply_verified_engine_controls(payload, url, model)
+        _apply_verified_engine_controls(payload, url, model, _overrides)
         _drop_tools_for_small_talk(payload, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)

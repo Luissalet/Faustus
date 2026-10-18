@@ -87,6 +87,26 @@ async def test_fast_without_budget_does_not_force_empty_thinking(wire, route):
 
 
 @pytest.mark.parametrize("route", ["async", "stream"])
+@pytest.mark.parametrize("budget", [0, -1, 128])
+async def test_explicit_budget_without_separate_think_reaches_wire(wire, route, budget):
+    await invoke(route, {"reasoning_effort": "high", "reasoning_budget": budget})
+    payload = wire.sent[0][1]
+    assert payload["thinking_token_budget"] == budget
+    assert "reasoning_budget" not in payload and "thinking_budget_tokens" not in payload
+
+
+@pytest.mark.parametrize("route", ["async", "stream"])
+async def test_only_native_template_effort_is_used_without_inventing_budget(wire, route):
+    wire.inject = {"chat_template_kwargs": {"reasoning_effort": "high", "clear_thinking": False}}
+    await invoke(route, {})
+    payload = wire.sent[0][1]
+    assert payload["reasoning_effort"] == "high"
+    assert "reasoning_effort" not in payload["chat_template_kwargs"]
+    assert payload["chat_template_kwargs"]["clear_thinking"] is False
+    assert "thinking_token_budget" not in payload
+
+
+@pytest.mark.parametrize("route", ["async", "stream"])
 async def test_native_budget_and_explicit_history_choice_survive_to_wire(wire, route):
     wire.inject = {"thinking_token_budget": 128, "chat_template_kwargs": {"clear_thinking": False}}
     await invoke(route, {"think": False})

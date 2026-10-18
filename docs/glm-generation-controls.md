@@ -12,6 +12,10 @@ native budget survives when no generic override was supplied. The adapter remove
 llama-server's spelling before sending the request. Other models retain their
 existing fast-mode behavior.
 
+An explicit per-request budget also applies when the caller omits the optional
+`think` override. The adapter does not require a second toggle to preserve it;
+the verified GLM template still chooses its supported reasoning effort normally.
+
 The streaming path still honors the existing
 `local_openai_reasoning_budget_default` setting, whose fallback is 4096, when
 thinking is enabled and no per-request budget was supplied. Setting that default

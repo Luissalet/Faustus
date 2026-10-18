@@ -44,7 +44,7 @@ def controls_for(base_url: str, model: str) -> dict[str, Any] | None:
     return None
 
 
-def apply_controls(payload: dict[str, Any], base_url: str, model: str) -> None:
+def apply_controls(payload: dict[str, Any], base_url: str, model: str, *, reasoning_budget: Any = None) -> None:
     caps = controls_for(base_url, model)
     if not caps:
         return
@@ -64,6 +64,8 @@ def apply_controls(payload: dict[str, Any], base_url: str, model: str) -> None:
     payload["chat_template_kwargs"] = template
     payload["reasoning_effort"] = effort
     budget = payload.pop("reasoning_budget", None)
+    if reasoning_budget is not None:
+        budget = reasoning_budget  # an explicit budget does not require a separate think toggle
     if budget is not None:
         # Honor the caller's existing budget, including -1 (unlimited), and
         # leave validation to the engine. Never invent a default cap or

@@ -76,3 +76,13 @@ def test_native_template_effort_is_fallback_but_top_level_wins(monkeypatch):
     assert payload["reasoning_effort"] == "high"
     assert payload["thinking_token_budget"] == 0
     assert "reasoning_effort" not in payload["chat_template_kwargs"]
+
+
+def test_explicit_budget_argument_only_applies_to_verified_glm(monkeypatch):
+    monkeypatch.setattr(controls, "vllm_thinking_budget", lambda _: True)
+    payload = {"chat_template_kwargs": {"enable_thinking": False}}
+    controls.apply_controls(payload, "http://configured/v1", "qwen3.8", reasoning_budget=0)
+    assert payload == {"chat_template_kwargs": {"enable_thinking": False}}
+    monkeypatch.setattr(controls, "vllm_thinking_budget", lambda _: False)
+    controls.apply_controls(payload, "http://configured/v1", "glm-5.3-flash-nvfp4", reasoning_budget=128)
+    assert payload == {"chat_template_kwargs": {"enable_thinking": False}}
