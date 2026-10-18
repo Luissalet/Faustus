@@ -106,7 +106,7 @@ export function ProjectTasks({ project }: { project: Project; focus?: string; sa
     const timer = window.setInterval(() => { void load(); }, 8000);
     return () => { controller.abort(); window.clearInterval(timer); };
   }, [project.id, tick]);
-  const visible = tasks?.filter(task => `${task.id} ${task.origin_ref || ''} ${task.title} ${task.body} ${task.acceptance} ${task.labels?.join(' ')}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (!owner || task.owner === owner) && (!kind || task.kind === kind) && (priority === '' || String(task.priority) === priority) && (!label || task.labels?.includes(label)));
+  const visible = tasks?.filter(task => `${task.id} #${task.id} T:${task.id} ${task.origin_ref || ''} ${task.title} ${task.body} ${task.acceptance} ${task.labels?.join(' ')}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (!owner || task.owner === owner) && (!kind || task.kind === kind) && (priority === '' || String(task.priority) === priority) && (!label || task.labels?.includes(label)));
   const drop = async (event: React.DragEvent, column: string) => {
     event.preventDefault();
     const task = tasks?.find(value => value.id === Number(event.dataTransfer.getData('text/plain')));

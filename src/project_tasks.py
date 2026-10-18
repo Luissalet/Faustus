@@ -5,7 +5,6 @@ Old project records are imported once by stable origin, never deleted or
 overwritten on a later visit. No browser-local or second task database.
 """
 import json
-import re
 import sys
 
 from src.shared_coordination import call
@@ -72,8 +71,11 @@ def _legacy_records(project):
 
 
 def prepare(project):
+    from src.project_task_compat import active, adopt
+    adopted = active(project['id'])
     sid = space(project, create=True)['id']
     imported = 0
+    mapped, originals, fresh = {}, {}, set()
     for kind, key, item in legacy_records(project):
         acceptance = item.get('acceptance') or item.get('acceptance_criteria') or ''
         if not isinstance(acceptance, str):
@@ -96,19 +98,38 @@ def prepare(project):
         if kind == 'objective':
             priority -= 1  # Objectives use 1..4; the shared board uses 0..3.
         owner = item.get('assignee') or item.get('owner') or ''
-        if not isinstance(owner, str) or not re.fullmatch(r'[a-z][a-z0-9_.-]{1,40}', owner):
-            owner = None
         result = rpc('task_add', {'agent': 'faustus', 'space_id': sid, 'title': item['title'], 'body': body,
             'acceptance': acceptance, 'priority': min(3, max(0, priority)),
             'owner': owner,
             'kind': item.get('type', 'feature'), 'labels': item.get('labels', []),
             'context': {'aliases': {kind: str(key)}, 'source': item.get('source', 'human'),
                         'proposed_by': item.get('proposed_by', 'human'),
-                        'requirement_status': item.get('status') if kind=='requirement' else None},
+                        'requirement_status': item.get('status') if kind=='requirement' else None,
+                        **({'requirement_links': item.get('links', [])} if kind=='requirement' else {})},
             'repo': project['name'], 'origin_ref': f"faustus:{project['id']}:{kind}:{key}", 'origin_status': status,
             'origin_snapshot': source})
         imported += not result.get('existing', False)
-    from src.project_task_compat import adopt
+        mapped[kind, str(key)] = result['task']['id']
+        originals[kind, str(key)] = item
+        if not result.get('existing', False):
+            fresh.add((kind, str(key)))
+    # Every legacy ID is now mapped. Import operational edges, not only their
+    # evidence snapshot. Repeated preparation must not restore a dependency
+    # subsequently removed from the shared board.
+    for (kind, key), item in originals.items():
+        if adopted and (kind, key) not in fresh:
+            continue
+        if kind == 'objective':
+            edges = [(key, target) for target in item.get('deps', [])]
+        elif kind == 'issue':
+            edges = [(key, link['target_issue_id']) if link['kind']=='blocked_by' else (link['target_issue_id'], key)
+                     for link in item.get('links', []) if link['kind'] in ('blocked_by', 'blocks')]
+        else:
+            edges = []
+        for dependent, blocker in edges:
+            if (kind, dependent) not in mapped or (kind, blocker) not in mapped:
+                raise TaskError('A previous dependency has no matching task: ' + str(dependent) + ' -> ' + str(blocker))
+            rpc('task_deps', {'agent': 'faustus', 'space_id': sid, 'task_id': mapped[kind, dependent], 'add': [mapped[kind, blocker]]})
     adopt(project)
     return {'ok': True, 'space_id': sid, 'imported': imported}
 

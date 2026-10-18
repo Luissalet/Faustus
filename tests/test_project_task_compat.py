@@ -130,3 +130,43 @@ def test_existing_markdown_import_and_export_use_shared_records(shared):
     assert project_board.import_sources(project,'SH',sources=['objetivos'],dry_run=False)['created']==0
     assert 'Original context.' in project_board.export_markdown(project['id'],'SH',project['name'])
     assert project_board.Store().list_issues(project['id'])[0]==[]
+
+
+def test_adoption_keeps_operational_dependencies_aliases_and_personal_assignment(shared):
+    from src import project_tasks, project_board
+    from services import objectives
+    project,ledger=shared;pid=project['id'];raw=project_board.Store()
+    first=raw.create_issue(pid,'OLD',type='task',title='Prerequisite')
+    second=raw.create_issue(pid,'OLD',type='task',title='Dependent',assignee='Ana García')
+    raw.add_link(second['id'],'blocked_by',first['id'])
+    a=objectives.apply_deltas(project,[{'op':'ADD','title':'Goal prerequisite'}],'user')['applied'][0]['id']
+    b=objectives.apply_deltas(project,[{'op':'ADD','title':'Goal dependent','deps':[a]}],'user')['applied'][0]['id']
+    project_tasks.prepare(project)
+    dependent=project_board.get(second['id'])
+    assert dependent['blocked_by']==[first['id']] and dependent['assignee']=='Ana García'
+    assert second['id'] not in [row['id'] for row in project_board.ready_issues(pid)]
+    assert {'from':b,'to':a} in objectives.load_state(project)['edges']
+    relation=next(link for link in dependent['links'] if link['kind']=='blocked_by')
+    assert project_board.remove_link(second['id'],relation['id'])
+    assert not project_board.get(second['id'])['blocked_by']
+    project_tasks.prepare(project)
+    assert not project_board.get(second['id'])['blocked_by'],'reopening cannot restore an intentionally removed edge'
+    assert raw.get(second['id'])['blocked_by']==[first['id']]
+
+
+def test_creation_links_and_imported_requirement_link_state_stay_canonical(shared):
+    from src import project_tasks, project_board
+    from src.requirements import store as req, evidence
+    project,ledger=shared;pid=project['id'];raw=req.Store()
+    original=raw.create(pid,title='Legacy requirement',text='Original')
+    link=raw.add_link(pid,original['key'],kind='evidences',target='proof:old',revision='',content_hash=None,created_by='tester')
+    project_tasks.prepare(project)
+    first=project_board.create_issue(pid,'NEW',type='task',title='Prerequisite')
+    second=project_board.create_issue(pid,'NEW',type='task',title='New dependent',links=[{'kind':'blocked_by','target':first['id']},{'kind':'relates_to','target':first['id']}])
+    assert second['blocked_by']==[first['id']]
+    assert {row['kind'] for row in second['links']}=={'blocked_by','relates_to'}
+    assert any(row['kind']=='blocks' and row['target_issue_id']==second['id'] for row in project_board.get(first['id'])['links'])
+    req.update(pid,original['key'],{'text':'Changed after adoption'},by='human')
+    assert not evidence.matrix(pid,original['key'])['verified']
+    assert req.list_links(pid,original['key'])[0]['state']=='stale'
+    assert raw.list_links(pid,original['key'])[0]['state']=='linked','import sources must stay read-only'

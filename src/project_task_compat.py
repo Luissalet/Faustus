@@ -72,15 +72,35 @@ def locate(key, raw_get):
 def edit(pid, task, **patch):
     return call(pid, 'task_edit', task_id=task['id'], expected_etag=task['etag'], **patch)['task']
 
-def board_value(pid, task, detail=None):
+def board_value(pid, task, detail=None, aliases=None):
     context = task.get('context') or {}
     source = task.get('origin_snapshot') or {}
     key = alias(task, 'issue')
+    if aliases is None:
+        aliases = {row['id']: alias(row, 'issue') for row in rows(pid)}
+    related = context.get('links', source.get('links', []) if ':issue:' in str(task.get('origin_ref')) else [])
+    links = [{**link, 'issue_id': key} for link in related if link.get('kind') not in ('blocks', 'blocked_by')]
+    links.extend({'id': f"dep:{task['id']}:{row['id']}", 'issue_id': key, 'kind': 'blocked_by',
+                  'target_issue_id': aliases[row['id']], 'created_at': iso(task['created'])} for row in task.get('blocked_by', []))
+    links.extend({'id': f"dep:{other}:{task['id']}", 'issue_id': key, 'kind': 'blocks',
+                  'target_issue_id': aliases[other], 'created_at': iso(task['created'])} for other in task.get('dependents', []))
     state = {'claimed': 'in_progress', 'review': 'in_progress', 'approved': 'done', 'changes': 'in_progress', 'dropped': 'wontfix'}.get(task['status'], task['status'])
-    return {**source, 'id': key, 'canonical_id': task['id'], 'project_id': pid, 'seq': task['id'], 'title': task['title'], 'body_md': task.get('body') or '', 'type': task['kind'], 'status': state, 'status_category': 'completed' if state == 'done' else 'canceled' if state == 'wontfix' else 'started' if state in ('in_progress', 'blocked') else 'unstarted', 'priority': f"P{task['priority']}", 'assignee': task.get('owner') or '', 'labels': task.get('labels', []), 'acceptance': (task.get('acceptance') or '').splitlines(), 'created_at': iso(task['created']), 'updated_at': iso(task['updated']), 'closed_at': iso(task['closed_at']) if task.get('closed_at') else None, 'created_by': task.get('created_by'), 'blocked_by': [f"T:{row['id']}" for row in task.get('blocked_by', []) if row['status'] not in ('done', 'approved', 'dropped')], 'links': context.get('links', source.get('links', [])), 'refs': context.get('refs', source.get('refs', [])), 'comments': [*source.get('comments', []), *[{'id': str(msg['id']), 'issue_id': key, 'body_md': msg['body'], 'author': msg['author'], 'created_at': iso(msg['created'])} for msg in (detail or {}).get('messages', []) if msg['kind'] == 'comment']], 'events': [*source.get('events', []), *[{'id': str(item['revision']), 'kind': 'edit', 'actor': item['author'], 'created_at': iso(item['created']), 'payload': item} for item in (detail or {}).get('edits', [])]], 'etag': task['etag']}
+    return {**source, 'id': key, 'canonical_id': task['id'], 'project_id': pid, 'seq': task['id'],
+            'title': task['title'], 'body_md': task.get('body') or '', 'type': task['kind'], 'status': state,
+            'status_category': 'completed' if state == 'done' else 'canceled' if state == 'wontfix' else 'started' if state in ('in_progress', 'blocked') else 'unstarted',
+            'priority': f"P{task['priority']}", 'assignee': task.get('owner') or '', 'labels': task.get('labels', []),
+            'acceptance': (task.get('acceptance') or '').splitlines(), 'created_at': iso(task['created']),
+            'updated_at': iso(task['updated']), 'closed_at': iso(task['closed_at']) if task.get('closed_at') else None,
+            'created_by': task.get('created_by'),
+            'blocked_by': [aliases[row['id']] for row in task.get('blocked_by', []) if row['status'] not in ('done', 'approved', 'dropped')],
+            'links': links, 'refs': context.get('refs', source.get('refs', [])),
+            'comments': [*source.get('comments', []), *[{'id': str(msg['id']), 'issue_id': key, 'body_md': msg['body'], 'author': msg['author'], 'created_at': iso(msg['created'])} for msg in (detail or {}).get('messages', []) if msg['kind'] == 'comment']],
+            'events': [*source.get('events', []), *[{'id': str(item['revision']), 'kind': 'edit', 'actor': item['author'], 'created_at': iso(item['created']), 'payload': item} for item in (detail or {}).get('edits', [])]], 'etag': task['etag']}
 
 def board_list(pid, **filters):
-    values = [board_value(pid, task) for task in rows(pid)]
+    tasks = rows(pid)
+    aliases = {row['id']: alias(row, 'issue') for row in tasks}
+    values = [board_value(pid, task, aliases=aliases) for task in tasks]
     for field in ('status', 'type', 'assignee', 'priority'):
         if filters.get(field):
             values = [v for v in values if v[field] == filters[field]]
@@ -109,8 +129,19 @@ def fields(values):
     return result
 
 def board_create(pid, key, **values):
+    from src.project_board import LINK_KINDS
+    related, blockers, blocked = [], [], []
+    for link in values.get('links') or []:
+        if not isinstance(link, dict) or link.get('kind') not in LINK_KINDS:
+            raise ValueError('Invalid task link')
+        target = find(pid, link.get('target') or link.get('target_issue_id'))
+        kind = link['kind']
+        related.append({'id': uuid.uuid4().hex, 'kind': kind, 'target_issue_id': alias(target, 'issue'), 'created_at': iso(datetime.now().timestamp())})
+        if kind == 'blocked_by': blockers.append(target['id'])
+        if kind == 'blocks': blocked.append(target['id'])
     values = fields(values)
-    task = call(pid, 'task_add', **{k: v for k, v in values.items() if k != 'status'})['task']
+    task = call(pid, 'task_add', **{k: v for k, v in values.items() if k != 'status'},
+                blocked_by=blockers, blocks=blocked, context={'links': related})['task']
     return board_value(pid, task)
 
 def board_update(pid, key, patch, **kwargs):
@@ -182,7 +213,8 @@ def board_dispatch(name, pid, *args, **kw):
             other = find(pid, link['target_issue_id'])
             dependent, blocker = (other, task) if link['kind'] == 'blocks' else (task, other)
             call(pid, 'task_deps', task_id=dependent['id'], remove=[blocker['id']])
-        return board_context(pid, key, 'links', remove=link_id)
+        removed = board_context(pid, key, 'links', remove=link_id)
+        return bool(link) or removed
     if name == 'export_markdown':
         return '# ' + args[1] + '\n\n' + '\n\n'.join((f"## {v['id']} {v['title']}\n{v['status']} · {v['priority']} · {v['assignee']}\n\n{v['body_md']}\n\n" + '\n'.join(v['acceptance']) for v in board_list(pid, limit=500)[0]))
     if name == 'link_commit':
@@ -267,10 +299,12 @@ def canonical_import(value, key, sources, candidates):
 def objective_state(value):
     result = {}
     edges = []
-    for task in rows(value['id']):
+    tasks = rows(value['id'])
+    aliases = {task['id']: alias(task, 'objective') for task in tasks}
+    for task in tasks:
         key = alias(task, 'objective')
         result[key] = {'t': 'obj', 'id': key, 'title': task['title'], 'notes': task.get('body') or '', 'status': {'claimed': 'in_progress', 'review': 'in_progress', 'approved': 'done', 'changes': 'in_progress'}.get(task['status'], task['status']), 'priority': task['priority'] + 1, 'updated_at': iso(task['updated']), 'created_at': iso(task['created']), 'last_actor': 'user'}
-        edges.extend(({'from': key, 'to': f"T:{b['id']}"} for b in task.get('blocked_by', [])))
+        edges.extend(({'from': key, 'to': aliases[b['id']]} for b in task.get('blocked_by', [])))
     return {'objectives': result, 'edges': edges}
 
 def objective_apply(value, deltas, actor, session_id):
@@ -419,7 +453,10 @@ def wrap_requirements(namespace):
         if not _raw.get():
             for path in marker('probe').parent.glob('*.json'):
                 for task in rows(path.stem):
-                    links = task.get('context', {}).get('requirement_links', [])
+                    links = task.get('context', {}).get('requirement_links')
+                    if links is None and ':requirement:' in str(task.get('origin_ref')):
+                        links = (call(path.stem, 'task', task_id=task['id'])['task'].get('origin_snapshot') or {}).get('links', [])
+                    links = links or []
                     if any((link['id'] == link_id for link in links)):
                         context = {**task['context'], 'requirement_links': [{**link, 'state': state} if link['id'] == link_id else link for link in links]}
                         edit(path.stem, task, context=context)

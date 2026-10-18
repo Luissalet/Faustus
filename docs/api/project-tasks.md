@@ -55,6 +55,11 @@ objective and requirement IDs remain usable aliases; new compatibility IDs are
 `T:<canonical_id>`. Legacy source databases/files are retained as migration
 sources, without mirroring later edits back into another task authority. This
 also keeps the agent's ordinary board/objective context aligned with user edits.
+Adoption maps all previous IDs before importing operational dependency edges;
+reopening cannot recreate an edge later removed by the person. Personal
+assignee names retain their text. Creation links commit together with the new
+task, including cycle validation. Imported requirement evidence updates its
+canonical context and leaves the original link rows untouched.
 Projects not yet adopted retain their older API behavior until preparation.
 
 Task detail includes `edits`: ordered revisions with author, timestamp, and
