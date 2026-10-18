@@ -4,6 +4,8 @@ reach the user through a tool, and a model server that drops a connection."""
 import asyncio
 import json
 
+import pytest
+
 import src.agent_loop as al
 
 
@@ -223,3 +225,141 @@ def test_back_to_back_loops_before_any_tool_do_not_end_an_unattended_task(monkey
     events = _run(user="What is 2 + 2?")
     assert len(seen) == 4, [e.get("type") for e in events]
     assert not [e for e in events if e.get("type") == "error"]
+
+
+@pytest.mark.parametrize("initial_length", [False, True])
+def test_answer_only_data_with_a_workspace_does_not_reopen_after_stop(tmp_path, monkeypatch, initial_length):
+    _patch_common(monkeypatch)
+    request = (
+        "Documentos de una auditoría sintética. Aplica el cambio de moneda. "
+        "Convert using integer rate numerator/denominator. "
+        "INVOICE cents=12; rate=3/2. Devuelve SOLO JSON con el neto."
+    )
+    answer = '{"net":18}'
+    unexpected = {"error": "unexpected extra provider call", "status": 400}
+    rounds = ([_text("", "length")] if initial_length else []) + [
+        _text(answer), [f'event: error\ndata: {json.dumps(unexpected)}\n\n'],
+    ]
+    seen = _scripted(monkeypatch, rounds)
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": request}], workspace=str(tmp_path),
+        unattended=True, max_rounds=6, relevant_tools={"read_file", "glob"},
+    )))
+    assert len(seen) == 1 + int(initial_length), events
+    assert not [e for e in events if e.get("reason") == "completion_audit"
+                or e.get("status") == "no_action" or e.get("type") == "error"], events
+    assert "".join(e.get("delta", "") for e in events).strip() == answer
+    terminal = next(e for e in reversed(events) if e.get("type") == "metrics")
+    assert terminal["data"]["harness"]["stop_reason"] == "complete"
+
+
+@pytest.mark.parametrize("user_text", [
+    "Aplica el cambio usando ratio a/b y responde con JSON.",
+    "Read the ratio numerator/denominator and return JSON.",
+    "El cambio de moneda usa el ratio foo/bar.",
+])
+def test_data_ratios_are_not_workspace_paths(user_text):
+    assert not al._looks_like_workspace_coding_request(user_text)
+
+
+@pytest.mark.parametrize("user_text", [
+    "Read /etc/hosts", "Edit ./config/settings", "Rename ../old ../new",
+    "Open ~/work/README", r"Edit C:\work\LICENSE", "Edit C:/work/LICENSE",
+    r"Open \\server\share\LICENSE", "Fix cart.py", "Edit the file foo/bar",
+    "Lee la carpeta foo/bar", "Edit config/settings", "Rename logs/old logs/new",
+    "Lee src/config", "Open foo/bar",
+])
+def test_real_workspace_paths_still_require_work(user_text):
+    assert al._looks_like_workspace_coding_request(user_text)
+
+
+@pytest.mark.parametrize("user_text", [
+    "Write /app/result.json and return only JSON.",
+    "Guarda el resultado en result.json y devuelve solo JSON.",
+])
+def test_json_summary_does_not_exempt_a_file_job(tmp_path, monkeypatch, user_text):
+    _patch_common(monkeypatch)
+    seen = _scripted(monkeypatch, [_text('{"status":"done"}'), _text('{"status":"checked"}')])
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": user_text}], workspace=str(tmp_path),
+        unattended=True, max_rounds=2, relevant_tools={"read_file", "glob"},
+    )))
+    assert len([e for e in events if e.get("reason") == "completion_audit"]) == 1, events
+    assert len(seen) == 2
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_real_file_effect_keeps_audit_and_syntax_check_with_json_summary(tmp_path, monkeypatch, broken):
+    _patch_common(monkeypatch)
+    path = tmp_path / "result.py"
+    content = "def broken(:\n" if broken else "value = 18\n"
+    writes = []
+    checked = []
+
+    def check_syntax(paths, workspace):
+        # Keep the closing-stage check live without launching py_compile.
+        assert paths == ["result.py"]
+        checked.extend(paths)
+        try:
+            compile(path.read_text(encoding="utf-8"), str(path), "exec")
+        except SyntaxError as error:
+            return [{"path": str(path), "ok": False, "error": str(error)}]
+        return [{"path": str(path), "ok": True}]
+
+    monkeypatch.setattr(al._harness, "static_check_files", check_syntax)
+
+    async def write(block, *args, **kwargs):
+        assert block.tool_type == "write_file"
+        payload = json.loads(block.content)
+        assert payload["path"] == str(path)
+        path.write_text(payload["content"], encoding="utf-8")
+        writes.append(str(path))
+        return (block.tool_type, {"output": "Written " + str(path), "exit_code": 0})
+
+    monkeypatch.setattr(al, "execute_tool_block", write)
+    tool = _text("```write_file\n" + json.dumps({"path": str(path), "content": content}) + "\n```", "tool_calls")
+    seen = _scripted(monkeypatch, [tool, _text('{"status":"done"}'), _text('{"status":"checked"}')])
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Write result.py and return only JSON."}],
+        workspace=str(tmp_path), unattended=True, max_rounds=4,
+        relevant_tools={"write_file", "read_file"},
+    )))
+    assert writes == [str(path)]
+    assert path.read_text(encoding="utf-8") == content
+    assert len([e for e in events if e.get("reason") == "completion_audit"]) == 1, events
+    assert bool([e for e in events if e.get("status") == "syntax_error"]) == broken, events
+    assert checked == ["result.py"]
+    assert len(seen) >= 3
+
+
+def test_completion_work_uses_real_effects_and_workspace_reads_not_tool_availability(tmp_path):
+    intent = {"workspace_work": False}
+    ledger = al._harness.TurnLedger(str(tmp_path), "Return the data as JSON.")
+    assert not al._workspace_completion_work(intent, [], ledger)
+    ledger.record("web_search", "weather", {"output": "sunny"})
+    assert not al._workspace_completion_work(intent, [], ledger)
+    ledger.record("read_file", json.dumps({"path": "result.txt"}), {"output": "contents"})
+    assert al._workspace_completion_work(intent, [], ledger)
+    effects = al._harness.TurnLedger(str(tmp_path), "Return only JSON.")
+    effects.record("write_file", json.dumps({"path": "result.txt"}), {"output": "written"})
+    assert effects.effects
+    assert al._workspace_completion_work(intent, [], effects)
+
+
+def test_completion_work_preserves_requested_files_and_pending_progress(tmp_path):
+    ledger = al._harness.TurnLedger(str(tmp_path), "Write the result.")
+    assert al._workspace_completion_work({}, ["result.json"], ledger)
+    ledger.progress = [{"id": "1", "content": "Write result", "status": "pending"}]
+    assert al._workspace_completion_work({}, [], ledger)
+
+
+def test_prepared_workspace_intent_survives_an_explicit_continuation():
+    messages = [{"role": "user", "content": "Fix /app/cart.py"},
+                {"role": "assistant", "content": "I will inspect the file."},
+                {"role": "user", "content": "continue"}]
+    assert al._classify_agent_request(messages, "continue")["workspace_work"]
+    text = "Read the ratio a/b and return JSON."
+    assert not al._classify_agent_request([{"role": "user", "content": text}], text)["workspace_work"]

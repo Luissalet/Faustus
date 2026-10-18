@@ -2376,7 +2376,7 @@ def _uploaded_files_context_message(uploaded_files: Optional[List[Dict]]) -> Opt
 _WORKSPACE_CODE_ACTION_RE = re.compile(
     r"\b(?:fix|debug|implement(?:ing|ed)?|add|remove|change|update|refactor|wire|hook|"
     r"test|verify|run|build|lint|compile|commit|branch|merge|review|"
-    r"download|save|rename|move|copy|extract|convert|open|inspect|read|"
+    r"download|save|rename|move|copy|extract|convert|open|inspect|read|edit|write|"
     # Spanish (the heuristic was English-only, so a bound workspace plus a
     # Spanish request like "añade botones a la interfaz" never entered code
     # mode and the tool RAG handed the model session/notes tools instead of
@@ -2421,7 +2421,9 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"fallos?|problemas?|crash|excepci[oó]n|excepciones|borrado|borrar|eliminar|guardado|guardar|"
     r"cargar|carga|arranque|inicio|login|contador|lista|listado|"
     r"planes?|parche|tareas?|microtareas?|posible)\b"
-    r"|(?:~?/[^\"'\s`<>]+)|(?:[A-Za-z]:\\[^\s\"']+)"
+    # An absolute/rooted path starts a token. The slash in a ratio such as
+    # words/words is not a filesystem target, even beside a change verb.
+    r"|(?<![\w./\\:])(?:~?/|\.{1,2}/|[A-Za-z]:[\\/]|\\\\)[^\"'\s`<>]+"
     # A bare source filename is as strong a "work in this folder" signal as
     # there is, and only *paths* used to count: "refactor the rate limiter in
     # cart.py" matched no target, so it was classified low-signal and the turn
@@ -2733,6 +2735,14 @@ def _asks_for_a_text(text: str) -> bool:
     return bool(_TEXT_FOR_THE_USER_RE.search(str(text or "")))
 
 
+_RELATIVE_FILE_ACTION_RE = re.compile(
+    r"\b(?:read|open|edit|write|save|rename|move|copy|delete|"
+    r"lee|abre|edita|escribe|guarda|renombra|mueve|copia|borra)\s+"
+    r"(?:(?:the|el|la)\s+)?[`\"']?(?:[\w.-]+[/\\])+[\w.-]+\b",
+    re.IGNORECASE,
+)
+
+
 def _looks_like_workspace_coding_request(text: str) -> bool:
     """Best-effort signal that a request itself asks for coding work.
 
@@ -2756,7 +2766,19 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
     # noun used to satisfy both the action and target regexes ("datos de prueba"),
     # forcing an already answered analysis into tools and a repeated answer.
     text = _workspace_intent_text(text)
-    return bool(_WORKSPACE_CODE_ACTION_RE.search(text) and _WORKSPACE_CODE_TARGET_RE.search(text))
+    return bool(
+        (_WORKSPACE_CODE_ACTION_RE.search(text) and _WORKSPACE_CODE_TARGET_RE.search(text))
+        or _RELATIVE_FILE_ACTION_RE.search(text)
+    )
+
+
+def _workspace_completion_work(intent, deliverable_files, ledger) -> bool:
+    """Positive work evidence, independent of a merely bound workspace."""
+    return bool(
+        intent.get("workspace_work") or deliverable_files or ledger.effects or ledger.progress
+        or any(ToolEffect.READ_WORKSPACE in capabilities_for_tool(event.get("tool", "")).effects
+               for event in ledger.events)
+    )
 
 
 _SOURCE_ARTIFACT_SIGNAL_RE = re.compile(
@@ -3604,7 +3626,8 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     # also matched by accident (e.g. Spanish "todo lo posible" used to add
     # notes_calendar_tasks and then skip this fallback because domains was
     # already non-empty).
-    if _looks_like_workspace_coding_request(retrieval_query):
+    workspace_work = attached_implementation or _looks_like_workspace_coding_request(retrieval_query)
+    if workspace_work:
         domains.add("files")
 
     # Freshness: sports results, news, prices, releases, office holders,
@@ -3629,6 +3652,7 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
         "domains": domains,
         "retrieval_query": retrieval_query,
         "freshness_reasons": _freshness_hits,
+        "workspace_work": workspace_work,
     }
 
 
@@ -16046,9 +16070,11 @@ async def _stream_agent_loop_body(
             # once ended after a todo list and one sentence, its file never
             # written. Conversation tasks are left alone: their work is the
             # conversation, and it is already over.
+            _workspace_work = _workspace_completion_work(_intent, _deliverable_files, _ledger)
             if (
                 unattended
                 and workspace
+                and _workspace_work
                 and not _completion_audit_done
                 and _hc_text
                 and not _boundary_echo_only
@@ -16107,6 +16133,7 @@ async def _stream_agent_loop_body(
             if (
                 not _ledger.events
                 and _harness_scope_active
+                and (not unattended or _workspace_work)
                 and not _requires_project_objective_apply
                 and not _project_objective_unavailable
                 and _xr.permits("no_action_nudge", _no_action_nudges, 1)
