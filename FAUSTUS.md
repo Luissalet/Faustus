@@ -13565,3 +13565,20 @@ Verificación de fuente R4: 50 pruebas Faustus y 99 HoardLink del área, TypeScr
 build y checks montados de React; API y MCP reales sobre datos privados compartidos,
 guardado/reapertura del modal en navegador y revisión independiente. Estas pruebas
 no certifican la calidad semántica de nuevas respuestas de los modelos.
+
+
+## Blender: comparar ediciones de escena sin consultar al modelo (18-10-2026)
+
+El panel Faustus incorpora Capturar estado de escena y Comparar cambios; las
+operaciones nativas snapshot/diff se comparten con HTTP/MCP. Conservan geometría
+base en modo objeto, UV, pesos, shape keys, transformaciones, materiales/nodos,
+matrices de rig/pose, animación y contexto. Informan objetos añadidos, retirados,
+campos cambiados y acciones compartidas. No sustituyen undo ni comparan todos
+los datos de un .blend: modificadores, geometría evaluada, texturas externas y
+edición sin sincronizar necesitan lectores específicos.
+
+Regresión real Blender5.2.2: mover un vértice identifica exactamente el objeto,
+restaurarlo devuelve igualdad observada y conserva el resto de la escena. La
+cancelación de una revisión restaura también el color Workbench capturado por
+valor, cámara, fotograma y contexto. QAoffline, sin llamadas a Sparks; la calidad
+de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.

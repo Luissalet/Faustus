@@ -1,7 +1,7 @@
 ---
 name: blender-asset-production
 description: Build and revise editable Blender assets through modeling, materials, rigging and export. Use when producing a 3D asset or correcting a selected scene object.
-version: 1.1.0
+version: 1.2.0
 category: engineering
 tags: [blender, rigging, animation, assets, modelado, huesos, animacion]
 status: published
@@ -18,6 +18,11 @@ and the requested export; a screenshot alone is not a finished asset.
 1. Read the brief, reference images, current scene and selected objects.
    Record dimensions, intended style, target engine, export format and
    required clips before choosing the modeling approach.
+   Capture the current scene with native `snapshot` before a targeted edit and
+   compare it afterwards with `diff(snapshot_id)`. Inspect changed field names,
+   added/removed objects, shared actions and context. Its authored object-mode
+   mesh/material/rig observations do not cover every `.blend` datablock or
+   evaluated Geometry Nodes result; use the corresponding deep readers as well.
 2. Use `blender_scene` with `action: live_probe` for the connected Blender
    5.1+ scene, and `action: official_tools` to discover the installed official
    Blender Lab tools. `official_call` takes their exact `name` and `arguments`.

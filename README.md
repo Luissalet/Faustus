@@ -899,3 +899,12 @@ Silver can show saved changes before the reply ends. It refreshes in place and
 keeps unfinished trainer edits. Native tools and turn execution are unchanged.
 See Silver's `docs/COPILOT_LIVE_REFRESH.md`; other hosts require their ordinary
 vendor synchronization and refresh callbacks.
+
+## Connected scene comparisons
+
+The Blender sidebar can capture scene state and compare a later edit locally.
+The same `snapshot` and `diff` operations are available through live jobs and MCP,
+including authored mesh/UV/weight digests, rig/animation observations and context.
+See `docs/api/blender-live.md` for scope and limits. These controls do not call
+the reasoning service. Review cancellation restores Workbench background color,
+camera and frame, with a real Blender 5.2.2 regression.
