@@ -575,7 +575,9 @@ _PATH_EXTS = (
 PATH_TOKEN_RE = re.compile(
     r"(?<![\w@:/\\.-])"                                   # not glued to a URL/word
     r"((?:\.{0,2}[\w@.-]+[/\\])*"                          # optional dir segments
-    r"[\w@.-]*[A-Za-z_][\w@.-]*\.(?:" + _PATH_EXTS + r")(?!\w))"  # basename.ext, whole extension
+    # Choose the first letter/underscore once. Two overlapping greedy runs
+    # tried every possible letter split when a long token had no extension.
+    r"(?:(?![A-Za-z_])[\w@.-])*[A-Za-z_][\w@.-]*\.(?:" + _PATH_EXTS + r")(?!\w))"
     r"(?![\w/\\.-]*(?:://|@))",
     re.IGNORECASE,
 )

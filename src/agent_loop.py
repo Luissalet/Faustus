@@ -2427,7 +2427,10 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     # got read-only tools with a project folder bound. Extensions are limited
     # to source/config/doc types so ordinary prose ("check example.com") does
     # not become a code request.
-    r"|(?:\b[\w.-]+\.(?:py|pyi|js|mjs|cjs|jsx|ts|tsx|vue|svelte|go|rs|rb|php|"
+    # These consumers need existence, not the matched span. Start only once
+    # per filename-character run; include its leading punctuation so a dash
+    # cannot start another scan of the same multi-megabyte suffix.
+    r"|(?:(?<![\w.-])[.-]*\w[\w.-]*\.(?:py|pyi|js|mjs|cjs|jsx|ts|tsx|vue|svelte|go|rs|rb|php|"
     r"java|kt|kts|swift|scala|c|h|cc|cpp|hpp|cs|sh|bash|zsh|ps1|sql|html|htm|"
     r"css|scss|sass|less|json|jsonc|ya?ml|toml|ini|cfg|conf|env|lock|gradle|"
     r"mk|cmake|md|rst|txt|csv|tsv|xml|svg|log)\b)",
@@ -2759,7 +2762,7 @@ _SOURCE_ARTIFACT_SIGNAL_RE = re.compile(
     r"\b(?:source\s+code|c[oó]digo\s+fuente|stack\s*trace|traceback|"
     r"pytest|unittest|jest|vitest|cargo\s+test|go\s+test|npm\s+test|"
     r"dotnet\s+test)\b"
-    r"|\b[\w.-]+\.(?:py|pyi|js|mjs|cjs|jsx|ts|tsx|vue|svelte|go|rs|rb|php|"
+    r"|(?<![\w.-])[.-]*\w[\w.-]*\.(?:py|pyi|js|mjs|cjs|jsx|ts|tsx|vue|svelte|go|rs|rb|php|"
     r"java|kt|kts|swift|scala|c|h|cc|cpp|hpp|cs|sh|bash|zsh|ps1|sql|"
     r"css|html|json|yaml|yml|toml)\b"
     r"|`[^`\n]{1,100}`"
