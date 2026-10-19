@@ -1,8 +1,8 @@
-// #941 CAS2: empty external adopt must not outbox-Send; ordinary open may.
-// Walks the real Studio.tsx rejoin finally branch via TypeScript AST, then
-// executes that branch shape with inert spies (no HTTP/MCP).
+// #941: empty external adopt must not outbox-Send; gated history cannot overwrite newer follow.
+// Walks real Studio.tsx rejoin via TypeScript AST + spy/deferred race (no HTTP/MCP).
 // Run: node studio/checks/external-follow-adopt.check.mjs
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -10,6 +10,17 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const studioPath = join(root, 'studio', 'src', 'screens', 'Studio.tsx');
 const src = readFileSync(studioPath, 'utf8');
 const ts = await import(pathToFileURL(join(root, 'node_modules', 'typescript', 'lib', 'typescript.js')).href);
+const { build } = await import(pathToFileURL(join(root, 'node_modules', 'esbuild', 'lib', 'main.js')).href);
+const followOut = join(mkdtempSync(join(tmpdir(), 'fs-ext-adopt-')), 'externalFollow.mjs');
+await build({
+  entryPoints: [join(root, 'studio', 'src', 'screens', 'studio', 'externalFollow.ts')],
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  outfile: followOut,
+  logLevel: 'silent',
+});
+const { createExternalFollowGate, mayApplyExternalFollow } = await import(pathToFileURL(followOut).href);
 
 let failed = 0;
 const assert = (c, msg) => {
@@ -25,7 +36,6 @@ function textOf(node) {
   return src.slice(node.getStart(sf), node.getEnd());
 }
 
-/** Locate `const rejoin = useCallback(async (sid, opts?) => { ... }, deps)`. */
 function findRejoinCallback() {
   let found = null;
   const visit = (node) => {
@@ -56,8 +66,13 @@ assert(
   /if\s*\(\s*adoptOnly\s*\)[\s\S]*turnsFromHistory[\s\S]*else[\s\S]*reconcileOutbox/.test(rejoinText),
   'empty resume: adoptOnly → history only; else → reconcileOutbox',
 );
+assert(
+  /if\s*\(\s*adoptOnly\s*\)[\s\S]*gate\.begin\(\)[\s\S]*mayApplyExternalFollow[\s\S]*else[\s\S]*reconcileOutbox/.test(
+    rejoinText,
+  ),
+  'adoptOnly empty history applies only via generation gate',
+);
 
-// External-follow effect must always pass adoptOnly:true (never bare rejoin).
 const followIdx = src.indexOf('Follow an external turn on the conversation already on screen');
 assert(followIdx > 0, 'external-follow effect comment present');
 const followSlice = src.slice(followIdx, followIdx + 2500);
@@ -69,10 +84,6 @@ assert(
 );
 assert(followSlice.includes('decideExternalFollowAction'), 'follow effect uses mark decisions');
 
-/**
- * Executable mirror of the empty-resume finally branch proven above.
- * Spies stand in for turnsFromHistory / reconcileOutbox→sendTurn.
- */
 function runEmptyResumeFinally(adoptOnly, spies) {
   if (adoptOnly) {
     spies.turnsFromHistory('sid-a');
@@ -107,6 +118,55 @@ function runEmptyResumeFinally(adoptOnly, spies) {
   runEmptyResumeFinally(true, spies);
   assert(sends.length === 0, 'adoptOnly empty resume must sendTurn 0 times');
   assert(history.length === 1 && history[0] === 'sid-a', 'adoptOnly empty resume refreshes history once');
+}
+
+{
+  // Preflight: slow empty-resume GET must not overwrite a newer follow refresh.
+  const gate = createExternalFollowGate();
+  const applied = [];
+  const slowToken = gate.begin();
+  let resolveSlow;
+  const slow = new Promise((r) => {
+    resolveSlow = r;
+  });
+  slow.then((payload) => {
+    if (
+      !mayApplyExternalFollow({
+        token: slowToken,
+        gate,
+        visibleSession: 'sid-a',
+        sid: 'sid-a',
+        epoch: 1,
+        currentEpoch: 1,
+        hasController: false,
+      })
+    ) {
+      applied.push('slow:skipped');
+      return;
+    }
+    applied.push(`slow:${payload}`);
+  });
+  const freshToken = gate.begin();
+  if (
+    mayApplyExternalFollow({
+      token: freshToken,
+      gate,
+      visibleSession: 'sid-a',
+      sid: 'sid-a',
+      epoch: 1,
+      currentEpoch: 1,
+      hasController: false,
+    })
+  ) {
+    applied.push('fresh:new-terminal');
+  }
+  resolveSlow('old-history');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert(
+    applied.join(',') === 'fresh:new-terminal,slow:skipped',
+    `slow empty-resume must not overwrite newer follow (got ${applied.join(',')})`,
+  );
 }
 
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');

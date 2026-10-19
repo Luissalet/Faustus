@@ -2008,13 +2008,28 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         } else if (!controller.signal.aborted) {
           if (adoptOnly) {
             // External follow (#941): empty resume must not retry an unrelated
-            // outbox Send — only adopt/refresh the canonical history.
+            // outbox Send — only adopt/refresh the canonical history. Gate the
+            // deferred GET so a slow empty-resume cannot overwrite a newer
+            // follow refresh that already applied the terminal transcript.
+            const gate = externalFollowGateRef.current;
+            const token = gate.begin();
             turnsFromHistory(sid)
               .then((result) => {
-                if (!controller.signal.aborted && visibleSession.current === sid && runEpoch.current === epoch && !controllerRef.current) {
-                  setTitle(result.name);
-                  setTurns(result.turns);
+                if (
+                  !mayApplyExternalFollow({
+                    token,
+                    gate,
+                    visibleSession: visibleSession.current,
+                    sid,
+                    epoch,
+                    currentEpoch: runEpoch.current,
+                    hasController: Boolean(controllerRef.current),
+                  })
+                ) {
+                  return;
                 }
+                setTitle(result.name);
+                setTurns(result.turns);
               })
               .catch(() => undefined);
           } else {
