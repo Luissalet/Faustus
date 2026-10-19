@@ -119,6 +119,9 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
          note="one prompt, one answer; the token's owner pays for it"),
     _read("/api/models", "chat",
           note="which models the token's owner may name in a chat call"),
+    _read("/api/global-model", "chat", note="the exact global model descriptor, without provider credentials"),
+    Rule(frozenset({"POST"}), "/api/global-model/v1/chat/completions", ("chat",), effect="external",
+         note="stateless inference on the exact configured global model, scoped to the token owner"),
 
     # Codex/Claude integrations: explicit methods/paths, matching the route's
     # owner checks. A new endpoint does not inherit blanket token admission.

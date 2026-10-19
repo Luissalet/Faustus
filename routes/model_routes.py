@@ -1565,6 +1565,8 @@ def _api_key_fingerprint(api_key: Optional[str]) -> str:
 
 def setup_model_routes(model_discovery):
     router = APIRouter(prefix="/api")
+    from routes.global_model_routes import setup_global_model_routes
+    router.include_router(setup_global_model_routes())
 
     # ---- Model list cache ----
     import time as _time

@@ -39,6 +39,9 @@ REPO = Path(__file__).resolve().parents[1]
 ALLOWED_CALLERS = frozenset({
     "src/llm_core.py",          # shared AsyncClient used by stream_llm
     "routes/model_routes.py",   # _probe_endpoint + _ping_endpoint
+    # Stateless global inference reaches only the owner-visible configured LLM
+    # endpoint, with the same provider CA as normal model inference.
+    "routes/global_model_routes.py",
     # Settings → Local models: /api/tags, /api/ps, /api/show, /api/pull … on
     # the same Ollama endpoints model_routes probes — an Ollama behind a TLS
     # reverse proxy with a private CA needs the same bundle here as there.
