@@ -15,9 +15,10 @@ por teclado y la regresión de título sin encabezados. Es aceptación acotada t
 corregir: siguen abiertos los fallos del almacén KV y de aritmética con entrada
 grande. No se ha demostrado fiabilidad semántica general.
 
-El checkpoint QAD está completo con SHA en Spark1 solamente; Spark2 sigue parcial
-y QAD nunca se ha cargado. El modelo global continúa siendo NVFP4. Sigue pendiente
-el refresco de turnos MCP externos en una conversación de Studio ya abierta.
+Los 52 archivos fijados del checkpoint QAD están verificados por SHA en Spark1
+y Spark2 (177,52 GB por nodo). QAD no se ha cargado ni seleccionado: faltan cabida
+y calidad reales. El modelo global sigue siendo NVFP4. Está pendiente el refresco
+de turnos MCP externos en una conversación de Studio ya abierta.
 Recibos y continuación: `D:/LocalAI/research-inbox/sparks835/latest-status-path.txt`.
 
 **Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de

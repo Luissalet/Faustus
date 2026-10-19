@@ -90,9 +90,10 @@ nine real browser queries, two keyboard navigations and the title-only regressio
 This is scoped acceptance after corrections; the KV store and large-input
 arithmetic failures remain unresolved. General semantic reliability is unproven.
 
-The QAD checkpoint is SHA-verified on Spark1 only; Spark2 remains partial and QAD
-has not been loaded. The current global model remains NVFP4. External MCP turns
-in an already-open Studio conversation still need the pending refresh fix.
+All 52 pinned QAD checkpoint files are SHA-verified on both Spark1 and Spark2
+(177.52 GB per node). QAD has not been loaded or selected; runtime fit and quality
+remain unproven. The current global model is NVFP4. External MCP turns in an
+already-open Studio conversation still need the pending refresh fix.
 [Detailed evidence and continuation](D:/LocalAI/research-inbox/sparks835/latest-status-path.txt).
 
 ## Current verification (9 October 2026)
