@@ -18,6 +18,11 @@ export type { SessionActivity };
  * `GET /api/chat/activity` answers for the whole account in one call, so this
  * is ONE poller shared by every screen (a store, not a hook per row), it only
  * ticks while the tab is visible, and it slows down when nothing is alive.
+ *
+ * Lists use the snapshot for dots. The open Studio conversation must also
+ * subscribe (`useChatActivity` + `sessionActivity`): an external MCP turn on
+ * a session already on screen never changes `sessionId`, so history-load
+ * rejoin alone will not pick it up (#941).
  */
 
 interface ActivityState {

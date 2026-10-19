@@ -88,7 +88,8 @@ import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
 import { createNote, deleteNote } from '../adapters/notes';
 import { getSummary } from '../adapters/board';
 import { startTour } from '../shell/store';
-import { refreshActivity } from '../shell/activity';
+import { refreshActivity, sessionActivity, useChatActivity } from '../shell/activity';
+import { createExternalFollowGate, mayApplyExternalFollow } from './studio/externalFollow';
 import { TOURS, resetTours, seenTours } from '../lib/tours';
 import { getTheme as getMode, setTheme as setMode, type ThemeChoice } from '../shell/theme';
 import { applyThemeEvent, clearHighlights, emailReplyRoute, highlight, PANEL_ROUTES } from '../shell/uiEvents';
@@ -636,6 +637,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   const [preparingMessage, setPreparingMessage] = useState(false);
   const [ordinaryBusy, setBusy] = useState(false);
   const busy = groupId ? groupConversation.busy : ordinaryBusy;
+  /* Shared poller for live runs (sidebar dots). Studio itself must watch it
+     so an external MCP turn on the already-open conversation rejoins without
+     a reload — sessionId does not change, so the history effect alone misses it. */
+  const chatActivity = useChatActivity();
+  const openSessionLive = sessionActivity(chatActivity, groupId ? null : sessionId);
   const display = useDisplay();
   const lang = useLang();
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -712,6 +718,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
      the history loader); the effect that opens a session calls it through
      this ref so the dependency never has to travel up the file. */
   const rejoinRef = useRef<(sid: string) => void>(() => undefined);
+  /* Last live/idle snapshot for the open session. `undefined` means "first
+     observation after a session switch" — history-load owns that rejoin.
+     Idle→live while already open is the MCP-external case (#941). */
+  const externalFollowPrevRef = useRef<ReturnType<typeof sessionActivity> | undefined>(undefined);
+  const externalFollowGateRef = useRef(createExternalFollowGate());
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1989,6 +2000,68 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     [patchLast, refreshSessions, refreshActivity, turnsFromHistory, reconcileOutbox],
   );
   rejoinRef.current = (sid: string) => void rejoin(sid);
+
+  /* Reset transition memory when the open conversation changes so the first
+     activity sample does not look like an external start (history-load rejoin).
+     Also invalidate in-flight history callbacks from the previous session. */
+  useEffect(() => {
+    externalFollowPrevRef.current = undefined;
+    externalFollowGateRef.current.invalidate();
+  }, [sessionId, groupId]);
+
+  /* Follow an external turn that starts (or finishes) on the conversation
+     already on screen. resumeTurn only — no Send/POST, no other session id.
+     Each transition takes a generation token so a slow idle→live GET cannot
+     overwrite a later live→idle refresh or rejoin a turn that already ended. */
+  useEffect(() => {
+    if (groupId || !sessionId) return;
+    const prev = externalFollowPrevRef.current;
+    externalFollowPrevRef.current = openSessionLive;
+    if (prev === undefined) return;
+    const wasLive = prev != null;
+    const isLive = openSessionLive != null;
+    if (wasLive === isLive) return;
+    if (controllerRef.current) return;
+    const sid = sessionId;
+    const epoch = runEpoch.current;
+    const gate = externalFollowGateRef.current;
+    const token = gate.begin();
+    const stillMine = () =>
+      mayApplyExternalFollow({
+        token,
+        gate,
+        visibleSession: visibleSession.current,
+        sid,
+        epoch,
+        currentEpoch: runEpoch.current,
+        hasController: Boolean(controllerRef.current),
+      });
+    if (isLive) {
+      void turnsFromHistory(sid)
+        .then((result) => {
+          if (!stillMine()) return;
+          setTitle(result.name);
+          setTurns(result.turns);
+          pinnedRef.current = true;
+          refreshStaleWires(sid);
+          rejoinRef.current(sid);
+        })
+        .catch(() => {
+          if (stillMine()) rejoinRef.current(sid);
+        });
+      return;
+    }
+    // Live→idle without a local stream: the external turn ended before we
+    // connected. Refresh saved history/terminal; do not invent an assistant.
+    void turnsFromHistory(sid)
+      .then((result) => {
+        if (!stillMine()) return;
+        setTitle(result.name);
+        setTurns(result.turns);
+        refreshStaleWires(sid);
+      })
+      .catch(() => undefined);
+  }, [groupId, sessionId, openSessionLive, turnsFromHistory, refreshStaleWires]);
 
   const ensureSession = useCallback(
     async (name: string): Promise<string | null> => {
