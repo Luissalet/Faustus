@@ -15,6 +15,16 @@ por teclado y la regresión de título sin encabezados. Es aceptación acotada t
 corregir: siguen abiertos los fallos del almacén KV y de aritmética con entrada
 grande. No se ha demostrado fiabilidad semántica general.
 
+La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
+Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en
+recuperación de cola y escritura posterior. Un testigo de API pública reprodujo
+el fallo al quitar sólo el último byte; el corpus binario obtuvo 40 casos verdes
+y ocho fallos. Bloqueo de escritor, muerte real del proceso y corte observado
+tras instalar el snapshot pasaron por separado. El resultado global sigue
+siendo fallo, con fuentes fijadas y sin corregirlas desde el evaluador.
+Las correcciones revisadas de limpieza y arranque NVFP4/QAD ya están aplicadas
+en sus recetas; aún no se ha recargado el modelo con ellas.
+
 Los 52 archivos fijados del checkpoint QAD están verificados por SHA en Spark1
 y Spark2 (177,52 GB por nodo). QAD no se ha cargado ni seleccionado: faltan cabida
 y calidad reales. El modelo global sigue siendo NVFP4. Ya está activo el refresco

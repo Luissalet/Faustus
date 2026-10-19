@@ -90,6 +90,15 @@ nine real browser queries, two keyboard navigations and the title-only regressio
 This is scoped acceptance after corrections; the KV store and large-input
 arithmetic failures remain unresolved. General semantic reliability is unproven.
 
+The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
+passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
+A public-API witness reproduced this after truncating only the last byte; the
+binary corpus passed 40 cases and failed eight. Writer locking, actual writer
+process death and the observed post-snapshot-install crash passed separately.
+The overall result remains failed; evaluator source edits did not repair it.
+Reviewed NVFP4/QAD lifecycle corrections are now installed in their recipe
+sources; the model has not yet been reloaded with those corrections.
+
 All 52 pinned QAD checkpoint files are SHA-verified on both Spark1 and Spark2
 (177.52 GB per node). QAD has not been loaded or selected; runtime fit and quality
 remain unproven. The current global model is NVFP4. Studio now follows external
