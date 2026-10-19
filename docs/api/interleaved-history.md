@@ -12,12 +12,14 @@ in the agent loop. The central engine-controls profile describes the template;
 the existing managed-Sparks metadata sync verifies the served model identity
 and typed native thinking controls in the endpoint's OpenAPI document.
 
-This uses the existing metadata cache and its 60-second lifetime. Sparks sync
-starts after 15 seconds and normally refreshes every 20 seconds. No HTTP probe
-is added to generation. An expired, retired or changed endpoint/model identity
-does not grant the retention capability. Metadata refresh failure can therefore
-restore the previous stripping policy; this change does not pin stale proof
-for an entire long turn.
+This uses the existing metadata cache. Sparks sync starts after 15 seconds and
+normally refreshes every 20 seconds. JSON-format support keeps its 60-second
+lifetime. A successfully verified history profile survives expiry, an in-flight
+refresh and a temporary metadata failure for the same managed identity: those
+events must not irreversibly delete reasoning from an active turn. No HTTP probe
+is added to generation. Retiring the endpoint, changing its URL/model set or
+receiving a valid schema that withdraws native thinking retires the history
+proof. An unavailable endpoint that was never verified cannot grant it.
 
 Internal reasoning carries its originating endpoint/model identity. A fallback
 candidate does not receive private reasoning produced by another route, while

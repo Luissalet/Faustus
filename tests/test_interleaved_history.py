@@ -83,11 +83,70 @@ def test_fallback_drops_other_route_reasoning_without_mutating_source():
 def test_cache_expiry_changed_model_and_retirement_do_not_share_capability(monkeypatch):
     refresh();stamp=next(iter(ec._schema_cache.values()))['at']
     monkeypatch.setattr(ec.time,'monotonic',lambda:stamp+61)
-    assert not ec.interleaved_history_capability(BASE,MODEL)['interleaved_history']
+    assert ec.interleaved_history_capability(BASE,MODEL)['interleaved_history']
+    assert not ec.json_schema_capability(BASE,'managed-test')['json_schema']
     refresh(model='another-model')
     assert not ec.interleaved_history_capability(BASE,MODEL)['interleaved_history']
     refresh()
     assert ec.interleaved_history_capability(BASE,MODEL)['interleaved_history']
+
+
+@pytest.mark.parametrize('refresh_state',['expired','in_flight','unavailable'])
+def test_metadata_refresh_cannot_erase_current_turn_reasoning(monkeypatch,refresh_state):
+    from threading import Event
+    refresh();stamp=next(iter(ec._schema_cache.values()))['at']
+    messages=[{'role':'user','content':'same user'}]
+    round_message(messages,1)
+    monkeypatch.setattr(ec.time,'monotonic',lambda:stamp+61)
+    entered,release=Event(),Event()
+    thread=None
+    if refresh_state=='in_flight':
+        def blocked(_):
+            entered.set()
+            assert release.wait(3)
+            return document()
+        thread=Thread(target=lambda:ec.refresh_json_schema(
+            [{'endpoint_id':'managed-test','base_url':BASE,'models':[MODEL]}],fetch_openapi=blocked))
+        thread.start()
+        assert entered.wait(3)
+    elif refresh_state=='unavailable':
+        def unavailable(_):raise OSError('metadata unavailable')
+        ec.refresh_json_schema([{'endpoint_id':'managed-test','base_url':BASE,'models':[MODEL]}],fetch_openapi=unavailable)
+    try:
+        round_message(messages,2)
+        assert thoughts(messages)==['ROUND1_SENTINEL','ROUND2_SENTINEL']
+    finally:
+        release.set()
+        if thread:
+            thread.join(3)
+            assert not thread.is_alive()
+    monkeypatch.setattr(ec.time,'monotonic',lambda:stamp+122)
+    refresh();round_message(messages,3)
+    assert thoughts(project(messages,'openai_chat',record=False).messages)==[
+        'ROUND1_SENTINEL','ROUND2_SENTINEL','ROUND3_SENTINEL']
+
+
+def test_failed_metadata_cannot_grant_history_to_new_identity(monkeypatch):
+    refresh();stamp=next(iter(ec._schema_cache.values()))['at']
+    monkeypatch.setattr(ec.time,'monotonic',lambda:stamp+61)
+    def unavailable(_):raise OSError('metadata unavailable')
+    rows=[{'endpoint_id':'managed-test','base_url':BASE,'models':[MODEL,'another-model']}]
+    ec.refresh_json_schema(rows,fetch_openapi=unavailable)
+    assert not ec.interleaved_history_capability(BASE,MODEL)['interleaved_history']
+    # Even the same model/base under a new managed identity needs verification.
+    refresh()
+    rows=[{'endpoint_id':'replacement','base_url':BASE,'models':[MODEL]}]
+    ec.refresh_json_schema(rows,fetch_openapi=unavailable)
+    assert not ec.interleaved_history_capability(BASE,MODEL)['interleaved_history']
+
+
+def test_valid_schema_withdrawal_retires_history_proof(monkeypatch):
+    refresh();stamp=next(iter(ec._schema_cache.values()))['at']
+    monkeypatch.setattr(ec.time,'monotonic',lambda:stamp+61)
+    doc=document()
+    doc['components']['schemas']['ChatCompletionRequest']['properties'].pop('thinking_token_budget')
+    refresh(doc=doc)
+    assert not ec.interleaved_history_capability(BASE,MODEL)['interleaved_history']
 
 def test_context_estimate_counts_retained_fields_for_each_candidate():
     from src.model_context import estimate_tokens

@@ -166,11 +166,11 @@ def _openapi_native_thinking(document, api_base: str) -> bool:
 
 
 def interleaved_history_capability(base_url: str, model: str) -> dict[str, Any]:
-    """Cache-only template policy for an identity supplied by Sparks.sync()."""
+    """Verified template policy, retained until its managed identity changes."""
     base = _schema_base(base_url)
     for (identity, cached_base), cached in list(_schema_cache.items()):
         if (base and base == cached_base and model in cached['models'] and
-                time.monotonic() - cached['at'] < _SCHEMA_TTL and cached.get('native_thinking')):
+                cached.get('history_native_thinking')):
             profile = _model_template_controls(model)
             if profile and profile.get('interleaved_history'):
                 return {'interleaved_history': True, 'scope': 'current_user_turn',
@@ -200,7 +200,9 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
             previous = _schema_cache.get(key)
             if previous and previous['models'] == models and time.monotonic() - previous['at'] < _SCHEMA_TTL:
                 continue
-            _schema_cache.pop(key, None)  # no stale proof while a changed identity is checked
+            if previous and previous['models'] != models:
+                _schema_cache.pop(key, None)
+                previous = None  # a different served model must establish its own proof
             base = key[1]
             status, supported, native_thinking = 'unavailable', False, False
             try:
@@ -215,8 +217,15 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
                 status = 'verified' if supported else 'unsupported'
             except Exception:
                 pass
+            # Template history is not server liveness. Losing a successful
+            # proof during refresh/expiry would irreversibly strip earlier
+            # reasoning from an active turn. JSON-format support remains fresh.
+            history_native = native_thinking
+            if status == 'unavailable' and previous:
+                history_native = previous.get('history_native_thinking', False)
             _schema_cache[key] = {'at': time.monotonic(), 'models': models, 'json_schema': supported,
-                                  'status': status, 'source': 'served_openapi', 'native_thinking': native_thinking}
+                                  'status': status, 'source': 'served_openapi', 'native_thinking': native_thinking,
+                                  'history_native_thinking': history_native}
             while len(_schema_cache) > _SCHEMA_MAX_ENDPOINTS:
                 _schema_cache.pop(min(_schema_cache, key=lambda item: _schema_cache[item]['at']))
     return {identity: json_schema_capability(base, identity) for identity, base in active}
