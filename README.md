@@ -92,14 +92,23 @@ arithmetic failures remain unresolved. General semantic reliability is unproven.
 
 All 52 pinned QAD checkpoint files are SHA-verified on both Spark1 and Spark2
 (177.52 GB per node). QAD has not been loaded or selected; runtime fit and quality
-remain unproven. The current global model is NVFP4. External MCP turns in an
-already-open Studio conversation still need the pending refresh fix.
+remain unproven. The current global model is NVFP4. Studio now follows external
+MCP turns in an already-open conversation, including a new turn arriving while
+the previous observer drains and an older history response arriving late.
 [Detailed evidence and continuation](D:/LocalAI/research-inbox/sparks835/latest-status-path.txt).
 
 The configured global model also has a stateless OpenAI transport with descriptor
 pins for endpoint, model and connection revision. A real Sparks streaming call
 completed with the expected JSON and accents; this is a short transport check,
 not proof of large-task reliability. [Global model](docs/api/global-model.md).
+
+The global completion route is now exempt from the ordinary 45-second HTTP
+deadline. The reproduced cutoff fix passed 24 area tests and a 74.6-second
+native isolated request while API, MCP and browser remained responsive. Both
+this fix and the Studio refresh are active, with disabled connections and manual
+stops preserved. The original 3.19-million-character input completed in 452.3
+seconds with all three amounts correct, but fenced its JSON in Markdown: it still
+fails the JSON-only contract and does not establish general semantic reliability.
 
 ## Current verification (9 October 2026)
 

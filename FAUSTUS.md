@@ -17,8 +17,9 @@ grande. No se ha demostrado fiabilidad semántica general.
 
 Los 52 archivos fijados del checkpoint QAD están verificados por SHA en Spark1
 y Spark2 (177,52 GB por nodo). QAD no se ha cargado ni seleccionado: faltan cabida
-y calidad reales. El modelo global sigue siendo NVFP4. Está pendiente el refresco
-de turnos MCP externos en una conversación de Studio ya abierta.
+y calidad reales. El modelo global sigue siendo NVFP4. Ya está activo el refresco
+de turnos MCP externos en una conversación de Studio abierta (#941), incluidas
+las carreras entre observador anterior, turno nuevo e historial atrasado.
 Recibos y continuación: `D:/LocalAI/research-inbox/sparks835/latest-status-path.txt`.
 
 El transporte OpenAI sin conversación del modelo global (#938) está activo:
@@ -26,6 +27,15 @@ fija endpoint, modelo y revisión de conexión, sin reintento ni alternativa.
 Una petición real de streaming a Sparks terminó con el JSON y los acentos
 esperados. Es una prueba corta de transporte; no acredita trabajos grandes.
 Contrato: `docs/api/global-model.md`.
+
+La ruta global conserva ahora las llamadas largas ante el timeout HTTP general
+de 45 segundos (#947). La omisión se reprodujo con la entrada original completa;
+el arreglo revisado pasó 24 pruebas del área y una petición nativa aislada de
+74,6 segundos, con API/MCP y navegador disponibles durante la espera. Está
+activado junto a #941, conservando las conexiones desactivadas y paradas manuales.
+La entrada original de 3,19 millones de caracteres terminó en 452,3 segundos
+con los tres importes correctos, pero rodeó el JSON de Markdown: sigue siendo
+fallo del contrato «SOLO JSON». No demuestra fiabilidad semántica general.
 
 **Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de
 Blender Lab 1.0.3 sobre Blender 5.2.2 LTS. El panel Faustus conecta la escena y
