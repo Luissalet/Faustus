@@ -109,6 +109,9 @@ this fix and the Studio refresh are active, with disabled connections and manual
 stops preserved. The original 3.19-million-character input completed in 452.3
 seconds with all three amounts correct, but fenced its JSON in Markdown: it still
 fails the JSON-only contract and does not establish general semantic reliability.
+A separate invocation with explicit native JSON mode returned the exact object
+and amounts in 43.5 seconds using the same full input. This is a scoped result
+after an identical-prefix request, not a cold timing or a replacement plain verdict.
 
 ## Current verification (9 October 2026)
 

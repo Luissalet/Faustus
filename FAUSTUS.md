@@ -36,6 +36,10 @@ activado junto a #941, conservando las conexiones desactivadas y paradas manuale
 La entrada original de 3,19 millones de caracteres terminó en 452,3 segundos
 con los tres importes correctos, pero rodeó el JSON de Markdown: sigue siendo
 fallo del contrato «SOLO JSON». No demuestra fiabilidad semántica general.
+Una invocación separada con el modo JSON nativo explícito devolvió el objeto
+exacto y los tres importes correctos en 43,5 segundos, con el mismo texto completo.
+Es una prueba acotada tras otra petición al mismo prefijo; no una medida en frío
+ni un cambio del fallo anterior.
 
 **Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de
 Blender Lab 1.0.3 sobre Blender 5.2.2 LTS. El panel Faustus conecta la escena y
