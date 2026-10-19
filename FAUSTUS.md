@@ -1,5 +1,24 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Fiabilidad de Sparks, 19-10-2026 (#835).** Está activa la corrección revisada
+que permite recuperar por HTTP/MCP las conversaciones del modo sin login;
+Studio conserva la respuesta al recargar. Los trabajos largos usan el servicio
+global de Sparks, sin alternativa de texto en el PC. El descargador nativo de
+pesos usa HTTP serial sin Xet; la memoria medida corresponde a los jobs probados.
+
+Workledger corregido pasó 17 casos independientes originales, 61 tests propios,
+6 pruebas CLI en Windows y las regresiones de mutación y enteros grandes.
+Docsite terminó 38 rondas y 67 llamadas a herramientas, pero la evaluación rechazó
+los enlaces del HTML y el navegador abrió un 404, pese a sus 45 tests verdes.
+Su corrección está en curso, aún sin aceptación. Siguen abiertos los fallos del
+almacén KV y de aritmética con entrada grande. Transporte completo y tests del
+programa generado no equivalen a fiabilidad semántica general.
+
+El checkpoint QAD está completo con SHA en Spark1 solamente; Spark2 sigue parcial
+y QAD nunca se ha cargado. El modelo global continúa siendo NVFP4. Sigue pendiente
+el refresco de turnos MCP externos en una conversación de Studio ya abierta.
+Recibos y continuación: `D:/LocalAI/research-inbox/sparks835/latest-status-path.txt`.
+
 **Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de
 Blender Lab 1.0.3 sobre Blender 5.2.2 LTS. El panel Faustus conecta la escena y
 abre el chat común. Hay 35 herramientas MCP: 26 oficiales, cuatro flujos vivos y

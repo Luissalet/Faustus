@@ -73,6 +73,27 @@ foreground preemption policy remains opt-in; explicit task Stop stays available.
 
 **Plugin marketplace:** in Connectors, download Hoards with one button or link existing folders. Required HoardLink downloads first when missing. Faustus ships the catalogue; source checkouts live in `plugins/<id>/repository/`, outside Git. Watch and Book remain independent. [Collaborator setup and cloning](docs/api/plugin-marketplace.md).
 
+## Sparks verification (19 October 2026)
+
+The active backend includes the reviewed single-user conversation ownership fix:
+HTTP and native MCP recover the same completed conversation, and Studio reload
+preserves its answer. Long tasks continue through the configured global Sparks
+service; no PC text-model fallback is used. The native weight downloader now uses
+serial HTTP without Xet; its measured memory result is scoped to the recorded jobs.
+
+A corrected Workledger project passed 17 original independent cases, 61 producer
+tests, six Windows CLI checks and the extra mutation/large-integer regressions.
+A separate Docsite delivery completed 38 rounds and 67 tool calls but failed the
+independent HTML-link checks and actual browser navigation despite 45 passing
+producer tests. Its correction is in progress; it has not been accepted. The KV
+store and large-input arithmetic failures remain unresolved. Transport completion
+and passing generated tests do not establish general semantic reliability.
+
+The QAD checkpoint is SHA-verified on Spark1 only; Spark2 remains partial and QAD
+has not been loaded. The current global model remains NVFP4. External MCP turns
+in an already-open Studio conversation still need the pending refresh fix.
+[Detailed evidence and continuation](D:/LocalAI/research-inbox/sparks835/latest-status-path.txt).
+
 ## Current verification (9 October 2026)
 
 Normal chat and agent turns continue partial responses after an interrupted
