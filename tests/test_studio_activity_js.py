@@ -77,6 +77,72 @@ def test_the_screen_captures_the_run_id_and_rejoins():
     assert studio.index("turnsFromHistory(sessionId") < studio.index("rejoinRef.current(sessionId)")
 
 
+def test_open_studio_follows_external_activity_without_reload():
+    """MCP can start a turn on a conversation already open in the browser.
+
+    The sidebar poll already saw the run (#941 repro): Thinking on, Send
+    disabled. The transcript stayed on the previous messages until a full
+    reload, because rejoin only ran from the history-load effect and
+    sessionId never changed. Studio must subscribe to the shared activity
+    snapshot and rejoin on idle→live for the open session — resume only,
+    no new Send/POST. Marks carry runId + session watermarks so a whole
+    turn between idle polls (or a new run id while still running) still
+    refreshes; external rejoin is adoptOnly (no outbox Send).
+    """
+    studio = (_SRC / "screens" / "Studio.tsx").read_text(encoding="utf-8")
+    assert "useChatActivity" in studio
+    assert "sessionActivity" in studio
+    assert "externalFollowPrevRef" in studio
+    assert "mayApplyExternalFollow" in studio
+    assert "externalFollowGateRef" in studio
+    # CAS5+ plans follow transitions (defer while a controller drains) instead of
+    # calling decideExternalFollowAction directly from the effect.
+    assert "planExternalFollowTransition" in studio
+    assert "externalFollowKick" in studio or "bumpExternalFollow" in studio
+    assert "openFollowMark" in studio
+    assert "adoptOnly: true" in studio
+    assert studio.count("rejoinRef.current(") >= 2
+    shell = (_SRC / "shell" / "activity.ts").read_text(encoding="utf-8")
+    assert "#941" in shell or "external MCP" in shell
+
+
+_EXT_FOLLOW_CHECK = _REPO / "studio" / "checks" / "external-follow.check.mjs"
+_EXT_ADOPT_CHECK = _REPO / "studio" / "checks" / "external-follow-adopt.check.mjs"
+
+
+@pytest.mark.skipif(not (_HAS_NODE and _HAS_ESBUILD), reason="node + node_modules/esbuild needed")
+def test_external_follow_generation_gate():
+    """Deferred idle→live must not overwrite a later live→idle refresh."""
+    proc = subprocess.run(
+        ["node", str(_EXT_FOLLOW_CHECK)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=str(_REPO),
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ALL OK" in proc.stdout
+    assert "FAIL" not in proc.stdout
+
+
+@pytest.mark.skipif(not (_HAS_NODE and _HAS_ESBUILD), reason="node + node_modules/esbuild needed")
+def test_external_follow_adopt_only_empty_resume():
+    """External empty resume must not reconcileOutbox→sendTurn (CAS2)."""
+    proc = subprocess.run(
+        ["node", str(_EXT_ADOPT_CHECK)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=str(_REPO),
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ALL OK" in proc.stdout
+    assert "FAIL" not in proc.stdout
+    assert "adoptOnly empty resume must sendTurn 0 times" in proc.stdout
+
+
 def test_an_answered_permission_is_not_a_question():
     """The gate's question is saved as the assistant message's whole text.
 

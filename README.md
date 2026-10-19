@@ -96,6 +96,11 @@ remain unproven. The current global model is NVFP4. External MCP turns in an
 already-open Studio conversation still need the pending refresh fix.
 [Detailed evidence and continuation](D:/LocalAI/research-inbox/sparks835/latest-status-path.txt).
 
+The configured global model also has a stateless OpenAI transport with descriptor
+pins for endpoint, model and connection revision. A real Sparks streaming call
+completed with the expected JSON and accents; this is a short transport check,
+not proof of large-task reliability. [Global model](docs/api/global-model.md).
+
 ## Current verification (9 October 2026)
 
 Normal chat and agent turns continue partial responses after an interrupted

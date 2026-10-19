@@ -88,7 +88,13 @@ import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
 import { createNote, deleteNote } from '../adapters/notes';
 import { getSummary } from '../adapters/board';
 import { startTour } from '../shell/store';
-import { refreshActivity } from '../shell/activity';
+import { refreshActivity, sessionActivity, useChatActivity } from '../shell/activity';
+import {
+  createExternalFollowGate,
+  mayApplyExternalFollow,
+  planExternalFollowTransition,
+  type ExternalFollowMark,
+} from './studio/externalFollow';
 import { TOURS, resetTours, seenTours } from '../lib/tours';
 import { getTheme as getMode, setTheme as setMode, type ThemeChoice } from '../shell/theme';
 import { applyThemeEvent, clearHighlights, emailReplyRoute, highlight, PANEL_ROUTES } from '../shell/uiEvents';
@@ -636,6 +642,21 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   const [preparingMessage, setPreparingMessage] = useState(false);
   const [ordinaryBusy, setBusy] = useState(false);
   const busy = groupId ? groupConversation.busy : ordinaryBusy;
+  /* Shared poller for live runs (sidebar dots). Studio itself must watch it
+     so an external MCP turn on the already-open conversation rejoins without
+     a reload — sessionId does not change, so the history effect alone misses it. */
+  const chatActivity = useChatActivity();
+  const openSessionLive = sessionActivity(chatActivity, groupId ? null : sessionId);
+  const openSessionRow = !groupId && sessionId ? sessions?.find((s) => s.id === sessionId) : undefined;
+  const openFollowMark = useMemo<ExternalFollowMark | null>(() => {
+    if (groupId || !sessionId) return null;
+    return {
+      live: openSessionLive != null,
+      runId: chatActivity.runs[sessionId] ?? chatActivity.details[sessionId]?.runId ?? '',
+      messageCount: openSessionRow?.messageCount ?? 0,
+      lastMessageAt: openSessionRow?.lastMessageAt ?? '',
+    };
+  }, [groupId, sessionId, openSessionLive, chatActivity, openSessionRow]);
   const display = useDisplay();
   const lang = useLang();
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -711,7 +732,19 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   /* Rejoining a live run is declared further down (it needs patchLast and
      the history loader); the effect that opens a session calls it through
      this ref so the dependency never has to travel up the file. */
-  const rejoinRef = useRef<(sid: string) => void>(() => undefined);
+  const rejoinRef = useRef<(sid: string, opts?: { adoptOnly?: boolean }) => void>(() => undefined);
+  /* Last follow mark for the open session. `undefined` means "first
+     observation after a session switch" — history-load owns that rejoin.
+     Idle→live / run-id change / session watermark growth is the MCP-external
+     case (#941). */
+  const externalFollowPrevRef = useRef<ExternalFollowMark | undefined>(undefined);
+  const externalFollowGateRef = useRef(createExternalFollowGate());
+  /* Bumped when a stream controller releases so a deferred external RID
+     transition (held while the prior observer drained) can join once. */
+  const [externalFollowKick, setExternalFollowKick] = useState(0);
+  const bumpExternalFollow = useCallback(() => {
+    setExternalFollowKick((n) => n + 1);
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1810,6 +1843,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           setBusy(false);
           panelDispatch({ type: 'turn-end' });
           void syncIds(sid);
+          bumpExternalFollow();
         }
         refreshSessions();
         refreshActivity();
@@ -1819,7 +1853,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         refreshStaleWires(sid);
       }
     },
-    [knobs, executionPicks, executionForSend, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires, say, groupId, groupConversation, sendToGroup],
+    [knobs, executionPicks, executionForSend, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires, say, groupId, groupConversation, sendToGroup, bumpExternalFollow],
   );
 
   /**
@@ -1910,23 +1944,42 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           runIdRef.current = null;
           setBusy(false);
           panelDispatch({ type: 'turn-end' });
+          bumpExternalFollow();
         }
         if (!controller.signal.aborted) {
           refreshSessions();
           refreshActivity();
+          // Gate deferred history so a slow predecessor GET cannot overwrite a
+          // newer external-follow terminal refresh (#941 CAS5/CAS6).
+          const gate = externalFollowGateRef.current;
+          const token = gate.begin();
           turnsFromHistory(sid)
             .then((result) => {
-              if (!controller.signal.aborted && visibleSession.current === sid && runEpoch.current === epoch && !controllerRef.current) setTurns(result.turns);
+              if (
+                !mayApplyExternalFollow({
+                  token,
+                  gate,
+                  visibleSession: visibleSession.current,
+                  sid,
+                  epoch,
+                  currentEpoch: runEpoch.current,
+                  hasController: Boolean(controllerRef.current),
+                })
+              ) {
+                return;
+              }
+              setTurns(result.turns);
             })
             .catch(() => undefined);
         }
       }
     },
-    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, panelDispatch, executionForSend, executionPicks, knobs.autonomyPreset],
+    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, panelDispatch, executionForSend, executionPicks, knobs.autonomyPreset, bumpExternalFollow],
   );
 
   const rejoin = useCallback(
-    async (sid: string) => {
+    async (sid: string, opts?: { adoptOnly?: boolean }) => {
+      const adoptOnly = opts?.adoptOnly === true;
       const epoch = runEpoch.current;
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -1965,30 +2018,155 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           controllerRef.current = null;
           runIdRef.current = null;
           setBusy(false);
+          bumpExternalFollow();
         }
         if (joined && !controller.signal.aborted) {
           panelDispatch({ type: 'turn-end' });
           refreshSessions();
           refreshActivity();
           // The turn is saved now: re-read it so ids, harness and metadata
-          // are the server's and not this screen's reconstruction.
+          // are the server's and not this screen's reconstruction. Gate the
+          // GET so a slow predecessor cannot overwrite a newer follow terminal.
+          const gate = externalFollowGateRef.current;
+          const token = gate.begin();
           turnsFromHistory(sid)
             .then((result) => {
-              if (!controller.signal.aborted && visibleSession.current === sid && runEpoch.current === epoch && !controllerRef.current) setTurns(result.turns);
+              if (
+                !mayApplyExternalFollow({
+                  token,
+                  gate,
+                  visibleSession: visibleSession.current,
+                  sid,
+                  epoch,
+                  currentEpoch: runEpoch.current,
+                  hasController: Boolean(controllerRef.current),
+                })
+              ) {
+                return;
+              }
+              setTurns(result.turns);
             })
             .catch(() => undefined);
         } else if (!controller.signal.aborted) {
-          // No live run for this session — the ordinary case. But an
-          // unacknowledged send (this tab reloaded, or the connection
-          // dropped, between the POST and its response) is still sitting in
-          // the outbox, and THAT is worth retrying with its own id.
-          void reconcileOutbox(sid);
+          if (adoptOnly) {
+            // External follow (#941): empty resume must not retry an unrelated
+            // outbox Send — only adopt/refresh the canonical history. Gate the
+            // deferred GET so a slow empty-resume cannot overwrite a newer
+            // follow refresh that already applied the terminal transcript.
+            const gate = externalFollowGateRef.current;
+            const token = gate.begin();
+            turnsFromHistory(sid)
+              .then((result) => {
+                if (
+                  !mayApplyExternalFollow({
+                    token,
+                    gate,
+                    visibleSession: visibleSession.current,
+                    sid,
+                    epoch,
+                    currentEpoch: runEpoch.current,
+                    hasController: Boolean(controllerRef.current),
+                  })
+                ) {
+                  return;
+                }
+                setTitle(result.name);
+                setTurns(result.turns);
+              })
+              .catch(() => undefined);
+          } else {
+            // No live run for this session — the ordinary case. But an
+            // unacknowledged send (this tab reloaded, or the connection
+            // dropped, between the POST and its response) is still sitting in
+            // the outbox, and THAT is worth retrying with its own id.
+            void reconcileOutbox(sid);
+          }
         }
       }
     },
-    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, reconcileOutbox],
+    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, reconcileOutbox, bumpExternalFollow],
   );
-  rejoinRef.current = (sid: string) => void rejoin(sid);
+  rejoinRef.current = (sid, opts) => void rejoin(sid, opts);
+
+  /* Reset transition memory when the open conversation changes so the first
+     activity sample does not look like an external start (history-load rejoin).
+     Also invalidate in-flight history callbacks from the previous session. */
+  useEffect(() => {
+    externalFollowPrevRef.current = undefined;
+    externalFollowGateRef.current.invalidate();
+  }, [sessionId, groupId]);
+
+  /* Keep the open session's list watermark fresh so a full external turn that
+     finishes between idle activity polls still refreshes history (messageCount /
+     lastMessageAt), without Send/POST. */
+  useEffect(() => {
+    if (groupId || !sessionId) return;
+    refreshSessions();
+  }, [groupId, sessionId, chatActivity, refreshSessions]);
+
+  /* Follow an external turn on the conversation already on screen.
+     resumeTurn with adoptOnly — never outbox Send. Generation token keeps
+     deferred history callbacks from racing.
+     While a prior controller still drains, do not consume the new mark into
+     prev — bumpExternalFollow re-runs this effect after release so the RID
+     transition joins once (pending-rid race from CAS4). */
+  useEffect(() => {
+    if (groupId || !sessionId || !openFollowMark) return;
+    const plan = planExternalFollowTransition({
+      prev: externalFollowPrevRef.current,
+      next: openFollowMark,
+      hasController: Boolean(controllerRef.current),
+    });
+    if (plan.kind === 'none') {
+      externalFollowPrevRef.current = plan.nextPrev;
+      return;
+    }
+    if (plan.kind === 'defer') {
+      // Keep prev so oldRID→newRID remains decidable after the observer ends.
+      externalFollowPrevRef.current = plan.nextPrev;
+      return;
+    }
+    externalFollowPrevRef.current = plan.nextPrev;
+    const action = plan.action;
+    const sid = sessionId;
+    const epoch = runEpoch.current;
+    const gate = externalFollowGateRef.current;
+    const token = gate.begin();
+    const stillMine = () =>
+      mayApplyExternalFollow({
+        token,
+        gate,
+        visibleSession: visibleSession.current,
+        sid,
+        epoch,
+        currentEpoch: runEpoch.current,
+        hasController: Boolean(controllerRef.current),
+      });
+    if (action === 'join') {
+      void turnsFromHistory(sid)
+        .then((result) => {
+          if (!stillMine()) return;
+          setTitle(result.name);
+          setTurns(result.turns);
+          pinnedRef.current = true;
+          refreshStaleWires(sid);
+          rejoinRef.current(sid, { adoptOnly: true });
+        })
+        .catch(() => {
+          if (stillMine()) rejoinRef.current(sid, { adoptOnly: true });
+        });
+      return;
+    }
+    // refresh: live→idle, cleared run id, or missed full turn via watermark.
+    void turnsFromHistory(sid)
+      .then((result) => {
+        if (!stillMine()) return;
+        setTitle(result.name);
+        setTurns(result.turns);
+        refreshStaleWires(sid);
+      })
+      .catch(() => undefined);
+  }, [groupId, sessionId, openFollowMark, turnsFromHistory, refreshStaleWires, externalFollowKick]);
 
   const ensureSession = useCallback(
     async (name: string): Promise<string | null> => {

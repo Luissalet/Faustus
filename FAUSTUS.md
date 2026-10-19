@@ -21,6 +21,12 @@ y calidad reales. El modelo global sigue siendo NVFP4. Está pendiente el refres
 de turnos MCP externos en una conversación de Studio ya abierta.
 Recibos y continuación: `D:/LocalAI/research-inbox/sparks835/latest-status-path.txt`.
 
+El transporte OpenAI sin conversación del modelo global (#938) está activo:
+fija endpoint, modelo y revisión de conexión, sin reintento ni alternativa.
+Una petición real de streaming a Sparks terminó con el JSON y los acentos
+esperados. Es una prueba corta de transporte; no acredita trabajos grandes.
+Contrato: `docs/api/global-model.md`.
+
 **Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de
 Blender Lab 1.0.3 sobre Blender 5.2.2 LTS. El panel Faustus conecta la escena y
 abre el chat común. Hay 35 herramientas MCP: 26 oficiales, cuatro flujos vivos y
