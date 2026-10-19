@@ -1949,9 +1949,26 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         if (!controller.signal.aborted) {
           refreshSessions();
           refreshActivity();
+          // Gate deferred history so a slow predecessor GET cannot overwrite a
+          // newer external-follow terminal refresh (#941 CAS5/CAS6).
+          const gate = externalFollowGateRef.current;
+          const token = gate.begin();
           turnsFromHistory(sid)
             .then((result) => {
-              if (!controller.signal.aborted && visibleSession.current === sid && runEpoch.current === epoch && !controllerRef.current) setTurns(result.turns);
+              if (
+                !mayApplyExternalFollow({
+                  token,
+                  gate,
+                  visibleSession: visibleSession.current,
+                  sid,
+                  epoch,
+                  currentEpoch: runEpoch.current,
+                  hasController: Boolean(controllerRef.current),
+                })
+              ) {
+                return;
+              }
+              setTurns(result.turns);
             })
             .catch(() => undefined);
         }
@@ -2008,10 +2025,26 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           refreshSessions();
           refreshActivity();
           // The turn is saved now: re-read it so ids, harness and metadata
-          // are the server's and not this screen's reconstruction.
+          // are the server's and not this screen's reconstruction. Gate the
+          // GET so a slow predecessor cannot overwrite a newer follow terminal.
+          const gate = externalFollowGateRef.current;
+          const token = gate.begin();
           turnsFromHistory(sid)
             .then((result) => {
-              if (!controller.signal.aborted && visibleSession.current === sid && runEpoch.current === epoch && !controllerRef.current) setTurns(result.turns);
+              if (
+                !mayApplyExternalFollow({
+                  token,
+                  gate,
+                  visibleSession: visibleSession.current,
+                  sid,
+                  epoch,
+                  currentEpoch: runEpoch.current,
+                  hasController: Boolean(controllerRef.current),
+                })
+              ) {
+                return;
+              }
+              setTurns(result.turns);
             })
             .catch(() => undefined);
         } else if (!controller.signal.aborted) {

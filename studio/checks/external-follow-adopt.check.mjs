@@ -89,6 +89,12 @@ assert(
 assert(followSlice.includes('externalFollowKick') || followSlice.includes('bumpExternalFollow'), 'follow effect can flush after controller release');
 assert(/hasController|defer/.test(followSlice), 'follow effect defers while a controller drains');
 
+// joined-rejoin final history write must use the generation gate (CAS6).
+assert(
+  /if\s*\(\s*joined[\s\S]*gate\.begin\(\)[\s\S]*mayApplyExternalFollow[\s\S]*setTurns/.test(rejoinText),
+  'joined rejoin final history applies only via generation gate',
+);
+
 function runEmptyResumeFinally(adoptOnly, spies) {
   if (adoptOnly) {
     spies.turnsFromHistory('sid-a');
