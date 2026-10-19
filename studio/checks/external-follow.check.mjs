@@ -1,4 +1,4 @@
-// Generation gate for Studio external-activity follow (#941).
+// Generation gate + follow-mark decisions for Studio external-activity follow (#941).
 // Run: node studio/checks/external-follow.check.mjs
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
@@ -16,7 +16,11 @@ await build({
   outfile: out,
   logLevel: 'silent',
 });
-const { createExternalFollowGate, mayApplyExternalFollow } = await import(pathToFileURL(out).href);
+const {
+  createExternalFollowGate,
+  mayApplyExternalFollow,
+  decideExternalFollowAction,
+} = await import(pathToFileURL(out).href);
 
 let failed = 0;
 const assert = (c, msg) => {
@@ -131,6 +135,51 @@ const assert = (c, msg) => {
       hasController: true,
     }),
     'local controller blocks apply (no double resume)',
+  );
+}
+
+const mark = (partial) => ({
+  live: false,
+  runId: '',
+  messageCount: 0,
+  lastMessageAt: '',
+  ...partial,
+});
+
+{
+  assert(decideExternalFollowAction(undefined, mark({ live: true, runId: 'r1' })) === null, 'first sample ignored');
+  assert(
+    decideExternalFollowAction(mark({ live: false }), mark({ live: true, runId: 'r1' })) === 'join',
+    'idle→live joins',
+  );
+  assert(
+    decideExternalFollowAction(mark({ live: true, runId: 'r1' }), mark({ live: true, runId: 'r2' })) === 'join',
+    'runId change while live joins',
+  );
+  assert(
+    decideExternalFollowAction(mark({ live: true, runId: 'r1' }), mark({ live: false, runId: '' })) === 'refresh',
+    'live→idle refreshes',
+  );
+  assert(
+    decideExternalFollowAction(
+      mark({ live: false, messageCount: 3, lastMessageAt: 't1' }),
+      mark({ live: false, messageCount: 5, lastMessageAt: 't2' }),
+    ) === 'refresh',
+    'missed full turn via watermark refreshes',
+  );
+  assert(
+    decideExternalFollowAction(
+      mark({ live: false, messageCount: 0, lastMessageAt: '' }),
+      mark({ live: false, messageCount: 5, lastMessageAt: 't2' }),
+    ) === null,
+    'sessions hydrate 0→N is not an external turn',
+  );
+  assert(
+    decideExternalFollowAction(
+      mark({ live: false, messageCount: 5, lastMessageAt: 't2' }),
+      mark({ live: false, messageCount: 5, lastMessageAt: 't2' }),
+    ) === null,
+    'stable idle mark is a no-op',
   );
 }
 

@@ -1,9 +1,13 @@
 /**
- * Generation gate for Studio's external-activity follow (#941).
+ * Generation gate and follow decisions for Studio's external-activity follow (#941).
  *
  * Idle→live and live→idle both kick off async history reads. Without a
  * token, a slow idle→live GET can finish after a later live→idle refresh and
  * overwrite the terminal transcript, then call resume on a finished turn.
+ *
+ * Binary live/idle alone also misses: a whole turn between idle polls, or a
+ * new run id while still "running". Marks carry run id + session watermarks
+ * from the native activity/session lists (no new Send/POST).
  */
 
 export type ExternalFollowGate = {
@@ -47,4 +51,45 @@ export function mayApplyExternalFollow(args: {
   if (args.currentEpoch !== args.epoch) return false;
   if (args.hasController) return false;
   return true;
+}
+
+/** Native snapshot used to decide join vs history refresh. */
+export type ExternalFollowMark = {
+  live: boolean;
+  runId: string;
+  messageCount: number;
+  lastMessageAt: string;
+};
+
+export type ExternalFollowAction = 'join' | 'refresh';
+
+/**
+ * Compare two marks. `undefined` prev = first sample after a session switch
+ * (history-load owns that rejoin). Returns null when nothing to do.
+ */
+export function decideExternalFollowAction(
+  prev: ExternalFollowMark | undefined,
+  next: ExternalFollowMark,
+): ExternalFollowAction | null {
+  if (prev === undefined) return null;
+  if (next.live && (!prev.live || (next.runId !== '' && next.runId !== prev.runId))) {
+    return 'join';
+  }
+  if (prev.live && !next.live) return 'refresh';
+  if (prev.runId !== '' && next.runId === '' && !next.live) return 'refresh';
+  // Whole external turn between two idle polls: session list grew.
+  // Require a prior stable watermark so the first sessions hydrate (0→N)
+  // does not look like an external turn (history-load already owns open).
+  const hadStable =
+    prev.messageCount > 0 || prev.lastMessageAt !== '' || prev.live || prev.runId !== '';
+  if (
+    hadStable &&
+    !prev.live &&
+    !next.live &&
+    (next.messageCount > prev.messageCount ||
+      (next.lastMessageAt !== '' && next.lastMessageAt !== prev.lastMessageAt))
+  ) {
+    return 'refresh';
+  }
+  return null;
 }
