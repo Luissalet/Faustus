@@ -164,6 +164,72 @@ def _background_result_message(rec):
     return untrusted_context_message("background job output", inject)
 
 
+def _session_project_loop_kwargs(sess) -> dict:
+    """Forward the same project workspace/harness the foreground chat resolves.
+
+    Background follow-ups used to call ``stream_agent_loop`` without workspace /
+    harness_options, so tools started in Faustus/data instead of the project
+    folder (#948). Resolve by session id + owner through ``services.projects`` —
+    the same service foreground uses — never via a fake request, a second
+    context builder, or a process-wide ``os.chdir``.
+    """
+    session_id = str(getattr(sess, "id", "") or "").strip()
+    owner = getattr(sess, "owner", None)
+    if not session_id:
+        return {}
+    try:
+        from services.projects import (
+            agent_options,
+            project_for_session,
+            work_roots_for_session,
+            workspace_for_session,
+        )
+        from src.tool_execution import vet_workspace
+    except Exception:  # noqa: BLE001 — follow-up must still run without projects
+        logger.debug("bg-followup: project resolvers unavailable", exc_info=True)
+        return {}
+    out: dict = {}
+    try:
+        workspace = vet_workspace(workspace_for_session(session_id, owner)) or ""
+        if workspace:
+            out["workspace"] = workspace
+        roots = work_roots_for_session(session_id, owner) or []
+        if roots:
+            out["workspace_roots"] = list(roots)
+        project = project_for_session(session_id, owner)
+        opts = agent_options(project)
+        if opts:
+            harness = {
+                "project_id": opts.get("project_id"),
+                "checkpoints": opts.get("checkpoints", True),
+                "run_tests": opts.get("run_tests", True),
+                "review_mode": bool(opts.get("review_mode")),
+                "trusted_agents": bool(opts.get("trusted_agents")),
+            }
+            if opts.get("test_command"):
+                harness["test_command"] = opts["test_command"]
+            if opts.get("review_model"):
+                harness["review_model"] = opts["review_model"]
+            if (
+                opts.get("trusted")
+                and workspace
+                and (project or {}).get("workspace")
+            ):
+                import os as _os
+
+                if _os.path.realpath(workspace) == _os.path.realpath(project["workspace"]):
+                    harness["trusted_workspace"] = _os.path.realpath(workspace)
+            out["harness_options"] = harness
+    except Exception:  # noqa: BLE001 — never block the follow-up on project lookup
+        logger.debug(
+            "bg-followup: project context unavailable for session %s",
+            session_id,
+            exc_info=True,
+        )
+        return {}
+    return out
+
+
 async def _drain_agent(sess, messages):
     """Run the agent loop headless against a session. Returns
     (final_prose, tool_events) — tool_events in the same shape the live chat
@@ -172,6 +238,7 @@ async def _drain_agent(sess, messages):
     full = ""
     tool_events = []
     round_num = 1
+    project_kwargs = _session_project_loop_kwargs(sess)
     async for chunk in stream_agent_loop(
         sess.endpoint_url, sess.model, messages,
         headers=getattr(sess, "headers", None),
@@ -179,6 +246,8 @@ async def _drain_agent(sess, messages):
         session_id=sess.id,
         max_rounds=_FOLLOWUP_MAX_ROUNDS,
         owner=getattr(sess, "owner", None),
+        workload="background",
+        **project_kwargs,
     ):
         if not chunk.startswith("data: "):
             continue
