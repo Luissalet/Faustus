@@ -8,11 +8,12 @@ pesos usa HTTP serial sin Xet; la memoria medida corresponde a los jobs probados
 
 Workledger corregido pasó 17 casos independientes originales, 61 tests propios,
 6 pruebas CLI en Windows y las regresiones de mutación y enteros grandes.
-Docsite terminó 38 rondas y 67 llamadas a herramientas, pero la evaluación rechazó
-los enlaces del HTML y el navegador abrió un 404, pese a sus 45 tests verdes.
-Su corrección está en curso, aún sin aceptación. Siguen abiertos los fallos del
-almacén KV y de aritmética con entrada grande. Transporte completo y tests del
-programa generado no equivalen a fiabilidad semántica general.
+La primera entrega de Docsite falló enlaces HTML y navegador pese a sus 45 tests
+verdes. Tras tres correcciones guiadas, la cuarta pasó los casos API/CLI, siete
+casos límite, 54 tests propios, nueve búsquedas reales en navegador, dos recorridos
+por teclado y la regresión de título sin encabezados. Es aceptación acotada tras
+corregir: siguen abiertos los fallos del almacén KV y de aritmética con entrada
+grande. No se ha demostrado fiabilidad semántica general.
 
 El checkpoint QAD está completo con SHA en Spark1 solamente; Spark2 sigue parcial
 y QAD nunca se ha cargado. El modelo global continúa siendo NVFP4. Sigue pendiente

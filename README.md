@@ -83,11 +83,12 @@ serial HTTP without Xet; its measured memory result is scoped to the recorded jo
 
 A corrected Workledger project passed 17 original independent cases, 61 producer
 tests, six Windows CLI checks and the extra mutation/large-integer regressions.
-A separate Docsite delivery completed 38 rounds and 67 tool calls but failed the
-independent HTML-link checks and actual browser navigation despite 45 passing
-producer tests. Its correction is in progress; it has not been accepted. The KV
-store and large-input arithmetic failures remain unresolved. Transport completion
-and passing generated tests do not establish general semantic reliability.
+The initial Docsite delivery failed independent HTML-link and browser checks
+although its 45 producer tests passed. After three guided corrections, the fourth
+delivery passed the independent API/CLI cases, seven edge cases, 54 producer tests,
+nine real browser queries, two keyboard navigations and the title-only regression.
+This is scoped acceptance after corrections; the KV store and large-input
+arithmetic failures remain unresolved. General semantic reliability is unproven.
 
 The QAD checkpoint is SHA-verified on Spark1 only; Spark2 remains partial and QAD
 has not been loaded. The current global model remains NVFP4. External MCP turns
