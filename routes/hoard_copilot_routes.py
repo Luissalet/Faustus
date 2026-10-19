@@ -11,6 +11,7 @@ from core.middleware import require_admin
 from core.models import ChatMessage
 from services import hoard_copilot as copilot
 from src.auth_helpers import storage_owner_for_request
+from src.owner_identity import single_user_mode
 
 
 def setup_hoard_copilot_routes(session_manager):
@@ -24,7 +25,7 @@ def setup_hoard_copilot_routes(session_manager):
         from core.database import Session as DbSession, SessionLocal
         with SessionLocal() as db:
             row = db.query(DbSession).filter(DbSession.id == sid).first()
-            if row is None or (row.owner and who and row.owner != who):
+            if row is None or (not single_user_mode() and row.owner and who and row.owner != who):
                 raise HTTPException(404, "Conversation not found")
         return session_manager.get_session(sid)
 
