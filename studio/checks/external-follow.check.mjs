@@ -20,6 +20,7 @@ const {
   createExternalFollowGate,
   mayApplyExternalFollow,
   decideExternalFollowAction,
+  planExternalFollowTransition,
 } = await import(pathToFileURL(out).href);
 
 let failed = 0;
@@ -180,6 +181,37 @@ const mark = (partial) => ({
       mark({ live: false, messageCount: 5, lastMessageAt: 't2' }),
     ) === null,
     'stable idle mark is a no-op',
+  );
+}
+
+{
+  // Pending-RID race (CAS4 witness): oldRID live → newRID live while a
+  // controller still drains must NOT consume prev; after release, same marks
+  // still plan a single join.
+  const oldRid = mark({ live: true, runId: 'old', messageCount: 2, lastMessageAt: 't1' });
+  const newRid = mark({ live: true, runId: 'new', messageCount: 3, lastMessageAt: 't2' });
+  const deferred = planExternalFollowTransition({
+    prev: oldRid,
+    next: newRid,
+    hasController: true,
+  });
+  assert(deferred.kind === 'defer', 'controller defers join');
+  assert(deferred.kind === 'defer' && deferred.nextPrev === oldRid, 'defer keeps prev at oldRID');
+  assert(deferred.kind === 'defer' && deferred.action === 'join', 'defer preserves join action');
+  const afterRelease = planExternalFollowTransition({
+    prev: deferred.kind === 'defer' ? deferred.nextPrev : undefined,
+    next: newRid,
+    hasController: false,
+  });
+  assert(afterRelease.kind === 'run' && afterRelease.action === 'join', 'after release joins newRID once');
+  const consumedWrong = planExternalFollowTransition({
+    prev: newRid,
+    next: newRid,
+    hasController: false,
+  });
+  assert(
+    consumedWrong.kind === 'none',
+    'consuming prev early would leave a stable no-op (the CAS4 bug)',
   );
 }
 

@@ -93,3 +93,28 @@ export function decideExternalFollowAction(
   }
   return null;
 }
+
+export type ExternalFollowPlan =
+  | { kind: 'none'; nextPrev: ExternalFollowMark }
+  | { kind: 'defer'; nextPrev: ExternalFollowMark | undefined; pending: ExternalFollowMark; action: ExternalFollowAction }
+  | { kind: 'run'; nextPrev: ExternalFollowMark; action: ExternalFollowAction };
+
+/**
+ * Plan a follow transition without consuming `prev` while a legitimate
+ * controller is still draining. Defer keeps the old→new RID edge intact so a
+ * later flush (controller release / activity tick) can join once.
+ */
+export function planExternalFollowTransition(args: {
+  prev: ExternalFollowMark | undefined;
+  next: ExternalFollowMark;
+  hasController: boolean;
+}): ExternalFollowPlan {
+  const action = decideExternalFollowAction(args.prev, args.next);
+  if (!action) {
+    return { kind: 'none', nextPrev: args.next };
+  }
+  if (args.hasController) {
+    return { kind: 'defer', nextPrev: args.prev, pending: args.next, action };
+  }
+  return { kind: 'run', nextPrev: args.next, action };
+}

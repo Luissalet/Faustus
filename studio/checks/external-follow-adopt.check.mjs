@@ -82,7 +82,12 @@ assert(
   rejoinCalls.every((c) => /adoptOnly\s*:\s*true/.test(c)),
   `every external rejoin is adoptOnly (got ${rejoinCalls.join(' | ')})`,
 );
-assert(followSlice.includes('decideExternalFollowAction'), 'follow effect uses mark decisions');
+assert(
+  followSlice.includes('planExternalFollowTransition') || followSlice.includes('decideExternalFollowAction'),
+  'follow effect uses mark decisions',
+);
+assert(followSlice.includes('externalFollowKick') || followSlice.includes('bumpExternalFollow'), 'follow effect can flush after controller release');
+assert(/hasController|defer/.test(followSlice), 'follow effect defers while a controller drains');
 
 function runEmptyResumeFinally(adoptOnly, spies) {
   if (adoptOnly) {

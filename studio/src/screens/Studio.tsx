@@ -91,8 +91,8 @@ import { startTour } from '../shell/store';
 import { refreshActivity, sessionActivity, useChatActivity } from '../shell/activity';
 import {
   createExternalFollowGate,
-  decideExternalFollowAction,
   mayApplyExternalFollow,
+  planExternalFollowTransition,
   type ExternalFollowMark,
 } from './studio/externalFollow';
 import { TOURS, resetTours, seenTours } from '../lib/tours';
@@ -739,6 +739,12 @@ export function StudioScreen({ groupContext }: { groupContext?: {
      case (#941). */
   const externalFollowPrevRef = useRef<ExternalFollowMark | undefined>(undefined);
   const externalFollowGateRef = useRef(createExternalFollowGate());
+  /* Bumped when a stream controller releases so a deferred external RID
+     transition (held while the prior observer drained) can join once. */
+  const [externalFollowKick, setExternalFollowKick] = useState(0);
+  const bumpExternalFollow = useCallback(() => {
+    setExternalFollowKick((n) => n + 1);
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -1837,6 +1843,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           setBusy(false);
           panelDispatch({ type: 'turn-end' });
           void syncIds(sid);
+          bumpExternalFollow();
         }
         refreshSessions();
         refreshActivity();
@@ -1846,7 +1853,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         refreshStaleWires(sid);
       }
     },
-    [knobs, executionPicks, executionForSend, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires, say, groupId, groupConversation, sendToGroup],
+    [knobs, executionPicks, executionForSend, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires, say, groupId, groupConversation, sendToGroup, bumpExternalFollow],
   );
 
   /**
@@ -1937,6 +1944,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           runIdRef.current = null;
           setBusy(false);
           panelDispatch({ type: 'turn-end' });
+          bumpExternalFollow();
         }
         if (!controller.signal.aborted) {
           refreshSessions();
@@ -1949,7 +1957,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         }
       }
     },
-    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, panelDispatch, executionForSend, executionPicks, knobs.autonomyPreset],
+    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, panelDispatch, executionForSend, executionPicks, knobs.autonomyPreset, bumpExternalFollow],
   );
 
   const rejoin = useCallback(
@@ -1993,6 +2001,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           controllerRef.current = null;
           runIdRef.current = null;
           setBusy(false);
+          bumpExternalFollow();
         }
         if (joined && !controller.signal.aborted) {
           panelDispatch({ type: 'turn-end' });
@@ -2042,7 +2051,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         }
       }
     },
-    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, reconcileOutbox],
+    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, reconcileOutbox, bumpExternalFollow],
   );
   rejoinRef.current = (sid, opts) => void rejoin(sid, opts);
 
@@ -2064,14 +2073,28 @@ export function StudioScreen({ groupContext }: { groupContext?: {
 
   /* Follow an external turn on the conversation already on screen.
      resumeTurn with adoptOnly — never outbox Send. Generation token keeps
-     deferred history callbacks from racing. */
+     deferred history callbacks from racing.
+     While a prior controller still drains, do not consume the new mark into
+     prev — bumpExternalFollow re-runs this effect after release so the RID
+     transition joins once (pending-rid race from CAS4). */
   useEffect(() => {
     if (groupId || !sessionId || !openFollowMark) return;
-    const prev = externalFollowPrevRef.current;
-    externalFollowPrevRef.current = openFollowMark;
-    const action = decideExternalFollowAction(prev, openFollowMark);
-    if (!action) return;
-    if (controllerRef.current) return;
+    const plan = planExternalFollowTransition({
+      prev: externalFollowPrevRef.current,
+      next: openFollowMark,
+      hasController: Boolean(controllerRef.current),
+    });
+    if (plan.kind === 'none') {
+      externalFollowPrevRef.current = plan.nextPrev;
+      return;
+    }
+    if (plan.kind === 'defer') {
+      // Keep prev so oldRID→newRID remains decidable after the observer ends.
+      externalFollowPrevRef.current = plan.nextPrev;
+      return;
+    }
+    externalFollowPrevRef.current = plan.nextPrev;
+    const action = plan.action;
     const sid = sessionId;
     const epoch = runEpoch.current;
     const gate = externalFollowGateRef.current;
@@ -2110,7 +2133,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         refreshStaleWires(sid);
       })
       .catch(() => undefined);
-  }, [groupId, sessionId, openFollowMark, turnsFromHistory, refreshStaleWires]);
+  }, [groupId, sessionId, openFollowMark, turnsFromHistory, refreshStaleWires, externalFollowKick]);
 
   const ensureSession = useCallback(
     async (name: string): Promise<string | null> => {
