@@ -95,7 +95,10 @@ def test_open_studio_follows_external_activity_without_reload():
     assert "externalFollowPrevRef" in studio
     assert "mayApplyExternalFollow" in studio
     assert "externalFollowGateRef" in studio
-    assert "decideExternalFollowAction" in studio
+    # CAS5+ plans follow transitions (defer while a controller drains) instead of
+    # calling decideExternalFollowAction directly from the effect.
+    assert "planExternalFollowTransition" in studio
+    assert "externalFollowKick" in studio or "bumpExternalFollow" in studio
     assert "openFollowMark" in studio
     assert "adoptOnly: true" in studio
     assert studio.count("rejoinRef.current(") >= 2
