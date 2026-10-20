@@ -210,7 +210,7 @@ failed attempt remains recorded. Only four checker arguments were normalized to
 strings after independent review, with every semantic assertion unchanged.
 The 49 producer tests and README API examples also passed. Additional targeted
 malformed inputs nested 1,500 levels deep raised RecursionError instead of the
-required ValueError. Those failures remain unresolved; they limit acceptance.
+required ValueError. That original delivery remains failed for these inputs.
 Studio and native MCP recovered the same terminal run, retaining UNVERIFIED.
 
 Actual response metadata also identified one internal critic call whose entire
@@ -262,8 +262,16 @@ A fresh notebook web project completed 39 rounds and 64 tool calls. Independent
 acceptance passed 52 API cases and seven browser/delivery cases, including 1,001
 notes and a body larger than 1 MiB. Two UI cases failed: a valid unbroken title
 overflowed the mobile viewport, and a failed import retained an earlier success
-message. Its 28 producer tests passed with resource warnings. The source remains
-unchanged; those failures are retained and general reliability remains unproven.
+message. Its 28 producer tests passed with resource warnings. That original source
+and its failed receipts remain preserved.
+
+After directed corrections, the notebook passed all 61 original independent
+API/browser checks and its 28 producer tests without the earlier resource
+warnings. The browser exercised 1,001 notes, a body larger than 1 MiB, exact CRLF
+preservation, conflicting edits, invalid imports and the mobile title case.
+The corrected Pipeline passed the same 45 external cases, both depth-1,500
+regressions and its README examples; its 51 producer tests had no recorded
+resource warnings. These are corrected deliveries, not consecutive fresh passes.
 
 Reviewed UI-check repairs 1072/1074 preserve the public root and HTML entry and
 extract JavaScript references only in the appropriate HTML/script context. Repair
@@ -275,6 +283,21 @@ removed after process termination. Earlier static-preview API404 failures and
 Playwright pending-task/TargetClosed warnings remain recorded. This verifies the
 checker component, not the two failed UI cases or the installed running server.
 See [project startup for UI checks](docs/api/ui-smoke.md).
+
+The three UI-check repairs are now active and were also exercised by a normal
+native turn: the model supplied the notebook startup declaration and the normal
+harness ran Playwright against that backend, checking one page and two assets
+with zero console errors. Its temporary database directory and listener were
+gone afterward. HTTP/MCP recovered the same completed run and Studio retained
+its partial-coverage result; the smoke does not override missing evidence.
+
+An older model-written test command failed before terminating its nested server.
+The surviving process was identified from the original command, creation time
+and listener, then stopped separately. A later model answer incorrectly called
+it a harness process. Process-lifecycle handling and the failed execution's
+incorrect no-effect metadata remain under investigation; neither is resolved
+by this scoped UI success. General reliability remains unproven. Evidence:
+`research-inbox/sparks835/runtime-audit/resume-20261020/`.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.

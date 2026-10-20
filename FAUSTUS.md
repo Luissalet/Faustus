@@ -158,7 +158,7 @@ pase del evaluador añadió un requisitoPathLike no exigido: quedó registrado,
 se corrigieron sólo4argumentos en2calls tras revisión independiente y se
 preservaron todas las aserciones semánticas. La cobertura dirigida posterior
 encontró2fallos: entradas inválidas de profundidad1500 causanRecursionError en
-lugar deValueError. No se editó el programa ni se le envió esa corrección aún.
+lugar deValueError. Esa entrega original se conserva como fallida.
 Studio conservaUNVERIFIED/6herramientas fallidas, distinto de aceptaciónexterna.
 
 La metadata real del crítico de ese turno prueba un grupo con salida1200 y
@@ -189,8 +189,15 @@ Un cuaderno web nuevo terminó39rondas64herramientas. La aceptación externa pas
 52casosAPI y7casos de navegador/entrega, con1001notas y un cuerpo superior a1MiB.
 Dos casosUI fallaron: título válido sin espacios que desborda390px y mensaje de
 éxito anterior visible tras importar un archivo inválido. Sus28tests pasaron con
-ResourceWarning de descriptores. La fuente sigue intacta y se conservan los fallos;
-no acredita fiabilidad general.
+ResourceWarning de descriptores. Esa fuente original y sus fallos se conservan.
+
+Tras correcciones dirigidas, el cuaderno pasó los61casos externos originales
+API/navegador y sus28tests sin los avisos de recursos anteriores. El navegador
+ejercitó1001notas, cuerpo superior a1MiB, CRLF exactos, conflictos de edición,
+importación inválida y título largo en móvil. Pipeline corregido pasó los mismos
+45casos externos, las dos regresiones de profundidad1500, ejemplosREADME y sus
+51tests sin avisos de recursos registrados. Son entregas corregidas, no una serie
+de trabajos nuevos sin ayuda.
 
 Las correcciones revisadas1072/1074 conservan raíz pública/entradaHTML y extraen
 referenciasJS en su contextoHTML/script correcto.1075 permite declarar el servidor
@@ -201,6 +208,21 @@ errores de consola y temporal retirado tras terminar el proceso. Se conservan lo
 fallos anteriores API404 del preview estático y los avisos Playwright de tarea
 pendiente/TargetClosed. Esto verifica el componente evaluador, no los dos casosUI
 fallidos ni la versión del servidor instalado en ejecución. Guía: docs/api/ui-smoke.md.
+
+Las tres correccionesUI están ahora activas y se probaron también en un turno
+nativo normal: el modelo declaró el arranque del cuaderno y el harness abrió
+su backend real con Playwright, una página y dos recursos, cero errores de
+consola. Al terminar no quedaron su puerto ni su directorio de datos temporal.
+HTTP/MCP recuperaron el mismo turno terminado; Studio conservó su resultado
+parcial de cobertura, distinto del smoke aprobado.
+
+Una orden de prueba antigua del modelo había fallado antes de detener su servidor
+hijo. Se contrastaron comando original, creación y puerto para cerrar únicamente
+ese proceso. La atribución posterior del modelo al harness era incorrecta.
+La gestión de esos hijos y la metadata errónea de ausencia de efectos de la
+ejecución fallida siguen en investigación; el éxitoUI acotado no las resuelve.
+La fiabilidad general sigue sin demostrar. Evidencia:
+research-inbox/sparks835/runtime-audit/resume-20261020.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en
