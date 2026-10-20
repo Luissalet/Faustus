@@ -95,11 +95,31 @@ y el skip-link anunciado no tiene destino. Entrega incompleta; bytes y oráculos
 intactos. Studio llegó a terminado automáticamente sin recargar. El «100 %» del
 comprobador de cambios no es cobertura completa ni elimina esos fallos.
 
-La investigación de review detectó reutilización de aprobación antigua y un tope
-de dos revisiones; #1010 sigue en desarrollo. Un fixture sintético confundió
-eventos de mutación con rutas únicas: se rectificó antes de cambiar producto y
-se conservó el error. Los nuevos casos usan TurnLedger real. No se ha cambiado
-la política ni configuración off/same como parte de esta corrección.
+La corrección revisada #1010 está activa. Un resultado tardío no aprueba una
+época de fuente posterior y desaparece el tope separado de dos revisiones.
+El intento se registra antes de esperar el resultado: un error no repite la
+revisión de la misma época de fuente. Se conservan política,
+off/same, presupuestos explícitos y Stop. La revisión independiente pasó31casos
+y402tests del área; tres fallos previos se reprodujeron por separado. Un fixture
+sintético confundió eventos de mutación con rutas únicas: se rectificó antes de
+cambiar producto y el error permanece en el historial.
+
+También está activa #1029, revisada: cada grupo parcial recibe el inventario
+completo de archivos cambiados y su alcance explícito. Las respuestas vacías o
+inválidas conservan error y cobertura de archivos fallidos tras compactar;
+intentos y revisiones correctas son distintos. El revisor pasó11casos congelados
+y326tests del área, con dos exclusiones comprobadas contra la base. Son pruebas
+de ensamblado y errores, no de precisión semántica del modelo.
+
+Otro Docsite fresco con crítico nativo terminó41rondas/68herramientas, pero falló
+la aceptación independiente: el índice general sobrescribió el index.html
+generado para index.md y la búsqueda de portada no
+cargaba su índice. Sus34tests propios,22comprobaciones extra y búsquedas en páginas
+anidadas pasaron. El corpus separado de volumen pasó1001documentos,3003encabezados
+y enlaces y14consultas en111,435s; no borra los fallos funcionales. El crítico
+infirió ausencias desde un grupo parcial y tuvo al menos una respuesta vacía;
+la causa de esa respuesta vacía sigue sin demostrar. Se evalúa un proyecto
+nuevo sin feedback tras1029.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en

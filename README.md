@@ -164,11 +164,32 @@ additional generation. Five other descriptor fields, settings, all 37 disabled
 MCP connections, 24 manual stops and the Hub/model process identities remained.
 This is minimum image-capability evidence, not general visual comprehension.
 
-Research into review freshness found stale approval and a two-review scheduling
-cap; correction 1010 is still in progress. A synthetic research fixture wrongly
-treated mutation events as unique paths. That premise was corrected before code
-changes; real-ledger cases now distinguish ordinary repeated edits from known MCP
-effects. Review policy and configuration have not been changed by that work.
+The reviewed review-freshness correction 1010 is active. A late result cannot
+approve a newer source epoch, and reviews no longer have a separate two-run
+scheduling cap. A review attempt is recorded before awaiting its result, so an
+error does not repeatedly review the same source epoch. Policy, off/same selection,
+explicit repair budgets and Stop remain unchanged. Independent review passed 31
+cases and 402 area tests, with three pre-existing failures reproduced separately.
+A synthetic research fixture had wrongly treated mutation events as unique paths;
+that premise was corrected before code changes and remains in the history.
+
+The reviewed grouped-review correction 1029 is also active. Each partial group
+receives the complete changed-file inventory and explicit scope instructions.
+Empty or invalid replies retain errors and failed-file coverage after compaction;
+attempts and successful reviews are distinct. Independent review passed 11 frozen
+cases and 326 area tests, with two explicit exclusions checked against the base.
+This validates assembly and error reporting, not the model's semantic accuracy.
+
+A separate fresh Docsite run with the native critic completed 41 rounds and 68
+tools but failed independent acceptance: the generated index.html for index.md
+was overwritten by the general index, and
+the landing-page search did not load its index correctly. Its 34 producer tests,
+22 extra checks and nested-page browser searches passed. A separate volume corpus
+passed with 1,001 documents, 3,003 headings/links and 14 queries in 111.435 seconds;
+that result does not erase the functional failures. The critic also inferred
+missing files from a partial group and had at least one empty response; the cause
+of that empty response
+remains unproven. A new unassisted project is being evaluated after 1029.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
