@@ -118,8 +118,23 @@ cargaba su índice. Sus34tests propios,22comprobaciones extra y búsquedas en p�
 anidadas pasaron. El corpus separado de volumen pasó1001documentos,3003encabezados
 y enlaces y14consultas en111,435s; no borra los fallos funcionales. El crítico
 infirió ausencias desde un grupo parcial y tuvo al menos una respuesta vacía;
-la causa de esa respuesta vacía sigue sin demostrar. Se evalúa un proyecto
-nuevo sin feedback tras1029.
+la causa de esa respuesta vacía sigue sin demostrar.
+
+Un proyecto posterior nuevo, sin feedback de oráculos, pasó el checker original
+API/CLI, siete casos límite,35tests propios,22comprobaciones extra y el testigo de
+enlaces en párrafos separados. En navegador real, nueve búsquedas en portada y
+otras nueve en una página anidada coincidieron con la API; el teclado abrió el
+resultado correcto. Pasaron ejemplosREADME, errorUnicodeJSON y ocho archivos
+servidos porHTTP. El corpus separado de1001documentos pasó3003encabezados,
+3003enlaces y14consultas en82,127s. Fuentes y oráculos intactos. Studio llegó a
+terminal sin recargar, conservando review:error yUNVERIFIED: un grupo del crítico
+siguió incompleto. Es aceptación del contrato ejercitado, no fiabilidad universal.
+
+La corrección revisada #1036 reconoce también `reasoning` de vLLM en la ruta no
+streaming mediante el fallback/filtro existente, conservando la prioridad del
+contenido final. La revisión independiente pasó90casos frente a39fallos de base.
+El área obtuvo191PASS+6subtests; el wrapper de guardas conservóFAIL por un Git
+denegado reproducido igual en base y revisión. No prueba la causa del vacío anterior.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en

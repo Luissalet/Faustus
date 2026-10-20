@@ -189,7 +189,24 @@ passed with 1,001 documents, 3,003 headings/links and 14 queries in 111.435 seco
 that result does not erase the functional failures. The critic also inferred
 missing files from a partial group and had at least one empty response; the cause
 of that empty response
-remains unproven. A new unassisted project is being evaluated after 1029.
+remains unproven.
+
+A separate unassisted project after 1029 passed the original independent API/CLI
+checker, seven edge cases, 35 producer tests, 22 extra checks and the two-paragraph
+link witness. Nine searches on both root and nested pages matched the API in the
+real browser; keyboard navigation opened the intended result. Its README examples,
+Unicode error JSON and eight served files also passed. A separate 1,001-document
+corpus passed 3,003 headings, 3,003 links and 14 queries in 82.127 seconds. Sources
+and oracles stayed unchanged. Studio reached terminal without reload and retained
+review:error and UNVERIFIED; one critic group remained incomplete. These results
+support this delivery's exercised contract, not universal semantic reliability.
+
+The reviewed non-stream compatibility fix 1036 also accepts vLLM's `reasoning`
+field through the existing legacy fallback/filter, preserving final-content
+precedence. Independent checks passed 90 cases against 39 failing base cases.
+Its area had 191 passes and six subtests; the guard wrapper retained a failed
+status for a denied Git call reproduced identically on base and revision. This
+does not establish why the earlier critic returned an empty response.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
