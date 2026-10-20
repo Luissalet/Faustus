@@ -752,7 +752,9 @@ async def _call_reviewer(
             llm_call_async(
                 url=endpoint_url, model=reviewer,
                 messages=[{"role": "user", "content": _prompt(user_text, diff, files, tests, all_changed_files)}],
-                headers=headers, temperature=0.1, max_tokens=1200, timeout=int(timeout),
+                # Delegate output length to the configured service/model. A short
+                # reviewer-only cap can be exhausted by reasoning before the answer.
+                headers=headers, temperature=0.1, max_tokens=0, timeout=int(timeout),
                 max_retries=1, workload=workload or "foreground",
                 response_schema=REVIEW_SCHEMA,
                 _response_observer=observe_response,

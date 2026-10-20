@@ -61,7 +61,7 @@ class RequestContractTests(unittest.TestCase):
         self.assertEqual(calls[0]["model"], "reviewer")
         self.assertEqual([m["role"] for m in calls[0]["messages"]], ["user"])
         self.assertEqual(calls[0]["max_retries"], 1)
-        self.assertEqual(calls[0]["max_tokens"], 1200)
+        self.assertEqual(calls[0]["max_tokens"], 0)
         self.assertEqual(result["verdict"], "issues")
         self.assertTrue(result["findings"][0]["grounded"])
         self.assertEqual(result["findings"][0]["severity"], "error")

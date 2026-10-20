@@ -342,7 +342,7 @@ async def test_failed_model_review_is_error_and_retains_prior_findings(
         assert result["findings"] == []
     assert len(calls) == 1
     assert calls[0]["max_retries"] == 1 and calls[0]["temperature"] == 0.1
-    assert calls[0]["max_tokens"] == 1200 and calls[0]["workload"] == "foreground"
+    assert calls[0]["max_tokens"] == 0 and calls[0]["workload"] == "foreground"
 
 
 @pytest.mark.parametrize("issues", [False, True])
