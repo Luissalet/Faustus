@@ -12,7 +12,7 @@ harness had no mechanism that could have found it first.
 
 This module is that mechanism, and it does not trust the model to run it:
 given a workspace and the files a turn mutated, it decides on its own
-whether a web app is in play, starts the app's own server (never the model's
+whether a web app is in play, starts its detected server or a static preview (never the model's
 foreground turn — this always runs detached and is always killed in
 `finally`), fetches the pages a Flask/FastAPI/static app would actually
 serve, and — the check that would have caught the real bug — re-fetches
@@ -49,7 +49,7 @@ import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin
+from urllib.parse import quote, unquote, urljoin, urlsplit
 
 from core.platform_compat import IS_WINDOWS
 from src.native_env import native_host_environment
@@ -172,6 +172,37 @@ def _local_imports_source(workspace: str, src: str, cap: int = 6) -> str:
     return "\n".join(out)
 
 
+def _static_server_spec(workspace: str, index_dir: str) -> Dict[str, Any]:
+    """Keep the HTML entry separate from its public root. Prefer the nearest
+    ancestor that resolves the most local asset references, within workspace.
+    Missing resources are still crawled and fail their usual HTTP/MIME checks;
+    this only selects a mount, never certifies a dynamic backend.
+    """
+    workspace = os.path.abspath(workspace)
+    root = os.path.abspath(index_dir)
+    index = os.path.join(root, "index.html")
+    refs = _extract_asset_refs(_read_text(index))
+    best_root, best_entry, best_score = root, "/", -1
+    while os.path.commonpath([workspace, root]) == workspace:
+        entry = "/" if root == os.path.dirname(index) else "/" + quote(
+            os.path.relpath(index, root).replace(os.sep, "/"), safe="/"
+        )
+        score = 0
+        for ref in refs:
+            target = urlsplit(urljoin("http://ui-smoke.invalid" + entry, ref))
+            if target.scheme != "http" or target.netloc != "ui-smoke.invalid":
+                continue
+            path = os.path.abspath(os.path.join(root, unquote(target.path).lstrip("/").replace("/", os.sep)))
+            if os.path.commonpath([root, path]) == root and os.path.isfile(path):
+                score += 1
+        if score > best_score:
+            best_root, best_entry, best_score = root, entry, score
+        if root == workspace:
+            break
+        root = os.path.dirname(root)
+    return {"kind": "static", "dir": best_root, "entry_path": best_entry, "source": ""}
+
+
 def detect_server(workspace: str) -> Optional[Dict[str, Any]]:
     """First match wins: Flask app.py, FastAPI (uvicorn) app.py, an npm
     start/dev script, or a static `index.html` served with `http.server`.
@@ -211,7 +242,7 @@ def detect_server(workspace: str) -> Optional[Dict[str, Any]]:
 
     static_dir = _find_index_html_dir(workspace)
     if static_dir:
-        return {"kind": "static", "dir": static_dir, "source": ""}
+        return _static_server_spec(workspace, static_dir)
 
     return None
 
@@ -404,7 +435,7 @@ def _check_asset(url: str) -> Dict[str, Any]:
 
 
 def _crawl(spec: Dict[str, Any], base_url: str, deadline: float) -> Tuple[List[Dict], List[Dict], List[str]]:
-    page_paths = ["/"]
+    page_paths = [spec.get("entry_path") or "/"]
     for m in _ROUTE_RE.finditer(spec.get("source") or ""):
         route = m.group(1)
         if route.startswith("/") and route not in page_paths and len(page_paths) < MAX_PAGES:
@@ -887,7 +918,7 @@ def _perf_warnings(perf: Dict[str, Any]) -> List[str]:
 
 
 def _playwright_audit(base_url: str, timeout_s: float) -> Dict[str, Any]:
-    """Load `base_url/` headless once and gather everything the Playwright
+    """Load the supplied page URL headless once and gather everything the Playwright
     pass produces: console errors / uncaught exceptions / 4xx-5xx network
     responses, the a11y audit (`_A11Y_JS`), and the perf snapshot
     (`_PERF_JS`). Raises on any Playwright/driver problem — the caller
@@ -910,7 +941,7 @@ def _playwright_audit(base_url: str, timeout_s: float) -> Dict[str, Any]:
             page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
             page.on("pageerror", lambda exc: errors.append(f"uncaught exception: {exc}"))
             page.on("response", lambda resp: errors.append(f"{resp.status} {resp.url}") if resp.status >= 400 else None)
-            page.goto(base_url + "/", timeout=int(max(1.0, timeout_s) * 1000), wait_until="load")
+            page.goto(base_url, timeout=int(max(1.0, timeout_s) * 1000), wait_until="load")
             page.wait_for_timeout(500)
             try:
                 a11y_raw = page.evaluate(_A11Y_JS)
@@ -952,12 +983,17 @@ def _report(*, ran: bool, ok: bool = True, summary: str = "", server_cmd: Option
             playwright_used: bool = False, a11y: Optional[Dict[str, Any]] = None,
             perf: Optional[Dict[str, Any]] = None,
             quality_warnings: Optional[List[str]] = None,
-            design: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            design: Optional[Dict[str, Any]] = None,
+            server_kind: Optional[str] = None, server_cwd: Optional[str] = None,
+            entry_path: Optional[str] = None) -> Dict[str, Any]:
     return {
         "ran": bool(ran),
         "ok": bool(ok),
         "summary": summary,
         "server_cmd": server_cmd,
+        "server_kind": server_kind,
+        "server_cwd": server_cwd,
+        "entry_path": entry_path,
         "url": url,
         "pages": pages or [],
         "assets": assets or [],
@@ -1040,12 +1076,15 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
     `ran=True` — every failure mode (server never starts, times out, crashes)
     is folded into `ok=False` + `summary`, never an exception."""
     started = time.time()
+    entry_path = spec.get("entry_path") or "/"
+    launch_info = {"server_kind": spec.get("kind"), "server_cwd": None, "entry_path": entry_path}
     port = _free_port()
     python_exe = _project_python(workspace)
     try:
         argv, env_extra, cwd = _build_launch(spec, workspace, port, python_exe)
+        launch_info["server_cwd"] = cwd
     except Exception as e:  # noqa: BLE001
-        return _report(ran=True, ok=False, summary=f"could not build a launch command: {e}")
+        return _report(ran=True, ok=False, summary=f"could not build a launch command: {e}", **launch_info)
 
     env = native_host_environment(extra=env_extra)
     cmd_str = " ".join(argv)
@@ -1059,14 +1098,15 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
             )
         except (OSError, FileNotFoundError) as e:
             return _report(ran=True, ok=False, server_cmd=cmd_str,
-                            summary=f"failed to start server ({cmd_str}): {e}")
+                            summary=f"failed to start server ({cmd_str}): {e}", **launch_info)
 
         base_url = f"http://127.0.0.1:{port}"
+        entry_url = urljoin(base_url + "/", entry_path)
         ready_timeout = min(20.0, max(5.0, timeout_s * 0.4))
         ready, ready_err = _wait_ready(base_url, proc, ready_timeout)
         if not ready:
             return _report(ran=True, ok=False, server_cmd=cmd_str, url=base_url,
-                            summary=f"server never answered on {base_url} within {ready_timeout:.0f}s: {ready_err}")
+                            summary=f"server never answered on {base_url} within {ready_timeout:.0f}s: {ready_err}", **launch_info)
 
         deadline = started + timeout_s
         pages, assets, problems = _crawl(spec, base_url, deadline)
@@ -1079,16 +1119,16 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
         if playwright_available():
             remaining = max(3.0, deadline - time.time())
             try:
-                audit = _playwright_audit(base_url, remaining)
+                audit = _playwright_audit(entry_url, remaining)
                 console_errors = audit.get("console_errors") or []
                 a11y = audit.get("a11y")
                 perf = audit.get("perf")
                 design = audit.get("design")
                 playwright_used = True
                 # attach to the audited page's own entry too, not just the
-                # top-level report — the audit only ever loads base_url + "/".
+                # top-level report — the audit loads the selected HTML entry.
                 for pg in pages:
-                    if pg.get("url") == base_url + "/":
+                    if pg.get("url") == entry_url:
                         pg["a11y"] = a11y
                         pg["perf"] = perf
                         break
@@ -1108,7 +1148,7 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
         return _report(ran=True, ok=ok, server_cmd=cmd_str, url=base_url, pages=pages,
                         assets=assets, console_errors=console_errors, summary=summary,
                         playwright_used=playwright_used, a11y=a11y, perf=perf,
-                        quality_warnings=quality_warnings, design=design)
+                        quality_warnings=quality_warnings, design=design, **launch_info)
     finally:
         _kill_process_tree(proc)
 
@@ -1143,11 +1183,19 @@ def run_for_turn(workspace: str, mutated_paths: Optional[List[str]] = None) -> O
 def failure_message(report: Dict[str, Any]) -> str:
     """Bounded fix-round instruction for the model, mirroring
     `project_tests.failure_message`'s shape."""
+    server = "the detected server"
+    if report.get("server_kind") == "static":
+        server = "a static preview (Python http.server)"
+    elif report.get("server_kind"):
+        server = f"the detected {report['server_kind']} server"
     lines = [
         "[Harness check — automatic message from the runtime, not from the user]",
-        "ui_smoke started your app's own server and fetched the pages/assets it serves; "
+        f"ui_smoke used {server} and fetched its pages/assets; "
         f"it found a problem BEFORE any human opened a browser: {report.get('summary')}",
     ]
+    if report.get("server_kind") == "static":
+        lines.append(f"Static preview public root: {report.get('server_cwd')}; HTML entry: {report.get('entry_path') or '/'}.")
+        lines.append("This checks static pages/assets; dynamic API behavior has not been exercised.")
     bad_assets = [a for a in (report.get("assets") or []) if not a.get("ok")][:6]
     for a in bad_assets:
         extra = f" (Content-Type: {a.get('content_type')})" if a.get("problem") == "content_type" else ""
@@ -1177,6 +1225,10 @@ def compact(report: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "ok": report.get("ok"),
         "summary": report.get("summary"),
         "url": report.get("url"),
+        "server_kind": report.get("server_kind"),
+        "server_cmd": report.get("server_cmd"),
+        "server_cwd": report.get("server_cwd"),
+        "entry_path": report.get("entry_path"),
         "playwright_used": report.get("playwright_used"),
         "pages": len(report.get("pages") or []),
         "assets": len(report.get("assets") or []),
