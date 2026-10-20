@@ -24,6 +24,7 @@ helpers themselves swallow filesystem/git errors.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import logging
 import os
@@ -1858,6 +1859,10 @@ class TurnLedger:
         self.tests: Optional[Dict[str, Any]] = None        # project_tests.compact()
         self.tests_runs = 0
         self.tests_fix_rounds = 0
+        # Source identity here covers known turn-local effects, not external edits.
+        self.mutation_epoch = 0
+        self.tests_epoch = -1
+        self.tests_history: List[Dict[str, Any]] = []
         # H1: harness-driven UI smoke (src/ui_smoke.py) — server start + HTTP
         # status/Content-Type checks + optional Playwright console errors.
         self.ui_smoke: Optional[Dict[str, Any]] = None     # ui_smoke.compact()
@@ -1884,6 +1889,19 @@ class TurnLedger:
             self.observed_paths.add(_norm(tok))
 
     # -- recording ----------------------------------------------------------
+    def _invalidate_tests(self) -> None:
+        self.mutation_epoch += 1
+        self.tests = None
+
+    def tests_need_run(self) -> bool:
+        return bool(self.mutations) and self.tests_epoch != self.mutation_epoch
+
+    def record_tests(self, result: Optional[Dict[str, Any]], source_epoch: int) -> None:
+        evidence = {**result, "source_epoch": source_epoch} if result is not None else None
+        if evidence and evidence.get("ran"):
+            self.tests_history.append(dict(evidence))
+        self.tests = evidence if source_epoch == self.mutation_epoch else None
+
     def record(self, tool: str, content: str, result: Dict[str, Any], round_num: int = 0) -> Dict[str, Any]:
         ok = _result_ok(result)
         paths = [workspace_relative(self.workspace, p) for p in _paths_from_args(tool, content)]
@@ -1915,6 +1933,14 @@ class TurnLedger:
             "round": round_num, "tool": tool, "ok": ok, "kind": kind,
             "paths": paths, "error": (result or {}).get("error") if not ok else None,
         }
+        try:
+            arguments = json.loads(content)
+        except (ValueError, TypeError):
+            arguments = content
+        identity = [tool, os.path.normcase(os.path.abspath(self.workspace or os.getcwd())), arguments]
+        ev["verification_key"] = hashlib.sha256(json.dumps(
+            identity, sort_keys=True, ensure_ascii=False, default=str,
+        ).encode("utf-8", errors="surrogatepass")).hexdigest()
         if ok and _has_computed_list_result(tool, content, result):
             ev["computed_list"] = True
         if (result or {}).get('approval_required') is True:
@@ -1932,6 +1958,8 @@ class TurnLedger:
                 if _k in result and isinstance(result[_k], (int, str)) and not isinstance(result[_k], bool):
                     ev[_k] = result[_k]
         self.events.append(ev)
+        if ok and kind in ("mutation", "effect"):
+            self._invalidate_tests()
         if ok and tool in _TEXT_WRITING_TOOLS:
             self._note_written_text(content)
         try:
@@ -1952,6 +1980,7 @@ class TurnLedger:
                         "round": round_num, "tool": "delegate_agents:" + str(sub.get("name") or "worker"),
                         "ok": True, "kind": "mutation", "paths": sub_paths, "error": None,
                     })
+                    self._invalidate_tests()
                     for p in sub_paths:
                         self.observed_paths.add(_norm(p))
             invalidate_index(self.workspace)
@@ -2917,6 +2946,7 @@ class TurnLedger:
             "static_fix_rounds": self.static_fix_rounds,
             "checkpoint": (self.checkpoint or {}).get("sha") if isinstance(self.checkpoint, dict) else None,
             "tests": self.tests,
+            "tests_history": self.tests_history,
             "tests_fix_rounds": self.tests_fix_rounds,
             "ui_smoke": self.ui_smoke,
             "review": self.review,

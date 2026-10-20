@@ -38,7 +38,7 @@ Evidence sections (all optional, all plain dicts so a caller can hand over what
 it already holds):
 
     tool_results   [{tool, ok, exit_code, status|result_status, error,
-                     approval_required, blocked, code_mode?, process?}]
+                     approval_required, blocked, verification_key?, code_mode?, process?}]
     tests          project_tests.compact()
     ui_smoke       ui_smoke.compact()
     completion     TurnLedger.check_completion() result
@@ -182,7 +182,7 @@ def code_mode_direct_effects(result: Any) -> Dict[str, Any]:
 
 # -- per-section readers ------------------------------------------------------
 
-def _read_tool_result(t: _Tally, row: Mapping[str, Any], *, source: str, later_ok_tools: frozenset) -> None:
+def _read_tool_result(t: _Tally, row: Mapping[str, Any], *, source: str, recovered: bool) -> None:
     tool = str(row.get("tool") or row.get("name") or "tool")
     tag = f"{source}:{tool}"
     if row.get("approval_required") or row.get("requires_approval") or row.get("needs_approval"):
@@ -200,8 +200,8 @@ def _read_tool_result(t: _Tally, row: Mapping[str, Any], *, source: str, later_o
     failed = bool(row.get("error")) or (code is not None and code != 0) or ok is False \
         or (status not in _SUCCESS_STATUSES)
     if failed:
-        if tool in later_ok_tools:
-            t.note("failure_recovered", tag, "an earlier call failed and a later call of the same tool succeeded")
+        if recovered:
+            t.note("failure_recovered", tag, "the same request in the same workspace later succeeded")
         elif row.get("kind") == "read":
             t.note("lookup_failed", tag, "a lookup came back empty or failed; that is not a failure of the work")
         else:
@@ -216,18 +216,23 @@ def _read_tool_results(t: _Tally, rows: Iterable[Any], *, source: str = "tool") 
     rows = [r for r in rows if isinstance(r, Mapping)]
     if rows:
         t.section(source + "_results")
-    # A failure is cancelled out only by a LATER success of the same tool.
-    last_ok_index: Dict[str, int] = {}
+    # Tool names alone cannot identify a recheck (bash pytest != bash echo).
+    # Legacy events without a request identity cannot establish recovery.
+    last_ok_index: Dict[tuple, int] = {}
     for i, row in enumerate(rows):
         tool = str(row.get("tool") or row.get("name") or "tool")
         failed = bool(row.get("error")) or (_exit_code(row) not in (None, 0)) or row.get("ok") is False \
             or _status_of(row) not in _SUCCESS_STATUSES
-        if not failed and (_exit_code(row) == 0 or row.get("ok") is True or _status_of(row) == "succeeded"):
-            last_ok_index[tool] = i
+        key = row.get("verification_key")
+        held = any(row.get(k) for k in ("approval_required", "requires_approval", "needs_approval", "blocked", "refused"))
+        if (isinstance(key, str) and key and not failed and not held
+                and (_exit_code(row) == 0 or row.get("ok") is True or _status_of(row) == "succeeded")):
+            last_ok_index[(tool, key)] = i
     for i, row in enumerate(rows):
         tool = str(row.get("tool") or row.get("name") or "tool")
-        later = frozenset([tool]) if last_ok_index.get(tool, -1) > i else frozenset()
-        _read_tool_result(t, row, source=source, later_ok_tools=later)
+        key = row.get("verification_key")
+        recovered = isinstance(key, str) and bool(key) and last_ok_index.get((tool, key), -1) > i
+        _read_tool_result(t, row, source=source, recovered=recovered)
         cm = _mapping(row.get("code_mode"))
         if cm is not None:
             _read_code_mode(t, cm, source=f"{source}:{tool}", count_exit=False)

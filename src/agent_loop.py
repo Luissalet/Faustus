@@ -16583,10 +16583,12 @@ async def _stream_agent_loop_body(
                             )
                     # ── (4) Functional verification: the project's own tests
                     # (src/project_tests.py). "It parses" became "it works".
-                    # Re-run every time the model finishes with changes (so the
-                    # card shows the final state), one bounded fix round.
-                    if _ledger.mutations and _tests_on and _ledger.tests_runs < 3:
+                    # Recheck each new generation of known effects, including
+                    # repeated edits of the same path. Keep the run count informational.
+                    if _tests_on and _ledger.tests_need_run():
                         _ledger.tests_runs += 1
+                        _tests_source_epoch = _ledger.mutation_epoch
+                        _ledger.tests_epoch = _tests_source_epoch
                         try:
                             from src import project_tests as _ptests
                             _tspec = _ptests.detect_test_command(
@@ -16602,7 +16604,7 @@ async def _stream_agent_loop_body(
                                 )
                                 if _tres is not None:
                                     _tres["ui_verify"] = _ledger.ui_verify_status(_last_user)
-                                _ledger.tests = _ptests.compact(_tres)
+                                _ledger.record_tests(_ptests.compact(_tres), _tests_source_epoch)
                                 # H5: tests accepted as pre_existing/exempt
                                 # start a clock (src/test_debt.py); after N
                                 # turns they come back as high-priority todos.
@@ -16637,10 +16639,13 @@ async def _stream_agent_loop_body(
                             full_response += "\n\n"
                             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                             continue
-                        if _tres and _tres.get("ran") and _tres.get("ok") is False and not _tres.get("inconclusive"):
-                            _note = ("tests_pre_existing:" if _tres.get("pre_existing_only") else "tests_failed:") + str(_tres.get("summary") or "")[:80]
-                            if _note not in _ledger.notes:
-                                _ledger.notes.append(_note)
+                    # Unchanged source keeps the current failure visible without
+                    # launching the checker again just to repeat its finding.
+                    if (_tests_on and _ledger.tests and _ledger.tests.get("ran")
+                            and _ledger.tests.get("ok") is False and not _ledger.tests.get("inconclusive")):
+                        _note = ("tests_pre_existing:" if _ledger.tests.get("pre_existing_only") else "tests_failed:") + str(_ledger.tests.get("summary") or "")[:80]
+                        if _note not in _ledger.notes:
+                            _ledger.notes.append(_note)
                     # ── (5) Independent review of the diff (src/auto_review.py):
                     # a second model pass with no tools flags obvious defects.
                     # error-severity findings get one bounded fix round.
@@ -20149,7 +20154,7 @@ async def _stream_agent_loop_body(
                 "stop_reason", "mutations", "tool_calls", "failed_calls", "rejections",
                 "length_continues", "finish_reasons", "git", "notes", "progress", "language",
                 "static_checks", "static_analysis", "static_fix_rounds",
-                "workspace", "checkpoint", "tests", "tests_fix_rounds",
+                "workspace", "checkpoint", "tests", "tests_history", "tests_fix_rounds",
                 "review", "review_fix_rounds", "canvas_check", "asked_user", "changeset", "round_count",
                 "verification", "claim_check", "claim_diagnostics", "answer_diagnostics",
             )

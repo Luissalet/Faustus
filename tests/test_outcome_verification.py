@@ -54,9 +54,9 @@ def test_exit_code_failure_is_unverified_even_beside_a_success():
     assert "boom" in v["reasons"][0]["detail"]
 
 
-def test_a_failure_is_cancelled_out_only_by_a_later_success_of_the_same_tool():
-    retried = verify_outcome(tool_results=[{"tool": "bash", "exit_code": 1, "ok": False},
-                                           {"tool": "bash", "exit_code": 0, "ok": True}])
+def test_a_failure_is_cancelled_out_only_by_a_comparable_later_success():
+    retried = verify_outcome(tool_results=[{"tool": "bash", "exit_code": 1, "ok": False, "verification_key": "check-a"},
+                                           {"tool": "bash", "exit_code": 0, "ok": True, "verification_key": "check-a"}])
     assert retried["outcome"] == VERIFIED and "failure_recovered" in kinds(retried, "notes")
     other = verify_outcome(tool_results=[{"tool": "bash", "exit_code": 1, "ok": False},
                                          {"tool": "edit_file", "exit_code": 0, "ok": True}])
@@ -65,6 +65,36 @@ def test_a_failure_is_cancelled_out_only_by_a_later_success_of_the_same_tool():
                                           {"tool": "edit_file", "ok": True}])
     assert lookup["outcome"] == VERIFIED and "lookup_failed" in kinds(lookup, "notes"), \
         "an empty lookup is not a failure of the work"
+
+
+@pytest.mark.parametrize("later", [{}, {"verification_key": "echo"}, {"verification_key": ""}])
+def test_same_tool_success_without_same_check_cannot_clear_failure(later):
+    rows = [{"tool": "bash", "exit_code": 1, "ok": False, "verification_key": "acceptance"},
+            {"tool": "bash", "exit_code": 0, "ok": True, **later}]
+    assert verify_outcome(tool_results=rows)["outcome"] == UNVERIFIED
+    rows[0].pop("verification_key")
+    assert verify_outcome(tool_results=rows)["outcome"] == UNVERIFIED
+
+
+def test_real_ledger_compares_full_request_and_workspace(tmp_path):
+    from src.agent_harness import TurnLedger
+    led = TurnLedger(str(tmp_path))
+    failed = led.record("bash", '{"command":"pytest tests/test_acceptance.py","timeout":30}', {"exit_code": 1})
+    led.record("bash", '{"command":"echo OK"}', {"exit_code": 0})
+    assert led.verify_outcome()["outcome"] == UNVERIFIED
+    retry = led.record("bash", '{ "timeout":30, "command":"pytest tests/test_acceptance.py" }', {"exit_code": 0})
+    assert failed["verification_key"] == retry["verification_key"]
+    assert led.verify_outcome()["outcome"] == VERIFIED
+    other = TurnLedger(str(tmp_path / "other"))
+    ev = other.record("bash", '{"command":"pytest tests/test_acceptance.py","timeout":30}', {"exit_code": 0})
+    assert ev["verification_key"] != failed["verification_key"]
+    assert verify_outcome(tool_results=[failed, ev])["outcome"] == UNVERIFIED
+
+
+def test_comparable_success_must_be_later_and_confirmed():
+    row = {"tool": "bash", "verification_key": "check-a"}
+    assert verify_outcome(tool_results=[{**row, "ok": True}, {**row, "ok": False}])["outcome"] == UNVERIFIED
+    assert verify_outcome(tool_results=[{**row, "ok": False}, {**row, "ok": True, "status": "partial"}])["outcome"] == UNVERIFIED
 
 
 @pytest.mark.parametrize("row,kind", [
