@@ -1,6 +1,6 @@
 # Faustus — qué añade este fork sobre Odysseus
 
-**Fiabilidad de Sparks, 19-10-2026 (#835).** Está activa la corrección revisada
+**Fiabilidad de Sparks, 20-10-2026 (#835).** Está activa la corrección revisada
 que permite recuperar por HTTP/MCP las conversaciones del modo sin login;
 Studio conserva la respuesta al recargar. Los trabajos largos usan el servicio
 global de Sparks, sin alternativa de texto en el PC. El descargador nativo de
@@ -12,25 +12,44 @@ La primera entrega de Docsite falló enlaces HTML y navegador pese a sus 45 test
 verdes. Tras tres correcciones guiadas, la cuarta pasó los casos API/CLI, siete
 casos límite, 54 tests propios, nueve búsquedas reales en navegador, dos recorridos
 por teclado y la regresión de título sin encabezados. Es aceptación acotada tras
-corregir: siguen abiertos los fallos del almacén KV y de aritmética con entrada
-grande. No se ha demostrado fiabilidad semántica general.
+corregir; se conservan los fallos de entregas anteriores. No se ha demostrado
+fiabilidad semántica general.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en
 recuperación de cola y escritura posterior. Un testigo de API pública reprodujo
 el fallo al quitar sólo el último byte; el corpus binario obtuvo 40 casos verdes
 y ocho fallos. Bloqueo de escritor, muerte real del proceso y corte observado
-tras instalar el snapshot pasaron por separado. El resultado global sigue
-siendo fallo, con fuentes fijadas y sin corregirlas desde el evaluador.
-Las correcciones revisadas de limpieza y arranque NVFP4/QAD ya están aplicadas
-en sus recetas; aún no se ha recargado el modelo con ellas.
+tras instalar el snapshot pasaron por separado. El resultado de esa quinta
+entrega sigue siendo fallo, con fuentes fijadas y sin corregirlas desde el
+evaluador. La sexta entrega pasó los siete grupos del oráculo independiente R2.
+El 20 de octubre, sin modificar su fuente final, también pasó los 48 casos
+binarios congelados, conservación ante corrupción y cinco casos de capacidad y
+atomicidad de API pública: valores de 128 MiB y payload agregado exacto de
+192 MiB, entre otros. Esto no borra los fallos anteriores ni acredita cualquier
+proyecto grande.
 
 Los 52 archivos fijados del checkpoint QAD están verificados por SHA en Spark1
-y Spark2 (177,52 GB por nodo). QAD no se ha cargado ni seleccionado: faltan cabida
-y calidad reales. El modelo global sigue siendo NVFP4. Ya está activo el refresco
+y Spark2 (177,52 GB por nodo). QAD se cargó y probó el 19 de octubre con el mismo
+texto de 3,19 millones de caracteres: plain volvió a fallar «SOLO JSON» por los
+fences; una llamada separada con modo JSON nativo dio el objeto exacto. Se midió
+después de un prefijo caliente; no es una comparación en frío. QAD sigue sin
+validar para uso general y se restauró NVFP4 como modelo global. Está activo el refresco
 de turnos MCP externos en una conversación de Studio abierta (#941), incluidas
 las carreras entre observador anterior, turno nuevo e historial atrasado.
 Recibos y continuación: `D:/LocalAI/research-inbox/sparks835/latest-status-path.txt`.
+
+Las continuaciones de trabajos en segundo plano conservan workspace, raíces
+adjuntas, opciones del harness e instrucciones permanentes del proyecto, también
+si no llega packet del motor de contexto. Proyectos reales probados por API/MCP
+conservaron CWD, lectura relativa, claves distintas y ejecución automática del
+test configurado; una conversación sin proyecto mantuvo el contexto por defecto.
+Studio mostró la continuación sin reenviar ni recargar. La corrección de
+instrucciones (#956) tiene revisión independiente de fuente/CPU y pasó una prueba
+nativa separada tras activación. No se reinició el modelo ni se reactivaron
+conexiones o paradas manuales.
+Historial de conclusiones, cambios, pruebas y errores conservados:
+`D:/LocalAI/research-inbox/sparks835/HISTORIAL.md`.
 
 El transporte OpenAI sin conversación del modelo global (#938) está activo:
 fija endpoint, modelo y revisión de conexión, sin reintento ni alternativa.

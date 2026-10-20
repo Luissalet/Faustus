@@ -73,7 +73,7 @@ foreground preemption policy remains opt-in; explicit task Stop stays available.
 
 **Plugin marketplace:** in Connectors, download Hoards with one button or link existing folders. Required HoardLink downloads first when missing. Faustus ships the catalogue; source checkouts live in `plugins/<id>/repository/`, outside Git. Watch and Book remain independent. [Collaborator setup and cloning](docs/api/plugin-marketplace.md).
 
-## Sparks verification (19 October 2026)
+## Sparks verification (20 October 2026)
 
 The active backend includes the reviewed single-user conversation ownership fix:
 HTTP and native MCP recover the same completed conversation, and Studio reload
@@ -87,24 +87,42 @@ The initial Docsite delivery failed independent HTML-link and browser checks
 although its 45 producer tests passed. After three guided corrections, the fourth
 delivery passed the independent API/CLI cases, seven edge cases, 54 producer tests,
 nine real browser queries, two keyboard navigations and the title-only regression.
-This is scoped acceptance after corrections; the KV store and large-input
-arithmetic failures remain unresolved. General semantic reliability is unproven.
+This is scoped acceptance after corrections. Earlier failed deliveries remain
+recorded; general semantic reliability is unproven.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
 A public-API witness reproduced this after truncating only the last byte; the
 binary corpus passed 40 cases and failed eight. Writer locking, actual writer
 process death and the observed post-snapshot-install crash passed separately.
-The overall result remains failed; evaluator source edits did not repair it.
-Reviewed NVFP4/QAD lifecycle corrections are now installed in their recipe
-sources; the model has not yet been reloaded with those corrections.
+That fifth delivery remains failed; evaluator source edits did not repair it.
+The sixth corrective delivery passed the seven independent R2 groups. On
+20 October, the unchanged final source also passed all 48 frozen binary cases,
+corruption preservation and five public-API capacity/atomicity cases, including
+128 MiB values and an exact 192 MiB batch payload. These results do not establish
+reliability for every project or replace the earlier failures.
 
 All 52 pinned QAD checkpoint files are SHA-verified on both Spark1 and Spark2
-(177.52 GB per node). QAD has not been loaded or selected; runtime fit and quality
-remain unproven. The current global model is NVFP4. Studio now follows external
+(177.52 GB per node). QAD was loaded and tested on 19 October with the same
+3.19-million-character input: plain output still failed the JSON-only contract
+with Markdown fences; a separate explicit JSON-mode call returned the exact
+object. The JSON-mode timing followed a warm prefix and is not a cold comparison.
+QAD remains unvalidated for general use; the global model was restored to NVFP4.
+Studio now follows external
 MCP turns in an already-open conversation, including a new turn arriving while
 the previous observer drains and an older history response arriving late.
 [Detailed evidence and continuation](D:/LocalAI/research-inbox/sparks835/latest-status-path.txt).
+
+Native background continuations retain the project's workspace, attached roots,
+harness options and standing instructions, including the legacy path when no
+context-engine packet arrives. Real MCP/API checks on separate projects verified
+relative file access, distinct project instructions and the automatic project
+test command; a no-project chat retained the default context. Studio displayed
+the completed continuation without another send or reload. The standing-instruction
+correction passed independent source/CPU review and a separate native check after
+activation. The model was not restarted; disabled connections and manual stops
+were preserved.
+[Research history and retained failures](D:/LocalAI/research-inbox/sparks835/HISTORIAL.md).
 
 The configured global model also has a stateless OpenAI transport with descriptor
 pins for endpoint, model and connection revision. A real Sparks streaming call
