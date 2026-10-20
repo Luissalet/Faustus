@@ -2911,13 +2911,14 @@ def format_tool_result(description: str, result: Dict, *, tool: str = "", comman
             parts.append(_cl)
     except Exception:  # noqa: BLE001 - a clock never costs a result
         pass
-    if isinstance(result, dict) and result.get("effect_certainty") in ("unknown", "partial") and (
-            result.get("status") in ("outcome_unknown", "partial") or result.get("outcome_unknown")):
+    if isinstance(result, dict) and result.get("effect_certainty") in ("unknown", "partial"):
         _word = "UNKNOWN" if result.get("effect_certainty") == "unknown" else "PARTIAL"
         parts.append(
             f"**Effect outcome: {_word}** — this action may already have taken effect"
             + (f" (effect {result.get('effect_id')})" if result.get("effect_id") else "")
             + ". Do not repeat it without checking the destination first.")
+    if result.get("error") and ("stdout" in result or "output" in result):
+        parts.append(f"**Error:** {result['error']}")
     _image_count = 0
     try:
         from src.tool_images import normalize_result_images

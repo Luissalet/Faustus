@@ -1198,6 +1198,7 @@ TOOL_SECTIONS = {
 <shell command>
 ```
 Run any shell command. Output is returned to you. Use for: installing packages, checking files, git, system info, process management, etc.
+For a temporary test server, put its test in `try/finally`: stop and wait for your own process and close its pipes even if the test fails. For a persistent server, use `process_start` or `#!bg` and retain its handle. Verify process origin before stopping it; a name or directory does not prove the harness started it.
 Do NOT use bash/curl for web lookup/search/latest/current requests when `web_search` or `web_fetch` is available.
 NEVER use bash to create or change files — no `>`/`>>` redirects, no heredocs (`cat > f << 'EOF'`), no `tee`, `sed -i`, `awk -i`, no `python -c` that writes. To CREATE or fully rewrite a file use `write_file`; to change part of an existing file use `edit_file`. Those show a diff and are the ONLY allowed way to write files. (bash is for read-only inspection: `ls`, `cat` to READ, `grep`, `git status`/`git diff`, builds, installs.)
 For LONG-running commands (package installs, pip/npm, ffmpeg, model downloads, training, builds — anything that may take more than ~20s), make the FIRST line `#!bg` to run it in the BACKGROUND. You get a job id back immediately and are automatically re-invoked with the full output when it finishes — so you never block the chat waiting. Example:
@@ -1213,6 +1214,7 @@ NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats re
 <python code>
 ```
 Execute Python code. Use for computation, data processing, scripting. NOT for writing code for the user (use create_document for that). stdin is a pipe so `input()` will hang; for anything visual, launch it and call `desktop_screenshot` rather than claiming there is no GUI.
+Temporary test servers need `try/finally` to terminate and wait for your own process and close its pipes after errors too. Use `process_start` or a bash/powershell `#!bg` job for persistent servers and retain the handle. Verify origin before stopping a process; names and directories alone do not identify a harness process.
 Prefer a dedicated tool whenever one fits the job (reading, searching, or writing files); use python only for computation/processing no dedicated tool covers - not for reading or writing files.
 Do NOT use Python/requests for web lookup/search/latest/current requests when `web_search` or `web_fetch` is available.
 For temporary computation files, Python's `tempfile` uses the inherited run/workspace temporary directory; `tempfile.gettempdir()` returns its path.""",
@@ -1224,6 +1226,7 @@ For temporary computation files, Python's `tempfile` uses the inherited run/work
 Run a PowerShell script on this Windows host (pwsh or Windows PowerShell), starting in the workspace. Use it for anything Windows-native: `.bat`/`.cmd` launchers, `winget`/`choco`, `Start-Process`, services, registry, WMI, paths with backslashes, the project's `.venv\\Scripts\\python.exe`.
 Write the script exactly as you would type it in a PowerShell window: no outer quoting, no `powershell -Command "..."`, no escaping for a second shell. A `.bat`/`.cmd` runs with `& cmd.exe /c "thing.bat"` — PowerShell's `-File` only accepts `.ps1` and refuses a `.bat`.
 `bash` on Windows is Git Bash (POSIX syntax) and REFUSES to launch `powershell`/`cmd` for you; come here instead. Same rules as bash: not for creating or editing files (use the file tools). For LONG-running scripts (`.bat`, `winget`, installs) make the FIRST line `#!bg` to run detached — same job card as bash. Never start a foreground server.
+For temporary test servers use `try/finally` to stop and wait for your own process and close its pipes on failure as well. For persistent servers use `process_start` or `#!bg` and retain the handle. Check origin before stopping a process; its name or directory does not prove it belongs to the harness.
 For native temporary paths use `[IO.Path]::GetTempPath()` or `[IO.Path]::GetTempFileName()`; these use the inherited run/workspace temporary directory.""",
 
     "web_search": """\
