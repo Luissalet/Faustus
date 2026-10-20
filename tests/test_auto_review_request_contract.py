@@ -72,6 +72,32 @@ class RequestContractTests(unittest.TestCase):
             with self.subTest(request=request):
                 self.assertEqual(request_in(review._prompt(request, DIFF, [], None)), "")
 
+    def test_partial_group_scope_preserves_request_tests_and_local_diff(self):
+        changed = ["package/core.py", "tests/test_core.py", "examples/demo.md"]
+        prompt = review._prompt(REQUEST, DIFF, [changed[-1]],
+                                {"ran": True, "ok": True, "summary": "own fixture"}, changed)
+        self.assertEqual(request_in(prompt), REQUEST)
+        self.assertIn("PARTIAL", prompt)
+        self.assertIn("not the complete workspace", prompt)
+        self.assertIn("Project tests after the change: PASSED (own fixture)", prompt)
+        self.assertIn("<changed_files>\nexamples/demo.md\n</changed_files>", prompt)
+        inventory = prompt.split("<all_changed_files>\n", 1)[1].split("\n</all_changed_files>", 1)[0]
+        self.assertEqual(json.loads(inventory), changed)
+        self.assertIn("<diff>\n" + DIFF, prompt)
+
+    def test_single_group_prompt_keeps_existing_scope(self):
+        prompt = review._prompt(REQUEST, DIFF, ["kvstore.py"], None)
+        self.assertNotIn("<all_changed_files>", prompt)
+        self.assertNotIn("group-specific", prompt)
+
+    def test_legacy_verdict_inference_retains_valid_findings(self):
+        parsed = review._parse(json.dumps({"findings": [{
+            "severity": "error", "file": "kvstore.py", "evidence": "debug",
+            "issue": "Own fixture defect",
+        }]}))
+        self.assertEqual(parsed["verdict"], "issues")
+        self.assertEqual(parsed["findings"][0]["issue"], "Own fixture defect")
+
     def test_reviewer_selection_off_same_and_explicit_override_are_unchanged(self):
         with patch.object(review, "_setting", return_value="off"):
             self.assertEqual(review.resolve_reviewer_with_reason("writer"), (None, None))

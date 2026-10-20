@@ -209,10 +209,11 @@ def test_review_turn_groups_a_diff_over_the_file_threshold(ws, data_dir, monkeyp
     async def _fake(url, model, messages, **kwargs):
         prompt = messages[-1]["content"]
         calls.append(prompt)
+        supplied_diff = prompt.split("<diff>\n", 1)[1].split("\n</diff>", 1)[0]
         # Every group reports the same finding on its first file, by its
         # ACTUAL diff line, so grounding succeeds and dedup has real work.
         for f, d in diffs.items():
-            if f in prompt:
+            if f in supplied_diff:
                 line = d.splitlines()[-1]
                 return json.dumps({"verdict": "issues", "summary": "issue", "findings": [
                     {"severity": "error", "file": f, "line": 1, "issue": "uses old value",

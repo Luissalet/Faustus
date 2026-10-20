@@ -567,10 +567,21 @@ REVIEW_SCHEMA: Dict[str, Any] = {
 # The review call
 # ---------------------------------------------------------------------------
 
-def _prompt(user_text: str, diff: str, files: List[str], tests: Optional[Dict[str, Any]]) -> str:
+def _prompt(user_text: str, diff: str, files: List[str], tests: Optional[Dict[str, Any]],
+            all_changed_files: Optional[List[str]] = None) -> str:
     test_line = ""
     if tests and tests.get("ran"):
         test_line = f"\nProject tests after the change: {'PASSED' if tests.get('ok') else 'FAILED'} ({tests.get('summary') or ''})."
+    scope = ""
+    if all_changed_files is not None:
+        scope = (
+            "This is a PARTIAL, group-specific diff. The global inventory below lists only files "
+            "changed in this turn, not the complete workspace. Other changed files may be reviewed "
+            "in other groups or be outside this review's coverage. Do not infer that a package, "
+            "CLI, test or other file is absent merely because its diff is not in this group. "
+            "Report only defects supported by the supplied diff and request.\n"
+            f"<all_changed_files>\n{json.dumps(all_changed_files, ensure_ascii=False)}\n</all_changed_files>\n\n"
+        )
     return (
         "You are a strict but practical code reviewer. An AI coding agent just changed files in a "
         "repository to satisfy the user's request below. You see ONLY the request and the unified diff. "
@@ -588,6 +599,7 @@ def _prompt(user_text: str, diff: str, files: List[str], tests: Optional[Dict[st
         "the diff. Line numbers refer to the NEW file when you can tell.\n\n"
         f"<user_request>\n{user_text or ''}\n</user_request>\n\n"
         f"<changed_files>\n{', '.join(files[:40])}\n</changed_files>{test_line}\n\n"
+        f"{scope}"
         f"<diff>\n{diff}\n</diff>\n\n"
         "Answer with ONLY a JSON object, no prose before or after:\n"
         '{"verdict": "ok" | "issues", "summary": "<one sentence>", '
@@ -677,7 +689,7 @@ def _parse(raw: str) -> Dict[str, Any]:
                 data = json.loads(re.sub(r",\s*([}\]])", r"\1", blob))
             except ValueError:
                 data = None
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or not isinstance(data.get("findings"), list):
         return {"verdict": "unparsed", "summary": text[:300], "findings": []}
     findings: List[Dict[str, Any]] = []
     for f in (data.get("findings") or [])[:20]:
@@ -709,6 +721,7 @@ def _parse(raw: str) -> Dict[str, Any]:
 async def _call_reviewer(
     *, diff: str, files: List[str], user_text: str, endpoint_url: str, reviewer: str,
     headers: Optional[Dict], tests: Optional[Dict[str, Any]], timeout: float, workload: str,
+    all_changed_files: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Any], Optional[str]]:
     """One reviewer completion over `diff`/`files`, parsed and grounded.
 
@@ -736,7 +749,7 @@ async def _call_reviewer(
         raw = await asyncio.wait_for(
             llm_call_async(
                 url=endpoint_url, model=reviewer,
-                messages=[{"role": "user", "content": _prompt(user_text, diff, files, tests)}],
+                messages=[{"role": "user", "content": _prompt(user_text, diff, files, tests, all_changed_files)}],
                 headers=headers, temperature=0.1, max_tokens=1200, timeout=int(timeout),
                 max_retries=1, workload=workload or "foreground",
                 response_schema=REVIEW_SCHEMA,
@@ -756,7 +769,8 @@ async def _call_reviewer(
         return empty, "the reviewer returned an empty answer"
     parsed = _parse(raw)
     if parsed["verdict"] == "unparsed":
-        logger.warning("[review] %s: answer was not a JSON object: %r", reviewer, raw[:300])
+        logger.warning("[review] %s: answer was not a valid review: %r", reviewer, raw[:300])
+        return parsed, "the reviewer returned an unparsed review"
     else:
         grounded = ground_findings(parsed["findings"], diff, user_text)
         parsed["findings"] = grounded["findings"]
@@ -873,6 +887,10 @@ async def review_turn(
     all_findings: List[Dict[str, Any]] = []
     group_file_lists: List[List[str]] = []
     group_chars: List[int] = []
+    attempted_group_files: List[List[str]] = []
+    failed_groups: List[Dict[str, Any]] = []
+    missing_diffs = [f for f in files if not (pf.get(f) or "").strip()]
+    not_reviewed.extend(f for f in missing_diffs if f not in not_reviewed)
     truncated_files: List[str] = []
     total_chars = 0
     total_ungrounded = 0
@@ -881,7 +899,7 @@ async def review_turn(
     any_issues = False
 
     for group in reviewed_groups:
-        group_present = [f for f in group if pf.get(f)]
+        group_present = [f for f in group if (pf.get(f) or "").strip()]
         if not group_present:
             continue
         group_diff = "\n".join(pf[f] for f in group_present)
@@ -889,15 +907,19 @@ async def review_turn(
             group_diff = group_diff[:MAX_DIFF_CHARS] + "\n… diff truncated for review"
             truncated_files.extend(group_present)
         total_chars += len(group_diff)
-        group_file_lists.append(group_present)
-        group_chars.append(len(group_diff))
+        attempted_group_files.append(group_present)
         parsed, err = await _call_reviewer(
             diff=group_diff, files=group_present, user_text=user_text, endpoint_url=endpoint_url,
             reviewer=reviewer, headers=headers, tests=tests, timeout=timeout, workload=workload,
+            all_changed_files=files,
         )
         if err:
             any_error = any_error or err
+            failed_groups.append({"files": group_present, "verdict": parsed.get("verdict"), "error": err})
+            not_reviewed.extend(f for f in group_present if f not in not_reviewed)
             continue
+        group_file_lists.append(group_present)
+        group_chars.append(len(group_diff))
         any_ok_call = True
         if parsed.get("verdict") == "issues":
             any_issues = True
@@ -908,8 +930,15 @@ async def review_turn(
     result["ungrounded"] = total_ungrounded
     result["groups"] = len(group_file_lists)
     result["group_files"] = group_file_lists
+    result["attempted_groups"] = len(attempted_group_files)
+    result["attempted_group_files"] = attempted_group_files
+    result["failed_groups"] = failed_groups
+    result["missing_diffs"] = missing_diffs
     result["not_reviewed"] = not_reviewed
     result["truncated_files"] = truncated_files
+    result["partially_reviewed"] = [f for g in group_file_lists for f in g if f in truncated_files]
+    result["reviewed_files"] = [f for g in group_file_lists for f in g if f not in truncated_files]
+    result["coverage_complete"] = not not_reviewed and not truncated_files
     result["group_chars"] = group_chars
     result["diff_chars"] = total_chars
     result["truncated"] = bool(truncated_files) or bool(not_reviewed)
@@ -917,11 +946,13 @@ async def review_turn(
         result.update(error=any_error or "all review groups failed", verdict="error")
     else:
         has_error_finding = any(f.get("severity") == "error" for f in result["findings"])
-        result["verdict"] = "issues" if (has_error_finding or any_issues or result["findings"]) else "ok"
-        summary = f"reviewed in {result['groups']} group(s)"
+        result["verdict"] = ("issues" if (has_error_finding or any_issues or result["findings"])
+                             else "error" if any_error else "ok")
+        summary = f"reviewed {result['groups']} of {result['attempted_groups']} attempted group(s)"
         if not_reviewed:
-            summary += f", {len(not_reviewed)} file(s) not reviewed (group cap)"
+            summary += f", {len(not_reviewed)} file(s) not reviewed (cap, missing diff or failed group)"
         if any_error:
+            result["error"] = any_error
             summary += f" ({any_error})"
         result["summary"] = summary[:400]
     result["duration_s"] = round(time.time() - t0, 1)
@@ -956,7 +987,9 @@ def compact(review: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not review:
         return None
     keys = ("model", "verdict", "summary", "findings", "duration_s", "diff_chars", "truncated", "source", "error",
-            "ungrounded", "disputed", "groups", "group_files", "not_reviewed", "truncated_files", "group_chars")
+            "ungrounded", "disputed", "groups", "group_files", "not_reviewed", "truncated_files", "group_chars",
+            "attempted_groups", "attempted_group_files", "failed_groups", "missing_diffs", "partially_reviewed",
+            "reviewed_files", "coverage_complete", "source_epoch")
     return {k: review.get(k) for k in keys if k in review}
 
 
