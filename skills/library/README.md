@@ -19,6 +19,14 @@ than added to every prompt. The procedures need no paid service or hosted
 API. They describe how to use available tools; installing a procedure does
 not install a renderer, a speech model or a new application capability.
 
+`diagram-authoring` uses Vitruvius's revisioned graph editor and native
+object operations. `source-explainer-production` uses Prospero's supplied
+sources, scenes, local voice and resumable MP4/SRT production. They check
+the installed tool catalogue before using a capability. The existing
+design and deterministic-motion procedures route to the fused owners;
+they do not launch the absorbed applications. Spatial image composition
+remains a separate implementation and is not claimed by these procedures.
+
 ## Format
 
 Every skill here uses the exact dialect `services/memory/skill_format.py`

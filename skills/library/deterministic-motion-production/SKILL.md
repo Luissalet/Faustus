@@ -1,7 +1,7 @@
 ---
 name: deterministic-motion-production
-description: Author seekable motion graphics with one timeline for preview and export. Use when producing animated titles, charts, overlays or an explanatory video.
-version: 1.0.0
+description: Author seekable motion graphics with one timeline for preview and export. Use when producing animated titles, charts or overlays; source-linked narrated videos use source-explainer-production.
+version: 1.1.0
 category: engineering
 tags: [motion, html, video, keyframes, composicion, animacion]
 status: published
@@ -18,7 +18,9 @@ duration, frame rate, canvas and content; retain source and local assets.
 1. Define duration, frame rate, dimensions, safe text bounds and audio
    timing. Prepare a shot plan identifying the information visible during
    each interval, rather than beginning with decorative transitions.
-2. Discover the native composition and render tools. Use local fonts and
+2. Discover the native composition and render tools of Prospero, which now
+   incorporates both Generation and Montage. Do not launch a retired
+   Lumiere service or an upstream renderer/CLI. Use local fonts and
    media and one authoritative timeline. Express animation as a function
    of time so seeking does not depend on earlier playback.
 3. Build scenes with editable text, data and keyframes. Avoid random state
@@ -36,6 +38,10 @@ duration, frame rate, canvas and content; retain source and local assets.
 
 ## Pitfalls
 
+- `source-explainer-production` handles supplied sources, scene narration,
+  local voice and resumable MP4/SRT production. This procedure concerns the
+  underlying deterministic motion composition; it does not replace that
+  source-linked workflow or install another production harness.
 - Smooth playback can still fail when frames render out of order.
 - Missing fonts or late media loads alter line wrapping and frame content.
 - A correct frame count does not establish the intended scene is present.
