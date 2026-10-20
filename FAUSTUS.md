@@ -164,11 +164,18 @@ Studio conservaUNVERIFIED/6herramientas fallidas, distinto de aceptaciónexterna
 La metadata real del crítico de ese turno prueba un grupo con salida1200 y
 razonamiento1200, finishlength y contenido finalNone; los otros2grupos acabaron
 stop. El presupuesto1200 impuesto por el crítico explica ESA respuesta vacía,
-sin probar la causa de todos los incidentes históricos. Se corrige en#1058,
-todavía sin activar. Otra investigación CPU
-reprodujo una espera del consumidor tras cancelación espontánea de la fuente:
-la reparación#1052 está aprobadaCAS1 y pasó340tests+6subtests en composición
-propia, conservando una negación de conexión preexistente; aún no está activa.
+sin probar la causa de todos los incidentes históricos. La reparación#1058
+retira ese tope del crítico y usa el presupuesto existente del servicio/modelo.
+La reparación#1052 transmite al consumidor la cancelación espontánea de la
+fuente, conservando Task.cancel normal. Ambas aprobadasCAS1, integradas y
+cargadas por el servidor recuperado: composición30módulos354PASS+6subtests,
+con una denegación8081 preexistente conservada. El primer arranque falló su
+plazo de salud; un arranque diagnóstico separado recuperó Faustus y conservó
+settings, conexiones desactivadas, paradas manuales y proceso del modelo.
+Las métricas registraron1token y1petición terminada por length adicionales:
+el control de cero inferencias permanece FALLIDO. La prueba automática de
+visión del catálogo es la atribución inferida, no una captura del request.
+La revalidación nativa del crítico tras estas reparaciones sigue pendiente.
 La fiabilidad global sigue
 sin demostrar. Evidencias: research-inbox/sparks835/runtime-audit/resume-20261020,
 subcarpetas integration1047, native-review1045, integration1052 y

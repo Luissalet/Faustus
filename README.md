@@ -215,11 +215,19 @@ Studio and native MCP recovered the same terminal run, retaining UNVERIFIED.
 
 Actual response metadata also identified one internal critic call whose entire
 1,200-token output budget was consumed by reasoning: finish_reason=length and
-no final content. Two other groups finished normally. Task 1058 is repairing
-that imposed budget; it is not active yet. The separately approved source
-cancellation repair 1052 passed 340 area tests and six subtests in the composed
-worktree, with one known pre-existing connection denial retained. It is also
-not active yet. See the durable Pipeline report under
+no final content. Two other groups finished normally. Reviewed repair 1058
+removes that reviewer-specific cap and uses the existing service/model output
+budget. Reviewed repair 1052 also propagates a source cancellation to the waiting
+consumer while retaining ordinary task cancellation. Both are integrated and
+loaded by the recovered server. The combined 30-module area passed 354 tests
+and six subtests; one known pre-existing connection denial remains recorded.
+The first cold start failed its health deadline. A separate diagnostic start
+recovered the same configured service, preserving settings, disabled connections,
+manual stops and the model process. Activation counters recorded one extra
+generation token and one length-finished request, so the zero-generation check
+remains failed. Catalogue vision probing is the inferred source, not a captured
+request attribution. Native reviewer revalidation after these repairs is pending.
+See the durable Pipeline report under
 research-inbox/sparks835/runtime-audit/resume-20261020/PIPELINE-FRESH-RESULT.md.
 
 The reviewed non-stream compatibility fix 1036 also accepts vLLM's `reasoning`
@@ -244,9 +252,8 @@ two-line arithmetic defect in 3.36 seconds. Its receipt reports 108 output token
 finish reason stop and a complete final response. This scoped success does not
 exercise every compatibility branch or explain earlier critic failures. Native
 MCP and Studio also recover the same ongoing large-project run and display its
-real progress; that project's independent acceptance has not run yet. A separate
-CPU investigation reproduced a source-cancellation termination defect, tracked
-in 1052; its correction is not yet active. General reliability remains unproven.
+real progress. The Pipeline acceptance and additional failures are recorded above.
+General reliability remains unproven.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
