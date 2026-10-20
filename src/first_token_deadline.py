@@ -33,7 +33,12 @@ async def bounded(source, seconds: float, *, phase="model"):
                 await queue.put(("chunk", chunk))
             await queue.put(("end", None))
         except asyncio.CancelledError:
-            raise
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            # A source can stop itself without Task.cancel(). Deliver that
+            # terminal to the consumer instead of leaving it on queue.get().
+            await queue.put(("cancelled", None))
         except Exception as exc:
             await queue.put(("error", exc))
         finally:
@@ -75,6 +80,8 @@ async def bounded(source, seconds: float, *, phase="model"):
                 return
             if kind == "error":
                 raise chunk
+            if kind == "cancelled":
+                raise asyncio.CancelledError()
             started = started or meaningful(chunk)
             yield chunk
     finally:
