@@ -2050,7 +2050,7 @@ class TurnLedger:
         output is deliberately absent; completed effects and their paths are
         enough to keep the same claim checks across an approval boundary.
         """
-        keys = {"round", "tool", "ok", "kind", "paths", "error", "computed_list", "exit_code"}
+        keys = {"round", "tool", "ok", "kind", "paths", "error", "computed_list", "exit_code", "verification_key"}
         # Long runs can have many reads after a completed write. Keep effects
         # separately so those reads do not evict the work being reported.
         kept = {id(e) for e in self.effects[-128:] + self.events[-128:]}

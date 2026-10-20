@@ -97,6 +97,24 @@ def test_comparable_success_must_be_later_and_confirmed():
     assert verify_outcome(tool_results=[{**row, "ok": False}, {**row, "ok": True, "status": "partial"}])["outcome"] == UNVERIFIED
 
 
+@pytest.mark.parametrize("command,other_workspace,outcome", [
+    ("pytest tests/test_own.py", False, VERIFIED),
+    ("echo unrelated", False, UNVERIFIED),
+    ("pytest tests/test_own.py", True, UNVERIFIED),
+])
+def test_server_owned_snapshot_preserves_recheck_identity(tmp_path, command, other_workspace, outcome):
+    from src.agent_harness import TurnLedger
+    original = TurnLedger(str(tmp_path), "Run the own fixture check.")
+    failed = original.record("bash", '{"command":"pytest tests/test_own.py"}',
+                             {"exit_code": 1, "error": "own fixture check failed"})
+    snapshot = original.approval_evidence()
+    restored = TurnLedger(str(tmp_path / "other" if other_workspace else tmp_path), "Continue the own fixture check.")
+    restored.restore_approval_evidence(snapshot)
+    assert restored.events[0]["verification_key"] == failed["verification_key"]
+    restored.record("bash", json.dumps({"command": command}), {"exit_code": 0})
+    assert restored.verify_outcome()["outcome"] == outcome
+
+
 @pytest.mark.parametrize("row,kind", [
     ({"tool": "bash", "status": "outcome_unknown"}, "result_outcome_unknown"),
     ({"tool": "bash", "result_status": "cancelled", "exit_code": 0}, "result_cancelled"),
