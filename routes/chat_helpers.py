@@ -743,6 +743,7 @@ async def build_chat_context(
     continuation_context_message: str | None = None,
     persist_user_message: bool = True,
     behavior_mode: str | None = None,
+    no_skills: bool = False,
 ) -> ChatContext:
     """Build the full context (preface + messages) for an LLM call.
 
@@ -797,7 +798,7 @@ async def build_chat_context(
     mem_enabled = not incognito and not no_memory and uprefs.get("memory_enabled", True)
     # Skills injection respects its own enable toggle (mirrors memory_enabled).
     # When off, the "Available skills" index is not added to the prompt.
-    skills_enabled = not incognito and uprefs.get("skills_enabled", True)
+    skills_enabled = not incognito and not no_skills and uprefs.get("skills_enabled", True)
     if not allow_tool_preprocessing:
         mem_enabled = False
         skills_enabled = False
