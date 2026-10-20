@@ -115,6 +115,111 @@ def test_server_owned_snapshot_preserves_recheck_identity(tmp_path, command, oth
     assert restored.verify_outcome()["outcome"] == outcome
 
 
+_SNAPSHOT_RESULTS = [
+    pytest.param("bash", {field: status}, id=f"{field}-{status or 'empty'}")
+    for field in ("result_status", "status")
+    for status in sorted(ov._UNKNOWN_STATUSES | ov._SUCCESS_STATUSES | {"failed", "denied", "conflict", "error"})
+] + [
+    pytest.param("bash", {"approval_required": True}, id="waiting-approval"),
+    pytest.param("bash", {"approval_required": True, "exit_code": 0}, id="approval-with-exit-zero"),
+    pytest.param("bash", {"result_status": "partial", "status": "succeeded"}, id="canonical-partial"),
+    pytest.param("bash", {"result_status": "succeeded", "status": "partial"}, id="canonical-precedence"),
+    pytest.param("run_code", {"exit_code": 0, "runtime_guarantees": HOST}, id="code-host"),
+    pytest.param("run_code", {"exit_code": 0, "runtime_guarantees": confined_guarantees()}, id="code-readonly"),
+    pytest.param("run_code", {"exit_code": 0, "runtime_guarantees": confined_guarantees("workspace_read_write")}, id="code-write"),
+    pytest.param("run_code", {"exit_code": 0, "runtime_guarantees": confined_guarantees(network_isolated=False)}, id="code-network"),
+    pytest.param("run_code", {"refused": True, "runtime_guarantees": {"mode": "not_executed"}}, id="code-refused"),
+] + [
+    pytest.param("run_code", {"exit_code": 0, "runtime_guarantees": confined_guarantees(),
+                              "receipt": {"terminated_by": reason}}, id=f"code-{reason}")
+    for reason in ("timeout", "cancelled", "output", "memory", "error", "max_calls")
+] + [
+    pytest.param("run_code", {"exit_code": 0, "runtime_guarantees": confined_guarantees(),
+                              "tool_outcomes": {"counts": {status: 1}}}, id=f"nested-{status}")
+    for status in sorted(ov._UNKNOWN_STATUSES | {"failed"})
+] + [
+    pytest.param("bash", {flag: True, "exit_code": 0}, id=f"not-executed-{flag}")
+    for flag in ("blocked", "refused", "requires_approval", "needs_approval")
+] + [
+    pytest.param("process_read", {"handle": "own-process", "state": state, **extra}, id=f"process-{state}-{extra}")
+    for state, extra in [
+        ("starting", {}), ("running", {}), ("stopped", {}),
+        ("lost", {}), ("uncertain", {}), ("orphaned", {}),
+        ("exited", {"exit_code": 0}), ("exited", {"exit_code": 1}), ("exited", {}),
+        ("failed_to_start", {"termination_reason": "own startup error"}),
+        ("timed_out", {}), ("unknown-state", {}),
+    ]
+]
+
+
+@pytest.mark.parametrize("recheck", [False, True], ids=["without-recheck", "with-recheck"])
+@pytest.mark.parametrize("tool,result", _SNAPSHOT_RESULTS)
+def test_server_snapshot_keeps_recorded_verification_semantics(tmp_path, tool, result, recheck):
+    from src.agent_harness import TurnLedger
+    original = TurnLedger(str(tmp_path), "Own synthetic evidence fixture.")
+    arguments = '{"command":"own synthetic check"}'
+    original.record(tool, arguments, result)
+    restored = TurnLedger(str(tmp_path), "Continue own synthetic evidence fixture.")
+    restored.restore_approval_evidence(original.approval_evidence())
+    assert restored.events == original.events
+    if recheck:
+        original.record(tool, arguments, {"exit_code": 0})
+        restored.record(tool, arguments, {"exit_code": 0})
+    assert restored.verify_outcome() == original.verify_outcome()
+
+
+@pytest.mark.parametrize("result,outcome", [
+    ({"result_status": "outcome_unknown"}, UNCERTAIN),
+    ({"status": "partial"}, UNCERTAIN),
+    ({"result_status": "cancelled"}, UNCERTAIN),
+    ({"approval_required": True}, UNVERIFIED),
+])
+def test_snapshot_cannot_turn_unconfirmed_or_waiting_evidence_into_recovery(tmp_path, result, outcome):
+    from src.agent_harness import TurnLedger
+    ledger = TurnLedger(str(tmp_path))
+    ledger.record("bash", '{"command":"own check"}', result)
+    resumed = TurnLedger(str(tmp_path))
+    resumed.restore_approval_evidence(ledger.approval_evidence())
+    resumed.record("bash", '{"command":"own check"}', {"exit_code": 0})
+    assert resumed.verify_outcome()["outcome"] == outcome
+
+
+@pytest.mark.parametrize("flag", ["blocked", "refused", "approval_required", "requires_approval", "needs_approval"])
+@pytest.mark.parametrize("recheck", [False, True])
+def test_nonexecution_flags_remain_unverified_direct_and_after_snapshot(tmp_path, flag, recheck):
+    from src.agent_harness import TurnLedger
+    original = TurnLedger(str(tmp_path))
+    original.record("bash", '{"command":"own check"}', {flag: True, "exit_code": 0})
+    resumed = TurnLedger(str(tmp_path))
+    resumed.restore_approval_evidence(original.approval_evidence())
+    if recheck:
+        original.record("bash", '{"command":"own check"}', {"exit_code": 0})
+        resumed.record("bash", '{"command":"own check"}', {"exit_code": 0})
+    assert original.verify_outcome()["outcome"] == UNVERIFIED
+    assert resumed.verify_outcome() == original.verify_outcome()
+
+
+@pytest.mark.parametrize("flag", ["blocked", "refused", "approval_required", "requires_approval", "needs_approval"])
+def test_nonexecution_flag_is_not_a_successful_mutation_or_failed_approval_wait(flag):
+    from src.agent_harness import TurnLedger
+    ledger = TurnLedger()
+    ledger.tests = {"ran": True, "ok": True}
+    event = ledger.record("write_file", '{"path":"own-fixture.txt","content":"own"}', {flag: True, "exit_code": 0})
+    assert event["ok"] is False and event[flag] is True
+    assert not ledger.mutations and ledger.tests["ok"] is True
+    waiting = flag in ("approval_required", "requires_approval", "needs_approval")
+    assert ledger.summary()["waiting_approval_calls"] == int(waiting)
+    assert ledger.summary()["failed_calls"] == int(not waiting)
+
+
+@pytest.mark.parametrize("flag", ["blocked", "refused", "approval_required", "requires_approval", "needs_approval"])
+def test_false_nonexecution_flag_does_not_erase_a_success(flag):
+    from src.agent_harness import TurnLedger
+    ledger = TurnLedger()
+    assert ledger.record("write_file", '{"path":"own.txt","content":"own"}', {flag: False, "exit_code": 0})["ok"]
+    assert ledger.verify_outcome()["outcome"] == VERIFIED
+
+
 @pytest.mark.parametrize("row,kind", [
     ({"tool": "bash", "status": "outcome_unknown"}, "result_outcome_unknown"),
     ({"tool": "bash", "result_status": "cancelled", "exit_code": 0}, "result_cancelled"),

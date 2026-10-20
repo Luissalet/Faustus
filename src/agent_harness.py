@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 
 # Tools whose success IS evidence that files changed on disk.
 FILE_MUTATION_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+_APPROVAL_WAIT_FLAGS = ("approval_required", "requires_approval", "needs_approval")
+_NONEXECUTION_FLAGS = ("blocked", "refused") + _APPROVAL_WAIT_FLAGS
 # A path whose edit is only provable by looking at it: markup and styles
 # anywhere, scripts only where they are served to a browser. `src/editor/x.py`
 # is not UI; `static/editor/viewport2d.js` is.
@@ -1945,9 +1947,10 @@ class TurnLedger:
         ).encode("utf-8", errors="surrogatepass")).hexdigest()
         if ok and _has_computed_list_result(tool, content, result):
             ev["computed_list"] = True
-        if (result or {}).get('approval_required') is True:
-            ev['approval_required'] = True
         if isinstance(result, dict):
+            for flag in _NONEXECUTION_FLAGS:
+                if result.get(flag):
+                    ev[flag] = True
             # Evidence the single outcome verifier (src/outcome_verification.py)
             # reads back: Code Mode's runtime/receipts and a process handle's state.
             if tool == "run_code":
@@ -2052,7 +2055,9 @@ class TurnLedger:
         output is deliberately absent; completed effects and their paths are
         enough to keep the same claim checks across an approval boundary.
         """
-        keys = {"round", "tool", "ok", "kind", "paths", "error", "computed_list", "exit_code", "verification_key"}
+        # Preserve the observations the outcome verifier already reads, not raw output.
+        keys = {"round", "tool", "ok", "kind", "paths", "error", "computed_list", "exit_code",
+                "verification_key", "result_status", "status", "code_mode", "process", *_NONEXECUTION_FLAGS}
         # Long runs can have many reads after a completed write. Keep effects
         # separately so those reads do not evict the work being reported.
         kept = {id(e) for e in self.effects[-128:] + self.events[-128:]}
@@ -2931,8 +2936,8 @@ class TurnLedger:
             "tool_calls": len(self.events),
             # Waiting at the authorization boundary is neither successful
             # execution nor an execution failure. Keep the raw ledger intact.
-            "failed_calls": sum(not e.get('approval_required') for e in self.failed),
-            "waiting_approval_calls": sum(bool(e.get('approval_required')) for e in self.events),
+            "failed_calls": sum(not any(e.get(flag) for flag in _APPROVAL_WAIT_FLAGS) for e in self.failed),
+            "waiting_approval_calls": sum(any(e.get(flag) for flag in _APPROVAL_WAIT_FLAGS) for e in self.events),
             "mutations": changed_now + [p for p in self.prior_leg_paths if p not in changed_now],
             "effects": len(self.effects),
             "rejections": self.rejections,
@@ -3015,7 +3020,7 @@ def _result_ok(result: Optional[Dict[str, Any]]) -> bool:
         return False
     if result.get("error"):
         return False
-    if result.get("blocked") or result.get("approval_required"):
+    if any(result.get(flag) for flag in _NONEXECUTION_FLAGS):
         return False
     code = result.get("exit_code")
     if code not in (None, 0):
