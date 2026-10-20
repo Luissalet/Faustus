@@ -758,11 +758,12 @@ DEFAULT_SETTINGS = {
     # Run the project's own tests after a turn that changed files
     # (src/project_tests.py): pytest / npm test / cargo / go / make, detected;
     # "related" runs only the test files that name a changed module (pytest),
-    # "all" runs the whole suite. One bounded fix round when they fail.
+    # "all" runs the whole suite. Automatic repairs use the current turn budget;
+    # explicit nonnegative repair limits remain fixed (0 = report only).
     "agent_project_tests": True,
     "agent_project_tests_scope": "related",
     "agent_project_tests_timeout_seconds": 300,
-    "agent_project_tests_fix_rounds": 1,
+    "agent_project_tests_fix_rounds": -1,
     # Harness-driven UI smoke test (src/ui_smoke.py): a turn that mutates
     # static/templates/*.html/*.js/*.css starts the project's own web server
     # in a free port, fetches its pages, and re-fetches every referenced

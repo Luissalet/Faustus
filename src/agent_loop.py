@@ -11993,9 +11993,9 @@ async def _stream_agent_loop_body(
 
     _tests_on = bool(_harness_enabled and workspace and _hopts.get("run_tests", get_setting("agent_project_tests", True)))
     try:
-        _tests_max_fix = int(get_setting("agent_project_tests_fix_rounds", 1) or 0)
-    except (TypeError, ValueError):
-        _tests_max_fix = 1
+        _tests_max_fix = max(-1, int(get_setting("agent_project_tests_fix_rounds", -1)))
+    except (TypeError, ValueError, OverflowError):
+        _tests_max_fix = -1  # malformed configuration uses the automatic default
     try:
         from src import auto_review as _auto_review
         _reviewer_model, _reviewer_skip_reason = _auto_review.resolve_reviewer_with_reason(
@@ -16617,11 +16617,13 @@ async def _stream_agent_loop_body(
                         except Exception as _pt_err:
                             logger.debug("[harness] project tests failed to run: %s", _pt_err)
                             _tres = None
+                        # AUTO follows the current accumulated turn budget, including extensions.
+                        _tests_fix_limit = _rounds_budget if _tests_max_fix == -1 else _tests_max_fix
                         if (_tres and _tres.get("ran") and _tres.get("ok") is False
                                 and not _tres.get("inconclusive") and not _tres.get("pre_existing_only")
-                                and _xr.permits("tests_fix", _ledger.tests_fix_rounds, _tests_max_fix)):
+                                and _xr.permits("tests_fix", _ledger.tests_fix_rounds, _tests_fix_limit)):
                             _ledger.tests_fix_rounds += 1
-                            logger.warning("[harness] round %s project tests FAILED (%s) — one fix round",
+                            logger.warning("[harness] round %s project tests FAILED (%s) — requesting repair",
                                            round_num, _tres.get("summary"))
                             if round_response.strip():
                                 messages.append({"role": "assistant", "content": round_response})
@@ -16630,9 +16632,9 @@ async def _stream_agent_loop_body(
                                 "data: " + json.dumps({
                                     "type": "harness_check", "status": "tests_failed", "round": round_num,
                                     "tests": _ledger.tests, "attempt": _ledger.tests_fix_rounds,
-                                    "max_attempts": _tests_max_fix, "mutations": _ledger.mutated_paths(),
+                                    "max_attempts": _tests_fix_limit, "mutations": _ledger.mutated_paths(),
                                     **_xr.event("tests_fix", used=_ledger.tests_fix_rounds,
-                                                limit=_tests_max_fix, round_num=round_num),
+                                                limit=_tests_fix_limit, round_num=round_num),
                                 }) + "\n\n"
                             )
                             full_response += "\n\n"

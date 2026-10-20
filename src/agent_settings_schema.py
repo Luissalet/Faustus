@@ -341,8 +341,8 @@ GROUPS: list[dict[str, Any]] = [
                  "Wall-clock cap for one test run.",
                  10, 7200),
             _int("agent_project_tests_fix_rounds", "Test fix rounds",
-                 "Bounded extra rounds the model gets to fix failing tests. 0 = report only.",
-                 0, 5),
+                 "-1 = automatic within the current turn budget; 0 = report only; positive = fixed repair rounds.",
+                 -1, 5),
             _bool("agent_project_tests_baseline", "Baseline failing tests",
                   "Re-run the failing test files against the turn's checkpoint to tell new failures "
                   "from pre-existing ones; no fix round when everything already failed before."),
