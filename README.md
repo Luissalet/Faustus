@@ -226,7 +226,10 @@ recovered the same configured service, preserving settings, disabled connections
 manual stops and the model process. Activation counters recorded one extra
 generation token and one length-finished request, so the zero-generation check
 remains failed. Catalogue vision probing is the inferred source, not a captured
-request attribution. Native reviewer revalidation after these repairs is pending.
+request attribution. Native reviewer revalidation then correctly identified the
+line-2 arithmetic defect in 2.57 seconds, with one real request, 107 output tokens,
+finish reason stop and no 1,200-token cap in the observed request controls. This
+small case does not exercise a reasoning response longer than 1,200 tokens.
 See the durable Pipeline report under
 research-inbox/sparks835/runtime-audit/resume-20261020/PIPELINE-FRESH-RESULT.md.
 

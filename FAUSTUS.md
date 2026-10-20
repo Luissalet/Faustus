@@ -175,7 +175,11 @@ settings, conexiones desactivadas, paradas manuales y proceso del modelo.
 Las métricas registraron1token y1petición terminada por length adicionales:
 el control de cero inferencias permanece FALLIDO. La prueba automática de
 visión del catálogo es la atribución inferida, no una captura del request.
-La revalidación nativa del crítico tras estas reparaciones sigue pendiente.
+La revalidación nativa posterior identificó correctamente la resta en línea2
+en2,57s: una petición real,107tokens de salida, finishstop y controles observados
+sin tope1200. Este caso pequeño no ejercita razonamiento superior a1200tokens.
+MCP recuperó el mismo turno Pipeline terminado y una conversación exactamente
+igual a la anterior al reinicio; Studio recuperó su finalUNVERIFIED sin reenviar.
 La fiabilidad global sigue
 sin demostrar. Evidencias: research-inbox/sparks835/runtime-audit/resume-20261020,
 subcarpetas integration1047, native-review1045, integration1052 y
