@@ -117,6 +117,48 @@ def test_failed_fresh_check_cannot_revive_previous_pass(tmp_path, monkeypatch):
     assert ledger.tests_history[0]["source_epoch"] < ledger.mutation_epoch
 
 
+@pytest.mark.parametrize("first", ["exception", "not_run", "no_result"])
+def test_unexecuted_check_retries_at_next_completion_without_new_mutation(tmp_path, monkeypatch, first):
+    from src import project_tests
+    ledger = TurnLedger(str(tmp_path))
+    calls, finish = _project_test_branch(ledger, tmp_path, monkeypatch)
+    _write(ledger, tmp_path, "old")
+    finish()
+    old_epoch = ledger.tests["source_epoch"]
+    _write(ledger, tmp_path, "new")
+    attempts = []
+
+    def transient(*args, **kwargs):
+        attempts.append(ledger.mutation_epoch)
+        if len(attempts) == 1:
+            if first == "exception":
+                raise OSError("own transient checker startup failure")
+            return {"ran": False, "ok": None, "inconclusive": True} if first == "not_run" else None
+        return {"ran": True, "ok": True, "summary": "own current check passed"}
+
+    monkeypatch.setattr(project_tests, "run_for_turn", transient)
+    finish()
+    assert not (ledger.tests and ledger.tests.get("ran") and ledger.tests.get("ok")), "old PASS must not revive"
+    assert len(ledger.tests_history) == 1
+    finish()
+    assert len(attempts) == 2
+    assert ledger.tests["ok"] is True and ledger.tests["source_epoch"] == ledger.mutation_epoch
+    assert ledger.tests["source_epoch"] > old_epoch
+    assert len(ledger.tests_history) == 2
+    assert not ledger.tests_need_run()
+
+
+def test_executed_failure_is_not_repeated_on_unchanged_source(tmp_path, monkeypatch):
+    ledger = TurnLedger(str(tmp_path))
+    calls, finish = _project_test_branch(ledger, tmp_path, monkeypatch)
+    _write(ledger, tmp_path, "broken")
+    finish()
+    finish()
+    assert calls == ["broken"]
+    assert ledger.tests["ran"] is True and ledger.tests["ok"] is False
+    assert ledger.tests_runs == 1 and len(ledger.tests_history) == 1
+
+
 def test_check_covers_only_its_starting_epoch(tmp_path, monkeypatch):
     from src import project_tests
     ledger = TurnLedger(str(tmp_path))

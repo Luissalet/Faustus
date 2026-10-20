@@ -1861,6 +1861,7 @@ class TurnLedger:
         self.tests_fix_rounds = 0
         # Source identity here covers known turn-local effects, not external edits.
         self.mutation_epoch = 0
+        # Only an executed check covers an epoch; startup failures remain due.
         self.tests_epoch = -1
         self.tests_history: List[Dict[str, Any]] = []
         # H1: harness-driven UI smoke (src/ui_smoke.py) — server start + HTTP
@@ -1900,6 +1901,7 @@ class TurnLedger:
         evidence = {**result, "source_epoch": source_epoch} if result is not None else None
         if evidence and evidence.get("ran"):
             self.tests_history.append(dict(evidence))
+            self.tests_epoch = source_epoch
         self.tests = evidence if source_epoch == self.mutation_epoch else None
 
     def record(self, tool: str, content: str, result: Dict[str, Any], round_num: int = 0) -> Dict[str, Any]:

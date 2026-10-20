@@ -16588,7 +16588,6 @@ async def _stream_agent_loop_body(
                     if _tests_on and _ledger.tests_need_run():
                         _ledger.tests_runs += 1
                         _tests_source_epoch = _ledger.mutation_epoch
-                        _ledger.tests_epoch = _tests_source_epoch
                         try:
                             from src import project_tests as _ptests
                             _tspec = _ptests.detect_test_command(
