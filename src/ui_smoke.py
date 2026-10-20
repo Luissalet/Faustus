@@ -181,7 +181,7 @@ def _static_server_spec(workspace: str, index_dir: str) -> Dict[str, Any]:
     workspace = os.path.abspath(workspace)
     root = os.path.abspath(index_dir)
     index = os.path.join(root, "index.html")
-    refs = _extract_asset_refs(_read_text(index))
+    refs = _extract_asset_refs(_read_text(index), is_html=True)
     best_root, best_entry, best_score = root, "/", -1
     while os.path.commonpath([workspace, root]) == workspace:
         entry = "/" if root == os.path.dirname(index) else "/" + quote(
@@ -400,15 +400,64 @@ _JS_MIME_OK = {
 }
 
 
-def _extract_asset_refs(html_or_js: str) -> List[str]:
+def _extract_asset_refs(html_or_js: str, *, is_html: Optional[bool] = None) -> List[str]:
+    """Separate HTML attributes/inline scripts from standalone JavaScript.
+
+    Known callers pass their context. Legacy calls use initial markup as the
+    HTML hint; ambiguous JavaScript containing markup can pass is_html=False.
+    JavaScript imports retain the existing regex extraction, not a full lexer.
+    """
+    if is_html is None:
+        is_html = html_or_js.lstrip().startswith("<")
     refs: List[str] = []
-    refs += _SCRIPT_SRC_RE.findall(html_or_js)
-    refs += _LINK_HREF_RE.findall(html_or_js)
-    refs += _ES_IMPORT_RE.findall(html_or_js)
-    refs += _ES_DYNAMIC_IMPORT_RE.findall(html_or_js)
+    scripts = [html_or_js]
+    if is_html:
+        from html.parser import HTMLParser
+
+        class AssetHTMLParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.sources: List[str] = []
+                self.styles: List[str] = []
+                self.scripts: List[str] = []
+                self.script_parts: Optional[List[str]] = None
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == "script":
+                    kind = (attrs.get("type") or "").split(";", 1)[0].strip().lower()
+                    javascript = not kind or kind in _JS_MIME_OK
+                    src = attrs.get("src")
+                    if src and javascript:
+                        self.sources.append(src)
+                    self.script_parts = [] if javascript and "src" not in attrs else None
+                elif tag == "link":
+                    href = attrs.get("href")
+                    if href and ".css" in href.lower():
+                        self.styles.append(href)
+
+            def handle_data(self, data):
+                if self.script_parts is not None:
+                    self.script_parts.append(data)
+
+            def handle_endtag(self, tag):
+                if tag == "script":
+                    if self.script_parts is not None:
+                        self.scripts.append("".join(self.script_parts))
+                    self.script_parts = None
+
+        parser = AssetHTMLParser()
+        parser.feed(html_or_js)
+        parser.close()
+        refs = parser.sources + parser.styles
+        scripts = parser.scripts
+    for script in scripts:
+        refs += _ES_IMPORT_RE.findall(script)
+    for script in scripts:
+        refs += _ES_DYNAMIC_IMPORT_RE.findall(script)
     out: List[str] = []
     for r in refs:
-        r = (r or "").strip()
+        r = (r or "").strip(" \t\r\n\f") if is_html else (r or "").strip()
         if not r or r.startswith(("http://", "https://", "//", "data:", "mailto:")):
             continue
         if r not in out:
@@ -459,7 +508,7 @@ def _crawl(spec: Dict[str, Any], base_url: str, deadline: float) -> Tuple[List[D
         if mime and "html" not in mime:
             continue
         html = body.decode("utf-8", "replace")
-        for ref in _extract_asset_refs(html)[:MAX_ASSETS]:
+        for ref in _extract_asset_refs(html, is_html=True)[:MAX_ASSETS]:
             if time.time() > deadline:
                 break
             asset_url = urljoin(url, ref)
