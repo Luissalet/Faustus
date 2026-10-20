@@ -1,7 +1,7 @@
 ---
 name: diagram-authoring
-description: Create, edit and explain revisioned diagrams through Vitruvius's native visual editor and object operations. Use when the user asks for an editable flowchart, architecture, concept map or organisation chart, including «hazme un diagrama» or «cambia esta conexión».
-version: 1.0.0
+description: Create, edit and explain revisioned diagrams and paginated infographics through Vitruvius's native editor. Use when the user asks for an editable flowchart, architecture, concept map, organisation chart or «infografía editable».
+version: 1.1.0
 category: engineering
 tags: [hoards, vitruvius, diagram, diagrama, flowchart, esquema, organigrama, editable]
 status: published
@@ -41,6 +41,19 @@ An exported bitmap is an illustration, not the graph's editable source.
    {"id":"012345abcdef","base_revision":3,"edits":[{"collection":"nodes","id":"review","values":{"label":"Comprobar la fuente"}},{"collection":"view_nodes","id":"review","values":{"x":260,"pinned":true}}]}
    ```
 
+   For editorial composition, retain the same graph and set
+   `view.kind:"infographic"`. `view.pages` holds objects with stable `id`,
+   `title`, `order`, `width` and `height`; each `view.nodes[id].page_id`
+   selects its page. Node view supports `font_size`, `font_weight`, `align`,
+   `ink`, `border` and `show_label`. `view.assets` embeds PNG/JPEG/WebP
+   data URIs by asset ID, referenced from a block's `asset_id`. Object-edit
+   collections include `pages`, `assets` and `view`; view properties use
+   action=set. Move or remove a page's blocks before removing it through
+   native edits. The UI also offers page duplication and four editorial
+   templates: comparison, timeline, process and relationships. The common
+   panel includes the current draft and selected page. Saved renders report
+   text/bounds findings without refusing the save.
+
 4. Independent fields merge. On a same-field conflict, retain the person's
    draft and its base, read the conflicting current field and reconcile
    that field according to the request. Do not retry blindly using the
@@ -57,14 +70,19 @@ An exported bitmap is an illustration, not the graph's editable source.
    imported original. Opening the exported source as a new document does
    not import server-side history. Do not claim linked insertion into another
    Hoard until that consumer's operation has actually been exercised.
+   For editorial documents, SVG/PNG stack pages vertically and PDF retains
+   each page's own dimensions. draw.io preserves the documented page/style/
+   raster subset; cross-page semantic links use a native extension. Mermaid
+   retains graph relationships rather than the editorial page composition.
 
 ## Pitfalls
 
 - An empty canvas, an automatic layout and a saved revision are different states.
 - A local draft in the panel may be newer than the server revision.
 - Changing node IDs breaks references; copying pixels does not preserve relations.
-- Full Canva/Visio fidelity, multipage infographics and authored isometric
-  state simulation are not implied by the first graph editor.
+- Full Canva/Visio fidelity and authored isometric state simulation are not
+  implied by the native editor. Approximate character wrapping is not a
+  desktop-publishing text-layout engine.
 
 ## Verification
 
