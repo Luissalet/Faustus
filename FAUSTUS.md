@@ -185,6 +185,23 @@ sin demostrar. Evidencias: research-inbox/sparks835/runtime-audit/resume-2026102
 subcarpetas integration1047, native-review1045, integration1052 y
 PIPELINE-FRESH-RESULT.md; fallos previos conservados.
 
+Un cuaderno web nuevo terminó39rondas64herramientas. La aceptación externa pasó
+52casosAPI y7casos de navegador/entrega, con1001notas y un cuerpo superior a1MiB.
+Dos casosUI fallaron: título válido sin espacios que desborda390px y mensaje de
+éxito anterior visible tras importar un archivo inválido. Sus28tests pasaron con
+ResourceWarning de descriptores. La fuente sigue intacta y se conservan los fallos;
+no acredita fiabilidad general.
+
+Las correcciones revisadas1072/1074 conservan raíz pública/entradaHTML y extraen
+referenciasJS en su contextoHTML/script correcto.1075 permite declarar el servidor
+real en .faustus/ui_smoke.json, con argumentos literales y datos de prueba dirigidos
+explícitamente a un temporal. Sobre el cuaderno intacto, la comprobación nativa del
+componente usó backend y navegador reales: HTML y2activosHTTP/MIME correctos, cero
+errores de consola y temporal retirado tras terminar el proceso. Se conservan los
+fallos anteriores API404 del preview estático y los avisos Playwright de tarea
+pendiente/TargetClosed. Esto verifica el componente evaluador, no los dos casosUI
+fallidos ni la versión del servidor instalado en ejecución. Guía: docs/api/ui-smoke.md.
+
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en
 recuperación de cola y escritura posterior. Un testigo de API pública reprodujo

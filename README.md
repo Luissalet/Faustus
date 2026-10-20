@@ -258,6 +258,24 @@ MCP and Studio also recover the same ongoing large-project run and display its
 real progress. The Pipeline acceptance and additional failures are recorded above.
 General reliability remains unproven.
 
+A fresh notebook web project completed 39 rounds and 64 tool calls. Independent
+acceptance passed 52 API cases and seven browser/delivery cases, including 1,001
+notes and a body larger than 1 MiB. Two UI cases failed: a valid unbroken title
+overflowed the mobile viewport, and a failed import retained an earlier success
+message. Its 28 producer tests passed with resource warnings. The source remains
+unchanged; those failures are retained and general reliability remains unproven.
+
+Reviewed UI-check repairs 1072/1074 preserve the public root and HTML entry and
+extract JavaScript references only in the appropriate HTML/script context. Repair
+1075 lets a project declare its actual server in `.faustus/ui_smoke.json`, with
+literal argv substitution and explicitly directed temporary test data. On the
+unchanged notebook, a native component check used the real backend and browser:
+HTML and both real assets passed, no console errors, and temporary data was
+removed after process termination. Earlier static-preview API404 failures and
+Playwright pending-task/TargetClosed warnings remain recorded. This verifies the
+checker component, not the two failed UI cases or the installed running server.
+See [project startup for UI checks](docs/api/ui-smoke.md).
+
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
 A public-API witness reproduced this after truncating only the last byte; the
