@@ -153,7 +153,7 @@ def effect_state(result: Optional[ToolResult]) -> str:
 
 #: Effect classes whose failures cannot be read as "nothing happened" without
 #: an explicit marker: they leave the process (or change something that stays).
-_UNCERTAIN_ON_GENERIC_FAILURE = frozenset({"external", "sensitive"})
+_UNCERTAIN_ON_GENERIC_FAILURE = frozenset({"execute", "external", "sensitive"})
 
 
 def effect_certainty(result: Optional[ToolResult], *, effect_class: str = "",
@@ -166,7 +166,7 @@ def effect_certainty(result: Optional[ToolResult], *, effect_class: str = "",
     ``partial``   part of it happened
     ``unknown``   it may have happened; do not repeat it without checking
 
-    A generic failure of an external-effect call without an explicit
+    A generic failure of an execution or external-effect call without an explicit
     not-dispatched marker is ``unknown``: an error string after dispatch does
     not prove the destination did nothing.
     """
