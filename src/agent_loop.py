@@ -16649,25 +16649,27 @@ async def _stream_agent_loop_body(
                             _ledger.notes.append(_note)
                     # ── (5) Independent review of the diff (src/auto_review.py):
                     # a second model pass with no tools flags obvious defects.
-                    # error-severity findings get one bounded fix round.
-                    if _ledger.mutations and _reviewer_model and _ledger.review_runs < 2 and (
-                            _ledger.review is None or _ledger.review_fix_rounds):
-                        _ledger.review_runs += 1
-                        try:
-                            yield f'data: {json.dumps({"type": "harness_check", "status": "review_running", "round": round_num, "model": _reviewer_model})}\n\n'
-                            _rev = await _auto_review.review_turn(
-                                workspace=workspace, changed=_ledger.mutated_paths(),
-                                checkpoint_sha=(_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
-                                user_text=_last_user, endpoint_url=endpoint_url, model=model, headers=headers,
-                                reviewer_model=_reviewer_model, tests=_ledger.tests,
-                                workload=workload,
-                            )
-                            _ledger.review = _auto_review.compact(_rev)
-                        except Exception as _rv_err:
-                            logger.debug("[harness] auto-review failed: %s", _rv_err)
-                            _rev = None
-                        _rev_errors = [f for f in ((_rev or {}).get("findings") or []) if f.get("severity") == "error"]
-                        if _rev_errors and _ledger.review_fix_rounds >= 1 and len(_ledger.mutations) == _ledger.review_mutations_at_fix:
+                    # Review each known source epoch once; repair uses its own budget.
+                    if _ledger.mutations and _reviewer_model:
+                        if _ledger.review_epoch != _ledger.mutation_epoch:
+                            _review_source_epoch = _ledger.mutation_epoch
+                            _ledger.review_epoch = _review_source_epoch
+                            _ledger.review_runs += 1
+                            try:
+                                yield f'data: {json.dumps({"type": "harness_check", "status": "review_running", "round": round_num, "model": _reviewer_model})}\n\n'
+                                _rev = await _auto_review.review_turn(
+                                    workspace=workspace, changed=_ledger.mutated_paths(),
+                                    checkpoint_sha=(_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
+                                    user_text=_last_user, endpoint_url=endpoint_url, model=model, headers=headers,
+                                    reviewer_model=_reviewer_model, tests=_ledger.tests,
+                                    workload=workload,
+                                )
+                                _ledger.record_review(_auto_review.compact(_rev), _review_source_epoch)
+                            except Exception as _rv_err:
+                                logger.debug("[harness] auto-review failed: %s", _rv_err)
+                                _ledger.record_review(None, _review_source_epoch)
+                        _rev_errors = [f for f in ((_ledger.review or {}).get("findings") or []) if f.get("severity") == "error"]
+                        if _rev_errors and _ledger.review_fix_rounds >= 1 and _ledger.mutation_epoch == _ledger.review_fix_epoch:
                             # The fix round changed nothing: the agent looked and disagreed
                             # (its answer says why). Not a defect count to alarm about.
                             if isinstance(_ledger.review, dict):
@@ -16678,12 +16680,12 @@ async def _stream_agent_loop_body(
                             _rev_errors = []
                         if _rev_errors and _xr.permits("review_fix", _ledger.review_fix_rounds, _review_max_fix):
                             _ledger.review_fix_rounds += 1
-                            _ledger.review_mutations_at_fix = len(_ledger.mutations)
-                            logger.warning("[harness] round %s review flagged %d defect(s) — one fix round",
+                            _ledger.review_fix_epoch = _ledger.mutation_epoch
+                            logger.warning("[harness] round %s review flagged %d defect(s) — requesting repair",
                                            round_num, len(_rev_errors))
                             if round_response.strip():
                                 messages.append({"role": "assistant", "content": round_response})
-                            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_auto_review.fix_message(_rev))})
+                            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_auto_review.fix_message(_ledger.review))})
                             yield (
                                 "data: " + json.dumps({
                                     "type": "harness_check", "status": "review_issues", "round": round_num,

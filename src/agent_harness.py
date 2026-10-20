@@ -1874,8 +1874,10 @@ class TurnLedger:
         self.ui_smoke_mutations_at_run = -1    # len(mutations) at the last smoke pass
         self.review: Optional[Dict[str, Any]] = None       # auto_review.compact()
         self.review_runs = 0
+        # A failed attempt must not loop at successive closes of unchanged source.
+        self.review_epoch = -1
         self.review_fix_rounds = 0
-        self.review_mutations_at_fix = -1     # len(mutations) when the review fix round started
+        self.review_fix_epoch = -1
         # OBJ-47: the work compared against the design canvas drafted for it
         # (src/design_canvas_check.py). None when no canvas was drafted.
         self.canvas_check: Optional[Dict[str, Any]] = None
@@ -1895,6 +1897,9 @@ class TurnLedger:
     def _invalidate_tests(self) -> None:
         self.mutation_epoch += 1
         self.tests = None
+        # A configuration skip is not a verdict about a particular source.
+        if self.review and self.review.get("verdict") != "skipped":
+            self.review = None
 
     def tests_need_run(self) -> bool:
         return bool(self.mutations) and self.tests_epoch != self.mutation_epoch
@@ -1905,6 +1910,10 @@ class TurnLedger:
             self.tests_history.append(dict(evidence))
             self.tests_epoch = source_epoch
         self.tests = evidence if source_epoch == self.mutation_epoch else None
+
+    def record_review(self, result: Optional[Dict[str, Any]], source_epoch: int) -> None:
+        self.review = ({**result, "source_epoch": source_epoch}
+                       if result is not None and source_epoch == self.mutation_epoch else None)
 
     def record(self, tool: str, content: str, result: Dict[str, Any], round_num: int = 0) -> Dict[str, Any]:
         ok = _result_ok(result)
