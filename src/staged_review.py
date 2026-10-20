@@ -515,7 +515,9 @@ def _markdown(result: Dict[str, Any]) -> str:
         st = (result.get("stages") or {}).get(name)
         if not st:
             continue
-        if not st.get("ran"):
+        if st.get("error"):
+            status = "error"
+        elif not st.get("ran"):
             status = "skipped"
         elif st.get("ok") is True:
             status = "ok"
@@ -525,7 +527,7 @@ def _markdown(result: Dict[str, Any]) -> str:
             status = "inconclusive"
         dur = st.get("duration_s")
         dur_str = f"{dur:.2f}s" if isinstance(dur, (int, float)) else "?"
-        detail = st.get("summary") or st.get("reason") or st.get("error") or ""
+        detail = st.get("error") or st.get("summary") or st.get("reason") or ""
         lines.append(f"- **{name}**: {status} ({dur_str})" + (f" — {detail}" if detail else ""))
     lines.append("")
     lines.append(f"**Verdict:** {result.get('verdict')} — {result.get('summary')}")
@@ -652,6 +654,12 @@ async def review_worktree(
         f"{n_err} error(s), {n_warn} warning(s) across {len(result['files'])} file(s)"
         if result["findings"] else f"clean across {len(result['files'])} file(s)"
     )
+    stage_errors = [f"{name}: {stage['error']}" for name, stage in result["stages"].items()
+                    if stage.get("error")]
+    if stage_errors:
+        result["verdict"] = "error"
+        findings_summary = f"; {result['summary']}" if result["findings"] else ""
+        result["summary"] = "review incomplete: " + "; ".join(stage_errors) + findings_summary
     result["duration_s"] = round(time.time() - t0, 2)
     result["markdown"] = _markdown(result)
     logger.info("[staged_review] %s: verdict=%s findings=%d in %ss", workspace, result["verdict"],

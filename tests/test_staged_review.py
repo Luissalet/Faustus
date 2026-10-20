@@ -296,3 +296,105 @@ def test_model_stage_without_a_request_is_told_so(monkeypatch):
     asyncio.run(staged_review._run_model_stage("/tmp", {"diff": "+x = 1\n", "files": ["a.py"]}, None, None, "",
                                                "http://e/v1", "m", None, 10.0))
     assert seen["user_text"] == staged_review.NO_REQUEST
+
+
+@pytest.fixture
+def reviewer_transport(monkeypatch):
+    """Only the completion transport is private; parsing/grounding stay real."""
+    from src import llm_core
+    calls = []
+
+    def install(reply):
+        async def complete(**kwargs):
+            calls.append(kwargs)
+            if isinstance(reply, BaseException):
+                raise reply
+            return reply
+        monkeypatch.setattr(llm_core, "llm_call_async", complete)
+        return calls
+    return install
+
+
+@pytest.mark.parametrize("prior_findings", [False, True])
+@pytest.mark.parametrize("reply,error", [
+    ("", "the reviewer returned an empty answer"),
+    ("not a review JSON document", "the reviewer returned an unparsed review"),
+    (TimeoutError(), "review timed out after 37 s"),
+])
+async def test_failed_model_review_is_error_and_retains_prior_findings(
+        dirty_repo, reviewer_transport, reply, error, prior_findings):
+    from src import staged_review as sr
+    calls = reviewer_transport(reply)
+    stages = ("diff", "static", "model") if prior_findings else ("diff", "model")
+    result = await sr.review_worktree(str(dirty_repo), stages=stages, request="Return the sum.",
+        endpoint_url="https://reviewer-fixture.invalid/v1", model="private-reviewer", timeout_s=7)
+    stage = result["stages"]["model"]
+    assert stage["ran"] is False and stage["ok"] is None and stage["error"] == error
+    assert result["verdict"] == "error"
+    assert "clean across" not in result["summary"]
+    assert error in result["summary"]
+    assert "**model**: error" in result["markdown"] and error in result["markdown"]
+    if prior_findings:
+        assert result["findings"] == result["stages"]["static"]["findings"]
+        assert any(f["code"] == "F821" for f in result["findings"])
+        assert "## Findings" in result["markdown"]
+    else:
+        assert result["findings"] == []
+    assert len(calls) == 1
+    assert calls[0]["max_retries"] == 1 and calls[0]["temperature"] == 0.1
+    assert calls[0]["max_tokens"] == 1200 and calls[0]["workload"] == "foreground"
+
+
+@pytest.mark.parametrize("issues", [False, True])
+async def test_valid_model_review_preserves_clean_and_issues(dirty_repo, reviewer_transport, issues):
+    import json
+    from src import staged_review as sr
+    findings = ([{"severity": "error", "file": "src/mod.py", "line": 5,
+                  "issue": "Subtraction contradicts the requested sum", "evidence": "return a - b"}]
+                if issues else [])
+    calls = reviewer_transport(json.dumps({"verdict": "issues" if issues else "ok",
+        "summary": "Actual private response", "findings": findings}))
+    result = await sr.review_worktree(str(dirty_repo), stages=("diff", "model"), request="Return the sum.",
+        endpoint_url="https://reviewer-fixture.invalid/v1", model="private-reviewer")
+    assert result["verdict"] == ("issues" if issues else "ok")
+    assert result["stages"]["model"]["ran"] is True
+    assert "error" not in result["stages"]["model"]
+    assert len(calls) == 1
+    if issues:
+        assert result["findings"][0]["grounded"] is True
+        assert "## Findings" in result["markdown"]
+    else:
+        assert result["summary"] == "clean across 1 file(s)"
+        assert result["findings"] == []
+
+
+@pytest.mark.parametrize("configured", [False, True])
+async def test_model_skip_is_not_promoted_to_error(dirty_repo, reviewer_transport, configured):
+    from src import staged_review as sr
+    calls = reviewer_transport(AssertionError("a skipped stage must not call the transport"))
+    result = await sr.review_worktree(str(dirty_repo),
+        stages=("diff",) if configured else ("diff", "model"),
+        endpoint_url="https://reviewer-fixture.invalid/v1" if configured else None,
+        model="private-reviewer" if configured else None)
+    assert result["verdict"] == "ok" and result["findings"] == []
+    assert result["stages"]["model"]["ran"] is False
+    assert result["stages"]["model"]["reason"] == (
+        "stage skipped" if configured else "no model/endpoint configured")
+    assert "**model**: skipped" in result["markdown"] and calls == []
+
+
+@pytest.mark.parametrize("stage_name", ["static", "tests"])
+async def test_explicit_stage_exception_survives_a_clean_later_model(
+        dirty_repo, monkeypatch, reviewer_transport, stage_name):
+    from src import staged_review as sr
+    def unavailable(*args, **kwargs):
+        raise OSError("private checker unavailable")
+    monkeypatch.setattr(sr, "run_static" if stage_name == "static" else "run_affected_tests", unavailable)
+    calls = reviewer_transport('{"verdict":"ok","summary":"No model findings","findings":[]}')
+    result = await sr.review_worktree(str(dirty_repo), stages=("diff", stage_name, "model"),
+        endpoint_url="https://reviewer-fixture.invalid/v1", model="private-reviewer")
+    assert result["verdict"] == "error" and result["findings"] == []
+    assert result["stages"]["model"]["ran"] is True and len(calls) == 1
+    assert result["stages"][stage_name]["error"] == "OSError: private checker unavailable"
+    assert "private checker unavailable" in result["summary"]
+    assert f"**{stage_name}**: error" in result["markdown"]
