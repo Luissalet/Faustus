@@ -481,6 +481,8 @@ async def _run_model_stage(workspace: str, diff_res: Dict[str, Any], static_res:
         result["error"] = f"{type(e).__name__}: {e}"[:300]
         result["summary"] = result["error"]
         return result
+    if parsed.get("response_evidence"):
+        result["response_evidence"] = parsed["response_evidence"]
     if err:
         result["error"] = err
         result["summary"] = err
@@ -531,6 +533,18 @@ def _markdown(result: Dict[str, Any]) -> str:
         lines.append(f"- **{name}**: {status} ({dur_str})" + (f" — {detail}" if detail else ""))
     lines.append("")
     lines.append(f"**Verdict:** {result.get('verdict')} — {result.get('summary')}")
+    for receipt in (result.get("stages", {}).get("model", {}).get("response_evidence") or []):
+        response = receipt.get("response") or {}
+        usage = response.get("usage") or {}
+        lines.append(f"- Model HTTP {receipt.get('http_status', 'unknown')}; "
+                     f"input/output tokens: {usage.get('input_tokens', 'unknown')}/"
+                     f"{usage.get('output_tokens', 'unknown')}")
+        for choice in response.get("choices", []) if isinstance(response.get("choices"), list) else []:
+            channels = choice.get("channels") or {}
+            sizes = ", ".join(f"{name}: {value.get('chars', value.get('type', 'unknown'))}"
+                              for name, value in channels.items() if value.get("present"))
+            lines.append(f"  - Finish: {choice.get('finish_reason', 'unknown')}" +
+                         (f"; channel characters/types: {sizes}" if sizes else ""))
     findings = result.get("findings") or []
     if findings:
         lines.append("")

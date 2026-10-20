@@ -733,6 +733,8 @@ async def _call_reviewer(
     made — factored out so the grouped path (below) can make it more than
     once, byte-identical each time, instead of duplicating it."""
     empty: Dict[str, Any] = {"verdict": "error", "summary": "", "findings": []}
+    def observe_response(evidence):
+        empty.setdefault("response_evidence", []).append(evidence)
     try:
         from src.llm_core import llm_call_async
         # max_retries is the number of *attempts* (0 would never call the
@@ -753,6 +755,7 @@ async def _call_reviewer(
                 headers=headers, temperature=0.1, max_tokens=1200, timeout=int(timeout),
                 max_retries=1, workload=workload or "foreground",
                 response_schema=REVIEW_SCHEMA,
+                _response_observer=observe_response,
             ),
             timeout=timeout + 30,
         )
@@ -768,6 +771,8 @@ async def _call_reviewer(
         logger.warning("[review] reviewer %s returned an empty answer", reviewer)
         return empty, "the reviewer returned an empty answer"
     parsed = _parse(raw)
+    if empty.get("response_evidence"):
+        parsed["response_evidence"] = empty["response_evidence"]
     if parsed["verdict"] == "unparsed":
         logger.warning("[review] %s: answer was not a valid review: %r", reviewer, raw[:300])
         return parsed, "the reviewer returned an unparsed review"
@@ -846,6 +851,8 @@ async def review_turn(
             reviewer=reviewer, headers=headers, tests=tests, timeout=timeout, workload=workload,
         )
         if err:
+            if parsed.get("response_evidence"):
+                result["response_evidence"] = parsed["response_evidence"]
             result.update(error=err, verdict="error")
             result["duration_s"] = round(time.time() - t0, 1)
             return result
@@ -897,6 +904,7 @@ async def review_turn(
     any_error: Optional[str] = None
     any_ok_call = False
     any_issues = False
+    response_evidence: List[Dict[str, Any]] = []
 
     for group in reviewed_groups:
         group_present = [f for f in group if (pf.get(f) or "").strip()]
@@ -913,6 +921,8 @@ async def review_turn(
             reviewer=reviewer, headers=headers, tests=tests, timeout=timeout, workload=workload,
             all_changed_files=files,
         )
+        response_evidence.extend(dict(entry, files=group_present)
+                                 for entry in parsed.get("response_evidence", []))
         if err:
             any_error = any_error or err
             failed_groups.append({"files": group_present, "verdict": parsed.get("verdict"), "error": err})
@@ -927,6 +937,8 @@ async def review_turn(
         all_findings.extend(parsed.get("findings") or [])
 
     result["findings"] = _dedup_findings(all_findings)
+    if response_evidence:
+        result["response_evidence"] = response_evidence
     result["ungrounded"] = total_ungrounded
     result["groups"] = len(group_file_lists)
     result["group_files"] = group_file_lists
@@ -989,7 +1001,7 @@ def compact(review: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     keys = ("model", "verdict", "summary", "findings", "duration_s", "diff_chars", "truncated", "source", "error",
             "ungrounded", "disputed", "groups", "group_files", "not_reviewed", "truncated_files", "group_chars",
             "attempted_groups", "attempted_group_files", "failed_groups", "missing_diffs", "partially_reviewed",
-            "reviewed_files", "coverage_complete", "source_epoch")
+            "reviewed_files", "coverage_complete", "source_epoch", "response_evidence")
     return {k: review.get(k) for k in keys if k in review}
 
 

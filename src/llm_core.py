@@ -2624,19 +2624,29 @@ def httpx_post_kimi_aware(url: str, headers: Optional[Dict], *, _automatic_min_p
     return last
 
 
-async def httpx_post_kimi_aware_async(client, url: str, headers: Optional[Dict], *, _automatic_min_p=False, **kwargs):
+async def httpx_post_kimi_aware_async(client, url: str, headers: Optional[Dict], *, _automatic_min_p=False,
+                                     _on_response=None, **kwargs):
+    def observe(response):
+        if _on_response is not None:
+            try:
+                _on_response(kwargs.get("json"), response)
+            except Exception:
+                logger.debug("non-streaming response evidence failed", exc_info=True)
     h = await apply_kimi_code_headers_async(client, headers, url)
     if not _is_kimi_code_url(url):
         response = await client.post(url, headers=h, **kwargs)
+        observe(response)
         if _automatic_min_p and response.status_code == 400 and _neutralize_rejected_automatic_min_p(kwargs.get("json"), url, response.status_code,
                                                response.text, automatic=_automatic_min_p):
             response = await client.post(url, headers=h, **kwargs)
+            observe(response)
         return response
     last = None
     for ua in _kimi_code_ua_candidates(url):
         trial = dict(h)
         trial["User-Agent"] = ua
         last = await client.post(url, headers=trial, **kwargs)
+        observe(last)
         if not _is_kimi_code_access_denied(last.status_code, last.content):
             if last.status_code < 400:
                 _remember_kimi_code_user_agent(url, ua)
@@ -4960,6 +4970,70 @@ def _spend_cap_refusal_chunk(url: str, model: str) -> Optional[str]:
     return None
 
 
+def _nonstream_response_evidence(payload: Dict, response, provider: str, model: str, attempt: int) -> Dict:
+    """Metadata from this HTTP reply; never retain model text or credentials."""
+    def shape(value, present=True):
+        result = {"present": present}
+        if present:
+            result["type"] = type(value).__name__
+            if isinstance(value, str):
+                result.update(chars=len(value), utf8_bytes=len(value.encode("utf-8")),
+                              nonblank_chars=len(value.strip()))
+            elif isinstance(value, (list, dict)):
+                result["items"] = len(value)
+        return result
+
+    controls = ("temperature", "max_tokens", "max_completion_tokens", "reasoning_effort",
+                "thinking_token_budget", "stream", "min_p", "top_p", "top_k", "seed",
+                "frequency_penalty", "presence_penalty", "repeat_penalty", "repetition_penalty")
+    request = {"model": payload.get("model") if isinstance(payload.get("model"), str) else shape(payload.get("model")), "controls": {
+        key: payload[key] for key in controls if key in payload and
+        (payload[key] is None or type(payload[key]) in (str, int, float, bool))}}
+    template = payload.get("chat_template_kwargs")
+    if isinstance(template, dict):
+        request["chat_template_kwargs"] = {key: template[key] for key in
+            ("enable_thinking", "clear_thinking", "reasoning_effort") if key in template and
+            (template[key] is None or type(template[key]) in (str, int, float, bool))}
+    fmt = payload.get("response_format")
+    if isinstance(fmt, dict):
+        request["response_format"] = {"type": fmt.get("type") if isinstance(fmt.get("type"), str) else shape(fmt.get("type"))}
+        if isinstance(fmt.get("json_schema"), dict) and "strict" in fmt["json_schema"]:
+            strict = fmt["json_schema"]["strict"]
+            request["response_format"]["strict"] = strict if type(strict) is bool else shape(strict)
+    evidence = {"source": "http_response", "http_status": response.status_code,
+                "attempt": attempt, "request": request}
+    try:
+        data = response.json()
+    except Exception as exc:
+        evidence["response"] = {"json_error_type": type(exc).__name__, "body_bytes": len(response.content)}
+        return evidence
+    if not isinstance(data, dict):
+        evidence["response"] = {"shape": shape(data)}
+        return evidence
+    projected = {key: data[key] for key in ("model", "id") if isinstance(data.get(key), str)}
+    projected["usage"] = _observed_nonstream_usage(data, provider, model)
+    choices = data.get("choices")
+    if isinstance(choices, list):
+        projected["choices"] = []
+        for choice in choices:
+            if not isinstance(choice, dict):
+                projected["choices"].append({"shape": shape(choice)})
+                continue
+            item = {key: choice[key] for key in ("index", "finish_reason", "stop_reason")
+                    if key in choice and (choice[key] is None or type(choice[key]) in (str, int))}
+            message = choice.get("message")
+            if isinstance(message, dict):
+                item["channels"] = {key: shape(message.get(key), key in message) for key in
+                                    ("content", "reasoning_content", "reasoning", "thinking")}
+            else:
+                item["message"] = shape(message, "message" in choice)
+            projected["choices"].append(item)
+    else:
+        projected["choices"] = shape(choices, "choices" in data)
+    evidence["response"] = projected
+    return evidence
+
+
 async def llm_call_async(
     url: str,
     model: str,
@@ -4980,6 +5054,7 @@ async def llm_call_async(
     gen_overrides: Optional[Dict] = None,
     _usage_observer: Optional[Callable] = None,
     _spend_purpose: Optional[str] = None,
+    _response_observer: Optional[Callable[[Dict], None]] = None,
 ) -> str | tuple[str, str]:
     """Traced wrapper around ``_llm_call_async_impl`` (LLM-TRACE-01).
 
@@ -5043,6 +5118,7 @@ async def llm_call_async(
             response_schema=response_schema, pin_public_dns=pin_public_dns,
             on_outcome_unknown=on_outcome_unknown, gen_overrides=gen_overrides,
             _on_observed_usage=_capture_usage,
+            **({"_on_observed_response": _response_observer} if _response_observer is not None else {}),
         )
         # This transport returns only the complete response, so it cannot
         # observe a first token. Keep the caller's existing HTTP timeout and
@@ -5123,6 +5199,7 @@ async def _llm_call_async_impl(
     on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
     gen_overrides: Optional[Dict] = None,
     _on_observed_usage: Optional[Callable[[dict], None]] = None,
+    _on_observed_response: Optional[Callable[[Dict], None]] = None,
 ) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging.
 
@@ -5418,6 +5495,14 @@ async def _llm_call_async_impl(
     # after coming back fails normally instead of looping.
     _engine_wait_used = False
     _reasoning_steps = 0
+    _http_response_index = 0
+    def observe_http_response(sent_payload, response):
+        nonlocal _http_response_index
+        _http_response_index += 1
+        evidence = _nonstream_response_evidence(sent_payload, response, provider, model, attempt)
+        evidence["http_response_index"] = _http_response_index
+        _on_observed_response(evidence)
+    _evidence_kwargs = {"_on_response": observe_http_response} if _on_observed_response is not None else {}
     # max_retries is the total attempt count here. Zero from a caller means
     # "do not retry", but must still make the initial request.
     while attempt < max(1, max_retries):
@@ -5445,6 +5530,7 @@ async def _llm_call_async_impl(
                             client, target_url, h, json=payload,
                             timeout=call_timeout,
                             _automatic_min_p=_automatic_min_p,
+                            **_evidence_kwargs,
                         )
                 else:
                     client = _get_http_client()
@@ -5452,6 +5538,7 @@ async def _llm_call_async_impl(
                         client, target_url, h, json=payload,
                         timeout=call_timeout,
                         _automatic_min_p=_automatic_min_p,
+                        **_evidence_kwargs,
                     )
             duration = time.time() - start
             if not r.is_success:
