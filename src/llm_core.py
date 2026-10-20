@@ -4574,9 +4574,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
                 if thinking_part:
                     response = thinking_part + "\n\n" + (text_part or "")
                 else:
-                    response = text_part or reasoning_as_answer(msg.get("reasoning_content"))
+                    response = text_part or reasoning_as_answer(msg.get("reasoning_content") or msg.get("reasoning"))
             else:
-                response = content or reasoning_as_answer(msg.get("reasoning_content"))
+                response = content or reasoning_as_answer(msg.get("reasoning_content") or msg.get("reasoning"))
     except Exception:
         raise HTTPException(502, f"Unexpected schema from {target_url}: {str(data)[:400]}")
 
@@ -5548,9 +5548,9 @@ async def _llm_call_async_impl(
                         if thinking_part:
                             response = thinking_part + "\n\n" + (text_part or "")
                         else:
-                            response = text_part or reasoning_as_answer(msg.get("reasoning_content"))
+                            response = text_part or reasoning_as_answer(msg.get("reasoning_content") or msg.get("reasoning"))
                     else:
-                        response = content or reasoning_as_answer(msg.get("reasoning_content"))
+                        response = content or reasoning_as_answer(msg.get("reasoning_content") or msg.get("reasoning"))
                 _set_cached_response(
                     cache_key,
                     response,
