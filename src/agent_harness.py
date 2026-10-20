@@ -1898,7 +1898,7 @@ class TurnLedger:
         self.mutation_epoch += 1
         self.tests = None
         # A configuration skip is not a verdict about a particular source.
-        if self.review and self.review.get("verdict") != "skipped":
+        if self.review and ("source_epoch" in self.review or self.review.get("verdict") != "skipped"):
             self.review = None
 
     def tests_need_run(self) -> bool:

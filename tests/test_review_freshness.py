@@ -44,6 +44,8 @@ def _closure(ledger, workspace, monkeypatch, *, errors=(), limit=3, reviewer="ow
                 raise result
             if result is None:
                 return None
+            if isinstance(result, dict):
+                return result
         return _review_result(errors[min(len(calls) - 1, len(errors) - 1)] if errors else False)
 
     monkeypatch.setattr(auto_review, "review_turn", review)
@@ -215,6 +217,19 @@ def test_legacy_approval_snapshot_restores_effects_not_a_fresh_review(tmp_path, 
     calls, close, _ = _closure(ledger, tmp_path, monkeypatch)
     close()
     assert len(calls) == 1 and ledger.review["source_epoch"] == ledger.mutation_epoch
+
+
+def test_source_specific_skip_does_not_survive_a_new_mutation(tmp_path, monkeypatch):
+    ledger = TurnLedger(str(tmp_path))
+    calls, close, _ = _closure(ledger, tmp_path, monkeypatch,
+                              action=lambda index: {"verdict": "skipped", "summary": "own empty diff", "findings": []})
+    _write(ledger, tmp_path, 1)
+    close()
+    assert ledger.review["source_epoch"] == 1
+    _write(ledger, tmp_path, 2)
+    assert ledger.review is None
+    close()
+    assert len(calls) == 2 and ledger.review["source_epoch"] == 2
 
 
 def _stream_review(monkeypatch, tmp_path, *, mode="enforce", limit=3, unattended=False, stop=False):
