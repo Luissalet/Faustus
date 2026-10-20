@@ -1,7 +1,7 @@
 ---
 name: hoard-design-loop
 description: Build or fix a web page with Vitruvius's Hoard in the loop — a cited brief first, then render, critique, fix, and a functional check before calling it done. Use when the user asks for a landing, a page, a component or "make this look less generic"; en español: «hazme/diséñame una landing», «una página web», «que no parezca genérica».
-version: 1.1.0
+version: 1.2.0
 category: engineering
 tags: [hoards, vitruvius, frontend, design, critique, assay, tokens, landing, web, pagina, diseno, disename, maqueta, comprueba]
 status: published
@@ -44,6 +44,15 @@ belongs to `diagram-authoring`, rather than generating a web page around it.
    it exercises supported controls in a real browser and reports contradictions —
    a button that does nothing, `undefined` on screen, a counter that goes
    the wrong way. Fix every failing case before handing the page over.
+   For requested state coverage, use explicit `page_check` criteria or
+   `page_assay` criteria with per-case `environment`: viewport width/height,
+   `reduced_motion: "reduce"` and/or `color_scheme: "dark"`. Supported steps
+   include `focus` and `hover`; expectations include `focused`,
+   `no_overflow` and `no_motion`. Each criterion uses a fresh browser page.
+   Check the installed schema, including exact step/expectation keys.
+   Reports retain the environment and sampled browser state. Document
+   overflow and sampled running animations do not certify every nested
+   scroller, all future motion or Core Web Vitals.
 6. **Deliver**: the file (written in the workspace when there is one), the
    last score, what `page_assay` checked, and the `[vitruvius: …]` cites of
    the rules you followed.

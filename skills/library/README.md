@@ -24,8 +24,10 @@ object operations. `source-explainer-production` uses Prospero's supplied
 sources, scenes, local voice and resumable MP4/SRT production. They check
 the installed tool catalogue before using a capability. The existing
 design and deterministic-motion procedures route to the fused owners;
-they do not launch the absorbed applications. Spatial image composition
-remains a separate implementation and is not claimed by these procedures.
+they do not launch the absorbed applications. `image-composition` uses
+Prospero's retained pixel boxes, exact text, reference images, schematic
+preview and existing image-generation route. It distinguishes installed
+capability, compilation, demo transport and actual image-model adherence.
 
 ## Format
 
