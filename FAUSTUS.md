@@ -136,6 +136,27 @@ contenido final. La revisión independiente pasó90casos frente a39fallos de bas
 El área obtuvo191PASS+6subtests; el wrapper de guardas conservóFAIL por un Git
 denegado reproducido igual en base y revisión. No prueba la causa del vacío anterior.
 
+Las correcciones revisadas #1044, #1045 y #1047 están integradas y activas.
+Un error del crítico conserva ahora error y cobertura incompleta en el agregado,
+sin perder los hallazgos de etapas anteriores. Sus diagnósticos retienen los
+metadatos del POST no streaming real: razón de fin, uso, forma/tamaño de canales
+y controles finales, sin texto de razonamiento ni prompts. Caché y CLI no
+fabrican recibos HTTP. Skills Audit comunica etapa, elemento actual y conteo
+terminado mediante el callback existente del planificador; un fallo del callback
+no cambia el resultado de la auditoría. Área conjunta:298PASS+6subtests, con una
+conexión denegada previa reproducida también en base y conservada en el registro.
+
+Una revisión nativa API con las Sparks globales identificó correctamente una
+resta introducida en una función de suma, con línea exacta, en3,36s. Su recibo
+reporta108tokens de salida, finish_reason=stop y respuesta final completa. No
+ejercita todas las ramas de compatibilidad ni explica los fallos históricos.
+MCP y Studio recuperan el mismo turno grande activo y muestran su progreso real;
+su aceptación independiente aún no se ha ejecutado. Otra investigación CPU
+reprodujo una espera del consumidor tras cancelación espontánea de la fuente:
+se corrige por separado en#1052 y aún no está activa. La fiabilidad global sigue
+sin demostrar. Evidencias: research-inbox/sparks835/runtime-audit/resume-20261020,
+subcarpetas integration1047, native-review1045 y audit-wait-research20.
+
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en
 recuperación de cola y escritura posterior. Un testigo de API pública reprodujo

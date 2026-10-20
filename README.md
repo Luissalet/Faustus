@@ -208,6 +208,25 @@ Its area had 191 passes and six subtests; the guard wrapper retained a failed
 status for a denied Git call reproduced identically on base and revision. This
 does not establish why the earlier critic returned an empty response.
 
+Reviewed fixes 1044/1045/1047 are integrated and active. A failed critic stage now
+keeps the aggregate review in error with incomplete coverage, preserving earlier
+findings. Review diagnostics retain metadata from the actual non-stream HTTP
+response: finish reason, token usage, channel shape/size and final controls, with
+no reasoning text or prompts. Cache/CLI results do not invent HTTP evidence.
+Scheduled Skills Audit forwards its real stage/current-item/completed-count
+progress through the existing task callback; callback failures do not change the
+audit result. These changes passed 298 combined area tests and six subtests;
+one denied connection was reproduced on the base and remains recorded.
+
+One native API review on the configured global Sparks correctly identified a
+two-line arithmetic defect in 3.36 seconds. Its receipt reports 108 output tokens,
+finish reason stop and a complete final response. This scoped success does not
+exercise every compatibility branch or explain earlier critic failures. Native
+MCP and Studio also recover the same ongoing large-project run and display its
+real progress; that project's independent acceptance has not run yet. A separate
+CPU investigation reproduced a source-cancellation termination defect, tracked
+in 1052; its correction is not yet active. General reliability remains unproven.
+
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
 A public-API witness reproduced this after truncating only the last byte; the
