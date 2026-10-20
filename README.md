@@ -144,11 +144,31 @@ so internal user-role messages do not erase earlier reasoning; explicit override
 and other model profiles remain. Independent CPU review passed 13 contract cases
 and 147 area tests. These results do not establish model quality.
 
-Activation preserved all other setting values, 24 manual stops and the selected
-model/connection identity. The full descriptor check detected vision changing
-from true to false after restart/profile selection; investigation #1006 remains
-open. A new text-only Docsite task is running, with independent acceptance still
-pending. Neither that run nor the descriptor discrepancy is reported as a pass.
+The fresh Docsite run completed 34 rounds and 60 tools. Its independent core,
+seven edge cases, 22 extra checks, 32 producer tests on native Windows, nine browser
+queries, keyboard navigation and README API/CLI/HTTP examples passed. Two separate
+contract witnesses failed: the second paragraph reused the first paragraph's link
+target, and the advertised skip link had no target element. The delivery remains
+incomplete. All candidate bytes and original oracle pins were preserved. Studio
+displayed the terminal answer automatically without reload. Closed trace metadata
+retained up to 21 reasoning messages; this observes the wrapper, not server cache
+or an explanation for program quality.
+
+Activation of 991/995 preserved other setting values, 24 manual stops and the
+selected model/connection identity, but its full descriptor guard detected vision
+changing from true to false. That failed receipt remains recorded. Reviewed fix
+1007 now consults existing exact durable capability evidence before the legacy
+cache/name fallback. One native vision probe stored a scoped positive result;
+after one Faustus stop/start, the first descriptor read returned true with no
+additional generation. Five other descriptor fields, settings, all 37 disabled
+MCP connections, 24 manual stops and the Hub/model process identities remained.
+This is minimum image-capability evidence, not general visual comprehension.
+
+Research into review freshness found stale approval and a two-review scheduling
+cap; correction 1010 is still in progress. A synthetic research fixture wrongly
+treated mutation events as unique paths. That premise was corrected before code
+changes; real-ledger cases now distinguish ordinary repeated edits from known MCP
+effects. Review policy and configuration have not been changed by that work.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.

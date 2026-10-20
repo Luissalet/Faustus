@@ -24,8 +24,11 @@ visible. There is no fallback to a different endpoint or model.
 ```
 
 This reads `default_endpoint_id` and `default_model`, checks the selected row
-and its ownership/enabled/hidden state, and reports existing vision cache/name
-metadata without probing. It does not return a backend URL, credentials or
+and its ownership/enabled/hidden state. For vision, an existing durable supported
+or unsupported observation wins only when vendor, endpoint, connection revision,
+protocol and model match exactly. Unknown, malformed, legacy and mismatched
+evidence retain the existing cache/name fallback. Reading the descriptor does
+not run a capability probe. It does not return a backend URL, credentials or
 headers. It does not claim the provider is online. It never chooses a first
 available endpoint, another vision model, a hidden-model replacement or a
 model adopted by a sibling instance. An unconfigured/disabled/hidden selection

@@ -72,15 +72,34 @@ arrancar Prometheus. La consulta del historial no hace red. Para GLM verificado,
 clear_thinking=false evita borrar razonamientos del mismo encargo cuando un
 resultado de imagen o recordatorio usa role:user; los overrides explícitos y los
 demás modelos mantienen su política. El revisor pasó 13 casos independientes y
-147 tests del área, con fuentes exactas. Son pruebas CPU; la eficacia del modelo
-en un proyecto nuevo sigue pendiente de aceptación independiente.
+147 tests del área, con fuentes exactas. La traza cerrada del nuevo ensayo Docsite
+conservó hasta 21 mensajes de razonamiento; acredita el wrapper, no la caché real
+del servidor ni una causa de mejora de calidad.
 
 La activación conservó los ajustes salvo revisión interna y el cambio deliberado
 a AUTO, las 24 paradas manuales y la identidad/conexión global. Su comprobación
 completa detectó vision=true→false en el descriptor tras el arranque y el cambio
-de perfil. Esa incidencia sigue abierta en #1006; no se declara preservación
-completa del descriptor ni una pérdida de capacidad real sin comprobar su causa.
-El ensayo nuevo de Docsite usa texto y todavía no tiene resultado de aceptación.
+de perfil. Ese recibo fallido se conserva. La corrección revisada #1007 consume
+la evidencia durable exacta de capacidades antes del fallback de caché/nombre.
+Un único probe nativo de visión guardó True para la conexión y modelo exactos;
+tras un Stop/Start de Faustus, el primer descriptor devolvió True sin nuevas
+generaciones. Los otros cinco campos, ajustes, 37 conexiones MCP desactivadas,
+24 paradas manuales y procesos de Hub/modelo se conservaron. Es soporte mínimo
+de imagen, no una prueba de comprensión visual general.
+
+Docsite nuevo terminó 34 rondas/60 herramientas. Pasaron núcleo independiente,
+siete corpus límite, 22 comprobaciones extra, 32 tests propios en Windows nativo,
+nueve búsquedas de navegador, teclado y ejemplos README/API/CLI/HTTP. Mantiene
+dos fallos funcionales: el segundo párrafo reutiliza el destino del primer enlace
+y el skip-link anunciado no tiene destino. Entrega incompleta; bytes y oráculos
+intactos. Studio llegó a terminado automáticamente sin recargar. El «100 %» del
+comprobador de cambios no es cobertura completa ni elimina esos fallos.
+
+La investigación de review detectó reutilización de aprobación antigua y un tope
+de dos revisiones; #1010 sigue en desarrollo. Un fixture sintético confundió
+eventos de mutación con rutas únicas: se rectificó antes de cambiar producto y
+se conservó el error. Los nuevos casos usan TurnLedger real. No se ha cambiado
+la política ni configuración off/same como parte de esta corrección.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en
