@@ -45,6 +45,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -95,7 +96,7 @@ _UI_MUTATION_RE = re.compile(
 
 def _is_ui_mutation(path: str) -> bool:
     rel = (path or "").replace("\\", "/")
-    return bool(_UI_MUTATION_RE.search(rel))
+    return bool(_UI_MUTATION_RE.search(rel) or rel.lower() == ".faustus/ui_smoke.json")
 
 
 # ---------------------------------------------------------------------------
@@ -203,14 +204,50 @@ def _static_server_spec(workspace: str, index_dir: str) -> Dict[str, Any]:
     return {"kind": "static", "dir": best_root, "entry_path": best_entry, "source": ""}
 
 
+def _declared_server_spec(workspace: str) -> Optional[Dict[str, Any]]:
+    path = os.path.join(workspace, ".faustus", "ui_smoke.json")
+    spec = {"kind": "declared", "source": "", "entry_path": "/"}
+    try:
+        with open(path, "r", encoding="utf-8-sig") as stream:
+            value = json.load(stream)
+        if not isinstance(value, dict) or set(value) - {"argv", "cwd", "entry_path"}:
+            raise ValueError("expected argv, optional cwd and entry_path")
+        argv = value.get("argv")
+        if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv) or not argv[0]:
+            raise ValueError("argv must be a nonempty list of strings with a nonempty executable")
+        relative = value.get("cwd", ".")
+        if not isinstance(relative, str) or os.path.isabs(relative):
+            raise ValueError("cwd must be relative to the workspace")
+        root = os.path.abspath(workspace)
+        cwd = os.path.abspath(os.path.join(root, relative))
+        if os.path.normcase(os.path.commonpath([root, cwd])) != os.path.normcase(root) or not os.path.isdir(cwd):
+            raise ValueError("cwd must name an existing directory within the workspace")
+        entry = value.get("entry_path", "/")
+        if not isinstance(entry, str) or not entry.startswith("/") or entry.startswith("//"):
+            raise ValueError("entry_path must be a local absolute URL path")
+        parsed = urlsplit(entry)
+        if parsed.scheme or parsed.netloc or "\\" in parsed.path:
+            raise ValueError("entry_path must not name an external server")
+        spec.update(argv=argv, dir=cwd, entry_path=entry)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, TypeError) as error:
+        spec["configuration_error"] = str(error)
+    return spec
+
+
 def detect_server(workspace: str) -> Optional[Dict[str, Any]]:
-    """First match wins: Flask app.py, FastAPI (uvicorn) app.py, an npm
+    """A project declaration wins, followed by Flask app.py, FastAPI (uvicorn), an npm
     start/dev script, or a static `index.html` served with `http.server`.
 
     Returns a spec dict consumed by `_build_launch`; None when nothing in
     the workspace looks like a web app at all."""
     if not workspace or not os.path.isdir(workspace):
         return None
+
+    declared = _declared_server_spec(workspace)
+    if declared is not None:
+        return declared
 
     for entry in ("app.py", "wsgi.py", "asgi.py", "main.py", "server.py"):
         p = os.path.join(workspace, entry)
@@ -263,11 +300,23 @@ def _free_port() -> int:
 
 
 def _build_launch(spec: Dict[str, Any], workspace: str, port: int,
-                   python_exe: str) -> Tuple[List[str], Dict[str, str], str]:
+                   python_exe: str, *, data_dir: Optional[str] = None) -> Tuple[List[str], Dict[str, str], str]:
     """(argv, extra env, cwd) for `subprocess.Popen`. Raises ValueError for an
     unknown spec kind (should never happen — `detect_server` controls kind)."""
     kind = spec.get("kind")
     env_extra = {"PORT": str(port), "FLASK_RUN_PORT": str(port)}
+    if kind == "declared":
+        if spec.get("configuration_error"):
+            raise ValueError(".faustus/ui_smoke.json: " + spec["configuration_error"])
+        values = {"python": python_exe, "port": str(port), "workspace": workspace, "data_dir": data_dir}
+        def expand(argument):
+            def replace(match):
+                value = values[match.group(1)]
+                if value is None:
+                    raise ValueError("data_dir is available only during a real smoke run")
+                return value
+            return re.sub(r"\{(python|port|workspace|data_dir)\}", replace, argument)
+        return [expand(argument) for argument in spec["argv"]], env_extra, spec["dir"]
     if kind == "flask":
         entry = spec["entry"]
         # Always `flask run --port N` with FLASK_APP=<entry>: the module's
@@ -340,6 +389,41 @@ def _kill_process_tree(proc: Optional["subprocess.Popen"]) -> None:
             proc.wait(timeout=2)
         except Exception:
             pass
+
+
+def _launch_tree_snapshot(proc):
+    """Observe only the held child's tree, for conservative temporary cleanup.
+
+    Failure to enumerate or establish ancestry means unknown, not an empty
+    tree. This does not change which processes the existing teardown signals.
+    """
+    if proc is None:
+        return []
+    try:
+        import psutil
+        if proc.poll() is not None:
+            return None
+        root = psutil.Process(proc.pid)
+        nodes = [root] + root.children(recursive=True)
+        created = {node.pid: node.create_time() for node in nodes}
+        for node in nodes[1:]:
+            parent = node.ppid()
+            if parent not in created or created[parent] > created[node.pid]:
+                return None
+        return nodes
+    except Exception:
+        return None
+
+
+def _cleanup_launch_data(path, proc, tree):
+    """Remove only this run's temporary directory after observed termination."""
+    try:
+        if proc is not None and (proc.poll() is None or tree is None or any(node.is_running() for node in tree)):
+            return {"state": "retained", "reason": "process stop not confirmed"}
+        shutil.rmtree(path)
+        return {"state": "removed"}
+    except Exception as error:
+        return {"state": "retained", "reason": str(error)}
 
 
 # ---------------------------------------------------------------------------
@@ -1034,12 +1118,13 @@ def _report(*, ran: bool, ok: bool = True, summary: str = "", server_cmd: Option
             quality_warnings: Optional[List[str]] = None,
             design: Optional[Dict[str, Any]] = None,
             server_kind: Optional[str] = None, server_cwd: Optional[str] = None,
-            entry_path: Optional[str] = None) -> Dict[str, Any]:
+            entry_path: Optional[str] = None, server_argv: Optional[List[str]] = None) -> Dict[str, Any]:
     return {
         "ran": bool(ran),
         "ok": bool(ok),
         "summary": summary,
         "server_cmd": server_cmd,
+        "server_argv": server_argv,
         "server_kind": server_kind,
         "server_cwd": server_cwd,
         "entry_path": entry_path,
@@ -1127,15 +1212,26 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
     started = time.time()
     entry_path = spec.get("entry_path") or "/"
     launch_info = {"server_kind": spec.get("kind"), "server_cwd": None, "entry_path": entry_path}
-    port = _free_port()
-    python_exe = _project_python(workspace)
+    data_dir = None
+    result = None
     try:
-        argv, env_extra, cwd = _build_launch(spec, workspace, port, python_exe)
+        port = _free_port()
+        python_exe = _project_python(workspace)
+        if spec.get("kind") == "declared" and not spec.get("configuration_error") and any("{data_dir}" in arg for arg in spec["argv"]):
+            data_dir = tempfile.mkdtemp(prefix="faustus-ui-smoke-")
+        if data_dir is None:
+            argv, env_extra, cwd = _build_launch(spec, workspace, port, python_exe)
+        else:
+            argv, env_extra, cwd = _build_launch(spec, workspace, port, python_exe, data_dir=data_dir)
         launch_info["server_cwd"] = cwd
+        launch_info["server_argv"] = argv
+        env = native_host_environment(extra=env_extra)
     except Exception as e:  # noqa: BLE001
-        return _report(ran=True, ok=False, summary=f"could not build a launch command: {e}", **launch_info)
+        result = _report(ran=True, ok=False, summary=f"could not build a launch command: {e}", **launch_info)
+        if data_dir is not None:
+            result.update(launch_data_dir=data_dir, data_cleanup=_cleanup_launch_data(data_dir, None, []))
+        return result
 
-    env = native_host_environment(extra=env_extra)
     cmd_str = " ".join(argv)
     proc: Optional["subprocess.Popen"] = None
     try:
@@ -1145,17 +1241,19 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 **_popen_kwargs(),
             )
-        except (OSError, FileNotFoundError) as e:
-            return _report(ran=True, ok=False, server_cmd=cmd_str,
+        except (OSError, ValueError) as e:
+            result = _report(ran=True, ok=False, server_cmd=cmd_str,
                             summary=f"failed to start server ({cmd_str}): {e}", **launch_info)
+            return result
 
         base_url = f"http://127.0.0.1:{port}"
         entry_url = urljoin(base_url + "/", entry_path)
         ready_timeout = min(20.0, max(5.0, timeout_s * 0.4))
         ready, ready_err = _wait_ready(base_url, proc, ready_timeout)
         if not ready:
-            return _report(ran=True, ok=False, server_cmd=cmd_str, url=base_url,
+            result = _report(ran=True, ok=False, server_cmd=cmd_str, url=base_url,
                             summary=f"server never answered on {base_url} within {ready_timeout:.0f}s: {ready_err}", **launch_info)
+            return result
 
         deadline = started + timeout_s
         pages, assets, problems = _crawl(spec, base_url, deadline)
@@ -1194,12 +1292,29 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
         summary = _summarize(pages, assets, console_errors, problems, a11y=a11y, perf=perf,
                               a11y_blocking_failed=a11y_blocking_failed)
         quality_warnings = _quality_warnings(a11y, perf, design)
-        return _report(ran=True, ok=ok, server_cmd=cmd_str, url=base_url, pages=pages,
+        result = _report(ran=True, ok=ok, server_cmd=cmd_str, url=base_url, pages=pages,
                         assets=assets, console_errors=console_errors, summary=summary,
                         playwright_used=playwright_used, a11y=a11y, perf=perf,
                         quality_warnings=quality_warnings, design=design, **launch_info)
+        return result
+    except Exception as error:
+        result = _report(ran=True, ok=False, server_cmd=cmd_str,
+                         summary=f"could not complete the UI check: {error}", **launch_info)
+        return result
     finally:
+        tree = _launch_tree_snapshot(proc) if data_dir is not None else None
         _kill_process_tree(proc)
+        if data_dir is not None:
+            cleanup = _cleanup_launch_data(data_dir, proc, tree)
+            if result is not None:
+                result.update(launch_data_dir=data_dir, data_cleanup=cleanup)
+                if cleanup["state"] != "removed":
+                    result["quality_warnings"].append("Temporary test data retained at " + data_dir + ": " + cleanup["reason"])
+        if proc is not None and proc.poll() is not None and proc.stdout is not None:
+            try:
+                proc.stdout.close()
+            except OSError as error:
+                logger.debug("[ui_smoke] closed child output could not be released: %s", error)
 
 
 def run_for_turn(workspace: str, mutated_paths: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
@@ -1235,16 +1350,21 @@ def failure_message(report: Dict[str, Any]) -> str:
     server = "the detected server"
     if report.get("server_kind") == "static":
         server = "a static preview (Python http.server)"
+    elif report.get("server_kind") == "declared":
+        server = "the project-declared server"
     elif report.get("server_kind"):
         server = f"the detected {report['server_kind']} server"
+    observed = (f"ui_smoke used {server} and fetched its pages/assets" if report.get("pages")
+                else f"ui_smoke could not check {server}")
     lines = [
         "[Harness check — automatic message from the runtime, not from the user]",
-        f"ui_smoke used {server} and fetched its pages/assets; "
+        observed + "; "
         f"it found a problem BEFORE any human opened a browser: {report.get('summary')}",
     ]
     if report.get("server_kind") == "static":
         lines.append(f"Static preview public root: {report.get('server_cwd')}; HTML entry: {report.get('entry_path') or '/'}.")
         lines.append("This checks static pages/assets; dynamic API behavior has not been exercised.")
+        lines.append("If the project needs a backend, declare its exact argv in .faustus/ui_smoke.json; supported markers are {python}, {port}, {workspace}, {data_dir}. Use {data_dir} explicitly for disposable test data.")
     bad_assets = [a for a in (report.get("assets") or []) if not a.get("ok")][:6]
     for a in bad_assets:
         extra = f" (Content-Type: {a.get('content_type')})" if a.get("problem") == "content_type" else ""
@@ -1276,8 +1396,11 @@ def compact(report: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "url": report.get("url"),
         "server_kind": report.get("server_kind"),
         "server_cmd": report.get("server_cmd"),
+        "server_argv": report.get("server_argv"),
         "server_cwd": report.get("server_cwd"),
         "entry_path": report.get("entry_path"),
+        "launch_data_dir": report.get("launch_data_dir"),
+        "data_cleanup": report.get("data_cleanup"),
         "playwright_used": report.get("playwright_used"),
         "pages": len(report.get("pages") or []),
         "assets": len(report.get("assets") or []),

@@ -54,7 +54,8 @@ _NONEXECUTION_FLAGS = ("blocked", "refused") + _APPROVAL_WAIT_FLAGS
 # is not UI; `static/editor/viewport2d.js` is.
 UI_PATH_RE = re.compile(
     r"(?:\.(?:html?|css|s?css|less|jsx|tsx|vue|svelte)$)"
-    r"|(?:(?:^|/)(?:static|templates|public|assets)/.*\.(?:m?js|ts|svg)$)",
+    r"|(?:(?:^|/)(?:static|templates|public|assets)/.*\.(?:m?js|ts|svg)$)"
+    r"|(?:^\.faustus/ui_smoke\.json$)",
     re.I,
 )
 # The user is talking about what the page LOOKS like. Word-bounded on purpose:

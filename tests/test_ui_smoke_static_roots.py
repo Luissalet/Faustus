@@ -25,7 +25,7 @@ ROOT=r'X:\ui-smoke-path-metadata'
 def functions(files):
     tree=ast.parse(SOURCE.read_text(encoding='utf-8-sig'))
     names={'_index_html_is_served_source','_find_index_html_dir','_static_server_spec',
-        '_local_imports_source','detect_server','_build_launch','_extract_asset_refs',
+        '_local_imports_source','_declared_server_spec','detect_server','_build_launch','_extract_asset_refs',
         '_check_asset','_crawl','_report','_quality_warnings','_summarize','failure_message','compact'}
     selected=[n for n in tree.body if isinstance(n,ast.Assign) and not any(isinstance(t,ast.Name) and t.id=='logger' for t in n.targets)
         or isinstance(n,ast.FunctionDef) and n.name in names]
