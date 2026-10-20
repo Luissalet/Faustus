@@ -150,12 +150,29 @@ Una revisión nativa API con las Sparks globales identificó correctamente una
 resta introducida en una función de suma, con línea exacta, en3,36s. Su recibo
 reporta108tokens de salida, finish_reason=stop y respuesta final completa. No
 ejercita todas las ramas de compatibilidad ni explica los fallos históricos.
-MCP y Studio recuperan el mismo turno grande activo y muestran su progreso real;
-su aceptación independiente aún no se ha ejecutado. Otra investigación CPU
+MCP y Studio recuperaron el mismo turno grande activo y su finalización sin
+recargar. La entrega Pipeline terminó47rondas72herramientas sin feedback del
+evaluador; fuente intacta,45casos externosPASS/1315APIcalls/22CLI/1001nodos y
+1260000bytesUTF8.49tests propios y ejemplosREADME también pasaron. El primer
+pase del evaluador añadió un requisitoPathLike no exigido: quedó registrado,
+se corrigieron sólo4argumentos en2calls tras revisión independiente y se
+preservaron todas las aserciones semánticas. La cobertura dirigida posterior
+encontró2fallos: entradas inválidas de profundidad1500 causanRecursionError en
+lugar deValueError. No se editó el programa ni se le envió esa corrección aún.
+Studio conservaUNVERIFIED/6herramientas fallidas, distinto de aceptaciónexterna.
+
+La metadata real del crítico de ese turno prueba un grupo con salida1200 y
+razonamiento1200, finishlength y contenido finalNone; los otros2grupos acabaron
+stop. El presupuesto1200 impuesto por el crítico explica ESA respuesta vacía,
+sin probar la causa de todos los incidentes históricos. Se corrige en#1058,
+todavía sin activar. Otra investigación CPU
 reprodujo una espera del consumidor tras cancelación espontánea de la fuente:
-se corrige por separado en#1052 y aún no está activa. La fiabilidad global sigue
+la reparación#1052 está aprobadaCAS1 y pasó340tests+6subtests en composición
+propia, conservando una negación de conexión preexistente; aún no está activa.
+La fiabilidad global sigue
 sin demostrar. Evidencias: research-inbox/sparks835/runtime-audit/resume-20261020,
-subcarpetas integration1047, native-review1045 y audit-wait-research20.
+subcarpetas integration1047, native-review1045, integration1052 y
+PIPELINE-FRESH-RESULT.md; fallos previos conservados.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en

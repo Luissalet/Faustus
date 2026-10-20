@@ -201,6 +201,27 @@ and oracles stayed unchanged. Studio reached terminal without reload and retaine
 review:error and UNVERIFIED; one critic group remained incomplete. These results
 support this delivery's exercised contract, not universal semantic reliability.
 
+A fresh local DAG pipeline project completed 47 rounds and 72 tools without
+external checker feedback. Its unchanged source passed all 45 prepared external
+cases: 1,315 API calls, 22 separate CLI invocations, 1,001 nodes, 1.26 MB of exact
+UTF-8 data, retries, cancellation and recovery after an abandoned durable claim.
+The checker first supplied Path objects, a type its task did not require; that
+failed attempt remains recorded. Only four checker arguments were normalized to
+strings after independent review, with every semantic assertion unchanged.
+The 49 producer tests and README API examples also passed. Additional targeted
+malformed inputs nested 1,500 levels deep raised RecursionError instead of the
+required ValueError. Those failures remain unresolved; they limit acceptance.
+Studio and native MCP recovered the same terminal run, retaining UNVERIFIED.
+
+Actual response metadata also identified one internal critic call whose entire
+1,200-token output budget was consumed by reasoning: finish_reason=length and
+no final content. Two other groups finished normally. Task 1058 is repairing
+that imposed budget; it is not active yet. The separately approved source
+cancellation repair 1052 passed 340 area tests and six subtests in the composed
+worktree, with one known pre-existing connection denial retained. It is also
+not active yet. See the durable Pipeline report under
+research-inbox/sparks835/runtime-audit/resume-20261020/PIPELINE-FRESH-RESULT.md.
+
 The reviewed non-stream compatibility fix 1036 also accepts vLLM's `reasoning`
 field through the existing legacy fallback/filter, preserving final-content
 precedence. Independent checks passed 90 cases against 39 failing base cases.
