@@ -81,8 +81,24 @@ def _descriptor(endpoint, model):
 def _vision(endpoint, model):
     from src.endpoint_resolver import build_chat_url
     from src.vision_routing import known_vision_models
+    chat_url = build_chat_url(endpoint.base_url)
+    try:
+        from src import model_calibration as calibration
+        protocol = calibration.explicit_openai_protocol(chat_url)
+        if protocol:
+            manifest = calibration.get_effective_manifest(
+                vendor=calibration.OPENAI_COMPATIBLE_VENDOR, model_id=model,
+                endpoint_id=endpoint.id, endpoint_revision=endpoint.connection_revision or '',
+                protocol=protocol)
+            if manifest.get('evidence_scope') == 'exact':
+                state = calibration.probe_state((manifest.get('tested') or {}).get(calibration.TEST_VISION))
+                if state in ('supported', 'unsupported'):
+                    return state == 'supported'
+    except Exception:
+        # An unreadable or unobserved manifest retains the existing fallback.
+        pass
     # Existing cache/name metadata only; never probe or select another VLM.
-    return model in known_vision_models(build_chat_url(endpoint.base_url), [model])
+    return model in known_vision_models(chat_url, [model])
 
 
 def _runtime(endpoint, owner):

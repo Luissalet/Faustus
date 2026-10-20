@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -12,6 +13,152 @@ import httpx
 from fastapi import FastAPI, HTTPException
 
 from routes import global_model_routes as route
+
+
+class DurableVisionDescriptorTests(unittest.IsolatedAsyncioTestCase):
+    """Real manifest read/write and vision resolver; no product data/network."""
+
+    async def asyncSetUp(self):
+        from src import model_calibration as calibration
+        self.calibration = calibration
+        self.private = tempfile.TemporaryDirectory(prefix='global-vision-')
+        self.addCleanup(self.private.cleanup)
+        self.store = Path(self.private.name) / 'model_capabilities.json'
+        self.row = endpoint(base_url='http://127.0.0.1:39871/v1')
+        self.model = 'opaque-fixture-model'
+        self.chat_url = self.row.base_url + '/chat/completions'
+        resolver = ModuleType('src.endpoint_resolver')
+        # DNS/runtime URL resolution is an existing separate boundary. Keep
+        # this fixture entirely inert while exercising the real vision policy.
+        resolver.build_chat_url = lambda base: self.chat_url
+        resolver.EndpointConfigurationChanged = type('EndpointConfigurationChanged', (RuntimeError,), {})
+        self.patches = [patch.dict(sys.modules, {'src.endpoint_resolver': resolver}),
+                        patch.object(calibration, '_store_path', return_value=str(self.store)),
+                        patch.object(calibration, '_record_deployment_evidence'),
+                        patch.object(route, '_caller', return_value=('alice', False)),
+                        patch.object(route, '_read_target', side_effect=lambda *a: (self.row, self.model))]
+        for item in self.patches:
+            item.start()
+            self.addCleanup(item.stop)
+        from src import chat_helpers, vision_routing
+        self.ch, self.vision = chat_helpers, vision_routing
+        self.cache_copies = [(cache, dict(cache)) for cache in (
+            chat_helpers._openai_vision_cache, chat_helpers._lmstudio_models_cache,
+            chat_helpers._llamacpp_props_cache)]
+        for cache, _ in self.cache_copies:
+            cache.clear()
+        self.addCleanup(self.restore_caches)
+        app = FastAPI()
+        app.include_router(route.setup_global_model_routes(), prefix='/api')
+        self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://fixture.invalid')
+
+    async def asyncTearDown(self):
+        await self.client.aclose()
+
+    def restore_caches(self):
+        for cache, previous in self.cache_copies:
+            cache.clear()
+            cache.update(previous)
+
+    def identity(self, **changes):
+        return dict(vendor='openai_compatible', model_id=self.model, endpoint_id=self.row.id,
+                    endpoint_revision=self.row.connection_revision,
+                    protocol='openai_chat_completions') | changes
+
+    def save(self, ok, **scope):
+        return self.calibration.save_scoped_tested(**self.identity(**scope),
+            tested={'vision': {'ok': ok, 'tested_at': '2026-10-20T00:00:00Z'}},
+            announced={'capabilities': {}})
+
+    async def descriptor(self):
+        class ForbiddenProbe:
+            def __init__(self, *a, **kw):
+                raise AssertionError('descriptor must not schedule an image probe')
+        with patch.object(self.vision, 'threading', SimpleNamespace(Thread=ForbiddenProbe)), \
+             patch('urllib.request.urlopen', side_effect=AssertionError('descriptor must not make HTTP/LLM calls')), \
+             patch('socket.socket.connect', side_effect=AssertionError('no network in descriptor fixture')):
+            response = await self.client.get('/api/global-model')
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(set(payload), {'endpoint_id', 'model', 'connection_revision', 'chat_path', 'protocol', 'vision'})
+        self.assertIs(type(payload['vision']), bool)
+        self.assertEqual(payload['endpoint_id'], self.row.id)
+        self.assertEqual(payload['connection_revision'], self.row.connection_revision)
+        self.assertEqual(payload['model'], self.model)
+        return payload['vision']
+
+    async def test_exact_durable_positive_survives_cold_and_expired_ram(self):
+        stored = self.save(True)
+        self.assertEqual(stored['evidence_scope'], 'exact')
+        self.assertIs(self.calibration.get_effective_manifest(**self.identity())['tested']['vision']['ok'], True)
+        for cache in ({}, {(self.chat_url, self.model): (True, 0)}, {}):
+            with self.subTest(cache=cache):
+                self.ch._openai_vision_cache.clear()
+                self.ch._openai_vision_cache.update(cache)
+                self.assertIs(await self.descriptor(), True)
+
+    async def test_exact_negative_overrides_positive_name_and_ram(self):
+        self.model = 'fixture-vision-model'
+        self.assertTrue(self.ch.is_vision_model(self.model))
+        self.ch._openai_vision_cache[(self.chat_url, self.model)] = (True, 1e18)
+        self.save(False)
+        self.assertIs(await self.descriptor(), False)
+
+    async def test_other_scope_or_legacy_tested_does_not_promote_vision(self):
+        for changes in ({'endpoint_id': 'different'}, {'endpoint_revision': 'different'},
+                        {'model_id': 'different'}, {'protocol': 'ollama_native_api_chat'},
+                        {'vendor': 'different'}):
+            with self.subTest(scope=changes):
+                self.save(True, **changes)
+                self.assertIs(await self.descriptor(), False)
+        self.calibration.save_tested(self.calibration.manifest_key(
+            vendor='openai_compatible', model_id=self.model, endpoint_id=self.row.id),
+            {'vision': {'ok': True}}, announced={'capabilities': {'vision': True}})
+        self.assertIs(await self.descriptor(), False)
+
+    async def test_unknown_nonboolean_and_declarations_keep_legacy_fallback(self):
+        for value in (None, 0, 1, 'true', 'false', {}, []):
+            with self.subTest(ok=value):
+                self.save(value)
+                self.assertIs(await self.descriptor(), False)
+        self.calibration.save_announced(self.calibration.manifest_key(
+            vendor='openai_compatible', model_id=self.model, endpoint_id=self.row.id),
+            {'capabilities': {'vision': True}})
+        self.assertIs(await self.descriptor(), False)
+        self.ch._openai_vision_cache[(self.chat_url, self.model)] = (True, 1e18)
+        self.assertIs(await self.descriptor(), True)
+
+    async def test_malformed_or_unavailable_store_keeps_legacy_fallback(self):
+        for content in ('not JSON', '{"manifests":[]}', '{"manifests":{"unused":[]}}'):
+            with self.subTest(content=content):
+                self.store.write_text(content, encoding='utf-8')
+                self.assertIs(await self.descriptor(), False)
+        with patch.object(self.calibration, 'get_effective_manifest', side_effect=OSError('own unavailable store')):
+            self.ch._openai_vision_cache[(self.chat_url, self.model)] = (True, 1e18)
+            self.assertIs(await self.descriptor(), True)
+
+    async def test_malformed_exact_result_is_not_a_boolean_observation(self):
+        scope = self.calibration._calibration_scope(**self.identity())
+        key = self.calibration.calibration_key(**self.identity())
+        for result in (True, 'supported', [], None):
+            with self.subTest(result=result):
+                self.store.write_text(json.dumps({'manifests': {key: {
+                    'calibration_scope': scope, 'tested': {'vision': result}}}}), encoding='utf-8')
+                self.assertIs(await self.descriptor(), False)
+
+    async def test_other_current_protocol_cannot_use_openai_observation(self):
+        self.save(True)
+        self.chat_url = 'http://127.0.0.1:39871/api/chat'
+        self.assertIs(await self.descriptor(), False)
+
+    async def test_unknown_attempt_does_not_erase_real_positive_or_negative(self):
+        self.save(True)
+        self.save(None)
+        self.assertIs(await self.descriptor(), True)
+        self.save(False)
+        self.save(None)
+        self.ch._openai_vision_cache[(self.chat_url, self.model)] = (True, 1e18)
+        self.assertIs(await self.descriptor(), False)
 
 
 def endpoint(**changes):
