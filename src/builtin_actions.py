@@ -2130,7 +2130,8 @@ async def action_audit_skills(owner: str, **kwargs) -> Tuple[str, bool]:
             ],
             "started": _time.time(), "cancel": False,
         }
-        await _run_audit_all_job(key, sm, names, url, model, headers, teacher, owner)
+        await _run_audit_all_job(key, sm, names, url, model, headers, teacher, owner,
+                                 progress_cb=kwargs.get("progress_cb"))
         job = _skill_audit_jobs.get(key, {})
         counts = {}
         for r in job.get("results", []):
