@@ -241,3 +241,53 @@ async def test_two_sessions_resolve_distinct_workspaces():
             )
             await ctx["_drain_agent"](sess, [])
     assert seen == [r"D:\proj-a", r"D:\proj-b"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sid,expected", [("sid-a", "standing rule A"), ("sid-b", "standing rule B"), ("sid-none", ""), ("sid-error", "")])
+async def test_followup_keeps_standing_project_context_without_engine(sid, expected):
+    """Legacy and packet-fallback calls need the same standing context as chat.
+
+    Observe the actual follow-up dispatch before any context-engine packet can
+    rescue it. The stream double never executes tools or calls a model.
+    """
+    tree = ast.parse(BG.read_text(encoding="utf-8"))
+    nodes = [n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_run_followup"]
+    log = SimpleNamespace(debug=lambda *a, **k: None, info=lambda *a, **k: None)
+    history = [{"role": "user", "content": "original request"}]
+    sess = SimpleNamespace(id=sid, owner="owner-local", model="fixture", get_context_messages=lambda: list(history))
+    seen, saved, busy, resolutions = [], [], set(), []
+
+    async def drain(session, messages):
+        assert session is sess and sid in busy
+        seen.extend(messages)
+        return "continued", []
+
+    def instructions(session_id, owner):
+        resolutions.append((session_id, owner))
+        if session_id == "sid-error":
+            raise OSError("project store unavailable")
+        return {"sid-a": "standing rule A", "sid-b": "standing rule B"}.get(session_id, "")
+
+    sm = SimpleNamespace(get_session=lambda _sid: sess, add_message=lambda *args: saved.append(args), save_sessions=lambda: None)
+    ai = ModuleType("src.ai_interaction")
+    ai.get_session_manager = lambda: sm
+    runs = SimpleNamespace(active_session_ids=lambda: list(busy), mark_busy=busy.add, clear_busy=busy.discard)
+    parent = ModuleType("src")
+    parent.__path__ = []
+    parent.agent_runs = runs
+    models = ModuleType("core.models")
+    models.ChatMessage = lambda *a, **k: SimpleNamespace(args=a, **k)
+    projects = ModuleType("services.projects")
+    projects.instructions_for_session = instructions
+    services = ModuleType("services")
+    services.projects = projects
+    ctx = {"logger": log, "_drain_agent": drain, "_background_result_message": lambda rec: {"role": "user", "content": "job output"}, "bg_jobs": SimpleNamespace(result_text=lambda rec: "job output")}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(BG), "exec"), ctx)
+    with patch.dict(sys.modules, {"src": parent, "src.ai_interaction": ai, "core.models": models, "services": services, "services.projects": projects}):
+        assert await ctx["_run_followup"]({"id": "job-own", "session_id": sid}) is True
+    assert resolutions == [(sid, "owner-local")]
+    assert seen == ([{"role": "system", "content": expected}] if expected else []) + history + [{"role": "user", "content": "job output"}]
+    assert history == [{"role": "user", "content": "original request"}]
+    assert not busy and len(saved) == 1
+    assert saved[0][1].metadata["bg_job_id"] == "job-own"

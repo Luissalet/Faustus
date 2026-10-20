@@ -328,6 +328,17 @@ async def _run_followup(rec: dict) -> bool:
             agent_runs = None
     try:
         context = sess.get_context_messages()
+        # Match foreground's standing project context. A context-engine packet
+        # may supply it too, but off/timeout/fallback must keep these rules.
+        try:
+            from services.projects import instructions_for_session
+
+            project_context = instructions_for_session(sess.id, getattr(sess, "owner", None))
+        except Exception:  # noqa: BLE001 - a broken project store must not lose the result
+            logger.debug("bg-followup: standing project context unavailable", exc_info=True)
+            project_context = ""
+        if project_context:
+            context.insert(0, {"role": "system", "content": project_context})
         context.append(_background_result_message(rec))
 
         full, tool_events = await _drain_agent(sess, context)
