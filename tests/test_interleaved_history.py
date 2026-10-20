@@ -21,11 +21,11 @@ def document():
 
 @pytest.fixture(autouse=True)
 def clean_capabilities(monkeypatch):
-    ec._schema_cache.clear();ec._cache.clear()
+    ec._schema_cache.clear();ec._cache.clear();getattr(ec,'_direct_history_cache',{}).clear()
     from src import tool_index
     monkeypatch.setattr(tool_index,'get_tool_index',lambda:None)
     yield
-    ec._schema_cache.clear();ec._cache.clear()
+    ec._schema_cache.clear();ec._cache.clear();getattr(ec,'_direct_history_cache',{}).clear()
 
 def refresh(base=BASE,model=MODEL,doc=None):
     ec.refresh_json_schema([{'endpoint_id':'managed-test','base_url':base,'models':[model]}],fetch_openapi=lambda _:document() if doc is None else doc)
@@ -160,7 +160,7 @@ def test_context_estimate_counts_retained_fields_for_each_candidate():
     assert estimate_tokens(same)==estimate_tokens(project(same,'openai_chat',record=False).messages)
 
 @pytest.mark.parametrize('mode',['sync','async','stream'])
-@pytest.mark.parametrize('clear',[None,False])
+@pytest.mark.parametrize('clear',[None,False,True])
 def test_real_wire_keeps_rounds_and_explicit_clear(monkeypatch,mode,clear):
     from tests.test_sparks_sampling import private_model
     from src import llm_core as core,model_backend
@@ -173,12 +173,12 @@ def test_real_wire_keeps_rounds_and_explicit_clear(monkeypatch,mode,clear):
         monkeypatch.setattr(core,'note_model_activity',lambda *a:None)
         monkeypatch.setattr(core,'_schedule_heal_on_garbage',lambda *a:None)
         monkeypatch.setattr(model_backend,'serving_backend',lambda *a,**k:{'backend':'unknown'})
-        if clear is False:
+        if clear is not None:
             # Existing native payload choice, injected at the adapter boundary;
             # this does not claim a new public gen_overrides/UI option.
             apply=core._apply_verified_engine_controls
             def configured(payload,*a,**kw):
-                payload.setdefault('chat_template_kwargs',{})['clear_thinking']=False
+                payload.setdefault('chat_template_kwargs',{})['clear_thinking']=clear
                 return apply(payload,*a,**kw)
             monkeypatch.setattr(core,'_apply_verified_engine_controls',configured)
         @asynccontextmanager
@@ -201,7 +201,7 @@ def test_real_wire_keeps_rounds_and_explicit_clear(monkeypatch,mode,clear):
         body=next(r['body']for r in requests if r['path'].endswith('/chat/completions'))
         assert thoughts(body['messages'])==['OLD_SENTINEL','ROUND1_SENTINEL','ROUND2_SENTINEL']
         assert all('_reasoning_origin' not in item for item in body['messages'])
-        assert body['chat_template_kwargs']['clear_thinking'] is (True if clear is None else False)
+        assert body['chat_template_kwargs']['clear_thinking'] is (False if clear is None else clear)
         assert messages==before
         if path:=os.environ.get('HISTORY859_WIRE_RECEIPT'):
             with Path(path).open('a',encoding='utf-8')as f:f.write(json.dumps({'mode':mode,'clear':clear,'body':body})+'\n')
@@ -266,3 +266,18 @@ def test_actual_agent_multiround_and_route_fallback_tcp(monkeypatch,tmp_path,fal
         else:assert not second
         if path:=os.environ.get('HISTORY859_WIRE_RECEIPT'):
             with Path(path).open('a',encoding='utf-8')as f:f.write(json.dumps({'mode':'agent','fallback':fallback,'bodies':first,'fallback_bodies':second})+'\n')
+
+
+def test_direct_discovery_keeps_three_rounds_with_synthetic_user(monkeypatch):
+    from tests.test_engine_controls import native_document, native_probe
+    calls = native_probe(monkeypatch, [native_document()])
+    payload = {}
+    ec.apply_controls(payload, BASE, MODEL)
+    messages = [{'role': 'user', 'content': 'one real user request'}]
+    round_message(messages, 1)
+    messages.append({'role': 'user', 'content': 'synthetic runtime note', '_harness_note': True})
+    round_message(messages, 2); round_message(messages, 3)
+    assert thoughts(project(messages,'openai_chat',record=False).messages) == [
+        'ROUND1_SENTINEL','ROUND2_SENTINEL','ROUND3_SENTINEL']
+    assert payload['chat_template_kwargs']['clear_thinking'] is False
+    assert len(calls) == 1

@@ -9,8 +9,9 @@ import urllib.request
 from urllib.parse import urlsplit, urlunsplit
 from typing import Any
 
-_cache: dict[str, tuple[float, bool]] = {}
+_cache: dict[str, tuple[float, bool, bool | None]] = {}
 _schema_cache: dict[tuple[str, str], dict[str, Any]] = {}
+_direct_history_cache: dict[tuple[str, str], float] = {}
 _schema_refresh_lock = threading.Lock()
 _SCHEMA_TTL = 60.0
 _SCHEMA_MAX_ENDPOINTS = 128
@@ -143,12 +144,13 @@ def json_schema_capability(base_url: str, endpoint_id: str) -> dict[str, Any]:
     return {'json_schema': False, 'status': 'unverified', 'source': 'served_openapi'}
 
 
-def _openapi_native_thinking(document, api_base: str) -> bool:
-    """Typed vLLM controls on the served chat route, checked only by sync."""
+def _openapi_native_thinking(document, api_base: str, *, exact_route: bool = False) -> bool:
+    """Typed native controls on the served chat route, independent of liveness."""
     if not isinstance(document, dict) or not isinstance(document.get('paths'), dict):
         return False
     api_path = urlsplit(api_base).path.rstrip('/') + '/chat/completions'
-    for path in dict.fromkeys((api_path, '/v1/chat/completions')):
+    paths = (api_path,) if exact_route else dict.fromkeys((api_path, '/v1/chat/completions'))
+    for path in paths:
         route = document['paths'].get(path)
         post = route.get('post') if isinstance(route, dict) else None
         if not isinstance(post, dict):
@@ -166,8 +168,12 @@ def _openapi_native_thinking(document, api_base: str) -> bool:
 
 
 def interleaved_history_capability(base_url: str, model: str) -> dict[str, Any]:
-    """Verified template policy, retained until its managed identity changes."""
+    """Cache-only template policy, retained across failed observations."""
     base = _schema_base(base_url)
+    profile = _model_template_controls(model)
+    if base and profile and profile.get('interleaved_history') and (base, model) in _direct_history_cache:
+        return {'interleaved_history': True, 'scope': 'current_user_turn',
+                'source': profile['source'], 'base_url': base, 'model': model}
     for (identity, cached_base), cached in list(_schema_cache.items()):
         if (base and base == cached_base and model in cached['models'] and
                 cached.get('history_native_thinking')):
@@ -176,6 +182,14 @@ def interleaved_history_capability(base_url: str, model: str) -> dict[str, Any]:
                 return {'interleaved_history': True, 'scope': 'current_user_turn',
                         'source': profile['source'], 'endpoint_id': identity, 'model': model}
     return {'interleaved_history': False, 'status': 'unverified'}
+
+
+def _invalidate_direct_history(base: str) -> None:
+    """A known route change must not reuse its old direct metadata proof."""
+    for key in list(_direct_history_cache):
+        if key[0] == base:
+            _direct_history_cache.pop(key, None)
+    _cache.pop(base[:-len('/v1')], None)
 
 
 def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) -> dict[str, dict[str, Any]]:
@@ -195,12 +209,14 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
     with _schema_refresh_lock:
         for key in list(_schema_cache):
             if key not in active:
+                _invalidate_direct_history(key[1])
                 _schema_cache.pop(key, None)
         for key, models in active.items():
             previous = _schema_cache.get(key)
             if previous and previous['models'] == models and time.monotonic() - previous['at'] < _SCHEMA_TTL:
                 continue
             if previous and previous['models'] != models:
+                _invalidate_direct_history(key[1])
                 _schema_cache.pop(key, None)
                 previous = None  # a different served model must establish its own proof
             base = key[1]
@@ -223,6 +239,8 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
             history_native = native_thinking
             if status == 'unavailable' and previous:
                 history_native = previous.get('history_native_thinking', False)
+            elif status != 'unavailable' and not native_thinking:
+                _invalidate_direct_history(base)
             _schema_cache[key] = {'at': time.monotonic(), 'models': models, 'json_schema': supported,
                                   'status': status, 'source': 'served_openapi', 'native_thinking': native_thinking,
                                   'history_native_thinking': history_native}
@@ -233,21 +251,36 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
 
 def vllm_thinking_budget(base_url: str) -> bool:
     """Probe a configured server's schema; never infer its engine from its IP."""
-    base = re.sub(r"/v1(?:/.*)?$", "", base_url.rstrip("/"))
-    cached = _cache.get(base)
-    if cached and time.monotonic() - cached[0] < 60:
-        return cached[1]
-    supported = False
-    try:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(base + "/openapi.json", timeout=1) as response:
-            schema = json.load(response)
-        fields = schema.get("components", {}).get("schemas", {}).get("ChatCompletionRequest", {}).get("properties", {})
-        supported = "thinking_token_budget" in fields and "chat_template_kwargs" in fields
-    except Exception:
-        pass
-    _cache[base] = (time.monotonic(), supported)
-    return supported
+    api_base = _schema_base(base_url)
+    if not api_base:
+        return False
+    base = api_base[:-len('/v1')]
+    with _schema_refresh_lock:
+        cached = _cache.get(base)
+        if cached and time.monotonic() - cached[0] < _SCHEMA_TTL:
+            return cached[1]
+        supported, history_verified = False, None
+        try:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(base + "/openapi.json", timeout=1) as response:
+                schema = json.load(response)
+            # The legacy budget probe's boolean is deliberately insufficient:
+            # history requires typed properties on this exact chat route.
+            history_verified = _openapi_native_thinking(schema, api_base, exact_route=True)
+            fields = schema.get("components", {}).get("schemas", {}).get("ChatCompletionRequest", {}).get("properties", {})
+            supported = "thinking_token_budget" in fields and "chat_template_kwargs" in fields
+        except Exception:
+            pass
+        if history_verified is False:
+            _invalidate_direct_history(api_base)
+            for (_, cached_base), entry in _schema_cache.items():
+                if cached_base == api_base:
+                    entry['history_native_thinking'] = False
+                    entry['native_thinking'] = False
+        _cache[base] = (time.monotonic(), supported, history_verified)
+        while len(_cache) > _SCHEMA_MAX_ENDPOINTS:
+            _cache.pop(min(_cache, key=lambda item: _cache[item][0]))
+        return supported
 
 
 def glm53_flash(model: str) -> bool:
@@ -267,7 +300,19 @@ def _model_template_controls(model: str) -> dict[str, Any] | None:
 
 def controls_for(base_url: str, model: str) -> dict[str, Any] | None:
     profile = _model_template_controls(model)
-    return profile if profile and vllm_thinking_budget(base_url) else None
+    if not profile or not vllm_thinking_budget(base_url):
+        return None
+    base = _schema_base(base_url)
+    with _schema_refresh_lock:
+        cached = _cache.get(base[:-len('/v1')]) if base else None
+        if cached and len(cached) > 2 and cached[2] is True:
+            # This provider request names the model; metadata is not borrowed
+            # by other models or paths and does not grant JSON-schema support.
+            _direct_history_cache[(base, model)] = time.monotonic()
+            while len(_direct_history_cache) > _SCHEMA_MAX_ENDPOINTS:
+                _direct_history_cache.pop(min(_direct_history_cache,
+                    key=lambda item: _direct_history_cache[item]))
+    return profile
 
 
 def apply_controls(payload: dict[str, Any], base_url: str, model: str, *, reasoning_budget: Any = None) -> None:
@@ -286,7 +331,9 @@ def apply_controls(payload: dict[str, Any], base_url: str, model: str, *, reason
         # artificially empty think block is outside its training template.
         effort = "low"
     template["enable_thinking"] = True
-    template.setdefault("clear_thinking", True)
+    # Runtime notes and tool images can also use role:user. Clearing at that
+    # synthetic boundary discards reasoning from the same human task.
+    template.setdefault("clear_thinking", False)
     payload["chat_template_kwargs"] = template
     payload["reasoning_effort"] = effort
     budget = payload.pop("reasoning_budget", None)
