@@ -57,8 +57,30 @@ no equivale a un modo sin historial ni a desactivar todo el motor de contexto.
 La investigación CPU separada #984 reprodujo que el presupuesto predeterminado
 de una reparación termina con tests fallidos; un presupuesto explícito mayor en
 el fixture alcanzó el cuarto chequeo y PASS. Stop y «sólo informar» se conservan.
-No se cambió ningún setting de producto; sigue pendiente resolver el presupuesto
-automático. Su proveedor guionizado no acredita calidad del modelo.
+La corrección #991 está revisada, integrada y activa: -1 selecciona el presupuesto
+automático del turno vigente; 0 sigue siendo «sólo informar» y los valores positivos
+mantienen su número explícito de reparaciones. Stop y la frescura de los tests se
+conservan. La revisión independiente pasó 22 oráculos y 31 pruebas nuevas; el área
+dio 125 PASS y tres fallos previos, también reproducidos en la base. No es una suite
+completamente verde ni calidad del modelo. El perfil de esta instalación pasó
+deliberadamente de 1 a -1 mediante el API nativo, con valor y ayuda comprobados en
+el navegador. No se migran otros valores positivos por suposición.
+
+La corrección #995, también revisada y activa, comparte la prueba tipada de
+controles del endpoint directo con la conservación de razonamiento; no requiere
+arrancar Prometheus. La consulta del historial no hace red. Para GLM verificado,
+clear_thinking=false evita borrar razonamientos del mismo encargo cuando un
+resultado de imagen o recordatorio usa role:user; los overrides explícitos y los
+demás modelos mantienen su política. El revisor pasó 13 casos independientes y
+147 tests del área, con fuentes exactas. Son pruebas CPU; la eficacia del modelo
+en un proyecto nuevo sigue pendiente de aceptación independiente.
+
+La activación conservó los ajustes salvo revisión interna y el cambio deliberado
+a AUTO, las 24 paradas manuales y la identidad/conexión global. Su comprobación
+completa detectó vision=true→false en el descriptor tras el arranque y el cambio
+de perfil. Esa incidencia sigue abierta en #1006; no se declara preservación
+completa del descriptor ni una pérdida de capacidad real sin comprobar su causa.
+El ensayo nuevo de Docsite usa texto y todavía no tiene resultado de aceptación.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en

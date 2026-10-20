@@ -130,9 +130,25 @@ history; it does not disable the entire context engine.
 
 A separate CPU investigation reproduced the default one-repair budget closing
 with failed tests, while an explicit larger fixture budget reached a passing
-fourth check. Stop and report-only behavior remained intact. No product setting
-was changed; an automatic-budget correction remains pending. The scripted
-provider in that investigation does not establish model quality.
+fourth check. The reviewed automatic-budget correction is now active: -1 uses the
+current turn budget, 0 remains report-only and positive values retain their fixed
+repair count. Stop and test freshness remain intact. Independent review passed
+22 oracles and 31 new tests; its area run had 125 passes and three reproduced
+pre-existing failures. This installation deliberately selected -1 through the
+native API, with its value and help verified in Settings. Other saved positive
+values are not silently migrated.
+
+Direct typed endpoint discovery now also preserves the current task's reasoning
+without starting Prometheus. Verified GLM controls default to clear_thinking=false
+so internal user-role messages do not erase earlier reasoning; explicit overrides
+and other model profiles remain. Independent CPU review passed 13 contract cases
+and 147 area tests. These results do not establish model quality.
+
+Activation preserved all other setting values, 24 manual stops and the selected
+model/connection identity. The full descriptor check detected vision changing
+from true to false after restart/profile selection; investigation #1006 remains
+open. A new text-only Docsite task is running, with independent acceptance still
+pending. Neither that run nor the descriptor discrepancy is reported as a pass.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
