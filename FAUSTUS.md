@@ -15,6 +15,51 @@ por teclado y la regresión de título sin encabezados. Es aceptación acotada t
 corregir; se conservan los fallos de entregas anteriores. No se ha demostrado
 fiabilidad semántica general.
 
+Una generación nueva e independiente de Workledger del 20 de octubre terminó
+38 rondas en 1113,8 segundos, pero falló la aceptación: 16 de 17 casos originales
+y cinco de ocho grupos adicionales pasaron. Aceptaba nombres del plan sin los
+dos puntos obligatorios y lanzaba RecursionError ante metadata cíclica. Los seis
+casos CLI base pasaron en Windows; un error con japonés y emoji produjo stderr
+que no era JSON válido. Sus 52 tests propios pasaban con UTF-8 forzado; en Windows
+nativo falló uno. Se conserva esta entrega como fallo, con sus pines originales
+y oráculos intactos. El «100 %» del comprobador de cambios es una puntuación heurística,
+no cobertura del contrato.
+
+La corrección #969 está revisada, integrada y activa. Un comando no relacionado
+no borra un fallo anterior y los snapshots de aprobación conservan estados,
+esperas y evidencias de Code Mode y procesos. Una nueva mutación conocida
+invalida los tests anteriores; las comprobaciones no tienen el antiguo tope de
+tres y conservan su historial. Si el verificador no llegó a ejecutarse, permanece
+pendiente para el siguiente cierre normal. La revisión independiente pasó 48
+casos preparados, cuatro streams completos con proveedor simulado y procesos/SQLite
+reales del fixture, y 259 tests del área, con seis exclusiones explícitas. Son
+ejecuciones separadas, no calidad del modelo. La corrección nativa R2 sobre ese
+mismo proyecto terminó 33 rondas y 45 herramientas en 571,7 segundos. Tras leer
+todas las fuentes finales, la evaluación independiente obtuvo 17/17 casos
+originales, 8/8 grupos adicionales, 65 tests propios en Windows nativo, seis CLI,
+el error Unicode y los ejemplos del README verdes. Conserva los 52 tests previos
+y añade 13 regresiones. Es aceptación tras corrección guiada; R1 sigue siendo fallo.
+MCP recuperó el run exacto terminado y Studio lo mostró automáticamente sin
+recargar. El harness guardó PASS real de 65 tests en la época de fuente 19,
+conservando UNVERIFIED por una operación Python anterior sin recuperación
+comparable confirmada. Ese historial y la aceptación del contrato son distintos.
+
+La corrección #964 propaga no_skills al prefacio compartido, además del loop.
+Tiene revisión independiente con 109 pruebas CPU verdes y está activa. Los cinco
+ledgers de contexto del turno correctivo API muestran cero tokens de skills
+e índice, con un catálogo real de 18 skills disponible. El catálogo MCP de inicio
+no expone ese flag; la prueba de la opción corresponde al API. MCP recuperó
+el estado del turno anterior y Studio conservó su historial tras la activación;
+esto no vuelve a verificar la entrega histórica. La opción
+no_memory desactiva recuperación personal; conserva contexto de proyecto y
+no equivale a un modo sin historial ni a desactivar todo el motor de contexto.
+
+La investigación CPU separada #984 reprodujo que el presupuesto predeterminado
+de una reparación termina con tests fallidos; un presupuesto explícito mayor en
+el fixture alcanzó el cuarto chequeo y PASS. Stop y «sólo informar» se conservan.
+No se cambió ningún setting de producto; sigue pendiente resolver el presupuesto
+automático. Su proveedor guionizado no acredita calidad del modelo.
+
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en
 recuperación de cola y escritura posterior. Un testigo de API pública reprodujo

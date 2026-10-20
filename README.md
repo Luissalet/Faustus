@@ -90,6 +90,50 @@ nine real browser queries, two keyboard navigations and the title-only regressio
 This is scoped acceptance after corrections. Earlier failed deliveries remain
 recorded; general semantic reliability is unproven.
 
+A fresh Workledger generation on 20 October completed 38 rounds in 1113.8 seconds
+but failed acceptance: 16 of 17 original cases and five of eight supplementary
+groups passed. It accepted a plan declaration without the required colon and
+raised RecursionError for cyclic metadata. The six baseline Windows CLI cases
+passed, while a Japanese/emoji error produced invalid JSON on stderr. Its 52
+producer tests passed with forced UTF-8; one failed on native Windows. The failed
+delivery's original source pins and oracles remain recorded. The change verifier's
+100% confidence is a heuristic score, not requirement coverage.
+
+Task 969 is reviewed, integrated and active: a later unrelated command cannot
+erase an earlier failure, and trusted approval snapshots retain result states,
+pending execution, Code Mode and process evidence. Known new mutations invalidate
+old test results; checks have no three-run cap and retain their history. A check
+that did not execute remains due at the next normal closing point. Independent
+CPU checks passed 48 prepared cases, four complete scripted streams with real
+fixture subprocesses/SQLite and 259 area tests (six execution tests excluded).
+These are separate runs, not proof of model quality. Native API correction R2
+on that same project completed 33 rounds and 45 tools in 571.7 seconds. After
+reading all final source, the independent evaluator obtained 17/17 original
+cases, 8/8 supplementary groups, 65 producer tests on native Windows, six CLI
+checks, the Unicode-error check and the README examples passing. The producer
+retained all 52 earlier tests and added 13 regressions. This is acceptance after
+guided correction; the fresh R1 failure remains recorded. Native MCP recovered
+the exact completed run and Studio displayed it automatically without reload.
+The harness persisted a real 65-test PASS at source epoch 19, while retaining
+UNVERIFIED for an earlier Python operation without confirmed comparable recovery.
+That operation history is distinct from independent contract acceptance.
+
+The reviewed no_skills correction also suppresses the shared preface catalog.
+Its source is active and has 109 passing independent/area CPU checks. All five
+context ledgers of the native API correction contain zero skill/index tokens,
+against a nonempty 18-skill catalog. The native MCP start catalog does not expose
+this option; this flag check covers the API profile. Native MCP status and Studio
+restored the prior conversation after activation; this does not reverify its old delivery.
+The existing no_memory option
+suppresses personal recall, while retaining project context and conversation
+history; it does not disable the entire context engine.
+
+A separate CPU investigation reproduced the default one-repair budget closing
+with failed tests, while an explicit larger fixture budget reached a passing
+fourth check. Stop and report-only behavior remained intact. No product setting
+was changed; an automatic-budget correction remains pending. The scripted
+provider in that investigation does not establish model quality.
+
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
 A public-API witness reproduced this after truncating only the last byte; the
