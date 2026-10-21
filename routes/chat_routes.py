@@ -5672,10 +5672,18 @@ def setup_chat_routes(
                 workers[sid] = card
         except Exception:
             workers = {}
+        background_jobs = []
+        try:
+            from routes.skills_routes import _skill_audit_activity
+            from src.tool_security import owner_is_admin_or_single_user
+            background_jobs = _skill_audit_activity(owner, owner_is_admin_or_single_user(owner))
+        except Exception:
+            logger.warning("[activity] could not read skill audit activity", exc_info=True)
+            unverified += 1
         return {"running": running, "runs": runs, "details": details,
                 "awaiting_approval": awaiting, "queued": queued,
                 "interrupted": interrupted, "workers": workers,
-                "unverified": unverified, "ts": time.time()}
+                "background_jobs": background_jobs, "unverified": unverified, "ts": time.time()}
 
     # ------------------------------------------------------------------ #
     # GET /api/questions — every `ask_user` question still waiting for an

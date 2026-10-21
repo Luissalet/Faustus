@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from services.memory.skills import SkillsManager
 from src import skill_governance, skill_import_review
-from src.auth_helpers import get_current_user
+from src.auth_helpers import effective_user, get_current_user
 from src.prompt_security import untrusted_context_message
 from src.skills_runtime import bridge as skills_bridge, discovery as skills_discovery
 from core.middleware import require_admin
@@ -565,6 +565,58 @@ async def _run_skill_test_job(
 _skill_audit_jobs: dict = {}
 
 
+def _skill_audit_activity(owner, admin=False):
+    """Read the existing audit records without creating jobs or chat identities."""
+    rows = []
+    for key, job in list(_skill_audit_jobs.items()):
+        job_owner = key[0] or None
+        if not admin and job_owner != (owner or None):
+            continue
+        if job.get("status") not in ("running", "awaiting_approval", "done", "error", "cancelled"):
+            raise ValueError("Unknown skill audit status")
+        active = job.get("active", job["status"] in ("running", "awaiting_approval"))
+        if type(active) is not bool:
+            raise ValueError("Unknown skill audit activity state")
+        rows.append({
+            "id": f"skill-audit:{key[0]}:{job['started']}",
+            "kind": "skill_audit", "owner": job_owner, "active": active,
+            "status": job["status"], "scope": job.get("scope"),
+            "model": job.get("model"), "teacher": job.get("teacher"),
+            "phase": job.get("phase"), "phase_model": job.get("phase_model"),
+            "attempt": job.get("attempt", 0), "total": job.get("total", 0),
+            "done": job.get("done", 0), "current": job.get("current"),
+            "started": job["started"], "finished": job.get("finished"),
+            "error": job.get("error"),
+        })
+    return rows
+
+
+def _skill_audit_status(owner, admin=False, job_id=None):
+    """Keep the owner response; optionally select one exact visible job."""
+    jobs = []
+    selected = None
+    for row in _skill_audit_activity(owner, admin):
+        job = _skill_audit_jobs[(row["owner"] or "",)]
+        complete = dict(row, results=list(job.get("results", [])), log=list(job.get("log", [])))
+        jobs.append(complete)
+        if (job_id is not None and row["id"] == job_id) or (job_id is None and row["owner"] == (owner or None)):
+            selected = complete
+    if job_id is not None and selected is None:
+        return None
+    return dict(selected or {"status": "none"}, jobs=jobs)
+
+
+def _audit_phase(callback, phase, model, attempt):
+    """A phase observer cannot interrupt the actual audit work."""
+    if callback is None:
+        return
+    import asyncio
+    try:
+        callback(phase, model, attempt)
+    except (Exception, asyncio.CancelledError):
+        logger.debug("Skill audit phase callback failed", exc_info=True)
+
+
 def _audit_auto_publish_policy(owner) -> tuple[bool, float]:
     """Return (auto_publish_enabled, minimum_confidence) for audit finalization."""
     try:
@@ -755,13 +807,14 @@ def _apply_skill_md(skills_manager, name: str, md: str, owner) -> bool:
         return False
 
 
-async def _run_skill_test_once(md: str, task: str, url, model, headers, owner) -> tuple:
+async def _run_skill_test_once(md: str, task: str, url, model, headers, owner, phase=None) -> tuple:
     """Run the skill once in the agent loop; return (transcript, verdict)."""
     import json as _json
     from src.agent_loop import stream_agent_loop
     transcript = []
     approval_required = None
     messages = _skill_test_messages(md, task)
+    _audit_phase(phase, "testing", model, None)
     try:
         # max_tokens explicitly set: passing 0 lets some upstreams (Ollama,
         # OpenAI-compat) generate an empty completion, which manifested as
@@ -819,6 +872,7 @@ async def _run_skill_test_once(md: str, task: str, url, model, headers, owner) -
             ],
             "approval_required": True,
         }
+    _audit_phase(phase, "review", model, None)
     verdict = await _eval_skill_run(md, task, text, url, model, headers)
     return text, verdict
 
@@ -871,11 +925,19 @@ async def _improve_skill_md(skill_md: str, verdict: dict, transcript: str, url, 
 
 
 async def _audit_one_skill(skills_manager, skill, url, model, headers,
-                           teacher, owner, log) -> dict:
+                           teacher, owner, log, phase=None) -> dict:
     """Test → judge → self-edit+retry → (teacher edit+retry) → flag. Never deletes;
     a skill the teacher still can't fix is demoted to draft for manual review.
     `teacher` is (url, model, headers) or None. `log(msg)` records progress."""
     name = skill.get("name")
+    phase = phase if phase is not None else getattr(log, "phase", None)
+    attempt = 0
+
+    def stage(value, phase_model=model):
+        _audit_phase(phase, value, phase_model, attempt)
+
+    def test_phase(value, phase_model, unused_attempt):
+        stage("retry" if value == "testing" and attempt > 1 else value, phase_model)
 
     # Reflect the audit outcome in the skill's confidence so the main list
     # updates: a clean pass earns high confidence; a pass that needed fixing
@@ -905,6 +967,7 @@ async def _audit_one_skill(skills_manager, skill, url, model, headers,
             if s.get("name") and s.get("name") != name
             and (not sk_owner or not s.get("owner") or s.get("owner") == sk_owner)
         ]
+        stage("necessity")
         nec = await _eval_skill_necessity(md, others, url, model, headers)
         if nec is not None:
             skills_manager.set_necessity(name, nec.get("necessary", True),
@@ -935,10 +998,12 @@ async def _audit_one_skill(skills_manager, skill, url, model, headers,
     # narrow skill over-inject, fix only metadata before the functional test.
     try:
         if _should_check_retrieval_precision(skill):
+            stage("retrieval")
             rp = await _eval_skill_retrieval_precision(md, others, url, model, headers)
             if rp and not rp.get("ok"):
                 issues = rp.get("issues") or ["metadata: retrieval: narrow tags and when_to_use to the intended trigger"]
                 log(f"{name}: narrowing retrieval metadata — {(rp.get('summary') or issues[0])[:80]}")
+                stage("fixing")
                 fixed = await _improve_skill_md(md, {
                     "verdict": "pass",
                     "confidence": 1.0,
@@ -955,7 +1020,8 @@ async def _audit_one_skill(skills_manager, skill, url, model, headers,
 
     task = _skill_test_task(skill)
     log(f"{name}: testing…")
-    transcript, verdict = await _run_skill_test_once(md, task, url, model, headers, owner)
+    attempt += 1
+    transcript, verdict = await _run_skill_test_once(md, task, url, model, headers, owner, phase=test_phase)
     v = verdict.get("verdict")
     log(f"{name}: verdict = {v} ({verdict.get('summary', '')[:80]})")
     if verdict.get("approval_required"):
@@ -985,6 +1051,7 @@ async def _audit_one_skill(skills_manager, skill, url, model, headers,
         meta_issues = [i for i in (verdict.get("issues") or []) if str(i).lower().lstrip().startswith("metadata:")]
         if meta_issues:
             log(f"{name}: pass, but fixing {len(meta_issues)} metadata issue(s)…")
+            stage("fixing")
             fixed = await _improve_skill_md(md, verdict, transcript, url, model, headers)
             if fixed and fixed.strip() != md.strip():
                 _apply_skill_md(skills_manager, name, fixed, owner)
@@ -1002,10 +1069,12 @@ async def _audit_one_skill(skills_manager, skill, url, model, headers,
 
     # Self-edit + retry.
     log(f"{name}: self-editing to fix issues…")
+    stage("fixing")
     new_md = await _improve_skill_md(md, verdict, transcript, url, model, headers)
     if new_md and new_md.strip() != md.strip() and _apply_skill_md(skills_manager, name, new_md, owner):
         md = new_md
-        transcript, verdict = await _run_skill_test_once(md, task, url, model, headers, owner)
+        attempt += 1
+        transcript, verdict = await _run_skill_test_once(md, task, url, model, headers, owner, phase=test_phase)
         v = verdict.get("verdict")
         log(f"{name}: retry (self) = {v}")
         if v == "pass":
@@ -1025,11 +1094,13 @@ async def _audit_one_skill(skills_manager, skill, url, model, headers,
         teacher_ran = True
         t_url, t_model, t_headers = teacher
         log(f"{name}: teacher {t_model} rewriting the skill…")
+        stage("teacher", t_model)
         t_md = await _improve_skill_md(md, verdict, transcript, t_url, t_model, t_headers)
         if t_md and t_md.strip() != md.strip() and _apply_skill_md(skills_manager, name, t_md, owner):
             md = t_md
         # Re-test with the STUDENT model (the model the skill runs under in use).
-        transcript, verdict = await _run_skill_test_once(md, task, url, model, headers, owner)
+        attempt += 1
+        transcript, verdict = await _run_skill_test_once(md, task, url, model, headers, owner, phase=test_phase)
         v = verdict.get("verdict")
         log(f"{name}: retry on student after teacher rewrite = {v}")
         if v == "pass":
@@ -1065,6 +1136,11 @@ async def _run_audit_all_job(key, skills_manager, names, url, model, headers, te
     job = _skill_audit_jobs.get(key)
     if job is None:
         return
+    job.update(active=True, phase="starting", phase_model=None, attempt=0, error=None)
+
+    def phase(value, phase_model, attempt):
+        job.update(phase=value, phase_model=phase_model, attempt=attempt)
+        progress(value)
 
     def progress(message):
         if progress_cb is None:
@@ -1083,7 +1159,10 @@ async def _run_audit_all_job(key, skills_manager, names, url, model, headers, te
             del job["log"][0:len(job["log"]) - 1000]
         progress(msg)
 
+    log.phase = phase
+
     cancelled = False
+    failed = False
     progress("starting")
     try:
         for nm in names:
@@ -1092,6 +1171,7 @@ async def _run_audit_all_job(key, skills_manager, names, url, model, headers, te
                 log("(cancelled)")
                 break
             job["current"] = nm
+            job.update(phase="starting", phase_model=None, attempt=0)
             progress(f"auditing {nm}")
             skills = skills_manager.load(owner=owner)
             sk = next((s for s in skills if s.get("name") == nm), None)
@@ -1106,7 +1186,9 @@ async def _run_audit_all_job(key, skills_manager, names, url, model, headers, te
                 raise
             except Exception as e:
                 log(f"{nm}: error — {e}")
-                res = {"skill": nm, "result": "error"}
+                job["error"] = str(e)
+                phase("error", None, job["attempt"])
+                res = {"skill": nm, "result": "error", "error": str(e)}
             try:
                 refreshed = next((s for s in skills_manager.load(owner=owner) if s.get("name") == nm), None)
                 if refreshed:
@@ -1128,12 +1210,19 @@ async def _run_audit_all_job(key, skills_manager, names, url, model, headers, te
             progress(f"finished {nm}")
     except _asyncio.CancelledError:
         cancelled = True
+    except Exception as e:
+        failed = True
+        job["error"] = str(e)
+        raise
     finally:
         job["current"] = None
-        job["status"] = "cancelled" if cancelled or job.get("cancel") else "done"
+        job["active"] = False
+        job["status"] = "error" if failed else "cancelled" if cancelled or job.get("cancel") else "done"
+        job["phase"] = "error" if failed else "cancelled" if job["status"] == "cancelled" else "finished"
+        job["phase_model"] = None
         job["finished"] = _time.time()
         job.pop("task", None)
-        progress("cancelled" if job["status"] == "cancelled" else "finished")
+        progress(job["phase"])
 
 
 def _resolve_audit_models(owner=None):
@@ -1226,6 +1315,7 @@ async def run_scheduled_skill_audit(skills_manager: SkillsManager,
 
     _skill_audit_jobs[key] = {
         "status": "running", "scope": "scheduled", "model": model,
+        "active": True, "phase": "starting", "phase_model": None, "attempt": 0, "error": None,
         "teacher": teacher[1] if teacher else None,
         "total": len(names), "done": 0, "current": None,
         "results": [], "log": [f"Nightly audit of {len(names)} least-recently-checked skill(s) with {model}"
@@ -1840,7 +1930,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         import asyncio as _asyncio
         import time as _time
 
-        user = _owner(request)
+        user = effective_user(request)
         body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
         scope = (body.get("scope") or "all").lower()
         requested_names = body.get("names")
@@ -1894,6 +1984,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
         _skill_audit_jobs[key] = {
             "status": "running", "scope": scope, "model": model,
+            "active": True, "phase": "starting", "phase_model": None, "attempt": 0, "error": None,
             "teacher": teacher[1] if teacher else None,
             "total": len(names), "done": 0, "current": None,
             "results": [], "log": [f"Auditing {len(names)} skill(s) with {model}" + (f"; teacher {teacher[1]}" if teacher else "")],
@@ -1905,21 +1996,16 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
     @router.get("/audit-all/status")
     async def audit_status(request: Request):
-        user = _owner(request)
-        job = _skill_audit_jobs.get((user or "",))
-        if not job:
-            return {"status": "none"}
-        return {
-            "status": job["status"], "scope": job.get("scope"),
-            "total": job.get("total", 0), "done": job.get("done", 0),
-            "current": job.get("current"), "model": job.get("model"), "teacher": job.get("teacher"),
-            "results": job.get("results", []), "log": job.get("log", []),
-            "started": job.get("started"), "finished": job.get("finished"),
-        }
+        from src.tool_security import owner_is_admin_or_single_user
+        user = effective_user(request)
+        value = _skill_audit_status(user, owner_is_admin_or_single_user(user), request.query_params.get("job_id"))
+        if value is None:
+            raise HTTPException(404, "Audit job not found")
+        return value
 
     @router.post("/audit-all/cancel")
     async def audit_cancel(request: Request):
-        user = _owner(request)
+        user = effective_user(request)
         job = _skill_audit_jobs.get((user or "",))
         if job:
             job["cancel"] = True

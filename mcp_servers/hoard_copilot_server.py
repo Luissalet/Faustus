@@ -17,6 +17,8 @@ from src.stdio_guard import guard
 server = Server("hoard-copilot")
 CONTEXT = {"type": "object", "description": "Hoard origin with app_id/data_space_id, native project, active objects and selection."}
 OPERATIONS = {
+    "hoard_activity": ("GET", "/api/chat/activity", "Read native chat and skill-audit activity, including active state and last terminal audit summaries; does not start work.", {}),
+    "hoard_skill_audit_status": ("GET", "/api/skills/audit-all/status", "Read visible native skill audit progress and results. Pass job_id to select that exact audit; never starts or repeats it.", {"job_id": {"type": "string"}}),
     "hoard_project_search": ("GET", "/projects/search", "Find prior Hoard work by title, canonical conversation and actual activity dates, returning native references.", {**{key: {"type": "string"} for key in ('query', 'app_id', 'data_space_id', 'after', 'before')}, 'offset': {'type': 'integer'}, 'limit': {'type': 'integer'}}),
     "hoard_project_recall": ("GET", "/projects/{project_link_id}", "Recall a linked Hoard project, recent canonical messages, memory scope and existing workspace.", {"project_link_id": {"type": "string"}}),
     "hoard_context_resolve": ("POST", "/project-links/resolve", "Resolve the Hoard project into the same stable Faustus working project.", {"context": CONTEXT}),
