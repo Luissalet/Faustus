@@ -185,6 +185,8 @@ def isolated_settings_file(tmp_path_factory, monkeypatch):
     path = tmp_path_factory.mktemp("settings") / "settings.json"
     monkeypatch.setattr(settings_mod, "SETTINGS_FILE", str(path))
     settings_mod._invalidate_caches()
+    monkeypatch.setitem(settings_mod.DEFAULT_SETTINGS, "tool_approval_mode", "ask")
+    settings_mod._invalidate_caches()
     yield
     settings_mod._invalidate_caches()
 

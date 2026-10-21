@@ -223,7 +223,14 @@ def test_nudge_line_once_usage_reaches_the_soft_ceiling(stores):
     settings = {"agent_context_tools_offer_round": 12, "agent_midturn_compact_enabled": False,
                 "agent_tool_result_offload_chars": 10_000_000}
     # The route's window as the loop resolves it (not the caller's hint).
-    with mock.patch("src.model_context.budget_context_for_model", lambda *a, **k: 16_000):
+    # The prompt size is stubbed (6k + 6k per tool result): the real system
+    # prompt grows with every release and used to push round 1 over the
+    # 45% offer line of a 16k window on its own.
+    def _tokens(messages, model, *a, **k):
+        return 6_000 + 6_000 * sum(1 for m in messages if m.get("role") == "tool")
+
+    with mock.patch("src.model_context.budget_context_for_model", lambda *a, **k: 16_000), \
+            mock.patch("src.token_calibration.estimate_tokens_for", _tokens):
         captured, _e = _drive(stores, script, native=True, settings=settings)
     assert not seen[1][0] and "context_drop" not in captured[0]["tools"]
     # ~6k prompt + ~6k tool result of a 16k window after round 1: over the
@@ -239,10 +246,14 @@ def test_no_offer_and_no_nudge_while_the_run_is_short(stores):
         seen[n] = _nudges(messages)
         return [("bash", {"command": "make"}, "call_big")] if n == 1 else "Done."
 
-    captured, _e = _drive(stores, script, native=True,
-                          settings={"agent_context_tools_offer_round": 12,
-                                    "agent_midturn_compact_enabled": False,
-                                    "agent_tool_result_offload_chars": 10_000_000})
+    # The route's window is fixed: left to the local model lookup it depends on the
+    # machine (32768 vs 131072 seen) and 45% of 32768 sits right at the ~14.7k
+    # tokens of a two-round run.
+    with mock.patch("src.model_context.budget_context_for_model", lambda *a, **k: 200_000):
+        captured, _e = _drive(stores, script, native=True,
+                              settings={"agent_context_tools_offer_round": 12,
+                                        "agent_midturn_compact_enabled": False,
+                                        "agent_tool_result_offload_chars": 10_000_000})
     assert not seen[2] and "context_drop" not in captured[1]["tools"]
 
 

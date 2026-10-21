@@ -423,8 +423,10 @@ def test_round_one_mailbox_delivery_refreshes_the_request_the_gate_observes():
     import pathlib
     src = (pathlib.Path(__file__).resolve().parents[1] / "src" / "agent_loop.py").read_text(encoding="utf-8")
     i = src.index("if round_num == 1 and any(isinstance(_s, dict) and _s.get(\"source\") == \"agent\" for _s in _steers):")
-    block = src[i:i + 900]
-    assert "_initial_route_request_messages = _trim_route_request_messages(" in block
+    block = src[i:i + 1200]
+    # 11b64684: the rebuild runs through the owned-preparation helper.
+    assert "_initial_route_request_messages = await run_preparation(" in block
+    assert "_trim_route_request_messages," in block
     assert "run_security.observe_messages(_initial_route_request_messages)" in block
 
 

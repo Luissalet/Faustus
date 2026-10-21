@@ -65,16 +65,19 @@ def _run(tmp_path):
         max_rounds=6, relevant_tools={"bash"}, workspace=str(tmp_path))))
 
 
-def test_an_unsupported_figure_gets_one_correction_then_is_struck_through(tmp_path, monkeypatch):
+def test_an_unsupported_figure_is_reported_as_an_advisory_and_the_answer_is_kept(tmp_path, monkeypatch):
+    # 7bfba264 made numerical/grounding diagnostics advisory: no correction
+    # round, no strike-through, the model's answer is preserved as written.
     seen = _patch(monkeypatch, True, ["Las ventas crecieron un 37 % (de 1200 a 1500).",
                                       "Las ventas crecieron un 37 % (de 1200 a 1500)."])
     events = _run(tmp_path)
-    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
-    assert rejected and "ungrounded_figure" in rejected[0]["reasons"]
-    assert any(e.get("type") == "harness_check" and e.get("status") == "figures_marked" for e in events)
-    replaced = [e["text"] for e in events if e.get("type") == "response_replace"]
-    assert replaced and "~~37" in replaced[-1]
-    assert len(seen) == 3  # tool round, first answer, the one correction
+    advisories = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "advisory"]
+    assert advisories and "ungrounded_figure" in advisories[0]["reasons"]
+    assert advisories[0].get("advisory") is True
+    assert not any(e.get("type") == "harness_check" and e.get("status") in ("rejected", "figures_marked")
+                   for e in events)
+    assert not [e for e in events if e.get("type") == "response_replace"]
+    assert len(seen) == 2  # tool round, the answer: no extra model call
 
 
 def test_a_supported_figure_passes_untouched(tmp_path, monkeypatch):

@@ -130,7 +130,11 @@ def backend(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _settings(monkeypatch):
-    values = {"desktop_control_mode": "ask_each", "agent_tool_image_max_px": 1280,
+    # `tool_approval_mode` is pinned to "ask": this fake replaces the whole settings
+    # reader, so without the key the mode would fall back to the product default
+    # ("full"), where nothing asks and every approval-card test below is moot.
+    values = {"desktop_control_mode": "ask_each", "tool_approval_mode": "ask",
+              "agent_tool_image_max_px": 1280,
               "agent_tool_images": True, "agent_tool_preflight": True}
 
     def _get(key, default=None):
@@ -262,7 +266,9 @@ def test_always_approve_set():
 def test_settings_defaults():
     from src.settings import DEFAULT_SETTINGS
 
-    assert DEFAULT_SETTINGS["desktop_control_mode"] == "ask_each"
+    # d3475e1c: "ask_task" is the default now; the setting is only read in the asking
+    # approval modes (with full access, the default, nothing asks).
+    assert DEFAULT_SETTINGS["desktop_control_mode"] == "ask_task"
     assert DEFAULT_SETTINGS["agent_tool_images"] is True
     assert DEFAULT_SETTINGS["agent_tool_image_max_px"] == 1280
     assert DEFAULT_SETTINGS["agent_keep_images"] == 1
@@ -605,9 +611,18 @@ def test_ask_task_mode_uses_normal_scoped_gate(_settings):
     assert tool_requires_per_call_approval("desktop_click") is False
 
 
-def test_unknown_mode_falls_back_to_ask_each(_settings):
-    _settings["desktop_control_mode"] = "whatever"
-    assert ToolRunSecurityContext().decision_for("desktop_key").allowed is False
+def test_unknown_mode_falls_back_to_the_default_mode(_settings):
+    # d3475e1c moved DEFAULT_DESKTOP_CONTROL_MODE (the fallback for an unknown or
+    # unreadable value) from "ask_each" to "ask_task"; the fallback follows it.
+    from src.tool_capabilities import DEFAULT_DESKTOP_CONTROL_MODE
+
+    def verdict(mode):
+        _settings["desktop_control_mode"] = mode
+        return (ToolRunSecurityContext().decision_for("desktop_key").allowed,
+                ToolRunSecurityContext(external_untrusted_context_seen=True).decision_for("desktop_key").allowed)
+
+    assert DEFAULT_DESKTOP_CONTROL_MODE == "ask_task"
+    assert verdict("whatever") == verdict(DEFAULT_DESKTOP_CONTROL_MODE) == (True, False)
 
 
 @pytest.mark.asyncio

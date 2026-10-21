@@ -293,7 +293,7 @@ def test_failing_project_tests_give_exactly_one_fix_round_with_its_budget(drive,
 
     run = drive([call("return a - b", "return a * b"), text("He corregido src/calc.py."),
                  call("return a * b", "return a + b"), text("He corregido src/calc.py de verdad.")],
-                user="Arregla la función add de src/calc.py", settings={"agent_project_tests": True},
+                user="Arregla la función add de src/calc.py", settings={"agent_project_tests": True, "agent_project_tests_fix_rounds": 1},
                 exec_fn=edit, workspace=str(ws), tools={"read_file", "edit_file", "glob", "bash"})
     statuses = [e["status"] for e in run.events if e.get("type") == "harness_check"]
     assert "tests_failed" in statuses and statuses[-1] == "verified"

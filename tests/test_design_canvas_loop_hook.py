@@ -10,7 +10,9 @@ def test_the_agent_loop_calls_the_closure_after_the_review():
     src = (Path(__file__).resolve().parent.parent / "src" / "agent_loop.py").read_text(encoding="utf-8")
     review = src.index("review_defects:")
     hook = src.index("design_canvas_check as _dcc")
-    advisor = src.index("Advisor, third trigger")
+    # The advisor no longer spends an extra model round on the final answer
+    # (7bfba264): the marker that follows the closure is its local advisory note.
+    advisor = src.index("Final evidence advice is local and informational")
     assert review < hook < advisor
     assert '"canvas_" + str(_cvc.get("overall")' in src
     # ...and it survives a reload: the verdict is part of what is persisted with the message.
