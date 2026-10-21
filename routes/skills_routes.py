@@ -783,8 +783,8 @@ def _audit_finalize_status(skills_manager, name: str, owner, verdict: str,
     return status
 
 
-def _apply_skill_md(skills_manager, name: str, md: str, owner) -> bool:
-    """Parse + persist an edited SKILL.md. Returns True on success."""
+def _apply_skill_md(skills_manager, name: str, md: str, owner, *, metadata_only=False) -> bool:
+    """Persist an edit, optionally preserving the already-tested functional body."""
     try:
         from services.memory.skill_format import Skill, slugify
         sk = Skill.from_markdown(md)
@@ -793,15 +793,21 @@ def _apply_skill_md(skills_manager, name: str, md: str, owner) -> bool:
         # skill — a changed `name` would move the dir and orphan the usage/audit
         # sidecar entries that the caller keeps writing under the original name.
         sk.name = name
-        return bool(skills_manager.update_skill(name, {
-            "name": sk.name, "description": sk.description, "version": sk.version,
+        updates = {
+            "description": sk.description, "version": sk.version,
             "category": sk.category, "tags": sk.tags, "platforms": sk.platforms,
             "requires_toolsets": sk.requires_toolsets, "fallback_for_toolsets": sk.fallback_for_toolsets,
-            "status": sk.status, "confidence": sk.confidence, "source": sk.source,
-            "teacher_model": sk.teacher_model, "owner": sk.owner or owner,
-            "when_to_use": sk.when_to_use, "procedure": sk.procedure,
-            "pitfalls": sk.pitfalls, "verification": sk.verification, "body_extra": sk.body_extra,
-        }, owner=owner))
+            "when_to_use": sk.when_to_use,
+        }
+        if not metadata_only:
+            updates.update({
+                "name": sk.name,
+                "status": sk.status, "confidence": sk.confidence, "source": sk.source,
+                "teacher_model": sk.teacher_model, "owner": sk.owner or owner,
+                "procedure": sk.procedure,
+                "pitfalls": sk.pitfalls, "verification": sk.verification, "body_extra": sk.body_extra,
+            })
+        return bool(skills_manager.update_skill(name, updates, owner=owner))
     except Exception as e:
         logger.warning(f"Audit: could not save edited skill {name}: {e}")
         return False
@@ -1047,14 +1053,14 @@ async def _audit_one_skill(skills_manager, skill, url, model, headers,
     if v == "pass":
         # Procedure works. If the reviewer still flagged metadata (tags/category/
         # when_to_use/description), do ONE fixer pass to correct the frontmatter
-        # without re-testing — a metadata-only fix can't break a passing run.
+        # without re-testing. Apply only metadata so the tested body is retained.
         meta_issues = [i for i in (verdict.get("issues") or []) if str(i).lower().lstrip().startswith("metadata:")]
         if meta_issues:
             log(f"{name}: pass, but fixing {len(meta_issues)} metadata issue(s)…")
             stage("fixing")
             fixed = await _improve_skill_md(md, verdict, transcript, url, model, headers)
             if fixed and fixed.strip() != md.strip():
-                _apply_skill_md(skills_manager, name, fixed, owner)
+                _apply_skill_md(skills_manager, name, fixed, owner, metadata_only=True)
         _set_conf(0.95)
         skills_manager.set_audit(name, "pass", by_teacher=False, worker_model=model, owner=owner)
         refreshed = next((s for s in skills_manager.load(owner=owner) if s.get("name") == name), None)
