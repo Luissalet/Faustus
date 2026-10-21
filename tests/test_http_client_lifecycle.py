@@ -1,8 +1,7 @@
-"""#1093 RED baseline: HTTP clients must close on their owner loop.
+"""#1093 HTTP clients must close on their owner loop.
 
-These assertions encode the GREEN contract from research #1054 / tcp-native21.
-On HEAD 4f55 they are expected to FAIL until the surgical fix lands. No model,
-DB, or product network: only local loops and (where needed) real httpx clients.
+GREEN contract from research #1054 / tcp-native21. No model, DB, or product
+network: only local loops and (where needed) real httpx clients.
 """
 from __future__ import annotations
 
