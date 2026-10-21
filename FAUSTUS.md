@@ -14078,3 +14078,45 @@ La activación real usó un STOP/START, conservó configuración,39conexiones MC
 El revisor recibió sólo los primeros 4.000 caracteres de la skill: el recorte fijo cortó el tercer vector aunque el ejecutor había recibido el contrato completo. También hay recortes de 3.000/5.000 caracteres en los otros jueces y del catálogo comparable. La corrección está registrada como 1094 y pendiente; este hallazgo impide atribuir el aviso de vector incompleto al modelo.
 
 La investigación1054 añadió TCP local real: el selector sustituye un cliente cuyo bucle cerró sin cerrar antes su conexión mientras conserva una referencia; un cierre tardío desde otro bucle produjo Event loop is closed aunque el servidor sí observó EOF. Un cierre esperado en el bucle propietario conservó pooling y terminó sin ese error. Es evidencia acotada, sin atribución de las esperas históricas ni prueba de fuga indefinida. La implementación de cierre por propietario para wrappers y shutdown está registrada como1093 y sigue pendiente.
+
+
+### Sparks con switch, generación cero atribuida y procesos huérfanos (21-10-2026)
+
+**Red.** Las cuatro Sparks quedan conectadas a un switch MikroTik CRS812:
+- Fabric RoCE a 200G en 10.100.40.x/10.100.41.x, MTU 9000, con 195,8 Gb/s RDMA por pareja.
+- GLM 5.3 Flash TP3 en Spark1-3.
+- Qwen 3.8 Next en Spark4, que va por Wi-Fi (192.168.0.214:30001).
+
+El endpoint efectivo de Faustus sigue siendo `sparks-2ba9eff4` / `glm-5.3-flash-nvfp4`.
+
+**#1094 (instrucciones completas a los evaluadores de skills).** Pasó una validación nativa acotada con el flujo normal:
+- Una auditoría real de 343,8 s llegó al mismo estado por API, MCP y Activity de escritorio.
+- Los tres vectores originales quedaron idénticos y el oráculo independiente dio 3/3.
+- Los 121 metadatos de skills ajenas no cambiaron.
+
+La vista móvil no se comprobó en ese ensayo.
+
+**Integradas y activas (master 46f26a66, proceso 129272 desde las 20:36:25Z):**
+- **#1099:** los clientes HTTP creados por la fábrica se rastrean con referencias débiles. Un bucle corto sin propietario ya no los mantiene vivos (Main 447f tenía 5/5 vivos; ahora 0/5).
+- **#1101:** la capacidad de visión de un servidor vLLM se pregunta por `/tokenize`, sin generar. La sonda de 1 token por completion queda solo para servidores sin `/tokenize`. En vivo: respuesta en 33 ms, 0 tokens y 0 peticiones.
+- **#1103:** la disponibilidad de Chromium para las comprobaciones de UI usa el contexto async público del SDK:
+  - devuelve un bool exacto también desde un hilo con un bucle asyncio activo (master devolvía `False` en ese caso aunque Chromium estaba instalado);
+  - ya no deja avisos de Task pendiente ni TargetClosedError;
+  - 66 pruebas de UI smoke, sin ninguna omitida.
+- **#1105:** en el host Windows, cada comando bash/python del agente nace suspendido dentro de su propio Job Object, sin KILL_ON_JOB_CLOSE y con breakaway permitido.
+  - Los procesos que sobreviven al comando se adoptan como un handle del gestor de procesos de la sesión y se comunican al modelo.
+  - Nada se mata automáticamente; `process_stop` termina el árbol completo.
+  - POSIX queda fuera de alcance.
+
+**Generación cero.** El generador de tokens de cada hora con Faustus en reposo era la sonda de visión de la lista de modelos. Está atribuido con fuentes primarias: el dueño del socket por psutil coincide con el log de la cabeza con IP y puerto de cliente. Tras activar b5200c1c y 46f26a66, el log completo de la cabeza registra:
+- 0 `POST /v1/chat/completions` desde el PC en 15 y 21 minutos;
+- la detección de visión hecha con dos `/tokenize`.
+
+Los contadores de vLLM no se quedan en cero porque la propia Spark lanza chequeos de salud de 8 tokens desde 127.0.0.1. Por eso el veredicto se decide por IP de cliente y no por contadores. El FAIL histórico de la activación de las 07:51 conserva la atribución desconocida, porque no hay datos de ese minuto.
+
+**Serie de aceptación.** El trabajo 1 (agenda con recurrencias DST, concurrencia e importación) se congeló antes de generar:
+- TASK sha256 d81585b0…, oráculo de 65 casos sha256 7c79c2e7….
+- Una referencia escrita solo desde el contrato da 65/65.
+- Las mutaciones se detectan; una sobrevivió por un fallo del propio mutante.
+
+Se envió el 21-10 a las 20:52Z. Los trabajos 2 (archivo binario con integridad) y 3 (analítica incremental exacta) tienen contrato y oráculo calibrados, pero aún no se han enviado. Esto no acredita fiabilidad global hasta que los tres pasen sus oráculos.
