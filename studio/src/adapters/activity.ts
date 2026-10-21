@@ -1,6 +1,6 @@
 import type { RunStatus } from '../components';
 import { ApiError, asArray, getJson, responseReason } from './api';
-import { chatActivity, createSession, listModels, listSessions, sendTurn, type AskOption, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
+import { chatActivity, createSession, listModels, listSessions, sendTurn, type AskOption, type ChatActivity, type ChatSession, type RunActivityDetail, type SkillAuditJob } from './chat';
 import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
 import { closedLabel } from './automations';
@@ -71,7 +71,7 @@ export interface QuestionDetail {
 
 export interface ActivityRun {
   id: string;
-  kind: 'task' | 'render' | 'approval' | 'chat' | 'workflow' | 'question' | 'external';
+  kind: 'task' | 'render' | 'approval' | 'chat' | 'workflow' | 'question' | 'external' | 'skill_audit';
   title: string;
   detail?: string;
   status: RunStatus;
@@ -99,6 +99,7 @@ export interface ActivityRun {
   chat?: { sessionId: string; runId: string; model: string; progress?: RunActivityDetail };
   workflow?: WorkflowDetail;
   question?: QuestionDetail;
+  audit?: SkillAuditJob;
   /** ADP-11: present only for a `chat`/`question` row `mergeAttention` matched
    *  against `GET /api/attention` (or synthesized one for a finished, never-
    *  otherwise-listed conversation — see that function). CMP-05 adds
@@ -217,6 +218,47 @@ export function conversationRuns(activity: ChatActivity, sessions: ChatSession[]
               model: session?.model || '', progress },
     }];
   });
+}
+
+export function skillAuditPhase(phase: string): string {
+  const labels: Record<string, string> = {
+    starting: 'Starting', necessity: 'Checking necessity', retrieval: 'Checking retrieval',
+    testing: 'Testing the skill', review: 'Reviewing the result', fixing: 'Improving the skill',
+    teacher: 'Teacher improving the skill', retry: 'Testing again', finished: 'Finished',
+    cancelled: 'Cancelled', error: 'Failed',
+  };
+  return labels[phase] ? t(labels[phase]) : phase || t('Working now');
+}
+
+export function skillAuditRuns(activity: Pick<ChatActivity, 'backgroundJobs'>): ActivityRun[] {
+  return (activity.backgroundJobs ?? []).map((job) => {
+    const mapped = job.active ? { status: 'running' as const, label: undefined } : normaliseStatus(job.status);
+    const phase = job.active && job.status === 'cancelled' ? t('Finishing cancellation') : skillAuditPhase(job.phase);
+    const count = job.done !== null && job.total !== null ? t('{done}/{total} completed', { done: job.done, total: job.total }) : '';
+    return {
+      id: job.id, kind: 'skill_audit', title: t('Skills audit'), status: mapped.status,
+      statusLabel: mapped.label, detail: [phase, count, job.current].filter(Boolean).join(' · '),
+      startedAt: job.startedAt === null ? null : new Date(job.startedAt).toISOString(),
+      finishedAt: job.finishedAt === null ? null : new Date(job.finishedAt).toISOString(),
+      repeats: 1, audit: job, error: job.error || null,
+    };
+  });
+}
+
+export interface SkillAuditResult {
+  id: string;
+  results: { skill: string; result: string; error: string }[];
+  log: string[];
+}
+
+export async function skillAuditResult(jobId: string, signal?: AbortSignal): Promise<SkillAuditResult> {
+  const raw = await getJson<Record<string, unknown>>(`/api/skills/audit-all/status?job_id=${encodeURIComponent(jobId)}`, signal);
+  if (raw.id !== jobId) throw new ApiError(t('The audit result changed. Refresh its status.'), 409);
+  return {
+    id: jobId,
+    results: asArray<Record<string, unknown>>(raw.results).map((row) => ({ skill: str(row.skill), result: str(row.result), error: str(row.error) })),
+    log: asArray<unknown>(raw.log).map(String),
+  };
 }
 
 /**
@@ -525,12 +567,13 @@ export async function loadActivity(signal?: AbortSignal): Promise<ActivityFeed> 
       return { questions: [] };
     }),
     chatActivity(signal).then(async (activity) => {
-      if (!activity.running.length && !activity.awaiting.length && !Object.keys(activity.queued).length) return [];
+      const audits = skillAuditRuns(activity);
+      if (!activity.running.length && !activity.awaiting.length && !Object.keys(activity.queued).length) return audits;
       const sessions = await listSessions(signal).catch(() => {
         degraded.push(t('conversation names'));
         return [];
       });
-      return conversationRuns(activity, sessions);
+      return [...conversationRuns(activity, sessions), ...audits];
     }).catch(() => {
       degraded.push(t('conversations'));
       unavailableKinds.push('chat');
@@ -551,6 +594,7 @@ export async function loadActivity(signal?: AbortSignal): Promise<ActivityFeed> 
   if (unavailableKinds.length === 6) {
     throw new ApiError(t('Could not read the activity'), 503);
   }
+  if (unavailableKinds.includes('chat')) unavailableKinds.push('skill_audit');
 
   const runs: ActivityRun[] = [
     ...(conversations ?? []),

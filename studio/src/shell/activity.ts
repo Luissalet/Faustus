@@ -44,7 +44,7 @@ let timer = 0;
 let reading = false;
 
 function anythingLive(activity: ChatActivity): boolean {
-  return activity.running.length > 0 || activity.awaiting.length > 0;
+  return activity.running.length > 0 || activity.awaiting.length > 0 || !!activity.backgroundJobs?.some((job) => job.active);
 }
 
 function schedule(delay: number): void {

@@ -2470,6 +2470,25 @@ export interface RunActivityDetail {
   queuedPosition: number;
 }
 
+export interface SkillAuditJob {
+  id: string;
+  active: boolean;
+  status: string;
+  scope: string;
+  owner: string | null;
+  model: string;
+  teacher: string;
+  phase: string;
+  phaseModel: string;
+  attempt: number | null;
+  total: number | null;
+  done: number | null;
+  current: string;
+  startedAt: number | null;
+  finishedAt: number | null;
+  error: string;
+}
+
 export interface ChatActivity {
   /** Sessions with a run going (queued ones included). */
   running: string[];
@@ -2481,6 +2500,8 @@ export interface ChatActivity {
   awaiting: string[];
   /** Session → position in the queue, while it waits for its lane. */
   queued: Record<string, number>;
+  /** Existing skills jobs, including their latest terminal result; never chat IDs. */
+  backgroundJobs?: SkillAuditJob[];
 }
 
 export const EMPTY_ACTIVITY: ChatActivity = { running: [], runs: {}, details: {}, awaiting: [], queued: {} };
@@ -2493,6 +2514,7 @@ export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> 
     awaiting_approval?: unknown;
     queued?: unknown;
     unverified?: unknown;
+    background_jobs?: unknown;
   }>('/api/chat/activity', signal);
   // The server could not confirm some runs this time (a busy database): the
   // answer is partial, and "not listed" would read as "finished". Callers
@@ -2526,12 +2548,31 @@ export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> 
       };
     }
   }
+  if (raw.background_jobs !== undefined && !Array.isArray(raw.background_jobs)) {
+    throw new ApiError('Skills audit activity is unavailable', 503);
+  }
+  const backgroundJobs = asArray<unknown>(raw.background_jobs).flatMap((value): SkillAuditJob[] => {
+    if (!value || typeof value !== 'object') throw new ApiError('Skills audit activity is unavailable', 503);
+    const job = value as Record<string, unknown>;
+    if (job.kind !== 'skill_audit') return [];
+    if (!str(job.id) || typeof job.active !== 'boolean') throw new ApiError('Skills audit activity is unavailable', 503);
+    return [{
+      id: str(job.id), active: job.active, status: str(job.status), scope: str(job.scope),
+      owner: typeof job.owner === 'string' ? job.owner : null,
+      model: str(job.model), teacher: str(job.teacher), phase: str(job.phase), phaseModel: str(job.phase_model),
+      attempt: num(job.attempt) ?? null, total: num(job.total) ?? null, done: num(job.done) ?? null, current: str(job.current),
+      startedAt: num(job.started) === undefined ? null : num(job.started)! * 1000,
+      finishedAt: num(job.finished) === undefined ? null : num(job.finished)! * 1000,
+      error: str(job.error),
+    }];
+  });
   return {
     running: ids(raw.running),
     runs: map(raw.runs, String),
     details: detailMap,
     awaiting: ids(raw.awaiting_approval),
     queued: map(raw.queued, (v) => num(v) ?? 0),
+    backgroundJobs,
   };
 }
 

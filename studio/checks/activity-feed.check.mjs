@@ -45,7 +45,7 @@ try {
   assert.equal(feed.runs[0].title, 'Local work');
   failChat = true;
   const partial = await loadActivity();
-  assert.deepEqual(partial.unavailableKinds, ['chat']);
+  assert.deepEqual(partial.unavailableKinds, ['chat', 'skill_audit'], 'both kinds share the unavailable activity source');
   const retained = retainUnavailableRuns(feed.runs, partial);
   assert.equal(retained.find((r) => r.kind === 'chat').chat.runId, 'run-1');
   assert.equal(retained.find((r) => r.kind === 'chat').stale, true);

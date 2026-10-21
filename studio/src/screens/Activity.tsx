@@ -2,11 +2,11 @@ import { Activity as ActivityIcon, ArrowUpToLine, Calculator, Check, CircleStop,
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, friendlyError, MermaidView, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, groupByProject, loadActivity, loadExternalRuns, loadQueue, mergeAttention, nextRunParam, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, stableAttentionOrder, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
+import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, groupByProject, loadActivity, loadExternalRuns, loadQueue, mergeAttention, nextRunParam, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, skillAuditPhase, skillAuditResult, stableAttentionOrder, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem, type SkillAuditResult } from '../adapters/activity';
 import { loadAttention, markAttentionRead, type AttentionRow, type NextAction } from '../adapters/attention';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
-import { stopChat } from '../adapters/chat';
+import { stopChat, type SkillAuditJob } from '../adapters/chat';
 import { gateForRun, traceForCall, type CallTrace, type GateReport } from '../adapters/observability';
 import { workflowEstimate, workflowMermaid, type WorkflowEstimate } from '../adapters/topology';
 import { createActivityPoller } from '../lib/activity-poller';
@@ -41,7 +41,7 @@ const FILTERS: { id: string; label: string; match: (run: ActivityRun) => boolean
   { id: 'fallido', label: 'Failed', match: (run) => run.status === 'failed' },
 ];
 
-type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow' | 'question' | 'external';
+type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow' | 'question' | 'external' | 'skill_audit';
 
 // CMP-05: plain English label maps for the three NEW axes a card carries
 // (`src/attention.py`'s module docstring has the full rationale) — kept as
@@ -448,6 +448,46 @@ function GatePanel() {
   );
 }
 
+function SkillAuditPanel({ job }: { job: SkillAuditJob }) {
+  const [result, setResult] = useState<SkillAuditResult | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const controller = new AbortController();
+    setResult(null);
+    setError('');
+    skillAuditResult(job.id, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setResult(value);
+    }).catch((cause) => {
+      if (!controller.signal.aborted) setError(friendlyError(cause).message);
+    });
+    return () => controller.abort();
+  }, [job.id, job.done, job.phase, job.active]);
+  const scopes: Record<string, string> = { scheduled: 'Scheduled', all: 'All skills', selected: 'Selected skills', unchecked: 'Unchecked skills' };
+  return <section data-testid="activity-skill-audit-detail">
+    <p className="fs-act__chat-phase" role="status">{job.active && job.status === 'cancelled' ? t('Finishing cancellation') : skillAuditPhase(job.phase)}</p>
+    <dl className="fs-act__facts">
+      <DetailRow label={t('Progress')}>{job.done ?? '—'} / {job.total ?? '—'}</DetailRow>
+      <DetailRow label={t('Scope')}>{scopes[job.scope] ? t(scopes[job.scope]) : job.scope || '—'}</DetailRow>
+      <DetailRow label={t('Owner')}>{job.owner ?? t('Shared')}</DetailRow>
+      {job.current && <DetailRow label={t('Current skill')}>{job.current}</DetailRow>}
+      {job.model && <DetailRow label={t('Model')}>{job.model}</DetailRow>}
+      {job.teacher && <DetailRow label={t('Configured teacher')}>{job.teacher}</DetailRow>}
+      {job.phaseModel && <DetailRow label={t('Model for this phase')}>{job.phaseModel}</DetailRow>}
+      {job.attempt !== null && job.attempt > 0 && <DetailRow label={t('Attempt')}>{job.attempt}</DetailRow>}
+    </dl>
+    <div className="fs-act__actions"><Link className="fs-act__link" to="/skills">{t('Open skills')}</Link></div>
+    <h3>{t('Results')}</h3>
+    {error && <p className="fs-act__error" role="alert">{error}</p>}
+    {!result && !error && <p role="status">{t('Loading results…')}</p>}
+    {result && (result.results.length ? <ol className="fs-act__trace-list">
+      {result.results.map((row, index) => <li key={`${row.skill}-${index}`}>
+        <strong>{row.skill}</strong> — {t(row.result)}{row.error && <p className="fs-act__error">{row.error}</p>}
+      </li>)}
+    </ol> : <p className="fs-act__hint">{t('No skill results yet.')}</p>)}
+    {result && result.log.length > 0 && <details><summary>{t('Log')}</summary><pre className="fs-act__pre">{result.log.join('\n')}</pre></details>}
+  </section>;
+}
+
 export function ActivityScreen() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -699,7 +739,7 @@ export function ActivityScreen() {
       .filter((run) => {
         if (!filter.match(run)) return false;
         const isNotification = run.kind === 'task' && run.task?.outputTarget === 'notification';
-        if (q && !`${run.title} ${run.detail ?? ''} ${run.chat?.model ?? ''}`.toLowerCase().includes(q)) return false;
+        if (q && !`${run.title} ${run.detail ?? ''} ${run.chat?.model ?? ''} ${run.audit?.model ?? ''}`.toLowerCase().includes(q)) return false;
         if (kind === 'notification') return isNotification;
         if (isNotification && kind === 'all') return false;
         if (kind !== 'all' && run.kind !== kind) return false;
@@ -725,7 +765,7 @@ export function ActivityScreen() {
   const groups = useMemo(() => (viewMode === 'project' ? groupByProject(displayed) : null), [viewMode, displayed]);
 
   const counts = useMemo(() => {
-    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0, question: 0, external: 0 };
+    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0, question: 0, external: 0, skill_audit: 0 };
     for (const run of merged ?? []) {
       if (run.kind === 'task' && run.task?.outputTarget === 'notification') c.notification++;
       else {
@@ -832,7 +872,7 @@ export function ActivityScreen() {
     return (
       <button type="button" className="fs-run fs-act__row" key={key} ref={(node) => { if (node) rowButtons.current.set(key, node); else rowButtons.current.delete(key); }} data-state={run.status} aria-current={key === currentId || undefined} onClick={() => open(run)} data-testid="activity-run">
         <span className="fs-run__kind" data-kind={run.kind}>
-          {t(run.kind)}
+          {run.kind === 'skill_audit' ? t('Skills audit') : t(run.kind)}
         </span>
         <span className="fs-run__main">
           <span className="fs-row__name">
@@ -997,6 +1037,7 @@ export function ActivityScreen() {
               ['all', t('All'), counts.all],
               ['question', t('Questions'), counts.question],
               ['chat', t('Conversations'), counts.chat],
+              ['skill_audit', t('Skills audits'), counts.skill_audit],
               ['task', t('Tasks'), counts.task],
               ['render', t('Renders'), counts.render],
               ['workflow', t('Workflows'), counts.workflow],
@@ -1082,7 +1123,7 @@ export function ActivityScreen() {
               <header className="fs-act__head">
                 <div className="fs-act__title">
                   <span className="fs-run__kind" data-kind={current.kind}>
-                    {t(current.kind)}
+                    {current.kind === 'skill_audit' ? t('Skills audit') : t(current.kind)}
                   </span>
                   <h2 id="fs-act-title" ref={detailTitle} tabIndex={-1}>{current.title}</h2>
                   <p className="fs-act__when">
@@ -1130,6 +1171,8 @@ export function ActivityScreen() {
                   </li>)}
                 </ol>
               </>}
+
+              {current.kind === 'skill_audit' && current.audit && <SkillAuditPanel job={current.audit} />}
 
               {current.kind === 'chat' && current.chat && (
                 <>
