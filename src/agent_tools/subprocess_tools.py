@@ -519,6 +519,25 @@ class _BoundedStreamText:
         return self.text.removesuffix("\n")
 
 
+async def _command_exit(proc: asyncio.subprocess.Process) -> Optional[int]:
+    """The command's own exit status (#1114).
+
+    asyncio's ``Process.wait()`` returns only once every pipe is closed, so a child that
+    inherited stdout/stderr (``server &`` without redirection, a Popen in a test) kept the
+    tool waiting until the idle watchdog killed the whole tree. ``returncode`` is set as
+    soon as the process itself exits; the readers are drained for a bounded time after."""
+    waiter = asyncio.ensure_future(proc.wait())
+    try:
+        while not waiter.done():
+            if proc.returncode is not None:
+                return proc.returncode
+            await asyncio.wait({waiter}, timeout=0.1)
+        return waiter.result()
+    finally:
+        if not waiter.done():
+            waiter.cancel()
+
+
 async def _run_subprocess_streaming(
     proc: asyncio.subprocess.Process,
     *,
@@ -587,7 +606,7 @@ async def _run_subprocess_streaming(
 
     timed_out: object = False
     try:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        await asyncio.wait_for(_command_exit(proc), timeout=timeout)
         if idle_hit[0]:
             timed_out = "idle"
     except asyncio.TimeoutError:
@@ -619,12 +638,18 @@ async def _run_subprocess_streaming(
                     await t
                 except (asyncio.CancelledError, Exception):
                     pass
+        held_open = False
         for t in (rd_out, rd_err):
             try:
                 await asyncio.wait_for(t, timeout=1)
+            except asyncio.TimeoutError:
+                held_open = True
             except (asyncio.CancelledError, Exception):
                 pass
         process_ownership.forget(proc)
+    if held_open and timed_out is False:
+        stderr_full.append("\n[output may be incomplete: a process started by this command still holds its "
+                           "output streams]")
 
     return (
         stdout_full.result(),
