@@ -389,14 +389,71 @@ def _chat_completions_url(endpoint_url: str) -> str:
     return base + "/chat/completions"
 
 
+_MULTIMODAL_REFUSAL_WORDS = ("image", "multimodal", "multi-modal", "vision")
+
+
+class _ServerUnreachable(Exception):
+    """The probe got no HTTP answer at all (down, timeout)."""
+
+
+def _tokenize_vision_answer(chat_url: str, model_name: str) -> Optional[bool]:
+    """Vision support asked through the server's `/tokenize`, which generates nothing (#1101).
+
+    The same message is tokenized without and with the probe image. vLLM runs the
+    multimodal processor there: an image that adds tokens means the checkpoint sees,
+    a refusal that names images/multimodal input means it does not. A server without
+    `/tokenize`, or one that ignores the image, gives None so the caller asks with
+    the 1-token completion instead.
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    url = chat_url[: -len("/v1/chat/completions")] + "/tokenize"
+
+    def count(content) -> Optional[int]:
+        body = {"model": model_name, "messages": [{"role": "user", "content": content}]}
+        request = urllib.request.Request(url, _json.dumps(body).encode(), {"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            value = _json.loads(response.read() or b"{}").get("count")
+        return value if isinstance(value, int) else None
+
+    try:
+        text_count = count("ok")
+    except urllib.error.HTTPError:
+        return None  # the server answers but has no usable /tokenize: the caller asks otherwise
+    except Exception as exc:  # noqa: BLE001 - nothing answered: do not wait a second timeout
+        raise _ServerUnreachable() from exc
+    if text_count is None:
+        return None
+    try:
+        image_count = count([
+            {"type": "text", "text": "ok"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _PROBE_PNG}},
+        ])
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read(2000).decode("utf-8", "replace").lower()
+        except Exception:  # noqa: BLE001
+            pass
+        return False if any(w in detail for w in _MULTIMODAL_REFUSAL_WORDS) else None
+    except Exception:  # noqa: BLE001
+        return None
+    if image_count is not None and image_count > text_count:
+        return True
+    return None
+
+
 def openai_compat_supports_vision(endpoint_url: str, model_name: str) -> Optional[bool]:
     """Ask a LAN OpenAI-compatible server (vLLM, SGLang...) with a tiny image.
 
     Names do not say whether a served checkpoint carries a vision tower
-    (glm-5.3-flash does; nothing in the name tells). One 1-token request
-    answers it: 200 means images work, a 400 about images or multimodal
-    input means they do not. Anything else (down, timeout) is unknown.
-    Only for local/LAN hosts, never a paid API.
+    (glm-5.3-flash does; nothing in the name tells). A server with
+    `/tokenize` (vLLM) is asked there first, which generates nothing; only
+    otherwise one 1-token request answers it: 200 means images work, a 400
+    about images or multimodal input means they do not. Anything else (down,
+    timeout) is unknown. Only for local/LAN hosts, never a paid API.
     """
     if not model_name or not _is_local_host(urlparse(endpoint_url).hostname):
         return None
@@ -406,6 +463,13 @@ def openai_compat_supports_vision(endpoint_url: str, model_name: str) -> Optiona
     cached = _openai_vision_cache.get(key)
     if cached and cached[1] > now:
         return cached[0]
+    try:
+        asked = _tokenize_vision_answer(url, model_name)
+    except _ServerUnreachable:
+        return None
+    if asked is not None:
+        _openai_vision_cache[key] = (asked, now + _OPENAI_VISION_TTL)
+        return asked
     import json as _json
     import urllib.error
     import urllib.request
