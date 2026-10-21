@@ -633,13 +633,37 @@ def _chromium_installed() -> bool:
     global _CHROMIUM_INSTALLED
     if _CHROMIUM_INSTALLED is None:
         try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as pw:
-                path = pw.chromium.executable_path
+            path = _chromium_executable_path()
             _CHROMIUM_INSTALLED = bool(path) and os.path.exists(path)
         except Exception:  # noqa: BLE001 - no driver, no browser: not available
             _CHROMIUM_INSTALLED = False
     return _CHROMIUM_INSTALLED
+
+
+async def _chromium_executable_path_async() -> str:
+    from playwright.async_api import async_playwright
+    async with async_playwright() as pw:
+        return pw.chromium.executable_path
+
+
+def _chromium_executable_path() -> str:
+    """The path Playwright would launch, asked through the public async context.
+
+    The sync context returns before the driver's init task settles and cancels
+    it on exit, which left "Task was destroyed but it is pending!" plus an
+    unretrieved TargetClosedError on every cold check; the async context waits
+    for the initialised object and exits clean (#1077/#1103). Callers stay sync:
+    collection-time `skipif` and the `asyncio.to_thread` worker. A thread that
+    already runs a loop cannot nest `asyncio.run`, so it asks from a short
+    worker thread and still gets the real answer."""
+    import asyncio
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_chromium_executable_path_async())
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="ui-smoke-chromium") as pool:
+        return pool.submit(lambda: asyncio.run(_chromium_executable_path_async())).result()
 
 
 # In-page accessibility audit, run via `page.evaluate`. Deterministic,
