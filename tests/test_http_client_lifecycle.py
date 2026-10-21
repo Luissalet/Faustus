@@ -135,3 +135,53 @@ def test_owned_loop_close_helper_callable_from_running_loop(monkeypatch):
         return True
 
     assert asyncio.run(_body()) is True
+
+
+def test_per_loop_client_from_unowned_short_loop_is_not_kept_alive(monkeypatch):
+    """#1099: factory bookkeeping must not keep clients alive on its own.
+
+    A per-loop client created on a short-lived loop that ends with a bare
+    ``asyncio.run`` (not ``owned_loop.run``) used to be held only weakly by
+    ``_loop_http_clients`` and was collected with its loop. Tracking factory
+    ownership must not turn that into an open client that lives forever.
+    """
+    import gc
+    import weakref
+
+    _reset_pool(monkeypatch)
+    monkeypatch.setattr(llm_core, "_factory_owned_clients", type(llm_core._factory_owned_clients)())
+
+    holder = asyncio.new_event_loop()
+    ready = threading.Event()
+    stop = threading.Event()
+
+    def _owner():
+        asyncio.set_event_loop(holder)
+
+        async def _hold():
+            llm_core._get_http_client()  # the global client belongs to this live loop
+            ready.set()
+            while not stop.is_set():
+                await asyncio.sleep(0.01)
+
+        holder.run_until_complete(_hold())
+
+    owner = threading.Thread(target=_owner, daemon=True)
+    owner.start()
+    assert ready.wait(5)
+
+    refs = []
+
+    async def _use():
+        client = llm_core._get_http_client()
+        refs.append(weakref.ref(client))
+        return client is not llm_core._http_client
+
+    try:
+        assert all(asyncio.run(_use()) for _ in range(3))
+        gc.collect()
+        assert [r() for r in refs] == [None, None, None]
+    finally:
+        stop.set()
+        owner.join(5)
+        holder.close()
