@@ -1421,7 +1421,7 @@ class _DegenerateStreamGuard:
         self.tail = ""
         self.script_tail = ""
         self.vocabulary_tail = ""
-        self._json_escape_carry = ""
+        self._json_escape_carry: Dict[Any, str] = {}
         self._sentence_buf = ""
         self._sentence_truncated = False
         self._reasoning_units: List[str] = []
@@ -1447,20 +1447,24 @@ class _DegenerateStreamGuard:
                 return f"repeated unit {unit!r} {count} times ({span} chars)"
         return None
 
-    def check(self, text: str, *, json_escaped: bool = False) -> None:
+    def check(self, text: str, *, json_escaped: bool = False, escape_key: Any = None) -> None:
         """Feed the next streamed chunk of text. Raises `DegenerateOutput`
         the moment a collapse is recognized; returns normally otherwise.
 
         `json_escaped`: the chunk is raw JSON string text (a tool call's
         argument delta). Word-based rules then read it decoded, the way the
-        tool will receive it; the raw-character rules still see the raw text."""
+        tool will receive it; the raw-character rules still see the raw text.
+        `escape_key` keeps an escape cut at the end of one tool call's delta
+        apart from the next delta of a different, interleaved call."""
         if not text:
             return
         self.total_chars += len(text)
         self.tail = (self.tail + text)[-_DEGENERATE_RAW_TAIL_WINDOW:]
         words_text = text
         if json_escaped:
-            complete, self._json_escape_carry = _split_json_escape_tail(self._json_escape_carry + text)
+            complete, held = _split_json_escape_tail(self._json_escape_carry.pop(escape_key, "") + text)
+            if held:
+                self._json_escape_carry[escape_key] = held
             words_text = _decode_json_escapes(complete)
         vocabulary = self.vocabulary_tail + words_text
         self.vocabulary_tail = vocabulary[-2400:]
@@ -1520,7 +1524,7 @@ class _DegenerateStreamGuard:
             # is full, so a short foreign quote inside an otherwise-Latin
             # answer cannot trip it (spec: never on legitimately
             # multilingual content shorter than the window).
-            self.script_tail = (self.script_tail + text)[-self._gibberish_window:]
+            self.script_tail = (self.script_tail + words_text)[-self._gibberish_window:]
             if len(self.script_tail) >= self._gibberish_window:
                 frac = _unexpected_script_fraction(self.script_tail)
                 if frac > self._gibberish_threshold:
@@ -8437,7 +8441,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                 # loop-specific check below (which needs 1500+
                                                 # chars to build up) — see §179.
                                                 try:
-                                                    degenerate_guard.check(call.last_appended, json_escaped=True)
+                                                    degenerate_guard.check(call.last_appended, json_escaped=True, escape_key=call.index)
                                                 except DegenerateOutput as _degenerate:
                                                     yield _degenerate_output_error_chunk(_degenerate)
                                                     return

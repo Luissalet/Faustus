@@ -8,6 +8,7 @@ guard's word pattern read the letter after each backslash as a word, so
 same schema as plain text never fired. The guard has to read the argument
 text the way the tool will receive it, while still catching a real loop."""
 import json
+import random
 import re
 
 import pytest
@@ -120,3 +121,70 @@ def test_the_stream_delivers_the_schema_patch_as_a_tool_call(monkeypatch):
     assert calls[0][0]["name"] == "apply_patch"
     args = json.loads(calls[0][0]["arguments"])
     assert "until_date TEXT NOT NULL" in args["patch"]
+
+
+def test_an_escaped_backslash_at_a_chunk_end_is_not_held():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    # "\\\\" is one escaped backslash: complete, so the next "n" is a word.
+    for piece in ["path C:", "\\\\", "nodes", " x \\\\\\", "nend"]:
+        guard.check(piece, json_escaped=True)
+    # three backslashes = one escaped backslash + a held one, then "\n" + "end"
+    assert guard.recent_tokens == ["path", "c", "nodes", "x", "end"]
+
+
+def test_invalid_escapes_stay_literal_text():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    for piece in ["\\x41 ", "\\u12g4 ", "ok"]:
+        guard.check(piece, json_escaped=True)
+    assert guard.recent_tokens == ["x41", "u12g4", "ok"]
+
+
+def test_a_held_escape_does_not_leak_into_another_tool_call():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    guard.check('"a\\', json_escaped=True, escape_key=0)
+    guard.check("ntext", json_escaped=True, escape_key=1)
+    guard.check("nb", json_escaped=True, escape_key=0)
+    assert guard.recent_tokens == ["a", "ntext", "b"]
+
+
+def test_escapes_split_by_the_stream_reach_the_tool_unchanged(monkeypatch):
+    # Every escape cut in two: "\\" ends one delta, its letter starts the next.
+    raw = json.dumps({"patch": "*** Begin Patch\n*** Add File: agenda/store.py\n" + SCHEMA})
+    pieces, buf = [], ""
+    for ch in raw:
+        buf += ch
+        if ch == "\\":
+            pieces.append(buf)
+            buf = ""
+    pieces.append(buf)
+    lines = [_sse({"tool_calls": [{"index": 0, "id": "c1", "type": "function",
+                                   "function": {"name": "apply_patch", "arguments": ""}}]})]
+    lines += [_sse({"tool_calls": [{"index": 0, "function": {"arguments": p}}]}) for p in pieces]
+    lines.append("data: [DONE]")
+    events = _drive(monkeypatch, lines, model="glm-5.3-flash-nvfp4")
+    assert not [e for e in events if e.get("error_class") == llm_core.DEGENERATE_OUTPUT_ERROR_CLASS]
+    calls = [e["calls"] for e in events if e.get("type") == "tool_calls"]
+    assert json.loads(calls[0][0]["arguments"]) == json.loads(raw)
+
+
+def test_non_latin_gibberish_sent_as_unicode_escapes_is_judged_like_utf8():
+    # Varied non-Latin words, so only the script rule can see it (no repeated
+    # word or phrase): the escaped form used to look like plain ASCII to it.
+    rng = random.Random(7)
+    letters = "абвгдежзийклмнопрстуфхцчшщыэюя"
+    words = " ".join("".join(rng.choice(letters) for _ in range(rng.randint(3, 8))) for _ in range(400))
+
+    def fires(chunks, **kw):
+        guard = llm_core._DegenerateStreamGuard("glm")
+        try:
+            for c in chunks:
+                guard.check(c, **kw)
+        except llm_core.DegenerateOutput:
+            return True
+        return False
+
+    plain = [words[i:i + 8] for i in range(0, len(words), 8)]
+    escaped_text = json.dumps(words)  # ensure_ascii: every letter as \uXXXX
+    escaped = [escaped_text[i:i + 8] for i in range(0, len(escaped_text), 8)]
+    assert fires(plain) is True
+    assert fires(escaped, json_escaped=True) is True
