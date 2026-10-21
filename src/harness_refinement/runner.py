@@ -169,7 +169,8 @@ def _worker_loop() -> None:
             _QUEUED_SESSIONS.discard(job["session_id"])
             _BUSY_SESSION = job["session_id"]
         try:
-            asyncio.run(run_job(job))
+            from src import owned_loop
+            owned_loop.run(run_job(job))
         except Exception:  # noqa: BLE001
             logger.debug("harness refinement job failed", exc_info=True)
         finally:

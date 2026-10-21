@@ -1701,12 +1701,101 @@ def _clear_host_dead(url: str) -> None:
 _http_client: Optional[httpx.AsyncClient] = None
 _http_client_owner: Optional[Tuple[int, Any]] = None  # (id(client), loop that created it)
 _loop_http_clients: "weakref.WeakKeyDictionary[Any, httpx.AsyncClient]" = weakref.WeakKeyDictionary()
+# Factory-created clients only (never injected/borrowed test doubles).
+_factory_owned_clients: set = set()
 _http_limits = httpx.Limits(max_connections=100, max_keepalive_connections=30, keepalive_expiry=30.0)
 
 
 def _new_http_client() -> httpx.AsyncClient:
     from src.tls_overrides import llm_verify
-    return httpx.AsyncClient(limits=_http_limits, http2=False, verify=llm_verify())
+    client = httpx.AsyncClient(limits=_http_limits, http2=False, verify=llm_verify())
+    _factory_owned_clients.add(client)
+    return client
+
+
+def _is_factory_owned(client: Any) -> bool:
+    return client is not None and client in _factory_owned_clients
+
+
+async def _aclose_factory_client(client: Any) -> None:
+    """One aclose attempt for a factory client. is_closed alone is not success proof."""
+    if client is None or not _is_factory_owned(client):
+        return
+    try:
+        if not client.is_closed:
+            await client.aclose()
+    except Exception as exc:  # noqa: BLE001 - cleanup must not hide callers
+        logger.warning("llm http client aclose failed: %r", exc)
+    finally:
+        _factory_owned_clients.discard(client)
+
+
+def _sync_close_abandoned_client(client: Any) -> None:
+    """Close a factory client whose owner loop is already gone (sync getter path).
+
+    Prefer closing on a side thread when the caller already has a running loop,
+    so we never nest asyncio.run. One attempt only; no private transport rescue.
+    """
+    if client is None or not _is_factory_owned(client) or getattr(client, "is_closed", True):
+        return
+
+    def _run() -> None:
+        try:
+            asyncio.run(_aclose_factory_client(client))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("abandoned llm http client close failed: %r", exc)
+            _factory_owned_clients.discard(client)
+
+    try:
+        asyncio.get_running_loop()
+        in_running = True
+    except RuntimeError:
+        in_running = False
+    if in_running:
+        t = threading.Thread(target=_run, name="llm-http-abandon-close", daemon=True)
+        t.start()
+        t.join(10)
+    else:
+        _run()
+
+
+async def close_owned_http_clients(loop: Any = None) -> None:
+    """Await aclose for factory-owned clients bound to ``loop`` (running loop if None).
+
+    Does not close borrowed/injected clients or clients owned by other live loops.
+    """
+    global _http_client, _http_client_owner
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+    to_close: List[Any] = []
+    client = _http_client
+    owner = _http_client_owner
+    if (
+        client is not None
+        and _is_factory_owned(client)
+        and owner is not None
+        and owner[0] == id(client)
+        and owner[1] is loop
+    ):
+        to_close.append(client)
+        _http_client = None
+        _http_client_owner = None
+
+    if loop is not None:
+        own = _loop_http_clients.get(loop)
+        if own is not None and _is_factory_owned(own):
+            to_close.append(own)
+            try:
+                del _loop_http_clients[loop]
+            except KeyError:
+                pass
+
+    for c in to_close:
+        await _aclose_factory_client(c)
 
 
 def _get_http_client() -> httpx.AsyncClient:
@@ -1722,7 +1811,7 @@ def _get_http_client() -> httpx.AsyncClient:
         owner = _http_client_owner
         if owner is None or owner[0] != id(client):
             # Set from outside (tests) or before this bookkeeping existed:
-            # adopt it for the current loop.
+            # adopt it for the current loop (borrowed — not factory-tracked).
             _http_client_owner = (id(client), loop)
             return client
         owner_loop = owner[1]
@@ -1736,7 +1825,11 @@ def _get_http_client() -> httpx.AsyncClient:
                 own = _new_http_client()
                 _loop_http_clients[loop] = own
             return own
-        # The owner loop is gone: its pooled connections are unusable.
+        # The owner loop is gone: close the abandoned factory client once, then replace.
+        abandoned = client
+        _http_client = None
+        _http_client_owner = None
+        _sync_close_abandoned_client(abandoned)
     _http_client = _new_http_client()
     _http_client_owner = (id(_http_client), loop)
     return _http_client

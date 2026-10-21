@@ -1739,7 +1739,8 @@ def _maybe_summarize(root: str, project_id: str, fingerprint: str,
             await _one(rec)
 
     try:
-        asyncio.run(_all())
+        from src import owned_loop
+        owned_loop.run(_all())
     except Exception as exc:  # noqa: BLE001
         logger.debug("code_graph.communities: summarize pass failed: %s", exc)
         return

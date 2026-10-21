@@ -294,8 +294,10 @@ async def _generate_notes_async(transcript_text: str, *, owner: Optional[str],
 
 def _generate_notes_sync(transcript_text: str, *, owner: Optional[str],
                          language: str = "") -> str:
-    import asyncio
-    return asyncio.run(_generate_notes_async(transcript_text, owner=owner, language=language))
+    from src import owned_loop
+    return owned_loop.run(
+        _generate_notes_async(transcript_text, owner=owner, language=language)
+    )
 
 
 _FALLBACK_NOTES = (

@@ -318,11 +318,12 @@ def _run_coro(coro: Any) -> Any:
     Every caller of `run()` that reaches these tasks is either already on a
     worker thread with no event loop (`scheduler_loop`'s
     `asyncio.to_thread`) or a synchronous test — never a coroutine itself —
-    so a fresh `asyncio.run` is safe and avoids making the whole maintenance
-    module async for the sake of two `src.brain` functions."""
-    import asyncio
+    so a fresh owned loop is safe and avoids making the whole maintenance
+    module async for the sake of two `src.brain` functions. #1093 closes
+    factory-owned HTTP clients before that loop ends."""
+    from src import owned_loop
 
-    return asyncio.run(coro)
+    return owned_loop.run(coro)
 
 
 def _brain_vault_sync(*, owner: str = "", **rest: Any) -> Tuple[int, str]:

@@ -191,7 +191,8 @@ def _worker_loop() -> None:
             job = _QUEUE.popleft()
         idle_since = time.monotonic()
         try:
-            outcome = asyncio.run(process_job(job))
+            from src import owned_loop
+            outcome = owned_loop.run(process_job(job))
         except Exception:  # noqa: BLE001
             logger.debug("observations: job crashed", exc_info=True)
             _bump("errors")

@@ -800,15 +800,17 @@ async def _choose(result: ChoiceResult, opts: List[str], prompt: str, system: Op
 def choose_one_sync(options: Sequence[Any], prompt: str, **kwargs: Any) -> ChoiceResult:
     """``choose_one`` for synchronous callers; safe inside a running loop (the
     call then runs on a short-lived worker thread)."""
+    from src import owned_loop
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(choose_one(options, prompt, **kwargs))
+        return owned_loop.run(choose_one(options, prompt, **kwargs))
     box: Dict[str, Any] = {}
 
     def _runner() -> None:
         try:
-            box["result"] = asyncio.run(choose_one(options, prompt, **kwargs))
+            box["result"] = owned_loop.run(choose_one(options, prompt, **kwargs))
         except ValueError as exc:
             box["error"] = exc
         except Exception as exc:  # noqa: BLE001

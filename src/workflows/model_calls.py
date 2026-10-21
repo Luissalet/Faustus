@@ -54,16 +54,22 @@ class ModelCalls:
 def run_coroutine(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run a coroutine to completion from sync code, whether or not this
     thread already has a running event loop (a route handler on the loop
-    thread does; the scheduler's worker thread does not)."""
+    thread does; the scheduler's worker thread does not).
+
+    Uses ``owned_loop.run`` so factory-owned HTTP clients close on the
+    short-lived owner loop before that loop closes (#1093).
+    """
+    from src import owned_loop
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        return owned_loop.run(coro)
     box: Dict[str, Any] = {}
 
     def runner() -> None:
         try:
-            box["value"] = asyncio.run(coro)
+            box["value"] = owned_loop.run(coro)
         except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
             box["error"] = exc
 

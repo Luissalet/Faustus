@@ -116,15 +116,12 @@ def test_model_calls_run_coroutine_uses_owned_loop():
 def test_post_turn_create_task_is_adopted():
     """GREEN: post-turn work must be adopted so shutdown can drain it before pool close."""
     src = (ROOT / "routes" / "chat_helpers.py").read_text(encoding="utf-8")
-    # Narrow to the post-turn automation spawn (research pin ~1546).
-    assert "create_task(_post_turn_automation())" in src
-    # Acceptance: that create_task must be paired with adopt on the same expression
-    # or the following statement — current HEAD creates an unadopted task.
-    idx = src.index("create_task(_post_turn_automation())")
-    window = src[max(0, idx - 120) : idx + 160]
-    assert "adopt" in window, (
-        "post-turn create_task must be adopted by TaskSupervisor before pool close"
-    )
+    # Spawn site: create_task then adopt on the supervisor (name pin).
+    create_idx = src.index("_post_turn_task = asyncio.get_running_loop().create_task(")
+    adopt_idx = src.index('name="post-turn-automation"')
+    assert adopt_idx > create_idx
+    assert adopt_idx - create_idx < 500
+    assert ".adopt(" in src[create_idx:adopt_idx + 40]
 
 
 def test_owned_loop_close_helper_callable_from_running_loop(monkeypatch):

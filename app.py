@@ -2992,6 +2992,11 @@ async def _shutdown_event():
         await mcp_manager.disconnect_all()
     except Exception as e:
         logger.warning(f"MCP shutdown error: {e}")
+    try:
+        from src.llm_core import close_owned_http_clients
+        await close_owned_http_clients()
+    except Exception as e:
+        logger.warning(f"LLM HTTP pool shutdown error: {e}")
     app.state._startup_tasks = []
     logger.info("Application shutdown complete")
 

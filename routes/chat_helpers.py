@@ -1543,11 +1543,20 @@ def save_assistant_response(
                 logger.debug("[instincts] extract_from_turn failed", exc_info=True)
 
         try:
-            asyncio.get_running_loop().create_task(_post_turn_automation())
+            _post_turn_task = asyncio.get_running_loop().create_task(
+                _post_turn_automation()
+            )
+            # Adopt so ASGI shutdown can drain before closing the LLM HTTP pool (#1093).
+            try:
+                from app import background_supervisor as _bg_sup
+                _bg_sup.adopt(_post_turn_task, name="post-turn-automation")
+            except Exception:
+                logger.debug("post-turn adopt failed", exc_info=True)
         except RuntimeError:
             import threading as _threading
+            from src import owned_loop as _owned_loop
             _threading.Thread(
-                target=lambda: asyncio.run(_post_turn_automation()), daemon=True
+                target=lambda: _owned_loop.run(_post_turn_automation()), daemon=True
             ).start()
     except Exception:
         logger.debug("post-turn automation dispatch failed", exc_info=True)
