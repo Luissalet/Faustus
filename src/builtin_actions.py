@@ -2095,7 +2095,7 @@ async def action_audit_skills(owner: str, **kwargs) -> Tuple[str, bool]:
 
         key = (owner or "",)
         existing = _skill_audit_jobs.get(key)
-        if existing and existing.get("status") == "running":
+        if existing and existing.get("active", existing.get("status") == "running"):
             raise TaskNoop("skill audit already running")
 
         sm = SkillsManager(DATA_DIR)

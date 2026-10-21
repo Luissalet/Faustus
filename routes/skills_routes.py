@@ -1288,7 +1288,7 @@ async def run_scheduled_skill_audit(skills_manager: SkillsManager,
 
     key = (owner or "",)
     existing = _skill_audit_jobs.get(key)
-    if existing and existing.get("status") == "running":
+    if existing and existing.get("active", existing.get("status") == "running"):
         logger.info("Scheduled skill audit skipped — a run is already active.")
         return {"status": "running", "skipped": True}
 
@@ -1938,7 +1938,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
         key = (user or "",)
         existing = _skill_audit_jobs.get(key)
-        if existing and existing.get("status") == "running":
+        if existing and existing.get("active", existing.get("status") == "running"):
             return {
                 "ok": True, "status": "running", "total": existing.get("total", 0),
                 "done": existing.get("done", 0), "model": existing.get("model"),

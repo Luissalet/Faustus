@@ -39,6 +39,54 @@ def projection(jobs):
 
 
 class AuditActivityTests(unittest.TestCase):
+    def test_all_creators_preserve_cancelled_job_until_real_cleanup_finishes(self):
+        jobs = {('alice',): job()}
+        guards = []
+        for path, name in (('routes/skills_routes.py', 'audit_all_skills'),
+                           ('routes/skills_routes.py', 'run_scheduled_skill_audit'),
+                           ('src/builtin_actions.py', 'action_audit_skills')):
+            tree = ast.parse((ROOT / path).read_bytes())
+            creator = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
+            guard = next(n.test for n in ast.walk(creator) if isinstance(n, ast.If)
+                         and any(isinstance(x, ast.Name) and x.id == 'existing' for x in ast.walk(n.test)))
+            guards.append((name, compile(ast.Expression(guard), path + ' [actual admission condition]', 'eval')))
+
+        async def exercise():
+            ready, cancelling, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+            async def stage(*args):
+                ready.set()
+                try:
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    cancelling.set()
+                    await finish.wait()
+                    raise
+            manager = types.SimpleNamespace(load=lambda **kwargs: [{'name': 'a'}])
+            scope = functions('routes/skills_routes.py', ['_run_audit_all_job', 'audit_cancel'],
+                              _skill_audit_jobs=jobs, _audit_one_skill=stage,
+                              effective_user=lambda request: 'alice')
+            task = asyncio.create_task(scope['_run_audit_all_job'](('alice',), manager, ['a'], 'unused', 'worker', {}, None, 'alice'))
+            jobs[('alice',)]['task'] = task
+            try:
+                await asyncio.wait_for(ready.wait(), 1)
+                await scope['audit_cancel'](object())
+                await asyncio.wait_for(cancelling.wait(), 1)
+                self.assertEqual(jobs[('alice',)]['status'], 'cancelled')
+                self.assertTrue(jobs[('alice',)]['active'])
+                self.assertFalse(task.done())
+                for name, guard in guards:
+                    with self.subTest(creator=name, phase='cancelled but still active'):
+                        self.assertTrue(eval(guard, {'existing': jobs[('alice',)]}), 'A new request must retain this still-active slot')
+            finally:
+                finish.set()
+                await asyncio.wait_for(task, 1)
+            self.assertFalse(jobs[('alice',)]['active'])
+            for name, guard in guards:
+                with self.subTest(creator=name, phase='cleanup finished'):
+                    self.assertFalse(eval(guard, {'existing': jobs[('alice',)]}), 'A new request may proceed after finally')
+                    self.assertTrue(eval(guard, {'existing': {'status': 'running'}}), 'Legacy running job remains protected')
+        asyncio.run(exercise())
+
     def test_active_and_terminal_are_visible_without_chat_identity(self):
         jobs = {('',): job(), ('alice',): job('done', 2.0)}
         jobs[('alice',)].update(active=False, done=2, finished=3.0)
