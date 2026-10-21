@@ -194,7 +194,7 @@ async def _eval_skill_run(skill_md: str, task: str, transcript: str,
         head = limit // 4
         return t[:head] + "\n\n…[transcript trimmed for length]…\n\n" + t[-(limit - head):]
     user_msg = (
-        f"=== SKILL ===\n{(skill_md or '')[:4000]}\n\n"
+        f"=== SKILL ===\n{skill_md or ''}\n\n"
         f"=== TASK ===\n{task}\n\n"
         f"=== TRANSCRIPT ===\n{_clip(transcript)}"
     )
@@ -322,8 +322,8 @@ async def _eval_skill_necessity(skill_md: str, others: list, url: str, model: st
         '"reason": "one short sentence"}'
     )
     user_msg = (
-        f"=== SKILL UNDER REVIEW ===\n{(skill_md or '')[:3000]}\n\n"
-        f"=== OTHER SKILLS IN THE LIBRARY ===\n{catalog[:4000]}"
+        f"=== SKILL UNDER REVIEW ===\n{skill_md or ''}\n\n"
+        f"=== OTHER SKILLS IN THE LIBRARY ===\n{catalog}"
     )
     try:
         raw = await llm_call_async(
@@ -392,7 +392,7 @@ async def _eval_skill_retrieval_precision(skill_md: str, others: list,
     import re as _re
     from src.llm_core import llm_call_async
 
-    catalog = "\n".join(f"- {o.get('name')}: {o.get('description', '')}" for o in others[:80]) or "(no other skills)"
+    catalog = "\n".join(f"- {o.get('name')}: {o.get('description', '')}" for o in others) or "(no other skills)"
     sys_prompt = (
         "You are auditing retrieval metadata for a reusable AI skill. The app selects "
         "skills by matching user requests against the skill name, description, tags, "
@@ -408,8 +408,8 @@ async def _eval_skill_retrieval_precision(skill_md: str, others: list,
         '{"ok": true|false, "summary": "one short sentence", "issues": ["metadata: retrieval: ..."]}'
     )
     user_msg = (
-        f"=== SKILL UNDER REVIEW ===\n{(skill_md or '')[:5000]}\n\n"
-        f"=== OTHER SKILLS IN LIBRARY ===\n{catalog[:5000]}\n\n"
+        f"=== SKILL UNDER REVIEW ===\n{skill_md or ''}\n\n"
+        f"=== OTHER SKILLS IN LIBRARY ===\n{catalog}\n\n"
         "Decide if this skill's retrieval metadata should be narrowed so it only "
         "fires for its intended scenario and not for adjacent skills above."
     )
