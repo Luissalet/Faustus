@@ -219,10 +219,38 @@ parcial de cobertura, distinto del smoke aprobado.
 Una orden de prueba antigua del modelo había fallado antes de detener su servidor
 hijo. Se contrastaron comando original, creación y puerto para cerrar únicamente
 ese proceso. La atribución posterior del modelo al harness era incorrecta.
-La gestión de esos hijos y la metadata errónea de ausencia de efectos de la
-ejecución fallida siguen en investigación; el éxitoUI acotado no las resuelve.
+La gestión de esos hijos sigue en investigación; el éxitoUI acotado no acredita
+contención automática de procesos huérfanos.
 La fiabilidad general sigue sin demostrar. Evidencia:
 research-inbox/sparks835/runtime-audit/resume-20261020.
+
+El 21 de octubre se activó la corrección revisada1085 y se probó por API normal,
+MCP y Studio: una orden PowerShell idéntica al encargo escribió un marcador y
+terminó intencionadamente con exit1. Se conservaron failed, las dos salidas y
+effect_certainty unknown; ROOT leyó después los 24 bytes exactos. Studio mostró
+la advertencia y el modelo distinguió el fallo de la escritura completada sin
+repetir la orden. Es evidencia de ese caso, no de cualquier ejecución. Costó 180 s,
+siete rondas y seis herramientas; Studio conservó UNVERIFIED. Una aserción posterior
+del supervisorQA se conserva con causa desconocida; se concilió el mismo turno,
+sin repetirlo. La activación preservó configuración y boots, pero falló el control
+de cero inferencias por 1 token y 1 petición terminada en length; no se cambia a PASS.
+
+Un archivo de correo local nuevo pasó 13 de 15 grupos independientes congelados.
+Un fallo demuestra pérdida de Message-ID mal formado; otro refleja una ambigüedad
+del código de salida por uso inválido de la CLI. Se comprobaron además un fallo
+de escritura sin JSON, una salida README incorrecta y avisos de recursos pese a 37
+tests propios correctos. Tras dos turnos correctivos dirigidos, los mismos grupos
+congelados pasan 14 de 15: queda la discrepancia histórica del código de salida
+(la CLI devuelve 2 por uso inválido, coherente con el encargo). Pasan además siete
+casos separados de CLI/recuperación, Unicode y errores en Windows nativo y el fallo
+de escritura. El bloque API literal y el flujo CLI del README ya se ejecutan sin
+errores. Los 42 tests propios pasan también en ejecución independiente, con stderr
+completo sin tracebacks, excepciones de hilos ni avisos de recursos. Las fuentes
+mantuvieron sus hashes durante la aceptación. Se conservan fallos originales y
+resultado estricto 14/15; esta entrega corregida no acredita autonomía repetible.
+El crítico real de esa entrega produjo 2106 tokens de razonamiento y respuesta final
+no vacía: sí ejercita la corrección del antiguo tope 1200. Estos resultados aún no
+demuestran entregas nuevas ambiciosas correctas de forma consecutiva.
 
 La quinta entrega correctiva del almacén KV terminó un trabajo de 78 rondas.
 Sus 61 tests pasaron en 347 segundos, pero el oráculo original R2 falló en

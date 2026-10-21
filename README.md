@@ -294,10 +294,41 @@ its partial-coverage result; the smoke does not override missing evidence.
 An older model-written test command failed before terminating its nested server.
 The surviving process was identified from the original command, creation time
 and listener, then stopped separately. A later model answer incorrectly called
-it a harness process. Process-lifecycle handling and the failed execution's
-incorrect no-effect metadata remain under investigation; neither is resolved
-by this scoped UI success. General reliability remains unproven. Evidence:
+it a harness process. Process-lifecycle handling remains under investigation;
+this scoped UI success does not prove orphan containment. General reliability
+remains unproven. Evidence:
 `research-inbox/sparks835/runtime-audit/resume-20261020/`.
+
+On 21 October, the approved execution-effect correction was activated and tested
+through the normal agent API, MCP and Studio. One unchanged PowerShell command
+wrote a marker and intentionally exited with code 1. Its failed status, both output streams
+and `effect_certainty=unknown` were preserved; independent reading confirmed the
+exact 24 marker bytes. Studio displayed the warning, and the model distinguished
+the command failure from the completed write without executing the command again.
+This verifies that case, not general execution correctness. The turn took 180 s,
+seven rounds and six tools; the generic UNVERIFIED label remained. A later QA
+supervisor assertion is retained with its cause unknown; the same completed turn
+was reconciled without replay. Activation preserved configuration and boots but
+failed its zero-inference check by one token and one request ending at its output limit;
+that failure and unknown attribution remain recorded.
+
+A fresh local mail archive passed 13 of 15 frozen independent groups. One failure
+demonstrated malformed Message-ID information loss; the other concerned an
+ambiguous CLI usage-error exit code. Separate checks found an unstructured file
+write error, incorrect README output and resource warnings despite 37 passing
+producer tests. After two directed corrective turns, the same frozen groups pass
+14 of 15; only the historical exit-code discrepancy remains (the CLI returns
+usage-error code 2, consistent with the task). Seven separate CLI/recovery cases,
+native Windows Unicode/error checks and the file-write error check pass. The
+actual README API block and CLI example now execute successfully. All 42 producer
+tests also pass independently with the complete stderr free of tracebacks,
+reader-thread decode errors and resource warnings. Source hashes remained unchanged
+through acceptance. The original failures and the strict 14/15 result remain
+recorded; this corrected delivery does not establish unassisted repeatability.
+The same native review produced 2106 reasoning tokens and a nonempty final answer,
+exercising the critic-budget correction beyond its former 1200-token cap. Neither
+that evidence nor the corrected notebook/pipeline deliveries establishes reliable
+first deliveries across new ambitious projects.
 
 The fifth corrective KV delivery completed a 78-round task. Its 61 producer tests
 passed in 347 seconds, but the frozen R2 oracle failed recovery followed by append.
