@@ -1701,8 +1701,9 @@ def _clear_host_dead(url: str) -> None:
 _http_client: Optional[httpx.AsyncClient] = None
 _http_client_owner: Optional[Tuple[int, Any]] = None  # (id(client), loop that created it)
 _loop_http_clients: "weakref.WeakKeyDictionary[Any, httpx.AsyncClient]" = weakref.WeakKeyDictionary()
-# Factory-created clients only (never injected/borrowed test doubles).
-_factory_owned_clients: set = set()
+# Factory-created clients only (never injected/borrowed test doubles). Weak, so this
+# bookkeeping never keeps a client alive whose loop ended without owned_loop (#1099).
+_factory_owned_clients: "weakref.WeakSet[httpx.AsyncClient]" = weakref.WeakSet()
 _http_limits = httpx.Limits(max_connections=100, max_keepalive_connections=30, keepalive_expiry=30.0)
 
 
