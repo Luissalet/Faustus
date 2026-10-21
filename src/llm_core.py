@@ -1024,6 +1024,34 @@ def _stream_delta_event(text: str, *, thinking: bool = False) -> str:
 
 _DEGENERATE_WORD_RE = re.compile(r"[A-Za-z0-9_\u0370-\u03ff\u0400-\u04ff]+")
 
+# Tool-call arguments stream in as raw JSON text: every newline in a file
+# body arrives as a backslash and the letter n. Read as words, a schema with
+# one `TEXT NOT NULL,` column per line became the phrase 'text not null n'
+# repeated once per column and ended a real job round after round (21-10).
+# The guard decodes the escapes before it counts words; an escape cut in two
+# by the stream is held until the next chunk completes it.
+_JSON_ESCAPE_RE = re.compile(r'\\(?:u([0-9a-fA-F]{4})|(["\\/bfnrt]))')
+_JSON_ESCAPE_TAIL_RE = re.compile(r'(?:^|[^\\])(?:\\\\)*(\\(?:u[0-9a-fA-F]{0,3})?)$')
+_JSON_SIMPLE_ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f",
+                        "n": "\n", "r": "\r", "t": "\t"}
+
+
+def _decode_json_escapes(text: str) -> str:
+    def _one(m: "re.Match[str]") -> str:
+        if m.group(1):
+            return chr(int(m.group(1), 16))
+        return _JSON_SIMPLE_ESCAPES[m.group(2)]
+    return _JSON_ESCAPE_RE.sub(_one, text)
+
+
+def _split_json_escape_tail(text: str) -> Tuple[str, str]:
+    """Split off an escape the chunk ends in the middle of (a lone backslash
+    or an incomplete \\uXXXX); return (complete part, held part)."""
+    m = _JSON_ESCAPE_TAIL_RE.search(text)
+    if not m:
+        return text, ""
+    return text[:m.start(1)], text[m.start(1):]
+
 # Minimum span (characters) a raw repeated unit must cover before it counts
 # as a degenerate collapse rather than legitimate repetitive-looking content
 # (a long hash, a run of coincidentally-similar digits, an ASCII rule of
@@ -1393,6 +1421,7 @@ class _DegenerateStreamGuard:
         self.tail = ""
         self.script_tail = ""
         self.vocabulary_tail = ""
+        self._json_escape_carry: Dict[Any, str] = {}
         self._sentence_buf = ""
         self._sentence_truncated = False
         self._reasoning_units: List[str] = []
@@ -1418,14 +1447,26 @@ class _DegenerateStreamGuard:
                 return f"repeated unit {unit!r} {count} times ({span} chars)"
         return None
 
-    def check(self, text: str) -> None:
+    def check(self, text: str, *, json_escaped: bool = False, escape_key: Any = None) -> None:
         """Feed the next streamed chunk of text. Raises `DegenerateOutput`
-        the moment a collapse is recognized; returns normally otherwise."""
+        the moment a collapse is recognized; returns normally otherwise.
+
+        `json_escaped`: the chunk is raw JSON string text (a tool call's
+        argument delta). Word-based rules then read it decoded, the way the
+        tool will receive it; the raw-character rules still see the raw text.
+        `escape_key` keeps an escape cut at the end of one tool call's delta
+        apart from the next delta of a different, interleaved call."""
         if not text:
             return
         self.total_chars += len(text)
         self.tail = (self.tail + text)[-_DEGENERATE_RAW_TAIL_WINDOW:]
-        vocabulary = self.vocabulary_tail + text
+        words_text = text
+        if json_escaped:
+            complete, held = _split_json_escape_tail(self._json_escape_carry.pop(escape_key, "") + text)
+            if held:
+                self._json_escape_carry[escape_key] = held
+            words_text = _decode_json_escapes(complete)
+        vocabulary = self.vocabulary_tail + words_text
         self.vocabulary_tail = vocabulary[-2400:]
 
         reason = self._raw_repeat_reason()
@@ -1434,7 +1475,7 @@ class _DegenerateStreamGuard:
         # that builds `Tree("x", [Tree("a"), Tree("b")])` apart from a model
         # stuck on "tree tree tree". Dropping them made a test file for a
         # tree exercise look like a phrase loop and ended the run (15-10).
-        for token in (t.lower() for t in _DEGENERATE_WORD_RE.findall(text)):
+        for token in (t.lower() for t in _DEGENERATE_WORD_RE.findall(words_text)):
             if len(token) < 2:
                 self.last_token = ""
                 self.same_run = 0
@@ -1483,7 +1524,7 @@ class _DegenerateStreamGuard:
             # is full, so a short foreign quote inside an otherwise-Latin
             # answer cannot trip it (spec: never on legitimately
             # multilingual content shorter than the window).
-            self.script_tail = (self.script_tail + text)[-self._gibberish_window:]
+            self.script_tail = (self.script_tail + words_text)[-self._gibberish_window:]
             if len(self.script_tail) >= self._gibberish_window:
                 frac = _unexpected_script_fraction(self.script_tail)
                 if frac > self._gibberish_threshold:
@@ -8400,7 +8441,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                 # loop-specific check below (which needs 1500+
                                                 # chars to build up) — see §179.
                                                 try:
-                                                    degenerate_guard.check(call.last_appended)
+                                                    degenerate_guard.check(call.last_appended, json_escaped=True, escape_key=call.index)
                                                 except DegenerateOutput as _degenerate:
                                                     yield _degenerate_output_error_chunk(_degenerate)
                                                     return

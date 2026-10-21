@@ -1,0 +1,190 @@
+"""Tool-call arguments reach the degenerate-stream guard as raw JSON text.
+
+21-10-2026, acceptance job on the Sparks: a plain SQLite schema written with
+apply_patch ended 14 rounds in a row with "repeated phrase 'text not null n'
+10 times". Every newline inside the argument string arrives escaped, and the
+guard's word pattern read the letter after each backslash as a word, so
+`TEXT NOT NULL,\\n` became the 4-gram 'text not null n' once per column. The
+same schema as plain text never fired. The guard has to read the argument
+text the way the tool will receive it, while still catching a real loop."""
+import json
+import random
+import re
+
+import pytest
+
+from src import llm_core
+from tests.test_llm_core_streaming import _drive, _sse
+
+SCHEMA = '''"""Storage for the agenda: one SQLite file, every write in one transaction."""
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS resources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    time_zone TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS series (
+    id TEXT NOT NULL PRIMARY KEY,
+    resource TEXT NOT NULL,
+    title TEXT NOT NULL,
+    time_zone TEXT NOT NULL,
+    weekday TEXT NOT NULL,
+    local_start TEXT NOT NULL,
+    local_end TEXT NOT NULL,
+    from_date TEXT NOT NULL,
+    until_date TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    fold INTEGER
+);
+CREATE TABLE IF NOT EXISTS bookings (
+    id TEXT PRIMARY KEY,
+    resource TEXT NOT NULL REFERENCES resources(id),
+    title TEXT NOT NULL,
+    start TEXT NOT NULL,
+    end TEXT NOT NULL,
+    status TEXT NOT NULL,
+    series TEXT
+);
+"""
+'''
+
+# Token-like pieces, as a model stream delivers them: an escape on its own,
+# then words, whitespace and punctuation.
+_PIECE = re.compile(r'\\u[0-9a-fA-F]{4}|\\.|\w+|\s+|[^\w\s]')
+
+
+def _argument_pieces(text: str) -> list:
+    raw = json.dumps({"patch": "*** Begin Patch\n*** Add File: agenda/store.py\n" + text})
+    return _PIECE.findall(raw)
+
+
+def test_the_input_reproduces_the_live_failure_when_read_as_plain_words():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    with pytest.raises(llm_core.DegenerateOutput) as exc:
+        for piece in _argument_pieces(SCHEMA):
+            guard.check(piece)
+    assert "text not null n" in exc.value.reason
+
+
+def test_a_schema_inside_tool_arguments_is_not_a_phrase_loop():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    for piece in _argument_pieces(SCHEMA):
+        guard.check(piece, json_escaped=True)
+    assert "n" not in guard.recent_tokens
+
+
+def test_an_escape_split_across_chunks_is_still_read_as_one_character():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    for piece in ['"name TEXT', "\\", "nid TEXT", "\\u00", "f1o", "\\\\", "n"]:
+        guard.check(piece, json_escaped=True)
+    # "\\n" + "id" is a newline then "id"; "\\u00f1o" is "ño"; "\\\\" + "n" is a
+    # literal backslash followed by the letter n, which is a real word. ("ñ"
+    # is outside the guard's word alphabet, so "ño" counts as "o".)
+    assert guard.recent_tokens == ["name", "text", "id", "text", "o", "n"]
+
+
+def test_a_real_phrase_loop_inside_tool_arguments_is_still_cut():
+    loop = "Also be a software developer mode? " * 40
+    guard = llm_core._DegenerateStreamGuard("glm")
+    with pytest.raises(llm_core.DegenerateOutput) as exc:
+        for piece in _argument_pieces(loop):
+            guard.check(piece, json_escaped=True)
+    assert "repeated" in exc.value.reason
+
+
+def test_a_loop_of_escaped_lines_is_still_cut():
+    loop = "".join("    status TEXT NOT NULL,\n" for _ in range(60))
+    guard = llm_core._DegenerateStreamGuard("glm")
+    with pytest.raises(llm_core.DegenerateOutput):
+        for piece in _argument_pieces(loop):
+            guard.check(piece, json_escaped=True)
+
+
+def test_the_stream_delivers_the_schema_patch_as_a_tool_call(monkeypatch):
+    pieces = _argument_pieces(SCHEMA)
+    lines = [_sse({"tool_calls": [{"index": 0, "id": "c1", "type": "function",
+                                   "function": {"name": "apply_patch", "arguments": ""}}]})]
+    for piece in pieces:
+        lines.append(_sse({"tool_calls": [{"index": 0, "function": {"arguments": piece}}]}))
+    lines.append("data: [DONE]")
+    events = _drive(monkeypatch, lines, model="glm-5.3-flash-nvfp4")
+    errors = [e for e in events if e.get("error_class") == llm_core.DEGENERATE_OUTPUT_ERROR_CLASS]
+    assert not errors, errors[:1]
+    calls = [e["calls"] for e in events if e.get("type") == "tool_calls"]
+    assert calls, events[-3:]
+    assert calls[0][0]["name"] == "apply_patch"
+    args = json.loads(calls[0][0]["arguments"])
+    assert "until_date TEXT NOT NULL" in args["patch"]
+
+
+def test_an_escaped_backslash_at_a_chunk_end_is_not_held():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    # "\\\\" is one escaped backslash: complete, so the next "n" is a word.
+    for piece in ["path C:", "\\\\", "nodes", " x \\\\\\", "nend"]:
+        guard.check(piece, json_escaped=True)
+    # three backslashes = one escaped backslash + a held one, then "\n" + "end"
+    assert guard.recent_tokens == ["path", "c", "nodes", "x", "end"]
+
+
+def test_invalid_escapes_stay_literal_text():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    for piece in ["\\x41 ", "\\u12g4 ", "ok"]:
+        guard.check(piece, json_escaped=True)
+    assert guard.recent_tokens == ["x41", "u12g4", "ok"]
+
+
+def test_a_held_escape_does_not_leak_into_another_tool_call():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    guard.check('"a\\', json_escaped=True, escape_key=0)
+    guard.check("ntext", json_escaped=True, escape_key=1)
+    guard.check("nb", json_escaped=True, escape_key=0)
+    assert guard.recent_tokens == ["a", "ntext", "b"]
+
+
+def test_escapes_split_by_the_stream_reach_the_tool_unchanged(monkeypatch):
+    # Every escape cut in two: "\\" ends one delta, its letter starts the next.
+    raw = json.dumps({"patch": "*** Begin Patch\n*** Add File: agenda/store.py\n" + SCHEMA})
+    pieces, buf = [], ""
+    for ch in raw:
+        buf += ch
+        if ch == "\\":
+            pieces.append(buf)
+            buf = ""
+    pieces.append(buf)
+    lines = [_sse({"tool_calls": [{"index": 0, "id": "c1", "type": "function",
+                                   "function": {"name": "apply_patch", "arguments": ""}}]})]
+    lines += [_sse({"tool_calls": [{"index": 0, "function": {"arguments": p}}]}) for p in pieces]
+    lines.append("data: [DONE]")
+    events = _drive(monkeypatch, lines, model="glm-5.3-flash-nvfp4")
+    assert not [e for e in events if e.get("error_class") == llm_core.DEGENERATE_OUTPUT_ERROR_CLASS]
+    calls = [e["calls"] for e in events if e.get("type") == "tool_calls"]
+    assert json.loads(calls[0][0]["arguments"]) == json.loads(raw)
+
+
+def test_non_latin_gibberish_sent_as_unicode_escapes_is_judged_like_utf8():
+    # Varied non-Latin words, so only the script rule can see it (no repeated
+    # word or phrase): the escaped form used to look like plain ASCII to it.
+    rng = random.Random(7)
+    letters = "абвгдежзийклмнопрстуфхцчшщыэюя"
+    words = " ".join("".join(rng.choice(letters) for _ in range(rng.randint(3, 8))) for _ in range(400))
+
+    def fires(chunks, **kw):
+        guard = llm_core._DegenerateStreamGuard("glm")
+        try:
+            for c in chunks:
+                guard.check(c, **kw)
+        except llm_core.DegenerateOutput:
+            return True
+        return False
+
+    plain = [words[i:i + 8] for i in range(0, len(words), 8)]
+    escaped_text = json.dumps(words)  # ensure_ascii: every letter as \uXXXX
+    escaped = [escaped_text[i:i + 8] for i in range(0, len(escaped_text), 8)]
+    assert fires(plain) is True
+    assert fires(escaped, json_escaped=True) is True
