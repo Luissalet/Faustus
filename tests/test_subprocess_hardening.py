@@ -136,10 +136,14 @@ def test_delegation_args_carry_a_worker_timeout():
     from src.agent_tools.subagent_tools import parse_delegation_args, DEFAULT_WORKER_TIMEOUT_S
     a = parse_delegation_args('{"tasks": ["do x"]}')
     assert a["timeout_s"] == DEFAULT_WORKER_TIMEOUT_S
+    # Since 81afefe2 (#457) a delegated worker has no imposed deadline: 0 means
+    # unlimited and a positive deadline is the caller's, with no floor or cap.
     a = parse_delegation_args('{"tasks": ["do x"], "timeout_s": 5}')
-    assert a["timeout_s"] == 60          # floor
+    assert a["timeout_s"] == 5
     a = parse_delegation_args('{"tasks": ["do x"], "timeout": 99999}')
-    assert a["timeout_s"] == 7200        # cap
+    assert a["timeout_s"] == 99999
+    a = parse_delegation_args('{"tasks": ["do x"], "timeout_s": 0}')
+    assert a["timeout_s"] == 0
 
 
 def test_worker_timeout_is_reported_and_releases_the_busy_flag(monkeypatch):

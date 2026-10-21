@@ -16,6 +16,9 @@ def launched(monkeypatch):
     # The owner is an admin here, wherever the suite runs (a test machine
     # without a user database would otherwise refuse the shell tools).
     monkeypatch.setattr("src.tool_execution._owner_is_admin", lambda owner: True)
+    # The routing guards are an ask/auto contract; full access (the default since
+    # 15-10) runs git in the shell on purpose (316cd3ec, test_full_git_shell).
+    monkeypatch.setattr("src.tool_capabilities.tool_approval_mode", lambda: "ask")
     seen = []
 
     def _launch(command, session_id, cwd=None, max_runtime_s=3600, shell="bash"):
