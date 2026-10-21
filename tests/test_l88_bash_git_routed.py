@@ -7,6 +7,13 @@ import pytest
 from src.agent_tools.subprocess_tools import git_mutation_routed_to_tools
 
 
+@pytest.fixture(autouse=True)
+def _ask_mode(monkeypatch):
+    """This routing is the ask/auto contract. Full access, the default since 15-10,
+    runs git in the shell on purpose (316cd3ec; see test_full_git_shell)."""
+    monkeypatch.setattr("src.tool_capabilities.tool_approval_mode", lambda: "ask")
+
+
 @pytest.mark.parametrize("cmd,sub,tool", [
     ("git push origin main", "push", "git_push"),
     ("cd repo && git commit -m 'x'", "commit", "git_commit"),
@@ -36,10 +43,10 @@ def test_reads_and_unrelated_commands_pass(cmd):
     assert git_mutation_routed_to_tools(cmd) is None
 
 
-def test_reset_is_refused_without_a_tool_but_points_to_the_panel():
-    out = git_mutation_routed_to_tools("git reset --hard")
-    assert out is not None and out["use_instead"] is None
-    assert "Source control panel" in out["error"]
+def test_reset_has_no_tool_and_runs_through_the_shell_gate():
+    # Since d3475e1c, git subcommands without a git_* tool (reset, clone, stash,
+    # tag, clean...) run in the shell under its normal approval gate.
+    assert git_mutation_routed_to_tools("git reset --hard") is None
 
 
 def test_git_config_write_cannot_bypass_the_git_tools():

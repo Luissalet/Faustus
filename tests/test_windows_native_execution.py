@@ -310,10 +310,14 @@ def test_powershell_is_blocked_in_plan_mode():
 
 
 @pytest.mark.asyncio
-async def test_powershell_refuses_a_git_mutation_and_a_foreground_server():
+async def test_powershell_refuses_a_git_mutation_and_a_foreground_server(monkeypatch):
     """The guards that make `bash` safe are not re-implemented per shell; both
     read the same two predicates, so a `git push` typed into PowerShell is
-    routed to `git_push` and a foreground `uvicorn` is refused."""
+    routed to `git_push` and a foreground `uvicorn` is refused.
+
+    Ask mode is pinned: under full access (the default since 15-10) git runs in
+    the shell on purpose, and this test then really executed `git push`."""
+    monkeypatch.setattr("src.tool_capabilities.tool_approval_mode", lambda: "ask")
     from src.agent_tools.subprocess_tools import PowerShellTool
     routed = await PowerShellTool().execute("git push origin master", {})
     assert routed["exit_code"] == 2 and routed["use_instead"] == "git_push"
