@@ -1306,3 +1306,35 @@ Los contadores de vLLM no se quedan en cero porque la propia Spark lanza chequeo
 - Las mutaciones se detectan; una sobrevivió por un fallo del propio mutante.
 
 Se envió el 21-10 a las 20:52Z. Los trabajos 2 (archivo binario con integridad) y 3 (analítica incremental exacta) tienen contrato y oráculo calibrados, pero aún no se han enviado. Esto no acredita fiabilidad global hasta que los tres pasen sus oráculos.
+
+
+### Guardia de degeneración, tuberías heredadas y aislamiento de tests (22-10-2026)
+
+**Trabajo 1 de la serie: FAIL (1/38) por un falso positivo de Faustus.** La sesión de Agenda acabó a las 21:20Z con 502 degenerate_output tras 22 rondas, sin ningún archivo escrito. El único PASS es vacuo (compara dos exportaciones vacías). Desde la ronda 4, cada `apply_patch` del esquema SQLite se cortaba con «repeated phrase 'text not null n' 10 times»:
+- Los deltas de argumentos de las llamadas a herramientas llegan al guardia como JSON crudo, y cada `\n` escapado contaba como la palabra `n`.
+- Un esquema con una columna `TEXT NOT NULL,` por línea formaba el 4-grama una vez por columna; el mismo texto sin escapar no dispara.
+- El prompt era idéntico en cada reintento, así que el corte se repetía hasta agotar la recuperación.
+
+No fue un fallo de GLM ni de las Sparks. El FAIL se conserva y la racha de tres trabajos empieza de nuevo con proyectos nuevos.
+
+**Integradas:**
+- **#1117:** el guardia lee los argumentos de herramientas como los recibirá la herramienta.
+  - Las reglas por palabras, la de vocabulario y la de escritura no latina leen el texto con los escapes JSON decodificados. Un escape partido entre trozos se guarda por índice de llamada hasta completarse.
+  - Las reglas de caracteres crudos (`////`, unidades repetidas) siguen leyendo el texto crudo, y un bucle real dentro de argumentos sigue cortándose.
+  - Efecto conocido: 28 o más líneas idénticas de una sola palabra dentro de un argumento abortan, igual que en el contenido.
+  - Revisión independiente aprobada; 11 pruebas nuevas, con mutantes del propio arreglo detectados.
+- **#1114:** bash y python vuelven cuando el comando sale, aunque un hijo en segundo plano herede su stdout/stderr. Antes `Process.wait()` de asyncio esperaba también a que se cerraran las tuberías y la herramienta se quedaba hasta el plazo. El resultado avisa de que la salida puede estar incompleta.
+- **#1113:** todas las pruebas redirigen el ledger de procesos desligados a un temporal. La batería ya no puede escribir en `data/runtime/detached.json` real.
+- **#1116:** 12 de las 16 pruebas que fallaban en master fijan el modo de aprobación `ask` que verifican. Siguen 4 fallos que dependen de una decisión de Luis (ver PENDIENTES A).
+
+**Oráculos de los trabajos 2 y 3, reforzados por mutación y congelados antes de generar:**
+- **Vault:** 44 casos (TASK d93e0341…, oráculo 72c4eb60…). Se añadieron interrupciones de `compact` a tiempos fijos y en cuanto cambia el archivo, y nombres cuyo orden difiere entre UTF-8 y UTF-16. La referencia da 44/44 tres veces seguidas y todos los mutantes conocidos se detectan.
+- **Ledger:** 55 casos. Se añadieron:
+  - empates exactos de medio céntimo;
+  - archivo inexistente tras un archivo nuevo, en `ingest` y en `rates`;
+  - un único archivo de 2.000.000 filas (143 MB) por debajo de 300 MB y de 20 minutos.
+
+  La referencia da 55/55 con 97 MB de pico; leer el archivo entero necesita 646 MB.
+- Ambos oráculos escriben su salida en UTF-8: antes abortaban al imprimir un detalle no ASCII con la consola en cp1252.
+
+Un cuarto trabajo nuevo con interfaz (biblioteca de préstamos, 77 casos, 22 mutantes detectados) está preparado; antes de congelarlo se corrigen los once puntos de la auditoría de equidad entre contrato y oráculo. Vault y Ledger pasan la misma auditoría antes de enviarse.

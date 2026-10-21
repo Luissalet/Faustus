@@ -1,5 +1,24 @@
 # Objetivos acordados
 
+## Fiabilidad de Sparks y Faustus en trabajos grandes — #835 (en curso)
+
+Encargo de Luis: demostrar que Faustus con el servicio global de las Sparks
+completa trabajos grandes y ambiciosos con resultados correctos. Criterio:
+tres trabajos NUEVOS consecutivos, de tipos distintos, con contrato y oráculo
+externos congelados antes de generar, fuentes finales leídas antes de ejecutar
+y sin correcciones dirigidas. Un fallo conserva su FAIL y la racha empieza de
+nuevo con otro proyecto (nunca el mismo con otro nombre).
+
+- Trabajo 1 (Agenda): FAIL 1/38 el 21-10 por un falso positivo del guardia de
+  degeneración con los escapes JSON de los argumentos (corregido en #1117).
+- Siguientes, en este orden y tras activar #1113/#1114/#1116/#1117:
+  Vault (archivo binario con integridad, 44 casos congelados), Ledger
+  (analítica incremental exacta, 55 casos congelados) y Préstamos
+  (biblioteca de herramientas con interfaz, 77 casos; pendiente de auditoría
+  de equidad contrato/oráculo antes de congelar).
+- Después de la estabilidad de GLM: evaluar DeepSeek V4.1 Flash TP4 frente a
+  la configuración actual con los mismos oráculos.
+
 ## Fuentes incorporadas como capacidades locales — #779–#783
 
 Encargo de Luis: incorporar las funciones útiles de las fuentes investigadas,
