@@ -68,7 +68,7 @@ def test_argument_loop_error_retains_the_managed_base(monkeypatch):
     }]})
     # Exercise the distinct accumulated-argument producer; delta-loop detection
     # is independently covered above and in test_degenerate_output.py.
-    monkeypatch.setattr(llm_core._DegenerateStreamGuard, "check", lambda *a: None)
+    monkeypatch.setattr(llm_core._DegenerateStreamGuard, "check", lambda *a, **k: None)
     monkeypatch.setattr(llm_core, "tool_argument_loop", lambda _: "repeated argument prose")
     chunks = collect(BASE, tools=[{"type": "function", "function": {
         "name": "write_file", "parameters": {"type": "object"},
