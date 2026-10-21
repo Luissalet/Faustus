@@ -76,6 +76,8 @@ TAIL_PERSIST_BYTES = 8 * 1024
 TAIL_PERSIST_INTERVAL_S = 2.0
 FINISHED_RETENTION_S = 3600.0
 MAX_WAIT_MS = 30_000
+#: How often an adopted handle checks whether its processes are still running.
+ADOPTED_POLL_S = 2.0
 
 LIVE_STATES = ("starting", "running")
 FINISHED_STATES = ("exited", "stopped", "timed_out", "failed_to_start", "lost", "uncertain")
@@ -237,6 +239,8 @@ class ProcessManager:
         self._lock = threading.RLock()
         self._records: Dict[str, Dict[str, Any]] = {}
         self._live: Dict[str, _Live] = {}
+        #: Job scopes of processes that outlived an agent command (kind "adopted").
+        self._adopted: Dict[str, Any] = {}
         self._loaded = False
 
     # ── persistence ─────────────────────────────────────────────────────
@@ -269,7 +273,8 @@ class ProcessManager:
         """Records this interpreter does not hold cannot be live handles."""
         changed = False
         for hid, rec in self._records.items():
-            if rec.get("state") not in LIVE_STATES or hid in self._live or rec.get("kind") != "managed":
+            if rec.get("state") not in LIVE_STATES or hid in self._live or hid in self._adopted \
+                    or rec.get("kind") not in ("managed", "adopted"):
                 continue
             pid, created = rec.get("pid"), rec.get("pid_created_at")
             alive = bool(pid) and created is not None and _same_process(pid, created)
@@ -292,7 +297,7 @@ class ProcessManager:
         (called at start-up; safe to call again)."""
         with self._lock:
             self._loaded = False
-            self._records = {k: v for k, v in self._records.items() if k in self._live}
+            self._records = {k: v for k, v in self._records.items() if k in self._live or k in self._adopted}
         self._load()
 
     # ── helpers ─────────────────────────────────────────────────────────
@@ -302,7 +307,8 @@ class ProcessManager:
         keep = ("handle", "kind", "state", "command", "shell", "cwd", "owner", "session_id",
                 "env_policy", "route", "started_at", "ended_at", "exit_code", "termination_reason",
                 "stdin_open", "output_total_bytes", "max_runtime_s", "containment",
-                "outcome_unknown", "remote_id", "requested_policy", "effective_policy")
+                "outcome_unknown", "remote_id", "requested_policy", "effective_policy",
+                "origin", "pids")
         return {k: rec[k] for k in keep if k in rec}
 
     def _authorize(self, rec: Optional[Dict[str, Any]], caller: Caller, action: str
@@ -651,6 +657,8 @@ class ProcessManager:
         if rec["state"] in FINISHED_STATES:
             return {"ok": True, "handle": handle, "state": rec["state"], "signalled": False,
                     "note": "already finished; nothing was signalled"}
+        if rec.get("kind") == "adopted":
+            return self._stop_adopted(handle, rec, reason)
         if rec["state"] == "orphaned":
             outcome = self._kill(rec, None)
             with self._lock:
@@ -722,6 +730,89 @@ class ProcessManager:
                                reason="session cancelled")
             stopped.append({"handle": handle, **{k: result.get(k) for k in ("state", "signalled")}})
         return stopped
+
+    # ── processes that outlived their command ───────────────────────────
+
+    def adopt(self, caller: Caller, command: str, scope: Any, survivors: List[Dict[str, Any]]
+              ) -> Dict[str, Any]:
+        """Track processes an agent command left running (#1105).
+
+        ``scope`` is the command's job (src.process_survivors.CommandScope): every
+        survivor is one of its members, so stopping the handle ends exactly that tree.
+        Nothing is signalled here. The handle reports ``exited`` once no member is
+        left; their exit codes are not known (they were not this manager's children).
+        """
+        self._load()
+        handle = "ph_" + uuid.uuid4().hex[:16]
+        first = survivors[0]
+        rec: Dict[str, Any] = {
+            "handle": handle, "kind": "adopted", "state": "running", "origin": "outlived_its_command",
+            "command": command, "owner": caller.owner, "session_id": caller.session_id,
+            "pids": [{"pid": s["pid"], "created": s["created"], "name": s.get("name", ""),
+                      "cmdline": s.get("cmdline", "")} for s in survivors],
+            "pid": first["pid"], "pid_created_at": first["created"],
+            "route": "host", **_host_policy("bash"), "containment": getattr(scope, "mechanism", ""),
+            "started_at": min(s["created"] for s in survivors), "ended_at": None, "exit_code": None,
+            "termination_reason": "", "stdin_open": False, "output_total_bytes": 0,
+            "tail": ("(no output captured: these processes were started inside an agent command "
+                     "that has finished; they kept that command's pipes)"),
+        }
+        with self._lock:
+            self._records[handle] = rec
+            self._adopted[handle] = scope
+            self._save_locked()
+
+        def watch() -> None:
+            while True:
+                time.sleep(ADOPTED_POLL_S)
+                with self._lock:
+                    if rec.get("state") not in LIVE_STATES or self._adopted.get(handle) is not scope:
+                        return
+                try:
+                    left = scope.survivors()
+                except Exception:  # noqa: BLE001
+                    left = [{}]
+                if left:
+                    continue
+                with self._lock:
+                    if rec.get("state") in LIVE_STATES:
+                        self._set_state_locked(rec, "exited", "all_processes_exited: their exit codes "
+                                                              "are not known")
+                        self._save_locked()
+                    self._adopted.pop(handle, None)
+                scope.close()
+                return
+
+        threading.Thread(target=watch, name=f"{handle}-adopted", daemon=True).start()
+        return self._public(rec)
+
+    def _stop_adopted(self, handle: str, rec: Dict[str, Any], reason: str) -> Dict[str, Any]:
+        scope = self._adopted.get(handle)
+        if scope is not None:
+            members = [s["pid"] for s in scope.survivors()]
+            ended = scope.terminate()
+            with self._lock:
+                self._set_state_locked(rec, "stopped", "stopped_by_request" + (f": {reason}" if reason else ""))
+                self._adopted.pop(handle, None)
+                self._save_locked()
+            scope.close()
+            return {"ok": ended or not members, "handle": handle, "state": "stopped",
+                    "signalled": bool(ended and members),
+                    "descendants_signalled": max(0, len(members) - 1) if ended else 0, "refused": []}
+        # After a restart the job handle is gone: each recorded process must still
+        # prove its identity (pid + creation time) before it is signalled.
+        signalled: List[int] = []
+        refused: List[Dict[str, Any]] = []
+        for item in rec.get("pids") or []:
+            outcome = process_ownership.terminate_tree(item.get("pid"), spawned_at=item.get("created"))
+            signalled.extend(outcome.signalled)
+            refused.extend({"pid": p, "why": w} for p, w in outcome.rejected)
+        with self._lock:
+            if signalled or rec.get("state") in LIVE_STATES:
+                self._set_state_locked(rec, "stopped", "stopped_by_request" + (f": {reason}" if reason else ""))
+            self._save_locked()
+        return {"ok": bool(signalled) or not refused, "handle": handle, "state": rec["state"],
+                "signalled": bool(signalled), "refused": refused}
 
     # ── remote handles ──────────────────────────────────────────────────
 

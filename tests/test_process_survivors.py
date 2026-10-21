@@ -7,7 +7,7 @@ inside its own Job Object, so every descendant is known from its first instructi
 Members still alive when the command ends are adopted as one handle of the session and
 reported. Nothing is killed automatically: deliberate persistence stays alive.
 
-Real processes, Windows only (the Job Object mechanism). The process store is redirected
+Real processes, Windows only (the Job Object mechanism). Children here get their own streams, as the incident's server did: a child that inherits the tool's pipes keeps asyncio's wait() open until it exits, which is the idle watchdog's case, not this one. The process store is redirected
 to a temporary file.
 """
 from __future__ import annotations
@@ -82,15 +82,28 @@ def _scoped(code: str, *, cwd: str):
             PY, "-c", code, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             cwd=cwd, **scope.spawn_kwargs())
         scope.attach_and_resume(proc)
-        out, err = await proc.communicate()
+        # Like the tools: wait for the command itself, not for EOF (a survivor
+        # inherits the pipes and would hold them open).
+        await asyncio.wait_for(proc.wait(), timeout=30)
+        out = await asyncio.wait_for(proc.stdout.read(4096), timeout=5) if proc.stdout else b""
+        err = b""
         return scope, proc, out, err
     return asyncio.run(go())
+
+
+def _pids(survivors):
+    return [s["pid"] for s in survivors]
+
+
+def _kill_all(survivors):
+    for s in survivors:
+        _kill(s["pid"])
 
 
 def test_scope_starts_suspended_resumes_and_tracks_descendants(tmp_path):
     code = textwrap.dedent(f"""
         import subprocess, sys
-        p = subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}])
+        p = subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(p.pid)
     """)
     scope, proc, out, _ = _scoped(code, cwd=str(tmp_path))
@@ -99,14 +112,16 @@ def test_scope_starts_suspended_resumes_and_tracks_descendants(tmp_path):
         assert scope.mechanism == "job_object"
         assert proc.returncode == 0          # it ran: resumed, not left suspended
         survivors = scope.settle()
-        assert [s["pid"] for s in survivors] == [child]
-        assert survivors[0]["created"] == pytest.approx(psutil.Process(child).create_time(), abs=1)
+        # The venv's python.exe is a launcher: the child may appear with its interpreter.
+        assert child in _pids(survivors)
+        entry = next(s for s in survivors if s["pid"] == child)
+        assert entry["created"] == pytest.approx(psutil.Process(child).create_time(), abs=1)
     finally:
         scope.close()
     # Closing Faustus's job handle does not end its members (no KILL_ON_JOB_CLOSE).
     time.sleep(0.3)
     assert _alive(child)
-    _kill(child)
+    _kill_all(survivors)
 
 
 def test_child_that_finished_is_not_a_survivor(tmp_path):
@@ -125,24 +140,25 @@ def test_child_that_finished_is_not_a_survivor(tmp_path):
 def test_breakaway_is_still_allowed(tmp_path):
     code = textwrap.dedent(f"""
         import subprocess, sys
-        p = subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}], creationflags=0x01000000)
+        p = subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}], creationflags=0x01000000, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(p.pid)
     """)
     scope, proc, out, err = _scoped(code, cwd=str(tmp_path))
     try:
         assert proc.returncode == 0, err.decode(errors="replace")
         child = int(out.decode().strip())
-        assert scope.settle() == []        # it left the job on purpose: not ours to track
+        assert child not in _pids(scope.settle())   # it left the job on purpose: not ours to track
     finally:
         scope.close()
-    _kill(child)
+    for p in [psutil.Process(child)] + psutil.Process(child).children(recursive=True) if _alive(child) else []:
+        _kill(p.pid)
 
 
 def test_failed_test_with_popen_server_is_reported_and_adopted(mgr, tmp_path):
     """The #1083 pattern: Popen, then an exception before terminate()."""
     code = textwrap.dedent(f"""
         import subprocess, sys
-        p = subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}])
+        p = subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("server", p.pid, flush=True)
         raise TypeError("req() got multiple values for argument 'body'")
     """)
@@ -151,18 +167,18 @@ def test_failed_test_with_popen_server_is_reported_and_adopted(mgr, tmp_path):
     assert result.get("exit_code") == 1
     assert "TypeError" in text                       # the original failure stays visible
     still = result.get("still_running") or []
-    assert len(still) == 1
+    assert still and len({s["handle"] for s in still}) == 1   # one handle for the tree
     pid, handle = still[0]["pid"], still[0]["handle"]
-    assert _alive(pid)
+    assert all(_alive(s["pid"]) for s in still)
     assert handle in text and "process_stop" in text  # the model is told how to manage it
     listed = {r["handle"]: r for r in mgr.list(ME)["handles"]}
     assert listed[handle]["kind"] == "adopted" and listed[handle]["state"] == "running"
     stopped = mgr.stop(handle, ME)
     assert stopped["ok"] and stopped["state"] == "stopped" and stopped["signalled"]
     deadline = time.time() + 5
-    while _alive(pid) and time.time() < deadline:
+    while any(_alive(s["pid"]) for s in still) and time.time() < deadline:
         time.sleep(0.05)
-    assert not _alive(pid)
+    assert not any(_alive(s["pid"]) for s in still)
 
 
 def test_deliberate_background_server_stays_alive(mgr, tmp_path):
@@ -176,7 +192,7 @@ def test_deliberate_background_server_stays_alive(mgr, tmp_path):
         None, None, "s-1105", caller=ME))
     assert result.get("exit_code") == 0 and "started" in result.get("output", "")
     still = result.get("still_running") or []
-    assert len(still) == 1
+    assert still
     pid = still[0]["pid"]
     time.sleep(1.0)
     assert _alive(pid)                                  # never killed automatically
@@ -189,7 +205,7 @@ def test_adopted_handle_exits_when_its_processes_end(mgr, tmp_path, monkeypatch)
     monkeypatch.setattr(pm, "ADOPTED_POLL_S", 0.1)
     code = textwrap.dedent("""
         import subprocess, sys
-        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1.5)"])
+        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1.5)"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     """)
     result = asyncio.run(_run_python_tool(code, tmp_path))
     handle = (result.get("still_running") or [{}])[0].get("handle")
@@ -205,7 +221,7 @@ def test_adopted_handle_exits_when_its_processes_end(mgr, tmp_path, monkeypatch)
 def test_other_session_cannot_stop_an_adopted_handle(mgr, tmp_path):
     code = textwrap.dedent(f"""
         import subprocess, sys
-        subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}])
+        subprocess.Popen([sys.executable, "-c", {_sleeper_code()!r}], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     """)
     result = asyncio.run(_run_python_tool(code, tmp_path))
     item = result["still_running"][0]

@@ -8,7 +8,7 @@ import signal
 import subprocess
 import sys
 import time
-from typing import Optional, Callable, Awaitable, Tuple, Dict, Mapping
+from typing import Any, Optional, Callable, Awaitable, Tuple, Dict, List, Mapping
 from core.platform_compat import IS_WINDOWS, find_bash
 from src import process_ownership, sandbox_exec
 from src.constants import MAX_OUTPUT_CHARS
@@ -634,6 +634,39 @@ async def _run_subprocess_streaming(
     )
 
 
+async def _run_scoped(proc: asyncio.subprocess.Process, scope: Any, command: str, caller: Any, **kwargs):
+    """`_run_subprocess_streaming` plus the processes the command left running (#1105).
+
+    Returns its 4-tuple plus the survivors handed to the process manager. Survivors
+    are tracked and reported, never signalled here: deliberate persistence stays."""
+    from src import process_survivors
+    try:
+        result = await _run_subprocess_streaming(proc, **kwargs)
+    except BaseException:
+        process_survivors.keep_survivors(scope, command, caller, grace_s=0)
+        raise
+    kept = await asyncio.to_thread(process_survivors.keep_survivors, scope, command, caller)
+    return (*result, kept)
+
+
+def _with_survivors(result: Dict, kept: List[Dict[str, Any]]) -> Dict:
+    if not kept or not isinstance(result, dict):
+        return result
+    from src import process_survivors
+    result["still_running"] = kept
+    key = "output" if "output" in result else "error"
+    result[key] = (str(result.get(key) or "") + "\n" + process_survivors.survivors_note(kept)).strip()
+    return result
+
+
+def _caller_from(ctx: Optional[dict], session_id: Any = None) -> Any:
+    from src.process_manager import Caller
+    caller = Caller.from_ctx(ctx)
+    if not caller.session_id and session_id:
+        caller = Caller(owner=caller.owner, session_id=str(session_id), disabled_tools=caller.disabled_tools)
+    return caller
+
+
 def _idle_result(tool: str, idle_s: float, stdout: str, stderr: str) -> Dict:
     from src.tool_execution import _truncate
     return {
@@ -866,9 +899,10 @@ class BashTool:
         # (empty when the sandbox is simply off).
         _skip = sandbox_exec.consume_skip_reason()
         return _mark_sandbox_skip(
-            await self._on_host(content, progress_cb, _subproc_env, session_id), _skip)
+            await self._on_host(content, progress_cb, _subproc_env, session_id,
+                                caller=_caller_from(ctx, session_id)), _skip)
 
-    async def _on_host(self, content: str, progress_cb, _subproc_env, session_id) -> dict:
+    async def _on_host(self, content: str, progress_cb, _subproc_env, session_id, *, caller: Any = None) -> dict:
         """The host path — byte-for-byte what `execute` ran before the
         sandbox existed (Git Bash on Windows, tmux or /bin/sh elsewhere)."""
         from src.tool_execution import agent_cwd, _truncate
@@ -920,6 +954,9 @@ class BashTool:
 
         _shell_name = find_bash() if IS_WINDOWS else "/bin/sh"
         _target = _execution_target(sandboxed=False, cwd=agent_cwd(), shell=_shell_name or "")
+        from src import process_survivors
+        caller = caller if caller is not None else _caller_from(None, session_id)
+        scope = process_survivors.CommandScope.create()
         try:
             proc = await _create_bash_subprocess(
                 content,
@@ -927,27 +964,33 @@ class BashTool:
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,
                 cwd=agent_cwd(),
+                **scope.spawn_kwargs(),
             )
+        except RuntimeError as e:
+            scope.close()
+            return {"error": f"bash: {e}", "exit_code": 1, "execution_target": _target}
+        try:
+            scope.attach_and_resume(proc)
         except RuntimeError as e:
             return {"error": f"bash: {e}", "exit_code": 1, "execution_target": _target}
         idle_s = _idle_for_command(content, "bash")
-        stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
-            proc,
+        stdout, stderr, rc, timed_out, kept = await _run_scoped(
+            proc, scope, content, caller,
             timeout=DEFAULT_BASH_TIMEOUT,
             progress_cb=progress_cb,
             idle_timeout=idle_s,
         )
         if timed_out == "idle":
-            return {**_idle_result("bash", idle_s, stdout, stderr), "execution_target": _target}
+            return _with_survivors({**_idle_result("bash", idle_s, stdout, stderr), "execution_target": _target}, kept)
         if timed_out:
-            return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
+            return _with_survivors({"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, kept)
         output = stdout.rstrip()
         err = stderr.rstrip()
         if err:
             output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
         output = _truncate(output, MAX_OUTPUT_CHARS)
         _record_cycle("bash", started_at)
-        return {"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}
+        return _with_survivors({"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}, kept)
 
 class PythonTool:
     async def execute(self, content: str, ctx: dict) -> dict:
@@ -989,28 +1032,36 @@ class PythonTool:
         # on sys.path, so `import jsonschema` failed here while the same
         # interpreter's `python -m pytest` (no -I) passed. The environment is
         # already scrubbed of Faustus's PYTHONPATH by native_host_environment.
+        from src import process_survivors
+        scope = process_survivors.CommandScope.create()
         proc = await asyncio.create_subprocess_exec(
             _python, "-c", content,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=_env,
             cwd=agent_cwd(),
+            **scope.spawn_kwargs(),
         )
+        try:
+            scope.attach_and_resume(proc)
+        except RuntimeError as e:
+            return _with_preflight_note(_mark_sandbox_skip(
+                {"error": f"python: {e}", "exit_code": 1, "execution_target": _target}, _skip), _pf_note)
         idle_s = _idle_for_command(content, "python")
-        stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
-            proc,
+        stdout, stderr, rc, timed_out, kept = await _run_scoped(
+            proc, scope, content, _caller_from(ctx),
             timeout=DEFAULT_PYTHON_TIMEOUT,
             progress_cb=progress_cb,
             idle_timeout=idle_s,
         )
         if timed_out == "idle":
             return _with_preflight_note(
-                _mark_sandbox_skip({**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}, _skip),
+                _mark_sandbox_skip(_with_survivors({**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}, kept), _skip),
                 _pf_note,
             )
         if timed_out:
             return _with_preflight_note(
-                _mark_sandbox_skip({"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, _skip),
+                _mark_sandbox_skip(_with_survivors({"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, kept), _skip),
                 _pf_note,
             )
         output = stdout.rstrip()
@@ -1020,7 +1071,7 @@ class PythonTool:
         output = _truncate(output, MAX_OUTPUT_CHARS)
         _record_cycle("python", started_at)
         return _with_preflight_note(
-            _mark_sandbox_skip({"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}, _skip),
+            _mark_sandbox_skip(_with_survivors({"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}, kept), _skip),
             _pf_note,
         )
 
