@@ -14056,3 +14056,12 @@ las cuatro pruebas fuera de Silver de la tarea 840 no hicieron solicitudes
 externas ni API. No se afirma que todos los proveedores históricos de la app
 hayan desaparecido. No se tocaron modelos, GPU o Hub ni se hizo push.
 Pruebas detalladas: research-inbox/silver-rock845 y silver-pause847.
+
+
+### Auditorías de skills en la actividad general (21-10-2026, validación en curso)
+
+La entrega1091 integra el registro existente de auditorías manuales y programadas en la API de actividad, las herramientas MCP de consulta y Activity. Expone propietario, alcance, fase, progreso, modelo efectivo y resultado; conserva la actividad durante la limpieza de una cancelación. No crea chats ni un segundo planificador. La revisión independiente CAS2 aprobó los tres commits317fbe7d/e94ca4ca/ad8da48e; las pruebas CPU de esta corrección no acreditan calidad del modelo.
+
+La fuente quedó integrada y construida desde Main. Se verificaron239 archivos locales y servidos, incluido el HTML con sus versiones de recursos. La activación real usó un solo STOP/START de Faustus, conservó configuración, conexiones MCP desactivadas, paradas manuales y procesos Hub/modelo, y no registró generación adicional durante ese intervalo. El nuevo proceso556 se creó a03:11:10UTC con fuentead8da48eb662675e2ae4197897d5d6d81f23db2c. El lease de activación quedó liberado.
+
+Pendiente: observar un job real completo en API/MCP y navegador de escritorio/móvil, con su resultado terminal. No se declara1091 cerrado ni fiabilidad global. La tarea programada SkillsAudit que precedió a la integración terminó antes del reinicio; su filaTASK ya mostraba progreso en la interfaz anterior. El hueco corregido no se generaliza a todas las vistas de tareas. Evidencias en D:/LocalAI/research-inbox/sparks835/runtime-audit/resume-20261020/activation-skill-audit-activity1091/ y las revisiones1091 citadas en el historial835.
