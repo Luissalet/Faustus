@@ -29,6 +29,16 @@ def no_live_turn_receipts(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolated_detached_ledger(monkeypatch, tmp_path):
+    """The detached-process ledger lives under BASE_DIR/data/runtime, outside the
+    ODYSSEUS_DATA_DIR redirection, and server_runtime spares the processes it lists on
+    shutdown: a faked spawn must never write the running checkout's ledger (#1113)."""
+    from src import process_launch
+    ledger = str(tmp_path / "runtime" / "detached.json")
+    monkeypatch.setattr(process_launch, "detached_ledger_path", lambda: ledger)
+
+
+@pytest.fixture(autouse=True)
 def isolated_agent_mailbox(monkeypatch, tmp_path):
     """The agent mailbox (#235) keeps its own database and mirrors to the Hub: tests get a private
     database and never reach the running Hub."""
