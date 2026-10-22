@@ -1,0 +1,11 @@
+.fs-conversation-objective { padding: var(--fs-space-2) var(--fs-space-4); border-block-end: 1px solid var(--fs-border); font-size: var(--fs-text-sm); }
+.fs-studio__stage:has(> .fs-conversation-objective) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.fs-conversation-objective__bar, .fs-conversation-objective__links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
+.fs-conversation-objective__bar > button:first-child { max-inline-size: min(560px, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-conversation-objective details { max-block-size: 35vh; overflow: auto; padding-block-start: var(--fs-space-2); }
+.fs-conversation-objective ul { padding-inline-start: var(--fs-space-5); }
+.fs-conversation-objective__form, .fs-conversation-objective__form label { display: grid; gap: var(--fs-space-2); }
+.fs-conversation-objective__form { gap: var(--fs-space-4); }
+.fs-conversation-objective__form textarea, .fs-conversation-objective__form input, .fs-conversation-objective__form select { inline-size: 100%; min-inline-size: 0; }
+.fs-conversation-objective__form textarea { min-block-size: 76px; resize: vertical; }
+.fs-conversation-objective__form fieldset { display: grid; gap: var(--fs-space-2); border: 1px solid var(--fs-border); padding: var(--fs-space-3); }

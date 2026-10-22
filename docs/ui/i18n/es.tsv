@@ -10107,3 +10107,59 @@ Search entire message	Buscar en todo el mensaje
 Find next	Buscar siguiente
 Match in section {n}	Coincidencia en la sección {n}
 Message section	Sección del mensaje
+Conversation objective	Objetivo de la conversación
+Set conversation objective	Definir el objetivo de la conversación
+Pause objective	Pausar objetivo
+Continue objective	Continuar objetivo
+Complete objective	Completar objetivo
+Brief, linked work and results	Encargo, trabajo relacionado y resultados
+Expected deliverable	Entregable esperado
+Time with objective active	Tiempo con el objetivo activo
+Pausing requests a generation safe point. Schedules keep their own state. Completion is explicit.	La pausa se aplica al terminar la operación en curso. Las programaciones conservan su propio estado. El objetivo se completa expresamente.
+Conversation activity	Actividad de la conversación
+Context and sources	Contexto y fuentes
+Link existing work	Relacionar trabajo existente
+Child conversation	Conversación hija
+Repository ID	ID del repositorio
+Existing item ID	ID del elemento existente
+Project ID	ID del proyecto
+Change scope	Alcance de los cambios
+Add reference	Añadir referencia
+Delivered result	Resultado entregado
+Linked run activity	Actividad de la ejecución relacionada
+Detailed activity is not in the loaded history. The saved run identity is retained.	La actividad detallada no está en el historial cargado. Se conserva la identidad de la ejecución guardada.
+The saved repository and workspace no longer match.	El repositorio guardado ya no coincide con la carpeta de trabajo.
+This objective changed elsewhere. Your draft is kept; close and reopen to compare with the saved version.	El objetivo ha cambiado en otra sesión. Conservamos tu borrador; cierra y vuelve a abrir para compararlo con la versión guardada.
+Requirements of the task	Requisitos del encargo
+Integrated browser	Navegador integrado
+Open web pages, read them, click, fill in forms and take screenshots	Abre páginas web, las lee, hace clic, rellena formularios y hace capturas
+some requirements of the task have no evidence	hay requisitos del encargo sin evidencia
+Skills audit	Auditoría de skills
+Skills audits	Auditorías de skills
+Checking necessity	Comprobando necesidad
+Checking retrieval	Comprobando recuperación
+Testing the skill	Probando la skill
+Reviewing the result	Revisando el resultado
+Improving the skill	Mejorando la skill
+Teacher improving the skill	El profesor está mejorando la skill
+Testing again	Probando de nuevo
+Finishing cancellation	Terminando la cancelación
+{done}/{total} completed	{done}/{total} completadas
+The audit result changed. Refresh its status.	El resultado de la auditoría ha cambiado. Actualiza su estado.
+Current skill	Skill actual
+Configured teacher	Profesor configurado
+Model for this phase	Modelo de esta fase
+Open skills	Abrir skills
+No skill results yet.	Todavía no hay resultados de skills.
+Loading results…	Cargando resultados…
+Selected skills	Skills seleccionadas
+Unchecked skills	Skills sin comprobar
+Automation	Automatización
+Revision	Revisión
+Shared	Compartido
+Staged	Preparados
+Unstaged	Sin preparar
+Saved version	Versión guardada
+Keep my draft on this version	Conservar mi borrador sobre esta versión
+This objective changed elsewhere. Your draft is kept. Review the saved version before saving again.	El objetivo ha cambiado en otra sesión. Se conserva tu borrador. Revisa la versión guardada antes de volver a guardar.
+Pausing at the next safe point…	Pausa en el próximo punto seguro…

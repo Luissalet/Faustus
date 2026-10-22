@@ -3,7 +3,7 @@
 
 La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
 
-La biblioteca incluye ocho procedimientos locales de ingeniería inversa, assets
+La biblioteca incluye procedimientos locales de desarrollo de juegos, ingeniería inversa, assets
 de Blender, composición de movimiento, revisiones de medios, impacto del código,
 investigación de entidades, evidencia histórica y comparación de voces. La
 instalación conserva sus ejemplos y recursos de texto, disponibles mediante las
@@ -16,6 +16,14 @@ función, y revisa los consumidores intactos cuando aparecen o desaparecen
 definiciones. La consulta existente también está disponible por HTTP, además de
 MCP y chat, con historial y riesgo opcionales.
 [Resolución de código](docs/api/code-resolution.md).
+
+Las conversaciones guardadas pueden conservar un objetivo editable, contexto,
+entregable y referencias al trabajo nativo. Las revisiones evitan sobrescribir
+cambios ajenos; cada ejecución conserva su identidad y la versión inicial del
+encargo. Pausar solicita el próximo punto seguro de generación; las
+programaciones conservan su propio estado. Continuar utiliza el chat habitual
+y recibos duraderos para conservar los efectos ya aceptados. Disponible en
+Studio, HTTP y MCP. [Objetivos de conversación](docs/api/conversation-objective.md).
 
 El campo de mensaje del copilot común ocupa todo el ancho del panel, parte de cuatro líneas, crece con el borrador y permite ajustar su altura a mano. Adjuntar y Enviar quedan debajo. [Componente compartido](studio/embed/README.md).
 

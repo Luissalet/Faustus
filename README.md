@@ -3,7 +3,14 @@
 
 Navigation now follows the work: chat actions and document workspaces in Studio, repositories inside each project, specialist apps under Hoards, and five searchable settings areas. All existing tools and saved data remain accessible. See [navigation](docs/ui/navigation.md).
 
-The bundled skill library includes eight local workflows for reverse engineering,
+Saved conversations can keep an editable objective, context, deliverable and
+native work links. Revisions prevent conflicting edits; runs retain their exact
+identity and starting brief. Pause requests a generation safe point, while
+automations retain their own state. Continue uses the normal chat pipeline and
+durable receipts to avoid repeating accepted effects. Available in Studio,
+HTTP and MCP. [Conversation objectives](docs/api/conversation-objective.md).
+
+The bundled skill library includes local workflows for game development, reverse engineering,
 Blender assets, motion composition, media revisions, code impact, entity
 investigations, historical evidence and speech comparison. Worked scenarios and
 supporting text files survive installation and remain available through the skill

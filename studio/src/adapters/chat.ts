@@ -2436,9 +2436,13 @@ export async function* resumeTurn(
      * unchanged for any caller that doesn't know about cursors yet.
      */
     cursor?: number;
+    runId?: string;
   } = {},
 ): AsyncGenerator<ChatEvent> {
-  const qs = options.cursor != null ? `?cursor=${encodeURIComponent(String(options.cursor))}` : '';
+  const params = new URLSearchParams();
+  if (options.cursor != null) params.set('cursor', String(options.cursor));
+  if (options.runId) params.set('run_id', options.runId);
+  const qs = params.size ? `?${params}` : '';
   let response: Response;
   try {
     response = await fetch(`/api/chat/resume/${encodeURIComponent(sessionId)}${qs}`, {

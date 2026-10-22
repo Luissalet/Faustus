@@ -7,6 +7,7 @@ import { lazyChunk } from '../shell/lazyChunk';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, IconButton, Popover, Skeleton } from '../components';
 import { AgentInbox } from './studio/AgentInbox';
+import { ConversationObjective } from './studio/ConversationObjective';
 import { agentMessageFromMetadata } from '../adapters/agentMailbox';
 import {
   createSession,
@@ -1978,7 +1979,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   );
 
   const rejoin = useCallback(
-    async (sid: string, opts?: { adoptOnly?: boolean }) => {
+    async (sid: string, opts?: { adoptOnly?: boolean; runId?: string }) => {
       const adoptOnly = opts?.adoptOnly === true;
       const epoch = runEpoch.current;
       const controller = new AbortController();
@@ -1986,6 +1987,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       let joined = false;
       try {
         for await (const event of resumeTurn(sid, {
+          runId: opts?.runId,
           signal: controller.signal,
           onRunId: (id) => {
             if (controller.signal.aborted || controllerRef.current !== controller) return;
@@ -3953,6 +3955,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           </div>
         </header>
 
+        {sessionId && !groupMode && !knobs.incognito && <ConversationObjective key={sessionId} sessionId={sessionId} projectId={project?.id} workspace={workspace} route={route} turns={turns || []}
+          onContinue={(runId) => { if (!controllerRef.current) void rejoin(sessionId, {runId: runId || undefined}); refreshActivity(); }}
+          onFile={(folder, path) => panelDispatch({type: 'file', workspace: folder, path})}
+          onAgents={() => panelDispatch({type: 'open', tab: 'agents'})}
+          onTasks={() => panelDispatch({type: 'open', tab: 'board'})} />}
         <div className="fs-studio__transcript-stage" data-message-nav={turns&&turns.length>1||undefined}>
         <div className="fs-studio__scroll" ref={scrollRef} onScroll={onScroll} data-testid="studio-transcript">
           {turns === null && !loadError && (

@@ -719,6 +719,11 @@ class SessionManager:
                 db.commit()
                 logger.info(f"Deleted session {session_id}")
                 try:
+                    from src.conversation_objective import get_store as objective_store
+                    objective_store().delete_session(session_id)
+                except Exception as e:
+                    logger.warning(f"Objective cleanup failed for deleted session {session_id}: {e}")
+                try:
                     # A saved llama-server slot holds the conversation's text:
                     # it goes with the chat (src/slot_cache.py).
                     from src import slot_cache

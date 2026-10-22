@@ -13,6 +13,11 @@ code impact analysis, entity investigation, historical evidence and local
 voice comparison. Each has a small worked scenario in `references/` and
 records its methodological source and revision.
 
+`gamedev` reads the actual project engine and version before selecting Unity,
+Godot, Unreal or browser-3D references. Structured live editor operations are
+currently implemented for Unity. Other references guide the existing file,
+terminal and verification tools; they do not claim an installed engine bridge.
+
 Installation preserves these supporting files beside the installed skill.
 They are read on demand through the existing skill reference tools, rather
 than added to every prompt. The procedures need no paid service or hosted

@@ -1952,6 +1952,13 @@ def setup_chat_routes(
             else:
                 ctx = await _context_pending
 
+            try:
+                from src.conversation_objective import inject_context as _inject_objective
+                if not getattr(chat_request, "incognito", False):
+                    _inject_objective(ctx, owner, session)
+            except Exception:
+                logger.warning("Could not read the saved conversation objective", exc_info=True)
+
             # Research injection
             research_blocked_by_policy = (
                 tool_policy.blocks("trigger_research")
@@ -2941,6 +2948,12 @@ def setup_chat_routes(
             # like the research-clarification system message above does) so the
             # model reads the selected fragment as context for THIS turn, never
             # as though the user had typed it.
+            if not incognito:
+                try:
+                    from src.conversation_objective import inject_context as _inject_objective
+                    _inject_objective(ctx, owner, session)
+                except Exception:
+                    logger.warning("Could not read the saved conversation objective", exc_info=True)
             _doc_context_msgs = _doc_context_messages(_parse_doc_context_payload(doc_context_raw), ctx.user)
             if _hoard_context is not None:
                 _doc_context_msgs.append(_hoard_copilot.context_message(_hoard_context))
@@ -5080,6 +5093,11 @@ def setup_chat_routes(
                                              endpoint_url=str(getattr(sess, "endpoint_url", "") or ""),
                                              initial_wait_s=(max(0.001, _context_wait - (time.monotonic() - _initial_request_started))
                                                              if _context_wait is not None else None))
+            try:
+                from src.conversation_objective import get_store as _objective_store
+                _objective_store().link_run(owner, session, _detached_run.run_id, client_message_id)
+            except Exception:
+                logger.warning("Could not link the conversation objective to its run", exc_info=True)
             if client_message_id and not tool_approval_id:
                 try:
                     chat_outbox.mark_running(
@@ -5105,13 +5123,14 @@ def setup_chat_routes(
     async def chat_resume(
         request: Request, session_id: str,
         cursor: Optional[int] = Query(None, ge=0, description="QA-09: last sequence the caller already has; resume replays only what's newer."),
+        run_id: Optional[str] = None,
     ) -> StreamingResponse:
         _verify_session_owner(request, session_id)
         _client_api_version = request.headers.get(api_version.CLIENT_VERSION_HEADER)
         if not api_version.is_supported(_client_api_version):
             raise HTTPException(426, api_version.upgrade_required_detail(_client_api_version))
         _active_run = agent_runs.get_active_run(session_id)
-        if _active_run is None:
+        if _active_run is None or (run_id is not None and _active_run.run_id != run_id):
             raise HTTPException(404, "No active run for this session")
         return StreamingResponse(
             agent_runs.subscribe(session_id, _active_run, from_sequence=cursor),
@@ -5453,6 +5472,80 @@ def setup_chat_routes(
     # "generation"}; kept as its own verb because that is what the Composer's
     # Pause button and its consequence line name.
     # ------------------------------------------------------------------ #
+    @router.post("/api/session/{session_id}/objective/continue")
+    async def objective_continue(request: Request, session_id: str):
+        from routes.conversation_objective_routes import objective_owner, objective_body, objective_error
+        from src.conversation_objective import get_store as objective_store
+        owner = objective_owner(request, session_id)
+        body = await objective_body(request)
+        selected_fields = {}
+        for key in ("selected_model", "selected_endpoint_id", "selected_endpoint_url", "workspace"):
+            if key in body:
+                if not isinstance(body[key], str):
+                    raise HTTPException(400, key + " must be a string")
+                selected_fields[key] = body[key]
+        generation = agent_runs.run_status_snapshot(session_id)
+        if generation and generation.get("active"):
+            current = objective_store().get(owner, session_id)
+            if current is None:
+                raise HTTPException(404, "Objective not found")
+            expected = body.get("expected_revision")
+            previous = (current["continuation_revision"] == expected and current["revision"] == expected + 1) if type(expected) is int else False
+            recorded = objective_store().continuation_run(owner, session_id, current["continuation_id"]) if previous else None
+            if current["revision"] != expected and not recorded:
+                from src.conversation_objective import RevisionConflict
+                objective_error(RevisionConflict(current["revision"]))
+            # An already running turn is rejoined, never superseded by Continue.
+            return {"objective": current, "run_id": recorded or generation["run_id"], "rejoined": True,
+                    **({"client_message_id": current["continuation_id"]} if recorded else {})}
+        try:
+            objective = objective_store().reserve_continuation(owner, session_id, body.get("expected_revision"))
+        except (KeyError, ValueError) as exc:
+            objective_error(exc)
+        fresh = objective.pop("_continuation_fresh")
+        recorded_run = objective_store().continuation_run(owner, session_id, objective["continuation_id"])
+        if recorded_run:
+            return {"objective": objective, "run_id": recorded_run, "rejoined": True,
+                    "client_message_id": objective["continuation_id"]}
+        if not fresh and chat_outbox.get(owner=owner, session_id=session_id, client_message_id=objective["continuation_id"]) is None:
+            raise HTTPException(409, {"reason": "continuation_outcome_unknown",
+                                      "message": "The previous continuation has no retained dispatch receipt. Read the history before issuing a new continuation; it was not resent.",
+                                      "client_message_id": objective["continuation_id"]})
+        message = ("Continúa este encargo desde el historial y sus resultados guardados. "
+                   "Comprueba lo ya realizado antes de actuar; no repitas efectos aceptados.\n\n"
+                   + objective["statement"])
+        if objective["context"]:
+            message += "\n\nContexto del encargo:\n" + objective["context"]
+        if objective["deliverable"]:
+            message += "\n\nEntregable esperado:\n" + objective["deliverable"]
+        if objective["refs"]:
+            message += "\n\nReferencias explícitas del encargo:\n" + json.dumps(objective["refs"], ensure_ascii=False)
+        from urllib.parse import urlencode
+        fields = {"session": session_id, "message": message, "client_message_id": objective["continuation_id"], "mode": "agent"}
+        fields.update(selected_fields)
+        payload = urlencode(fields).encode("utf-8")
+        # Reuse the normal chat route, its outbox and its execution defaults.
+        # Only the new continuation's message is constructed here; no tool replay.
+        scope = dict(request.scope)
+        scope["path"] = "/api/chat_stream"
+        scope["raw_path"] = b"/api/chat_stream"
+        scope["headers"] = [(key, value) for key, value in scope["headers"] if key.lower() not in (b"content-type", b"content-length")]
+        scope["headers"] += [(b"content-type", b"application/x-www-form-urlencoded"), (b"content-length", str(len(payload)).encode())]
+        delivered = False
+        async def receive():
+            nonlocal delivered
+            if delivered:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            delivered = True
+            return {"type": "http.request", "body": payload, "more_body": False}
+        response = await chat_stream(Request(scope, receive), initial_response_timeout_s=None)
+        run_id = response.headers.get("X-Odysseus-Run-Id")
+        if not run_id:
+            receipt = chat_outbox.get(owner=owner, session_id=session_id, client_message_id=objective["continuation_id"])
+            run_id = (receipt or {}).get("run_id")
+        return {"objective": objective_store().get(owner, session_id), "run_id": run_id,
+                "rejoined": False, "client_message_id": objective["continuation_id"]}
+
     @router.post("/api/chat/pause/{session_id}")
     async def chat_pause(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)

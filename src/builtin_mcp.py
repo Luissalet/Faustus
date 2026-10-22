@@ -77,6 +77,7 @@ def _find_npx() -> str:
 # carries hundreds of LOC of unique IMAP / HTTP / manager logic not worth
 # duplicating into the native path right now.
 _BUILTIN_SERVERS = {
+    "conversation_objective": ("mcp_servers/conversation_objective_server.py", "Built-in: Conversation objective"),
     "project_workspace": ("mcp_servers/project_workspace_server.py", "Built-in: Project workspace"),
     "groups": ("mcp_servers/groups_server.py", "Built-in: Persistent working groups"),
     "sparks": ("mcp_servers/sparks_server.py", "Built-in: Global Sparks models"),

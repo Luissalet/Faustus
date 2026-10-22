@@ -2,6 +2,14 @@
 
 **Unity local (#1138, candidato en pruebas).** Herramienta nativa común de chat/API/MCP sobre el puente de Blood Arrows: escenas, identidad de objetos, propiedades serializadas, materiales HDRP, prefabs, Undo/Redo y Test Runner. Descubrimiento sin arrancar el editor. Perfil por metadatos para Unity, Godot, Unreal y Three.js y habilidad gamedev con referencias por motor. No hay control nativo de los otros editores por leer su perfil. Validación e integración pendientes; [contrato](docs/api/unity.md).
 
+**Objetivo de conversación,23-10-2026 (#1089).** Encargo persistente y editable
+con CAS, contexto/fuentes/entregable y referencias a tareas, hijos, archivos,
+cambios y automatizaciones existentes. Cada run conserva su identidad y la
+versión del brief; terminar SSE no completa la meta. Pausa cooperativa y
+continuación por el chat normal con recibo persistente más allá del TTL del
+outbox. Estado de programación independiente, ningún Hoard/proyecto arranca por
+definir la meta. UI/API/MCP: [contrato](docs/api/conversation-objective.md).
+
 **Fiabilidad de Sparks, 20-10-2026 (#835).** Está activa la corrección revisada
 que permite recuperar por HTTP/MCP las conversaciones del modo sin login;
 Studio conserva la respuesta al recargar. Los trabajos largos usan el servicio
