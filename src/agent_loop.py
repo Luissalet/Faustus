@@ -237,6 +237,41 @@ def _browser_intent_is_real(names: Set[str]) -> bool:
     return bool(browser & _BROWSER_MCP_SESSION_TOOLS) or len(browser) > 1
 
 
+_BROWSER_WORD_RE = re.compile(
+    r"\b(?:navegador|browser|chrome|chromium|firefox|playwright)\b", re.IGNORECASE)
+_PAGE_ADDRESS_RE = re.compile(
+    r"(?:\bhttps?://[^\s<>\"']+|\blocalhost:\d{2,5}\b|\b127\.0\.0\.1(?::\d{2,5})?\b|\bwww\.[a-z0-9-]+\.[a-z]{2,}\b)",
+    re.IGNORECASE)
+_PAGE_ACTION_RE = re.compile(
+    r"\b(?:abre|abrir|ábrela|abrela|abre(?:me)?|visita|visitar|entra|entrar|navega|navegar|ve a|vete a|"
+    r"captura|capturas|pantallazo|pantallazos|screenshot|screenshots|screen ?shot|mira|mirar|fíjate|fijate|"
+    r"comprueba|compruébala|pulsa|pulsar|haz clic|clica|clic|click|rellena|rellenar|inicia sesión|"
+    r"inicia sesion|log ?in|sign ?in|p[aá]gina|sitio web|website|web ?page|page|open|visit|go to|navigate|look at|"
+    r"check the page|fill (?:in|out)|interact|scroll|desplázate|desplazate)\b",
+    re.IGNORECASE)
+
+
+def _browser_request(text: str) -> bool:
+    """Whether the user asks to look at or act on a web page.
+
+    The integrated browser is an MCP server, so its tool descriptions are
+    English and the Spanish examples of the desktop tools out-rank it in
+    retrieval. Seen live (22-10, DeepSeek): "Haz una captura de pantalla de la
+    página http://127.0.0.1:5205/#/modelos con tu herramienta de navegador"
+    was offered desktop_* and page_* tools only; the model concluded "No
+    browser tool available" and spent 15 rounds failing with desktop tools.
+
+    True when the request names the browser, or gives a page address together
+    with a verb or noun about seeing or using a page. A bare URL in a coding
+    request ("the API listens on http://localhost:8000, add an endpoint") is
+    not enough, so the ~30 browser schemas are not added to every turn.
+    """
+    t = text or ""
+    if _BROWSER_WORD_RE.search(t):
+        return True
+    return bool(_PAGE_ADDRESS_RE.search(t) and _PAGE_ACTION_RE.search(t))
+
+
 def _expand_browser_mcp_tools(tool_names: Set[str], mcp_mgr, force: bool = False) -> Set[str]:
     """Expand browser intent to every connected Playwright MCP tool.
 
@@ -10369,6 +10404,16 @@ async def _stream_agent_loop_body(
         _relevant_tools.update(forced_set)
         if _hot_seed is not None:
             _hot_seed |= forced_set
+
+    # A request about a web page gets the integrated browser even when
+    # retrieval ranked the desktop or page-reading tools higher (see
+    # _browser_request). A caller-pinned selection is a ceiling and wins;
+    # disabled tools and the browser policy are honoured by the expansion.
+    if (not guide_only and _relevant_tools is not None and not relevant_tools and _last_user
+            and "builtin_browser" not in disabled_tools and _browser_request(_last_user)):
+        if "builtin_browser" not in _relevant_tools:
+            logger.info("[tool-floor] browser offered for a request about a web page")
+        _relevant_tools.add("builtin_browser")
 
     if not guide_only and _relevant_tools is not None:
         _before_browser = set(_relevant_tools)
