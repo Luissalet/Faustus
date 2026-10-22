@@ -11,13 +11,19 @@ nuevo con otro proyecto (nunca el mismo con otro nombre).
 
 - Trabajo 1 (Agenda): FAIL 1/38 el 21-10 por un falso positivo del guardia de
   degeneración con los escapes JSON de los argumentos (corregido en #1117).
-- Siguientes, en este orden y tras activar #1113/#1114/#1116/#1117:
-  Vault (archivo binario con integridad, 44 casos congelados), Ledger
-  (analítica incremental exacta, 55 casos congelados) y Préstamos
-  (biblioteca de herramientas con interfaz, 77 casos; pendiente de auditoría
-  de equidad contrato/oráculo antes de congelar).
-- Después de la estabilidad de GLM: evaluar DeepSeek V4.1 Flash TP4 frente a
-  la configuración actual con los mismos oráculos.
+- Trabajos 2-4 (Vault 41/44, Ledger 68/69, Préstamos 74/77): FAIL. Turnos
+  limpios; el modelo omitió 1-3 reglas escritas del contrato y su auditoría de
+  cierre (autoevaluada) las dio por cumplidas.
+- Respuesta: #1127 (en master 6756ea98, 22-10). Faustus extrae los requisitos
+  del encargo y el harness exige evidencia real de cada uno antes de cerrar
+  (ajuste `agent_contract_criteria`, por defecto en turnos desatendidos).
+- Nueva racha con proyectos nuevos, cada uno con auditoría de equidad
+  independiente y re-comprobación de los arreglos, entorno del juez congelado
+  (JUDGE-ENV.json) y tzdata fijado: meter (analítica, 163 casos, enviado
+  22-10 07:45Z), tracker (app con API e interfaz, 98 casos) y tsdb
+  (almacenamiento con formato de ficheros, 85 casos), congelados.
+- Tras tres PASS consecutivos: evaluar DeepSeek V4.1 Flash TP4 frente a la
+  configuración actual con los mismos oráculos.
 
 ## Fuentes incorporadas como capacidades locales — #779–#783
 
