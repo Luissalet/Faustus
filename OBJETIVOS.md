@@ -1,6 +1,26 @@
 # Objetivos acordados
 
-## Fiabilidad de Sparks y Faustus en trabajos grandes — #835 (en curso)
+## Fiabilidad de Sparks y Faustus en trabajos grandes — #835
+
+**Decisión de Luis (22-10, 11:10):** el problema original (respuestas corruptas
+o vacías, como si el modelo estuviera roto) se da por resuelto. Evidencia: desde
+que están activos los arreglos de generación fantasma y del guardia (#1117), los
+trabajos largos Vault (66 rondas), Ledger (136), Préstamos (54) y meter (121+)
+corren sin texto corrupto, respuestas vacías, abortos ni reintentos, con 0
+abortos y 0 errores en el servidor; los fallos restantes son programas casi
+correctos que omiten reglas del contrato (calidad, no avería). Meter termina su
+turno y se juzga; tracker y tsdb (congelados y auditados) pasan a ser el banco
+de comparación GLM frente a DeepSeek V4.1 Flash TP4 con los mismos oráculos.
+
+**En la recámara** (solo si DeepSeek no lo resuelve por sí mismo):
+- Racha de tres PASS con GLM sobre trabajos nuevos.
+- #1127, límites conocidos: una frase compuesta se prueba con una de sus
+  cláusulas; un test con el nombre de la regla la prueba; los print calculados
+  cuentan como salida.
+- Auditoría de cierre con verificador externo (oráculo de propiedades generado
+  desde el contrato) en vez de solo evidencia enlazada por el modelo.
+
+Historial:
 
 Encargo de Luis: demostrar que Faustus con el servicio global de las Sparks
 completa trabajos grandes y ambiciosos con resultados correctos. Criterio:
