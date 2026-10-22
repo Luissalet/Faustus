@@ -93,6 +93,8 @@ def test_real_loop_provider_receives_complete_pasted_contract_and_tracker_brief(
     for messages in calls["messages"]:
         humans = [m for m in messages if m.get("role") == "user" and not m.get("_harness_note")]
         assert any(m.get("content") == CONTRACT for m in humans)
-    assert any(m.get("role") == "system" and "plan_status" in m.get("content", "")
-               for m in calls["messages"][0])
+    # The brief travels as a user-role harness note (some model families ignore
+    # mid-prompt system messages) flagged so context trimming keeps it.
+    assert any(m.get("role") == "user" and m.get("_harness_note") and (m.get("metadata") or {}).get("plan_note")
+               and "plan_status" in m.get("content", "") for m in calls["messages"][0])
     assert attempted_http == []

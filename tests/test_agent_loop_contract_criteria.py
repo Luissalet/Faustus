@@ -202,6 +202,28 @@ def test_the_harness_links_a_fresh_run_by_itself_and_the_model_keeps_the_rest(lo
     assert "C05 L" not in seen[4][-1]["content"] and "C01" in seen[4][-1]["content"]
 
 
+def test_the_start_note_is_a_user_role_harness_note_the_trimmer_keeps(loop):
+    seen, _events = loop(_scripted_turn())
+    notes = [m for m in seen[0] if "[Contract criteria" in str(m.get("content"))]
+    assert len(notes) == 1
+    note = notes[0]
+    assert note["role"] == "user" and note.get("_harness_note") is True
+    assert (note.get("metadata") or {}).get("contract_criteria") is True
+    # an id taken from the book, no deferred "before you finish", no stray brace
+    import re
+    example = re.search(r'"id": "(C\d+)"', note["content"])
+    assert example and example.group(1) in {f"C{i:02d}" for i in range(1, 7)}
+    assert "Before you finish" not in note["content"]
+    assert "}}" not in note["content"].split("more open")[-1]
+    # it sits in front of the person's own request, not in the system block
+    idx = seen[0].index(note)
+    task = next(i for i, m in enumerate(seen[0]) if m.get("content") == SPEC)
+    assert idx < task and all(m["role"] == "user" for m in seen[0][idx:task])
+    from src.context_compactor import is_pinned_note
+    assert is_pinned_note(note)
+    assert not [m for m in seen[0] if m.get("role") == "system" and "[Contract criteria" in str(m.get("content"))]
+
+
 def test_mass_not_applicable_keeps_the_audit_the_gap_round_and_the_gate(loop):
     links = [{"id": f"C{i:02d}", "status": "not_applicable", "reason": "covered by design"} for i in range(1, 30)]
     rounds = [

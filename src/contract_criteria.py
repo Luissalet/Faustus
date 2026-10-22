@@ -1896,13 +1896,14 @@ class CriteriaBook:
         """Once, at the start of a long unattended turn: counts per section and
         the first open criteria in priority order (sections in turn), bounded."""
         open_rows = self.ordered(self.open())
+        example = (open_rows[0] if open_rows else (self.criteria[0] if self.criteria else {})).get("id") or "C001"
         head = (
             "[Contract criteria - automatic runtime message] The task statement was read as "
-            f"{len(self.criteria)} checkable requirements ({len(open_rows)} open). Before you finish, show each "
+            f"{len(self.criteria)} checkable requirements ({len(open_rows)} open). Show each "
             "one with a tool call whose OUTPUT shows it, run after your last change, and link it with "
-            "`criteria_check` (`{\"links\": [{\"id\": \"C01\", \"call_id\": \"...\"}]}` or `\"command\": \"<text "
+            f"`criteria_check` (`{{\"links\": [{{\"id\": \"{example}\", \"call_id\": \"...\"}}]}}` or `\"command\": \"<text "
             "of the command you ran>\"`); an echo of your own words is not evidence; mark one not_applicable "
-            "only with a real reason.\n"
+            "only with a real reason. The harness also links by itself what a fresh run of yours clearly shows.\n"
         )
         secs = " · ".join(f"{s}: {n}" for s, n in self.sections(open_rows))
         if len(secs) > 600:
@@ -1913,7 +1914,7 @@ class CriteriaBook:
         text = head + "\n".join(lines)
         if n < len(open_rows):
             text += (f"\n... {len(open_rows) - n} more open: criteria_check {{\"list\": true, \"section\": "
-                     "\"...\"}} or {\"list\": true, \"page\": 2}.")
+                     "\"...\"} or {\"list\": true, \"page\": 2}.")
         return text[:max_chars]
 
     def audit_addendum(self, *, max_chars: int = AUDIT_NOTE_CHARS) -> str:

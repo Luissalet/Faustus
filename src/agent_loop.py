@@ -10934,7 +10934,7 @@ async def _stream_agent_loop_body(
                 # Defer only the supported preservation path until tools are final.
                 return _without_protection(route_messages)
             if preserve_current:
-                from src.context_compactor import _is_essential_system
+                from src.context_compactor import _is_essential_system, is_pinned_note
                 convo = [m for m in route_messages if m.get("role") != "system" and not m.get("_protected")]
                 anchor = current_request_start(convo)
                 systems = [m for m in route_messages if m.get("role") == "system" and not m.get("_protected")]
@@ -10942,6 +10942,10 @@ async def _stream_agent_loop_body(
                 required = (plain_systems[:1]
                             + [m for m in systems if _is_essential_system(m)]
                             + [m for m in route_messages if m.get("_protected")]
+                            # The start notes (contract criteria, active plan)
+                            # are kept whole by trim_for_context, so they are
+                            # part of what must fit.
+                            + [m for m in convo[:anchor] if is_pinned_note(m)]
                             + (convo[anchor:] if anchor is not None else []))
                 effective_budget = current_request_input_budget(
                     effective_budget, candidate_context, estimate_tokens(required),
@@ -12722,8 +12726,15 @@ async def _stream_agent_loop_body(
                     # Once, bounded (counts per section, the first open
                     # criteria by priority): the statement itself is already
                     # in the prompt; the rest is paged by criteria_check.
+                    # User role, not system: some model families fold every
+                    # mid-prompt system message into the leading block and
+                    # never act on it (DeepSeek, #1127 diagnosis); the
+                    # `metadata` flag keeps context trimming from dropping it
+                    # (context_compactor.is_pinned_note).
                     messages = _insert_before_latest_user(
-                        messages, {"role": "system", "content": _cc_book.start_note()})
+                        messages, {"role": "user", "_harness_note": True,
+                                   "metadata": {_cc_mod.NOTE_META: True},
+                                   "content": _cc_book.start_note()})
                     _cc_book.shown = True
                 yield (
                     "data: " + json.dumps({
@@ -12865,8 +12876,11 @@ async def _stream_agent_loop_body(
                             for m in (messages or []) if m.get("role") == "user")):
             try:
                 from src import plan_tracker as _pt
+                # Same channel and protection as the contract start note.
                 messages = _insert_before_latest_user(
-                    messages, {"role": "system", "content": _pt.brief(_plan_tracker, _ledger.language)}
+                    messages, {"role": "user", "_harness_note": True,
+                               "metadata": {"plan_note": True},
+                               "content": _pt.brief(_plan_tracker, _ledger.language)}
                 )
                 logger.info("[harness] active plan brief injected")
             except Exception as _pb_err:

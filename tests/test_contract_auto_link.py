@@ -160,3 +160,23 @@ def test_a_pending_link_attempt_by_the_model_does_not_undo_an_auto_proof():
     _run(book, "c2", "python -m arc --help", "usage: arc")
     rows = book.apply_links([{"id": "C04", "call_id": "c2"}])
     assert rows[0]["accepted"] is False and _state(book, "C04") == "proven" and book.get("C04")["auto"] is True
+
+
+def test_start_note_takes_its_example_id_from_the_book_and_is_not_deferred():
+    book = _book()
+    note = book.start_note()
+    assert "Before you finish" not in note
+    first_open = book.ordered(book.open())[0]["id"]
+    assert f'"id": "{first_open}"' in note
+    assert note.count("{") == note.count("}")
+
+
+def test_start_note_ids_follow_the_width_of_the_book_and_its_paging_hint_is_balanced():
+    rules = "".join(f"- The `cmd{n}` command must never use more than {n + 5} MB of memory.\n" for n in range(1, 140))
+    book = _book("# Tool\n\n" + "Background of the nightly job. " * 60 + "\n\n## Rules\n\n" + rules)
+    assert len(book.criteria) >= 100 and book.criteria[0]["id"] == "C001"
+    note = book.start_note()
+    assert '"id": "C0' in note and '"id": "C01"' not in note
+    hint = note.splitlines()[-1]
+    assert "more open" in hint
+    assert hint.count("{") == hint.count("}") and "}}" not in hint

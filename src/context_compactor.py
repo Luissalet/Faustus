@@ -703,8 +703,55 @@ def _is_essential_system(msg: Dict) -> bool:
     metadata = msg.get("metadata") or {}
     if metadata.get("research_spinoff_from") or metadata.get("compacted"):
         return True
+    if is_pinned_note(msg):
+        return True
     content = msg.get("content")
     return isinstance(content, str) and content.lstrip().startswith("[Conversation summary")
+
+
+#: `metadata` flags of the runtime notes the loop adds once, at the start of a
+#: turn, that nothing else in the prompt repeats: the contract criteria start
+#: note (src/contract_criteria.py NOTE_META) and the active-plan note.
+PINNED_NOTE_KEYS = ("contract_criteria", "plan_note")
+
+
+def is_pinned_note(msg: Dict) -> bool:
+    """A runtime note that trimming must keep, in whatever role it travels."""
+    metadata = msg.get("metadata") if isinstance(msg, dict) else None
+    return isinstance(metadata, dict) and any(metadata.get(k) for k in PINNED_NOTE_KEYS)
+
+
+def _trim_around_pinned(messages: List[Dict], context_length: int, reserve_tokens: int,
+                        preserve_current_request: bool) -> Optional[List[Dict]]:
+    """`trim_for_context` for a list that holds pinned notes: they are taken
+    out, their cost is reserved, the rest is trimmed as usual, and each note
+    goes back in front of the message it preceded (or, if that one is gone,
+    in front of the first conversation message left). None when there are no
+    pinned notes."""
+    pinned = [(i, m) for i, m in enumerate(messages) if is_pinned_note(m) and m.get("role") != "system"]
+    if not pinned:
+        return None
+    rest = [m for m in messages if not any(m is p for _, p in pinned)]
+    successors = []
+    for idx, note in pinned:
+        nxt = next((m for m in messages[idx + 1:] if not any(m is p for _, p in pinned)), None)
+        successors.append((note, nxt))
+    reserve = reserve_tokens + estimate_tokens([n for _, n in pinned])
+    trimmed = trim_for_context(rest, context_length, reserve,
+                               preserve_current_request=preserve_current_request)
+    out = list(trimmed)
+    for note, nxt in successors:
+        pos = next((k for k, m in enumerate(out) if m is nxt), None)
+        if pos is None:
+            # The anchor was copied or dropped: put the note in front of the
+            # person's current request, where it was written.
+            pos = next((k for k in range(len(out) - 1, -1, -1)
+                        if out[k].get("role") == "user" and not out[k].get("_harness_note")
+                        and not out[k].get("_agent_injected")), None)
+            if pos is None:
+                pos = next((k for k, m in enumerate(out) if m.get("role") != "system"), len(out))
+        out.insert(pos, note)
+    return out
 
 
 def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: int = 512, *,
@@ -734,6 +781,12 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
         return messages
 
     logger.info(f"Trimming messages: {used} tokens > {budget} budget (ctx={context_length})")
+
+    # The turn's start notes (contract criteria, active plan) are kept whole:
+    # trim everything else around them.
+    _around = _trim_around_pinned(messages, context_length, reserve_tokens, preserve_current_request)
+    if _around is not None:
+        return _around
 
     # Separate system messages from conversation.
     # Messages marked _protected (e.g. active document) are never dropped, but
