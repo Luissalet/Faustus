@@ -17,8 +17,13 @@ that already exists:
   * VER-05 `verify_citation` reads `src.claim_verify.verify`'s five-layer
     ladder as three words instead of a bool + layer number.
 
+  * `verify_contract_link`/`contract_state` decide the state of a contract
+    criterion (src/contract_criteria.py) from one tool call of the turn the
+    model linked it to (`criteria_check`).
+
 Stdlib only beyond the modules above. Nothing here talks to agent_loop or
-Studio — see the lot report for what wiring either up would need.
+Studio directly: the loop reaches `verify_contract_link` through
+`contract_criteria.CriteriaBook.apply_links`.
 """
 from __future__ import annotations
 
@@ -122,6 +127,90 @@ def waive_criterion(criterion: Any, *, by: str, reason: str) -> CriterionVerdict
     return CriterionVerdict(_criterion_id(criterion), "waived",
                             waived_by=by, waived_reason=reason,
                             detail=f"waived by {by}: {reason}")
+
+
+#: VER-01 verdict state -> `contracts.task.ACCEPTANCE_STATES` name, for the
+#: contract criteria of a turn (src/contract_criteria.py).
+_CONTRACT_STATE = {"verified": "proven", "failed": "unmet", "not_verifiable": "not_applicable",
+                   "waived": "not_applicable", "pending": "pending"}
+
+
+def contract_state(verdict_state: str) -> str:
+    return _CONTRACT_STATE.get(str(verdict_state or ""), "pending")
+
+
+def _mentions(haystack: str, token: str) -> bool:
+    """`token` appears in `haystack` as a whole token: letters and digits may
+    not continue it on either side (an underscore or a dot may: a test named
+    `test_get_memory` mentions `get`)."""
+    token = (token or "").strip().lower()
+    if not token:
+        return False
+    import re as _re
+    return _re.search(r"(?<![A-Za-z0-9])" + _re.escape(token) + r"(?![A-Za-z0-9])", haystack) is not None
+
+
+def _subject_mentioned(haystack: str, subject: str) -> bool:
+    subject = (subject or "").strip()
+    if not subject:
+        return True
+    if " " not in subject:
+        return _mentions(haystack, subject)
+    # A case phrase ("missing argument"): any of its content words will do.
+    words = [w for w in subject.lower().split() if len(w) >= 4] or subject.lower().split()
+    return any(_mentions(haystack, w) for w in words)
+
+
+def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[str, Any]], *,
+                         last_mutation_seq: int = -1, strict: bool = True,
+                         test: str = "") -> CriterionVerdict:
+    """Does one tool call of the turn show this contract criterion?
+
+    The model names the call; this decides. `evidence_ok=True` only when:
+      * the call exists in this turn (`call` is not None);
+      * with `strict` (setting `agent_contract_criteria_strict_evidence`):
+        it ran after the turn's last change to the workspace (`seq` not
+        before `last_mutation_seq`: a check of code that changed afterwards
+        shows nothing about the code that is there now);
+        its command or output names the criterion's subject, when it has one
+        (a check of `put` is not a check of `get`); and mentions at least one
+        of the criterion's keys (its backtick literals, limit numbers, quoted
+        strings) - or, with none, one of its content words; a named `test`
+        must appear in it too.
+    The exit code is NOT required: a criterion about an error is shown by a
+    command that fails with that error. Anything short of that keeps the
+    criterion `pending` with the reason in `detail` - never `failed`, which
+    only the model's own admission (`verify_criterion(evidence_ok=False)`)
+    produces.
+    """
+    if call is None:
+        return verify_criterion(criterion, evidence_ok=None,
+                                detail="no tool call of this turn matches that reference")
+    ref = str(call.get("call_id") or "")
+    if not strict:
+        return verify_criterion(criterion, evidence_ok=True, evidence_refs=[ref], detail="call exists")
+    seq = int(call.get("seq") or 0)
+    if seq < int(last_mutation_seq):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="stale: the workspace changed after that call; run the check again")
+    hay = (str(call.get("command") or "") + "\n" + str(call.get("output") or "")).lower()
+    subject = str(criterion.get("subject") or "")
+    if subject and not _subject_mentioned(hay, subject):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail=f"that call does not mention `{subject}`; check this subject on its own")
+    if test and not (_mentions(hay, test.lower()) or test.lower() in hay
+                     or test.split("::")[-1].lower() in hay):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail=f"that call does not run or show `{test}`")
+    keys = [k for k in (criterion.get("keys") or []) if str(k).strip() and str(k) != subject]
+    words = [w for w in (criterion.get("words") or []) if str(w).strip()]
+    pool = keys or words
+    if pool and not any(_mentions(hay, str(k)) or (not str(k).isalnum() and str(k).lower() in hay)
+                        for k in pool):
+        shown = ", ".join(str(k) for k in pool[:6])
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail=f"that call mentions none of the criterion's terms ({shown})")
+    return verify_criterion(criterion, evidence_ok=True, evidence_refs=[ref], detail="shown by " + ref)
 
 
 def criteria_summary(verdicts: Iterable[CriterionVerdict]) -> Dict[str, Any]:
