@@ -65,6 +65,13 @@ TIME_BUDGET_S = 5.0
 #: More than this fraction of the criteria marked not_applicable and those
 #: claims no longer settle anything: they stay open for the audit and gate.
 NA_FRACTION = 0.25
+#: ...and more than this many: a small statement may legitimately have a few.
+NA_FLOOR = 5
+#: The guidance given whenever the rule above applies.
+NA_MASS_GUIDANCE = (
+    "More than a quarter of the requirements are claimed not applicable, so those claims are kept open: more "
+    "not-applicable reasons will not settle them. Settle each one with proof (criteria_check with the call_id or "
+    "command of a call whose output shows it) or mark it unmet.")
 #: Books older than this are pruned when the scope is listed.
 BOOK_MAX_AGE_S = 30 * 24 * 3600
 #: Calls kept per turn for linking (oldest dropped first).
@@ -114,9 +121,25 @@ _COMPARE_RE = re.compile(
     re.I,
 )
 _TICK_RE = re.compile(r"`([^`\n]{1,80})`")
+#: A process exit status (0-255): "exits with status 2", "exit code 1",
+#: "returns exit code 3", "sale con código 1".
 _EXIT_RE = re.compile(
-    r"\b(?:exits?|exit\s+(?:code|status)|returns?\s+(?:exit\s+)?(?:code|status)|(?:sale|termina)\s+con)\s+"
+    r"\b(?:exits?|exit\s+(?:code|status)|returns?\s+exit\s+(?:code|status)|(?:sale|termina)\s+con)\s+"
     r"(?:with\s+)?(?:the\s+|el\s+)?(?:exit\s+)?(?:status|code|c[óo]digo|estado)?\s*(?:of\s+|de\s+)?(\d{1,3})\b",
+    re.I,
+)
+#: An HTTP status written in prose: "returns status 404", "HTTP 404",
+#: "status code 422", "answers status 404", "código HTTP 404".
+_HTTP_RE = re.compile(
+    r"(?<!exit )\b(?:returns?\s+(?:status|code)|answers?\s+(?:with\s+)?status|status(?:\s+code)?|HTTP(?:\s+status)?|"
+    r"responde\s+con(?:\s+(?:el\s+)?(?:estado|c[óo]digo))?|c[óo]digo\s+HTTP)\s*(?:of\s+|de\s+)?([1-5]\d\d)\b",
+    re.I,
+)
+#: An explicit ordering or precedence rule: shown early, never demoted.
+_ORDER_RE = re.compile(
+    r"\b(?:in\s+(?:this|that|the\s+following|the\s+given|file|document)\s+order|in\s+order|first\b[^.;]{0,120}\bthen\b|"
+    r"order\s+of\s+(?:checks|precedence|evaluation)|precedence|takes\s+priority|wins\b|the\s+first\s+(?:failing|failure|"
+    r"one|match)|en\s+(?:este|ese|el\s+siguiente)\s+orden|primero\b[^.;]{0,120}\b(?:luego|despu[ée]s)\b|prioridad|gana\b)",
     re.I,
 )
 _ERROR_CODE_RE = re.compile(
@@ -326,6 +349,8 @@ def _sentences(text: str) -> List[Tuple[int, str]]:
                     cut = True
                 elif ch == ":":
                     cut = bool(nxt) and (nxt.isupper() or nxt == "`")
+                elif ch == "." and re.search(r"(?:\be\.g|\bi\.e|\betc|\bvs|\bcf)$", text[max(0, i - 4):i], re.I):
+                    cut = False                           # an abbreviation, not the end of a sentence
                 else:
                     cut = bool(nxt) and (nxt.isupper() or nxt.isdigit() or nxt in "`\"'(¿¡")
                 if cut:
@@ -395,13 +420,13 @@ def is_normative(text: str, section: str = "") -> bool:
     if len(s) < 12 or s.endswith("?") or s.startswith("¿"):
         return False
     return bool(_NORMATIVE_RE.search(s) or _has_limit(s) or _ERROR_CODE_RE.search(s) or _EXIT_RE.search(s)
-                or _has_format(s) or _imperative(s, section))
+                or _HTTP_RE.search(s) or _ORDER_RE.search(s) or _has_format(s) or _imperative(s, section))
 
 
 def _kind(text: str) -> str:
     if _has_limit(text) or re.search(r"\b(?:at\s+most|at\s+least|como\s+m[áa]ximo|al\s+menos)\b", text, re.I):
         return "limit"
-    if _ERROR_CODE_RE.search(text) or _EXIT_RE.search(text):
+    if _ERROR_CODE_RE.search(text) or _EXIT_RE.search(text) or _HTTP_RE.search(text):
         return "error_code"
     if _has_format(text):
         return "format"
@@ -409,12 +434,16 @@ def _kind(text: str) -> str:
 
 
 def _priority(text: str, kind: str, subject: Optional[str]) -> int:
-    """Exposure priority (higher first): negative or universal rules, then
-    limits, codes and formats, then anything with a literal; a descriptive
-    `within`/`only` with nothing concrete ranks low."""
+    """Exposure priority (higher first): negative or universal rules and
+    explicit ordering/precedence rules, then limits, codes and formats, then
+    anything with a literal; a descriptive `within`/`only` with nothing
+    concrete ranks low - unless it states an order or uses a strong modal."""
     score = 0
     strong = bool(_STRONG_RE.search(text))
+    ordering = bool(_ORDER_RE.search(text))
     if strong:
+        score += 3
+    if ordering:
         score += 3
     if kind != "behaviour":
         score += 2
@@ -422,8 +451,8 @@ def _priority(text: str, kind: str, subject: Optional[str]) -> int:
         score += 1
     if _MODAL_RE.search(text):
         score += 1
-    if (kind == "behaviour" and not subject and "`" not in text and not _MODAL_RE.search(text)
-            and _WEAK_ONLY_RE.search(text) and not re.search(r"\b(?:never|nunca|exactly|always)\b", text, re.I)):
+    if (kind == "behaviour" and not subject and not ordering and not strong and "`" not in text
+            and not _MODAL_RE.search(text) and _WEAK_ONLY_RE.search(text)):
         score -= 2
     return score
 
@@ -459,22 +488,31 @@ def _words(text: str, limit: int = 8) -> List[str]:
     return out
 
 
+_JUNK_DOTTED_RE = re.compile(r"^(?:e\.g|i\.e|etc|vs|cf|a\.k\.a|n\.b)$", re.I)
+
+
 def _keys(text: str) -> List[str]:
     """Distinctive tokens a check of this criterion is expected to show:
     backtick literals, quoted strings, dotted/snake names. Numbers are NOT
-    keys on their own (see `_limits`)."""
+    keys on their own (see `_limits`); format and command literals become
+    matchers instead (see `_literal_matcher`)."""
     out: List[str] = []
 
     def add(tok: str) -> None:
         tok = (tok or "").strip()
-        if tok and tok not in out and len(out) < 24:
+        # A key with no letter or digit (`&`, `|`, `...`) would match almost
+        # any output.
+        if tok and tok not in out and len(out) < 24 and re.search(r"[A-Za-z0-9]", tok):
             out.append(tok)
 
     for t in _TICK_RE.findall(text):
         add(t)
-    for t in re.findall(r'"([^"\n]{2,40})"', text):
+    for t in re.findall(r'"([A-Za-z_][\w .:/-]{1,39})"', text):
         add(t)
     for t in re.findall(r"\b[A-Za-z][A-Za-z0-9]*(?:[_.-][A-Za-z0-9]+)+\b", _TICK_RE.sub(" ", text)):
+        parts = re.split(r"[_.-]", t)
+        if _JUNK_DOTTED_RE.match(t) or all(len(p) <= 1 for p in parts):
+            continue
         add(t)
     return out
 
@@ -489,7 +527,181 @@ def _limits(text: str) -> List[Dict[str, str]]:
 
 
 def _exit_codes(text: str) -> List[int]:
-    return sorted({int(m.group(1)) for m in _EXIT_RE.finditer(text)})[:4]
+    return sorted({int(m.group(1)) for m in _EXIT_RE.finditer(text) if int(m.group(1)) <= 255})[:4]
+
+
+def _http_statuses(text: str) -> List[int]:
+    return sorted({int(m.group(1)) for m in _HTTP_RE.finditer(text)})[:4]
+
+
+# -- literals that describe a form rather than a value ----------------------
+
+_HTTP_METHOD_RE = re.compile(r"^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/\S*)")
+_PYTHON_CMD_RE = re.compile(r"^(?:<python>|python[0-9.]*|py)\s+(?:-m\s+\S+|\S+\.py)", re.I)
+_PLACEHOLDER_TOKEN_RE = re.compile(r"^(?:<[^<>]+>|\[.*\]|\.\.\.|…|[A-Z][A-Z0-9_]*(?:\.\.\.)?)$")
+_FORMAT_HINT_RE = re.compile(r"YYYY|HH:MM|hh:mm|MM-DD|DD/MM|\.\.\.Z|…Z|<[^<>]+>")
+_REGEX_HINT_RE = re.compile(r"\[[^\]]*(?:0-9|a-z|A-Z|\\d)[^\]]*\]|\\[dws]")
+_UNSAFE_REGEX_RE = re.compile(r"\([^()]*[+*][^()]*\)[+*{]|\\[1-9]")
+_EXAMPLE_INSTANT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})?)?$")
+
+
+def _command_tokens(lit: str) -> Optional[List[str]]:
+    """The fixed tokens of a command template (`python -m ledger <command>
+    ...`, `ingest DB FILE...`, `report --format csv`, `--tz`): placeholders
+    and optional parts dropped. None when `lit` is not a command template."""
+    s = lit.strip()
+    toks = s.split()
+    if not toks:
+        return None
+    is_cmd = bool(_PYTHON_CMD_RE.match(s))
+    if not is_cmd and re.match(r"^--?[a-z][\w-]*$", toks[0]) and len(toks) <= 3:
+        is_cmd = True                                    # an option: `--tz`, `--from`
+    if (not is_cmd and re.match(r"^[a-z][a-z0-9_-]*$", toks[0]) and len(toks) >= 2
+            and any(_PLACEHOLDER_TOKEN_RE.match(t) or t.startswith("--") for t in toks[1:])):
+        is_cmd = True
+    if not is_cmd:
+        return None
+    s = re.sub(r"\[[^\]]*\]", " ", s)                   # optional parts
+    fixed = []
+    for t in s.split():
+        if _PLACEHOLDER_TOKEN_RE.match(t) or t.startswith("<"):
+            continue
+        t = t.rstrip(".…")
+        if t and t not in fixed:
+            fixed.append(t)
+    return fixed or None
+
+
+def _format_regex(lit: str) -> Optional[str]:
+    """A regex for the form a literal describes, to be matched against output:
+    `YYYY-MM-DD` -> `\\d{4}-\\d{2}-\\d{2}`, `...Z` -> an instant ending in Z,
+    `<series_id>:<YYYY-MM-DD>` -> `\\S+?:\\d{4}-\\d{2}-\\d{2}`, an example
+    instant with its digits generalised, or a literal that is itself a safe
+    regex (`-?[0-9]+`). None for anything else."""
+    s = lit.strip()
+    if not s or len(s) > 120:
+        return None
+    if _REGEX_HINT_RE.search(s) and not _FORMAT_HINT_RE.search(s):
+        if _UNSAFE_REGEX_RE.search(s):
+            return None
+        try:
+            re.compile(s)
+        except re.error:
+            return None
+        return r"(?<![\w.])(?:" + s + r")(?![\w])"
+    if _EXAMPLE_INSTANT_RE.match(s):
+        return r"(?<!\d)" + re.sub(r"\d", r"\\d", re.escape(s)) + r"(?!\d)"
+    if not _FORMAT_HINT_RE.search(s):
+        return None
+    out: List[str] = []
+    fixed = 0
+    i, n = 0, len(s)
+    while i < n:
+        if s.startswith("...Z", i) or s.startswith("…Z", i):
+            out.append(r"\d{2}Z")
+            fixed += 1
+            i += 4 if s[i] == "." else 2
+        elif s[i] == "<" and s.find(">", i) > i:
+            j = s.find(">", i)
+            inner = _format_regex(s[i + 1:j]) if _FORMAT_HINT_RE.search(s[i + 1:j]) else None
+            if inner:
+                out.append(inner.replace(r"(?<!\d)", "").replace(r"(?!\d)", ""))
+                fixed += 1
+            else:
+                out.append(r"\S+?")
+            i = j + 1
+        elif s.startswith("YYYY", i):
+            out.append(r"\d{4}")
+            fixed += 1
+            i += 4
+        elif s[i:i + 2] in ("MM", "DD", "HH", "SS", "hh", "mm", "ss"):
+            out.append(r"\d{2}")
+            fixed += 1
+            i += 2
+        elif s.startswith("...", i) or s[i] == "…":
+            out.append(r".*?")
+            i += 3 if s[i] == "." else 1
+        elif s[i].isspace():
+            out.append(r"\s+")
+            while i < n and s[i].isspace():
+                i += 1
+        else:
+            out.append(re.escape(s[i]))
+            if s[i].isalnum():
+                fixed += 1
+            i += 1
+    if fixed == 0:
+        return None
+    pat = "".join(out)
+    if pat.startswith(r"\d"):
+        pat = r"(?<!\d)" + pat
+    if pat.endswith("}") or pat.endswith("Z"):
+        pat = pat + r"(?!\d)"
+    return pat
+
+
+def _json_keys(lit: str) -> Optional[List[str]]:
+    s = lit.strip()
+    if not s.startswith("{"):
+        return None
+    keys = []
+    for k in re.findall(r"[\"']?([A-Za-z_][\w-]*)[\"']?\s*:", s):
+        if k not in keys:
+            keys.append(k)
+    return keys[:8] or None
+
+
+def _literal_matcher(lit: str) -> Optional[Dict[str, Any]]:
+    """How a literal is shown when it describes a FORM, not a value:
+    a route or command template by the command that ran it (the command
+    demonstrates the invocation), a JSON shape by its keys in the output, a
+    date/instant/regex format by a regex over the output."""
+    s = (lit or "").strip()
+    if not s:
+        return None
+    m = _HTTP_METHOD_RE.match(s)
+    if m:
+        path = re.split(r"[?<{]|\.\.\.|…", m.group(1))[0].rstrip("/") or "/"
+        return {"on": "command", "tokens": [path], "src": s}
+    toks = _command_tokens(s)
+    if toks:
+        return {"on": "command", "tokens": toks, "src": s}
+    keys = _json_keys(s)
+    if keys:
+        return {"on": "output", "json": keys, "src": s}
+    pat = _format_regex(s)
+    if pat:
+        return {"on": "output", "re": pat, "src": s}
+    return None
+
+
+def _matchers(text: str) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for t in _TICK_RE.findall(text):
+        m = _literal_matcher(t)
+        if m and all(x["src"] != m["src"] for x in out) and len(out) < 8:
+            out.append(m)
+    return out
+
+
+def matcher_shown(matcher: Dict[str, Any], *, output: str, command: str) -> bool:
+    """Does a call show a form matcher (see `_literal_matcher`)?"""
+    try:
+        if matcher.get("on") == "command":
+            cmd = command or ""
+            # A route path follows a host (`http://127.0.0.1:8000/api/x`); other
+            # tokens stand on their own.
+            return all(re.search(("" if str(t).startswith("/") else r"(?<![\w-])") + re.escape(str(t))
+                                 + r"(?![\w-])", cmd, re.I)
+                       for t in matcher.get("tokens") or [])
+        if matcher.get("json"):
+            return all(re.search(r"[\"']?" + re.escape(str(k)) + r"[\"']?\s*:", output or "")
+                       for k in matcher["json"])
+        if matcher.get("re"):
+            return re.search(str(matcher["re"]), (output or "")[:20000]) is not None
+    except re.error:
+        return False
+    return False
 
 
 def _compound_subjects(sentence: str) -> List[str]:
@@ -541,21 +753,29 @@ class _Basis:
     """What one sentence says, computed once and shared by every criterion
     expanded from it (the subjects of a compound list, the cases of a list)."""
 
-    __slots__ = ("text", "kind", "keys", "words", "limits", "exits")
+    __slots__ = ("text", "kind", "keys", "words", "limits", "exits", "statuses", "matchers")
 
     def __init__(self, text: str) -> None:
         self.text = text
         self.kind = _kind(text)
-        self.keys = _keys(text)
+        self.matchers = _matchers(text)
+        forms = {m["src"] for m in self.matchers}
+        # A literal that describes a form is shown through its matcher, never
+        # verbatim: `YYYY-MM-DD` does not occur in a correct program's output.
+        self.keys = [k for k in _keys(text) if k not in forms]
         self.words = _words(text)
         self.limits = _limits(text)
         self.exits = _exit_codes(text)
+        self.statuses = _http_statuses(text)
 
 
 def _criterion(quote: str, basis: _Basis, *, line: int, section: str, source: str,
                subject: Optional[str] = None, siblings: Sequence[str] = ()) -> Dict[str, Any]:
     skip = {s for s in siblings if s and s != subject}
-    keys = ([subject] if subject else []) + [k for k in basis.keys if k not in skip and k != subject]
+    subject_matcher = _literal_matcher(subject) if subject else None
+    keys = ([subject] if subject and not subject_matcher else []) + [
+        k for k in basis.keys if k not in skip and k != subject]
+    matchers = [m for m in basis.matchers if m["src"] not in skip and m["src"] != subject]
     return {
         "id": "",
         "quote": _clip(quote, subject),
@@ -569,6 +789,9 @@ def _criterion(quote: str, basis: _Basis, *, line: int, section: str, source: st
         "words": list(basis.words),
         "limits": list(basis.limits),
         "exits": list(basis.exits),
+        "statuses": list(basis.statuses),
+        "matchers": matchers,
+        "subject_matcher": subject_matcher,
         "state": "pending",
         "evidence_refs": [],
         "detail": "",
@@ -710,12 +933,85 @@ def is_echo_only(tool: str, command: str) -> bool:
     if not cmd:
         return False
     if tool == "python":
-        lines = [ln.strip() for ln in cmd.splitlines() if ln.strip() and not ln.strip().startswith("#")]
-        return bool(lines) and all(ln.startswith("print(") for ln in lines)
+        return _print_only_code(cmd)
     # A here-doc body is data, not steps.
     cmd = re.sub(r"(<<-?\s*['\"]?(\w+)['\"]?)[^\n]*\n.*?^\s*\2\s*$", r"\1", cmd, flags=re.S | re.M)
-    steps = [s for s in re.split(r"&&|\|\||;|\n|\|", cmd) if s.strip()]
-    return bool(steps) and all(_ECHO_RE.match(s) for s in steps)
+    # Separators outside quotes only: `python -c "print('a'); print('b')"` is one step.
+    steps = [s for s in _split_steps(cmd) if s.strip()]
+    if not steps:
+        return False
+    # The first step prints literal text; every later step only carries or
+    # stores it (`| tee out.txt`, `| Out-File`, `> log`, `| cat`).
+    return _echo_step(steps[0]) and all(_echo_step(s) or _CARRIER_RE.match(s) for s in steps[1:])
+
+
+#: Steps that only pass on or store what an earlier step printed.
+_CARRIER_RE = re.compile(
+    r"^\s*(?:tee-object|tee|cat|more|less|head|tail|sort|uniq|tr|out-file|set-content|add-content|out-string|out-host|"
+    r"out-null|format-table|format-list|select-object|write-output|write-host)\b(?![\w.-]*\s*\()",
+    re.I,
+)
+_INLINE_CODE_RE = re.compile(
+    r"^\s*(?:python[0-9.]*(?:\.exe)?|py)\s+-c\s+(['\"])(.*)\1\s*$|^\s*node(?:\.exe)?\s+-e\s+(['\"])(.*)\3\s*$",
+    re.S | re.I,
+)
+
+
+def _split_steps(cmd: str) -> List[str]:
+    parts: List[str] = []
+    buf: List[str] = []
+    quote = ""
+    i = 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+            buf.append(ch)
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        if cmd.startswith("&&", i) or cmd.startswith("||", i):
+            parts.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        if ch in ";|\n":
+            parts.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    parts.append("".join(buf))
+    return parts
+
+
+_LITERAL_PRINT_RE = re.compile(
+    r"""^(?:print|console\.log)\s*\(\s*(?:(?:[rbuf]?'[^'{}\n]*'|[rbuf]?"[^"{}\n]*"|-?\d+(?:\.\d+)?)\s*,?\s*)*\)\s*$""",
+    re.I,
+)
+
+
+def _print_only_code(code: str) -> bool:
+    """A code snippet made only of print()/console.log() calls of literal
+    strings or numbers (a print of a computed value is a real check)."""
+    stmts = [s.strip() for s in re.split(r"[;\n]", code) if s.strip() and not s.strip().startswith(("#", "//"))]
+    return bool(stmts) and all(_LITERAL_PRINT_RE.match(s) for s in stmts)
+
+
+def _echo_step(step: str) -> bool:
+    s = step.strip()
+    if _ECHO_RE.match(s):
+        return True
+    m = _INLINE_CODE_RE.match(s)
+    if m:
+        return _print_only_code(m.group(2) if m.group(2) is not None else (m.group(4) or ""))
+    return False
 
 
 def _result_text(result: Any) -> str:
@@ -790,6 +1086,10 @@ def _coerce(c: Dict[str, Any]) -> Dict[str, Any]:
         "words": [str(w) for w in _list(c.get("words"))],
         "limits": [d for d in _list(c.get("limits")) if isinstance(d, dict)],
         "exits": [int(x) for x in _list(c.get("exits")) if isinstance(x, int) and not isinstance(x, bool)],
+        "statuses": [int(x) for x in _list(c.get("statuses")) if isinstance(x, int) and not isinstance(x, bool)],
+        "matchers": [m for m in _list(c.get("matchers")) if isinstance(m, dict) and m.get("on") in ("output", "command")],
+        "subject_matcher": (c.get("subject_matcher") if isinstance(c.get("subject_matcher"), dict)
+                            and c["subject_matcher"].get("on") in ("output", "command") else None),
         "state": state,
         "evidence_refs": [str(r) for r in _list(c.get("evidence_refs"))],
         "detail": str(c.get("detail") or ""),
@@ -889,11 +1189,12 @@ class CriteriaBook:
         return None
 
     def na_mass(self) -> bool:
-        """More than NA_FRACTION of the criteria claimed not applicable: those
-        claims no longer settle anything."""
+        """More than NA_FRACTION of the criteria (and more than NA_FLOOR of
+        them) claimed not applicable: those claims no longer settle anything;
+        only proof or `unmet` moves them."""
         total = len(self.criteria)
         na = sum(1 for c in self.criteria if c.get("state") == "not_applicable")
-        return total > 0 and na > NA_FRACTION * total
+        return total > 0 and na > NA_FRACTION * total and na > NA_FLOOR
 
     def open(self) -> List[Dict[str, Any]]:
         """Criteria still needing evidence: pending, unmet, and - when the
@@ -1178,9 +1479,8 @@ class CriteriaBook:
         missing = len(rest) - ni
         if claimed:
             c_lines, nc = self._fill(claimed, 600, 0)
-            parts.append(f"Claimed not applicable ({len(claimed)}, more than a quarter of the requirements: "
-                         "each still needs evidence or a real reason): " + ", ".join(c_lines)
-                         + (" ..." if nc < len(claimed) else ""))
+            parts.append(f"Claimed not applicable ({len(claimed)}): " + ", ".join(c_lines)
+                         + (" ..." if nc < len(claimed) else "") + ". " + NA_MASS_GUIDANCE)
         if missing > 0 or self.dropped:
             extra = f"{missing} more open were not listed" if missing > 0 else ""
             if self.dropped:
@@ -1205,8 +1505,9 @@ class CriteriaBook:
                 f"{len(rows)} requirements of the task statement still have no accepted evidence"
                 + (f" ({len(fresh)} of them not listed in the audit, shown first)" if fresh and seen else "") + ":\n")
         foot = ("\nCheck each one with a tool now and link it with `criteria_check` (a link the harness did not "
-                "accept says why), or mark it unmet / not_applicable with a reason. This is the last reminder; "
-                "then give your final answer.")
+                "accept says why), or mark it unmet / not_applicable with a reason. "
+                + (NA_MASS_GUIDANCE + " " if self.na_mass() else "")
+                + "This is the last reminder; then give your final answer.")
         lines, n = self._fill(fresh + seen, max(400, max_chars - len(head) - len(foot) - 120), 120)
         more = f"\n... {len(rows) - n} more: criteria_check {{\"list\": true}}." if n < len(rows) else ""
         return (head + "\n".join(lines) + more + foot)[:max_chars]
@@ -1252,6 +1553,7 @@ class CriteriaBook:
                         c["state"], c["detail"] = t["state"], t.get("detail", "")
                         c["evidence_refs"] = list(t.get("evidence_refs") or [])
                         c["updated_at"] = t.get("updated_at")
+            _prune(d, keep=os.path.basename(path))
             fd, tmp = tempfile.mkstemp(prefix=".book-", suffix=".tmp", dir=d)
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(), f, ensure_ascii=False, indent=1)
@@ -1276,6 +1578,26 @@ def _book_dir(scope: str) -> str:
     # as a plan.
     from src import plan_tracker as _pt
     return os.path.join(_pt._scope_dir(scope), "criteria")
+
+
+def _prune(d: str, *, keep: str = "") -> None:
+    """Delete books (and stray temp files) older than BOOK_MAX_AGE_S in `d`.
+    Runs on every save and every resume, so a scope that never resumes is
+    pruned too."""
+    try:
+        names = os.listdir(d)
+    except Exception:  # noqa: BLE001
+        return
+    now = time.time()
+    for n in names:
+        if n == keep or not (n.endswith(".json") or n.endswith(".tmp")):
+            continue
+        p = os.path.join(d, n)
+        try:
+            if now - os.path.getmtime(p) > BOOK_MAX_AGE_S:
+                os.remove(p)
+        except OSError:
+            pass
 
 
 def _book_path(scope: str, key: str) -> str:

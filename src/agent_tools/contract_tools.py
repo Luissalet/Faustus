@@ -100,7 +100,7 @@ def _counts_line(book) -> str:
     open_ids = [c["id"] for c in book.open()]
     tail = (" Open: " + ", ".join(open_ids[:30]) + (" ..." if len(open_ids) > 30 else "")) if open_ids else ""
     if book.na_mass():
-        tail += (" More than a quarter are claimed not applicable, so those claims count as open: give them "
-                 "evidence or a real reason each.")
+        from src.contract_criteria import NA_MASS_GUIDANCE
+        tail += " " + NA_MASS_GUIDANCE
     return (f"{n['proven']} proven, {n['pending']} pending, {n['unmet']} unmet, "
             f"{n['not_applicable']} not applicable of {n['total']}.{tail}")

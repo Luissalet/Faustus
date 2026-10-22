@@ -184,18 +184,27 @@ def test_not_applicable_needs_a_reason_and_unmet_is_taken_as_said():
 def test_mass_not_applicable_keeps_the_claims_open():
     book = _book()
     ids = [c["id"] for c in book.criteria]
-    quarter = int(len(ids) * cc.NA_FRACTION)
-    book.apply_links([{"id": i, "status": "not_applicable", "reason": "covered"} for i in ids[:quarter]])
+    assert len(ids) >= 10
+    # five claims on a ten-criterion statement: over a quarter, but within the floor
+    book.apply_links([{"id": i, "status": "not_applicable", "reason": "covered"} for i in ids[:cc.NA_FLOOR]])
     assert not book.na_mass()
-    book.apply_links([{"id": ids[quarter], "status": "not_applicable", "reason": "covered"}])
+    book.apply_links([{"id": ids[cc.NA_FLOOR], "status": "not_applicable", "reason": "covered"}])
     assert book.na_mass()
+    claimed = ids[:cc.NA_FLOOR + 1]
     open_ids = {c["id"] for c in book.open()}
-    assert set(ids[:quarter + 1]) <= open_ids
+    assert set(claimed) <= open_ids
     summary = book.summary()
-    assert summary["mass_not_applicable"] and summary["claimed_not_applicable"] == ids[:quarter + 1]
+    assert summary["mass_not_applicable"] and summary["claimed_not_applicable"] == claimed
     assert summary["open_total"] == len(ids)
     note = book.audit_note("BASE")
     assert "Claimed not applicable" in note and ids[0] in note
+    # the guidance says exactly what settles them: proof or unmet, not more reasons
+    for text in (note, book.gap_note(), _run({"list": True}, book)["output"]):
+        assert "kept open" in text and "will not settle them" in text and "or mark it unmet" in text
+    _call(book, "c1", "python -m arc unpack damaged.arc", '{"error": {"code": "corrupt"}}', 1)
+    corrupt = _id(book, needle="`corrupt`")
+    if corrupt in claimed:
+        assert book.apply_links([{"id": corrupt, "call_id": "c1"}])[0]["state"] == "proven"
 
 
 def test_the_model_cannot_force_proven_through_any_field():
@@ -390,3 +399,226 @@ def test_plan_done_does_not_flag_files_of_a_task_started_in_an_earlier_turn(trac
     out = asyncio.run(PlanDoneTool().execute(
         json.dumps({"id": tracker["tasks"][0]["id"], "evidence": "ran pytest -q, 4 passed"}), ctx))
     assert out.get("sealed") and "unverified_files" not in out
+
+
+# -- re-review fixes (R1-R6) ------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+FORMS = """# Forms
+
+- Every date in the output must use the `YYYY-MM-DD` form.
+- Instants are returned in the canonical `...Z` form, e.g. `2026-01-02T03:04:05Z`.
+- Times are written `HH:MM`.
+- Each occurrence has the id `<series_id>:<YYYY-MM-DD>`.
+- A quantity must match `-?[0-9]+`.
+- Errors must be printed as `{"error": {"code": "<code>", "message": "<text>"}}`.
+- The tool is run as `python -m agenda --db <file> <command> ...` and must print one JSON document.
+- `cancel-series ID` must print `{"series": ..., "cancelled": <n>}`.
+- `GET /api/report?by=...&tz=...` must answer the same JSON as the CLI.
+- A missing item returns status 404 with the error document.
+"""
+
+
+def _forms():
+    book = cc.CriteriaBook.from_message(FORMS, min_chars=0)
+    assert book is not None
+    return book
+
+
+def _proves(book, needle, command, output, exit_code=0, tool="bash"):
+    cid = _id(book, needle=needle)
+    _call(book, "x" + cid, command, output, exit_code, tool=tool)
+    return book.apply_links([{"id": cid, "call_id": "x" + cid}])[0]
+
+
+@pytest.mark.parametrize("needle,command,output", [
+    ("`YYYY-MM-DD` form", "python -m agenda --db a.db list", "2026-10-22 dentist\n2026-10-23 gym"),
+    ("canonical `...Z`", "python -m agenda --db a.db get b1", '{"start": "2026-10-22T08:00:00Z"}'),
+    ("written `HH:MM`", "python -m agenda --db a.db slots", '{"slots": ["09:00", "09:30"]}'),
+    ("`<series_id>:<YYYY-MM-DD>`", "python -m agenda --db a.db bookings", '{"id": "s1:2026-04-06", "status": "x"}'),
+    ("`-?[0-9]+`", "python -m ledger report d.db", '{"quantity": -3}'),
+    ("Errors must be printed", "python -m agenda --db a.db get zz",
+     '{"error": {"code": "not_found", "message": "no such booking"}}'),
+    ("python -m agenda --db", "python -m agenda --db a.db resources", '{"items": []}'),
+    ("GET /api/report", 'curl -s "http://127.0.0.1:8000/api/report?by=day&tz=UTC"', '{"rows": []}'),
+])
+def test_form_criteria_are_proven_by_real_output_or_the_command_that_ran(needle, command, output):
+    row = _proves(_forms(), needle, command, output)
+    assert row["state"] == "proven", row
+
+
+@pytest.mark.parametrize("needle,command,output", [
+    ("`YYYY-MM-DD` form", "python -m agenda --db a.db list", "22/10/2026 dentist"),
+    ("canonical `...Z`", "python -m agenda --db a.db get b1", '{"start": "2026-10-22T08:00:00+02:00"}'),
+    ("`<series_id>:<YYYY-MM-DD>`", "python -m agenda --db a.db bookings", '{"id": "s1-20261022"}'),
+    ("Errors must be printed", "python -m agenda --db a.db get zz", "Traceback (most recent call last)"),
+    ("GET /api/report", 'curl -s "http://127.0.0.1:8000/api/items"', '{"rows": []}'),
+])
+def test_form_criteria_are_not_proven_by_output_of_another_form(needle, command, output):
+    assert _proves(_forms(), needle, command, output)["state"] == "pending"
+
+
+def test_a_command_template_subject_is_shown_by_the_command_that_ran():
+    book = _forms()
+    cid = _id(book, subject="cancel-series ID") if any(c["subject"] for c in book.criteria) else None
+    if cid is None:                                    # one criterion for the line, no compound subject
+        cid = _id(book, needle="`cancel-series ID`")
+    _call(book, "c1", "python -m agenda --db a.db cancel-series s1", '{"series": "s1", "cancelled": 3}')
+    assert book.apply_links([{"id": cid, "call_id": "c1"}])[0]["state"] == "proven"
+
+
+def test_echoing_a_form_is_still_not_evidence():
+    book = _forms()
+    for cmd, tool in (('echo "2026-10-22"', "bash"), ("python -c \"print('2026-10-22')\"", "bash")):
+        assert _proves(book, "`YYYY-MM-DD` form", cmd, "2026-10-22", tool=tool)["state"] == "pending"
+
+
+def test_junk_dotted_keys_are_dropped():
+    crit, _ = cc.extract("Instants use the canonical `...Z` form, e.g. `2026-01-02T03:04:05Z`, i.e. UTC.")
+    assert not {"e.g", "i.e"} & set(crit[0]["keys"])
+
+
+@pytest.mark.parametrize("output", ["HTTP/1.1 404 Not Found\r\nContent-Type: application/json", "404",
+                                    '{"status": 404}', "status_code=404"])
+def test_an_http_status_in_prose_is_matched_in_the_output(output):
+    book = _forms()
+    c = book.get(_id(book, needle="returns status 404"))
+    assert c["statuses"] == [404] and c["exits"] == []
+    _call(book, "c1", "curl -i http://127.0.0.1:8000/api/items/zz", output)
+    assert book.apply_links([{"id": c["id"], "call_id": "c1"}])[0]["state"] == "proven"
+
+
+def test_an_http_status_is_not_an_exit_code_and_exit_statuses_stop_at_255():
+    crit, _ = cc.extract("The CLI exits with status 2 on a usage error. The API returns status 422 on bad input.")
+    assert crit[0]["exits"] == [2] and crit[0]["statuses"] == []
+    assert crit[1]["exits"] == [] and crit[1]["statuses"] == [422]
+    crit, _ = cc.extract("It must exit with code 300 when nothing else applies.")
+    assert crit[0]["exits"] == []
+
+
+def test_a_passing_targeted_test_run_names_the_subject():
+    book = _book()
+    cid = _id(book, subject="pack")
+    _call(book, "c1", "python -m pytest -q tests/test_mem.py::test_pack_memory_under_64mb", "1 passed in 0.4s")
+    row = book.apply_links([{"id": cid, "call_id": "c1", "test": "tests/test_mem.py::test_pack_memory_under_64mb"}])[0]
+    assert row["state"] == "proven", row
+    # a failing run, or a test that names another subject, does not
+    other = _book()
+    _call(other, "c1", "python -m pytest -q tests/test_mem.py::test_pack_memory_under_64mb", "1 failed", 1)
+    assert other.apply_links([{"id": _id(other, subject="pack"), "call_id": "c1"}])[0]["state"] == "pending"
+    third = _book()
+    _call(third, "c1", "python -m pytest -q tests/test_mem.py::test_scan_memory_under_64mb", "1 passed")
+    assert third.apply_links([{"id": _id(third, subject="pack"), "call_id": "c1"}])[0]["state"] == "pending"
+
+
+@pytest.mark.parametrize("output", ["pack peak 31457280 bytes", "pack peak 30 MiB", "pack peak 0.03 GB",
+                                    "test_pack_peak_under_64mb PASSED"])
+def test_byte_measurements_in_any_unit_show_a_byte_limit(output):
+    book = _book()
+    _call(book, "c1", "python measure.py pack big.bin", output)
+    assert book.apply_links([{"id": _id(book, subject="pack"), "call_id": "c1"}])[0]["state"] == "proven"
+
+
+def test_a_subcommand_named_in_the_command_is_its_subject_but_terms_come_from_output():
+    book = _book()
+    cid = _id(book, subject="unpack")
+    _call(book, "c1", "python -m arc unpack big.arc out/", "ok")
+    assert book.apply_links([{"id": cid, "call_id": "c1"}])[0]["state"] == "pending"
+    _call(book, "c2", "python -m arc unpack big.arc out/", "peak RSS 12.5 MB")
+    assert book.apply_links([{"id": cid, "call_id": "c2"}])[0]["state"] == "proven"
+
+
+@pytest.mark.parametrize("command,tool", [
+    ('echo "pack peak 31 MB" | tee out.txt', "bash"),
+    ('echo pack peak 31 MB > out.txt && cat out.txt', "bash"),
+    ("python -c \"print('pack peak 31 MB')\"", "bash"),
+    ("python3 -c \"print('pack'); print('peak 31 MB')\"", "bash"),
+    ("node -e \"console.log('pack peak 31 MB')\"", "bash"),
+    ("Write-Output 'pack peak 31 MB' | Out-File o.txt", "powershell"),
+    ("Write-Output 'pack peak 31 MB' | Tee-Object o.txt", "powershell"),
+])
+def test_print_only_pipelines_are_not_evidence(command, tool):
+    assert cc.is_echo_only(tool, command)
+    book = _book()
+    _call(book, "c1", command, "pack peak 31 MB", tool=tool)
+    assert book.apply_links([{"id": _id(book, subject="pack"), "call_id": "c1"}])[0]["state"] == "pending"
+
+
+@pytest.mark.parametrize("command,tool", [
+    ("python -c \"import arc; print(arc.peak('pack'))\"", "bash"),
+    ("python -c \"print(open('log.txt').read())\"", "bash"),
+    ("python measure.py pack | tee out.txt", "bash"),
+    ("cat results.txt", "bash"),
+])
+def test_commands_that_compute_or_read_are_not_echo_only(command, tool):
+    assert not cc.is_echo_only(tool, command)
+
+
+def test_old_books_are_pruned_on_save_too(tracker_dir):
+    a = _book(scope="proj-f")
+    a.save()
+    path = cc._book_path("proj-f", a.key)
+    old = os.path.getmtime(path) - cc.BOOK_MAX_AGE_S - 10
+    os.utime(path, (old, old))
+    other = cc.CriteriaBook.from_message(SPEC + "\n- A second statement must differ.\n", min_chars=0, scope="proj-f")
+    other.save()
+    assert not os.path.exists(path)
+    assert os.path.exists(cc._book_path("proj-f", other.key))
+
+
+# -- format criteria of the series contracts, against what a correct run prints ---
+
+SERIES = Path(r"D:\LocalAI\research-inbox\sparks835\runtime-audit\resume-20261020")
+
+#: (job, quote fragment, command, output) - what a correct implementation runs
+#: and prints for each format criterion.
+REALISTIC = [
+    ("series21-job3-ledger", "runnable as `python -m ledger <command> ...`",
+     "python -m ledger report d.db --by day", '{"rows": []}'),
+    ("series21-job3-ledger", "`YYYY-MM-DDTHH:MM:SS` followed by `Z`",
+     "python -m ledger events d.db", '{"occurred_at": "2026-03-30T09:00:00+02:00"}'),
+    ("series21-job3-ledger", "`-?[0-9]+`, not zero", "python -m ledger events d.db", '{"quantity": -2}'),
+    ("series21-job3-ledger", "`[0-9]+(\\.[0-9]{1,4})?`", "python -m ledger events d.db", '{"unit_price": 12.5}'),
+    ("series21-job3-ledger", "`rates` prints", "python -m ledger rates d.db r.csv",
+     '{"accepted": 2, "duplicates": 1, "replaced": 0, "rejected": []}'),
+    ("series21-job3-ledger", "written `YYYY-MM-DD`", "python -m ledger report d.db --by day",
+     '{"rows": [{"day": "2026-03-30", "total": "10.00"}]}'),
+    ("series21-job3-ledger", "`GET /api/report?by=", 'curl -s "http://127.0.0.1:8765/api/report?by=day"', '{"rows": []}'),
+    ("series21-job1-agenda", "`<series_id>:<YYYY-MM-DD>`", "python -m agenda --db a.db bookings",
+     '{"records": [{"id": "s1:2026-03-30"}]}'),
+    ("series21-job1-agenda", "formatted exactly `YYYY-MM-DDTHH:MM:SSZ`", "python -m agenda --db a.db booking b1",
+     '{"start": "2026-03-30T07:00:00Z"}'),
+    ("series21-job1-agenda", "times `HH:MM`", "python -m agenda --db a.db resource r1", '{"opens": "09:00"}'),
+    ("series21-job1-agenda", "`cancel-series ID`", "python -m agenda --db a.db cancel-series s1",
+     '{"series": "s1", "cancelled": 4}'),
+    ("series21-job1-agenda", "The export document is", "python -m agenda --db a.db export",
+     '{"version": 1, "resources": [], "series": [], "bookings": []}'),
+    ("series21-job6-meter", "`tariff DB FILE...`", "python -m meter tariff m.db t.csv", '{"accepted": 1}'),
+    ("series21-job6-meter", "`HH:MM`, two digits each", "python -m meter tariffs m.db", '{"from": "00:00"}'),
+    ("series21-job6-meter", "(exactly these four keys)", "python -m meter ingest m.db a.csv",
+     '{"accepted": 3, "replaced": 0, "duplicates": 0, "rejected": []}'),
+    ("series21-job6-meter", "in UTC in the form `YYYY-MM-DDTHH:MM:SSZ`", "python -m meter meters m.db",
+     '{"meters": [{"readings": 3, "first_at": "2026-01-01T00:00:00Z", "last_at": "2026-01-02T00:00:00Z"}]}'),
+    ("series21-job7-tracker", "`project-add --id ID --name NAME --tz ZONE",
+     "python -m tracker --db t.db project-add --id P1 --name Demo --tz Europe/Madrid", '{"id": "P1"}'),
+    ("series21-job7-tracker", "`{version: 3, ...}` again", "python -m tracker --db t.db issue-update I1 --version 3",
+     '{"error": {"code": "stale_version", "message": "x"}}'),
+    ("series21-job7-tracker", "listings return", "python -m tracker --db t.db issues --limit 2",
+     '{"records": [], "next_cursor": null}'),
+    ("series21-job7-tracker", "every instant in the canonical form", "python -m tracker --db t.db export",
+     '{"version": 1, "issues": [{"created": "2026-01-01T00:00:00Z"}]}'),
+]
+
+
+@pytest.mark.parametrize("job,fragment,command,output", REALISTIC)
+def test_series_format_criteria_are_provable_by_a_correct_run(job, fragment, command, output):
+    path = SERIES / job / "TASK.md"
+    if not path.exists():
+        pytest.skip(f"{path} not available")
+    book = cc.CriteriaBook.from_message(path.read_text(encoding="utf-8"), min_chars=0)
+    rows = [c for c in book.criteria if fragment in c["quote"]]
+    assert rows, fragment
+    _call(book, "c1", command, output)
+    results = book.apply_links([{"id": c["id"], "call_id": "c1"} for c in rows])
+    assert any(r["state"] == "proven" for r in results), (fragment, results, [c["keys"] for c in rows])

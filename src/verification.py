@@ -161,11 +161,13 @@ def _subject_mentioned(haystack: str, subject: str) -> bool:
     return any(_mentions(haystack, w) for w in words)
 
 
-#: Units that name the same measure, for matching a limit against an output
-#: ("64 MiB" in the statement, "31 MB" in the output).
+#: Units that name the same measure, for matching a limit against an output.
+#: Every byte unit is one family (a measurement in bytes, KB or GiB shows a
+#: limit stated in MiB); time units are kept apart (`0.31s` is not `5 ms`).
+_BYTE_UNITS = ("b", "byte", "bytes", "kb", "kib", "kilobytes", "mb", "mib", "megabytes", "gb", "gib",
+               "gigabytes", "tb", "tib")
 _UNIT_ALIASES = (
-    ("b", "byte", "bytes"), ("kb", "kib", "kilobytes"), ("mb", "mib", "megabytes"), ("gb", "gib", "gigabytes"),
-    ("tb", "tib"), ("ms", "msec", "milliseconds", "millisecond"), ("us", "µs", "microseconds"),
+    _BYTE_UNITS, ("ms", "msec", "milliseconds", "millisecond"), ("us", "µs", "microseconds"),
     ("ns", "nanoseconds"), ("s", "sec", "secs", "second", "seconds", "segundo", "segundos"),
     ("min", "mins", "minute", "minutes", "minuto", "minutos"), ("h", "hr", "hrs", "hour", "hours", "hora", "horas"),
     ("%", "percent"),
@@ -183,13 +185,15 @@ def _unit_family(unit: str) -> Tuple[str, ...]:
 
 
 def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
-    """A limit is shown by a measurement in its unit (`31 MB` for "under 64
-    MiB", `12 ms` for "within 5 ms") or by its own number in a comparison
-    (`<= 64`, `under 64`) - never by the bare digits (`5 passed` is not "5 ms")."""
+    """A limit is shown by a measurement in its unit family (`31 MB` or
+    `31457280 bytes` for "under 64 MiB", `12 ms` for "within 5 ms", also
+    inside an identifier: `test_put_under_64mb`) or by its own number in a
+    comparison (`<= 64`, `under 64`) - never by the bare digits (`5 passed` is
+    not "5 ms")."""
     import re as _re
     num = str(limit.get("num") or "").strip()
     fam = [_re.escape(u) for u in _unit_family(str(limit.get("unit") or "")) if u]
-    if fam and _re.search(r"(?<![\w.])\d+(?:[.,]\d+)?\s?(?:" + "|".join(sorted(fam, key=len, reverse=True))
+    if fam and _re.search(r"(?<![A-Za-z0-9.])\d+(?:[.,]\d+)?[ _]?(?:" + "|".join(sorted(fam, key=len, reverse=True))
                           + r")(?![A-Za-z])", haystack, _re.I):
         return True
     if num and _re.search(r"(?:<=?|>=?|≤|≥|\b(?:under|below|above|over|max(?:imum)?|min(?:imum)?|limit|at most|"
@@ -199,27 +203,68 @@ def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
     return False
 
 
+def _status_shown(haystack: str, status: int) -> bool:
+    """An HTTP status in an output: a response line (`HTTP/1.1 404 Not
+    Found`), a `status: 404`/`status_code=404` field, a curl `-w
+    "%{http_code}"` line of its own, or the code followed by its reason
+    phrase."""
+    import re as _re
+    n = str(int(status))
+    return bool(_re.search(r"HTTP/\d(?:\.\d)?\s+" + n + r"\b", haystack, _re.I)
+                or _re.search(r"status(?:[_ ]?code)?[\"']?\s*[:=]\s*[\"']?" + n + r"\b", haystack, _re.I)
+                or _re.search(r"(?m)^\s*" + n + r"\s*$", haystack)
+                or _re.search(r"(?<!\d)" + n + r"\s+[A-Z][a-z]+(?:\s[A-Z][a-z]+)*", haystack))
+
+
+_TEST_ID_RE = None
+
+
+def _test_ids(command: str, output: str, named: str = "") -> List[str]:
+    """Test ids a call ran: `path::name` in its command or in `-v` output,
+    and the test named by the link when the command or output shows it."""
+    import re as _re
+    global _TEST_ID_RE
+    if _TEST_ID_RE is None:
+        _TEST_ID_RE = _re.compile(r"[\w./\\-]*::[\w\[\]\-.:]+")
+    ids = [t for t in _TEST_ID_RE.findall(command or "")]
+    ids += [m.group(1) for m in _re.finditer(r"(\S*::\S+)\s+PASSED", output or "")]
+    named = (named or "").strip()
+    if named and (named.lower() in (command or "").lower() or named.lower() in (output or "").lower()
+                  or named.split("::")[-1].lower() in (command or "").lower()):
+        ids.append(named)
+    return ids
+
+
 def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[str, Any]], *,
                          last_mutation_seq: int = -1, strict: bool = True,
                          test: str = "") -> CriterionVerdict:
     """Does one tool call of the turn show this contract criterion?
 
     The model names the call; this decides. `evidence_ok=True` only when:
-      * the call exists in this turn (`call` is not None) and is not a bare
-        `echo`/`printf`/`Write-Output`/`Write-Host`/here-doc (or a python
-        snippet of print() calls): printing your own claim proves nothing;
+      * the call exists in this turn (`call` is not None) and is not a
+        print-only command (`echo`/`printf`/`Write-Output`/`Write-Host`/a
+        here-doc, also piped into `tee`/`Out-File`/..., or `python -c`/
+        `node -e` that only prints literals): printing your own claim proves
+        nothing;
       * with `strict` (setting `agent_contract_criteria_strict_evidence`):
         it ran after the turn's last change to the workspace (`seq` not
-        before `last_mutation_seq`: a check of code that changed afterwards
-        shows nothing about the code that is there now);
-        its OUTPUT (never the command text, which only locates the call)
-        names the criterion's subject, when it has one (a check of `put` is
-        not a check of `get`); and shows at least one of the criterion's
-        terms: a key (backtick literal, quoted string, dotted/snake name), a
-        limit (a measurement in its unit, or its number in a comparison - not
-        bare digits), or the exit status it names (the call's exit code) -
-        or, with none of those, one of its content words; a named `test`
-        must appear in the command or output.
+        before `last_mutation_seq`);
+        its OUTPUT names the criterion's subject when it has one (a check of
+        `put` is not a check of `get`) - or the subject is a command template
+        the command ran, or the call is a passing targeted test run whose
+        test id names it;
+        and it shows at least one of the criterion's terms:
+          - a key (backtick literal, quoted string, dotted/snake name) in the output;
+          - a form matcher (src/contract_criteria.py `_literal_matcher`): a
+            date/instant/regex format or a JSON shape matched in the OUTPUT,
+            a command or route template matched in the COMMAND (the command
+            itself demonstrates the invocation);
+          - a limit as a measurement in its unit family, or its number in a
+            comparison - not bare digits;
+          - the exit status it names (the call's exit code), or the HTTP
+            status it names, in the output;
+        or, with none of those, one of its content words.
+        Test ids of a passing targeted run count as output for these terms.
     The exit code is NOT required to be 0: a criterion about an error is shown
     by a command that fails with that error. Anything short of that keeps the
     criterion `pending` with the reason in `detail` - never `failed`, which
@@ -230,10 +275,11 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
         return verify_criterion(criterion, evidence_ok=None,
                                 detail="no tool call of this turn matches that reference")
     ref = str(call.get("call_id") or "")
-    from src.contract_criteria import is_echo_only
-    if is_echo_only(str(call.get("tool") or ""), str(call.get("command") or "")):
+    from src.contract_criteria import is_echo_only, matcher_shown
+    command = str(call.get("command") or "")
+    if is_echo_only(str(call.get("tool") or ""), command):
         return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
-                                detail="that call only prints text you wrote (echo/printf/Write-Output); "
+                                detail="that call only prints text you wrote (echo/printf/Write-Output/print); "
                                        "run the program or test that shows it")
     if not strict:
         return verify_criterion(criterion, evidence_ok=True, evidence_refs=[ref], detail="call exists")
@@ -241,29 +287,53 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     if seq < int(last_mutation_seq):
         return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
                                 detail="stale: the workspace changed after that call; run the check again")
-    out = str(call.get("output") or "").lower()
-    located = (str(call.get("command") or "") + "\n" + out).lower()
+    raw_out = str(call.get("output") or "")
+    out = raw_out.lower()
+    located = (command + "\n" + raw_out).lower()
+    passing_tests = _test_ids(command, raw_out, test) if call.get("exit_code") == 0 else []
+    tests_text = "\n".join(passing_tests).lower()
     subject = str(criterion.get("subject") or "")
-    if subject and not _subject_mentioned(out, subject):
-        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
-                                detail=f"the output of that call does not mention `{subject}`; "
-                                       "check this subject on its own and print it")
+    subject_matcher = criterion.get("subject_matcher")
+    subject_form_ok = False
+    if subject:
+        if isinstance(subject_matcher, Mapping):
+            subject_ok = subject_form_ok = matcher_shown(dict(subject_matcher), output=raw_out, command=command)
+        else:
+            # In the output, in the id of a passing targeted test, or - for a
+            # one-word subject - as an argument of the command that ran
+            # (`python -m vault get ...` is a check of `get`; its terms must
+            # still show in the output).
+            args = command.split(None, 1)[1].lower() if len(command.split(None, 1)) > 1 else ""
+            subject_ok = (_subject_mentioned(out, subject)
+                          or bool(tests_text and _subject_mentioned(tests_text, subject))
+                          or (" " not in subject.strip() and _mentions(args, subject.lower())))
+        if not subject_ok:
+            return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                    detail=f"the output of that call does not mention `{subject}`; "
+                                           "check this subject on its own and print it")
     if test and not (_mentions(located, test.lower()) or test.lower() in located
                      or test.split("::")[-1].lower() in located):
         return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
                                 detail=f"that call does not run or show `{test}`")
+    hay = out + ("\n" + tests_text if tests_text else "")
     keys = [str(k) for k in (criterion.get("keys") or []) if str(k).strip() and str(k) != subject]
+    matchers = [m for m in (criterion.get("matchers") or []) if isinstance(m, Mapping)]
     limits = [l for l in (criterion.get("limits") or []) if isinstance(l, Mapping)]
     exits = [x for x in (criterion.get("exits") or []) if isinstance(x, int)]
+    statuses = [x for x in (criterion.get("statuses") or []) if isinstance(x, int)]
     words = [str(w) for w in (criterion.get("words") or []) if str(w).strip()]
-    if keys or limits or exits:
-        ok = (any(_mentions(out, k) or (not k.isalnum() and k.lower() in out) for k in keys)
-              or any(_limit_shown(out, l) for l in limits)
-              or (call.get("exit_code") in exits))
-        shown = ", ".join(keys[:4] + [f"{l.get('num')} {l.get('unit')}" for l in limits[:2]]
-                          + [f"exit {x}" for x in exits[:2]])
+    if keys or matchers or limits or exits or statuses or (subject_form_ok and criterion.get("kind") == "format"):
+        ok = ((subject_form_ok and criterion.get("kind") == "format")
+              or any(_mentions(hay, k) or (not k.isalnum() and k.lower() in hay) for k in keys)
+              or any(matcher_shown(dict(m), output=raw_out, command=command) for m in matchers)
+              or any(_limit_shown(hay, l) for l in limits)
+              or (call.get("exit_code") in exits)
+              or any(_status_shown(raw_out, s) for s in statuses))
+        shown = ", ".join(keys[:3] + [str(m.get("src")) for m in matchers[:2]]
+                          + [f"{l.get('num')} {l.get('unit')}" for l in limits[:2]]
+                          + [f"exit {x}" for x in exits[:2]] + [f"HTTP {s}" for s in statuses[:2]])
     else:
-        ok = not words or any(_mentions(out, w) for w in words)
+        ok = not words or any(_mentions(hay, w) for w in words)
         shown = ", ".join(words[:6])
     if not ok:
         return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],

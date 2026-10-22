@@ -3812,7 +3812,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "criteria_check",
-            "description": "Link the requirements extracted from the task statement (ids C01, C02...) to evidence: a tool call of THIS turn whose output shows the requirement. The harness decides: a link is accepted only if that call exists, is not a bare echo/printf, ran after your last change to the workspace and its OUTPUT shows the requirement's subject and terms (a non-zero exit is fine when the requirement is about an error). status 'unmet' records a requirement that still fails; 'not_applicable' needs a reason. {\"list\": true} lists open requirements a page at a time (filters: section, kind, page).",
+            "description": "Link the requirements extracted from the task statement (ids C01, C02...) to evidence: a tool call of THIS turn whose output shows the requirement. The harness decides: a link is accepted only if that call exists, does more than print your own text (echo/printf/print), ran after your last change to the workspace and its OUTPUT shows the requirement's subject and terms (formats like YYYY-MM-DD are matched as patterns; a command or route template is shown by the command that ran it; a non-zero exit is fine when the requirement is about an error). status 'unmet' records a requirement that still fails; 'not_applicable' needs a reason. {\"list\": true} lists open requirements a page at a time (filters: section, kind, page).",
             "parameters": {
                 "type": "object",
                 "properties": {

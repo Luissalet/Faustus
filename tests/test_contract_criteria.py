@@ -111,7 +111,8 @@ def test_spanish_markers_formats_codes_and_limits():
     assert any("solo puede tener una reserva activa" in q for q in quotes)
     fmt = next(c for c in crit if "YYYY-MM-DD" in c["quote"])
     assert fmt["kind"] in ("format", "error_code")
-    assert "YYYY-MM-DD" in fmt["keys"]
+    assert "YYYY-MM-DD" not in fmt["keys"]           # a form, matched by a regex instead
+    assert any(m["src"] == "YYYY-MM-DD" and m["on"] == "output" for m in fmt["matchers"])
     lim = next(c for c in crit if "200 ms" in c["quote"])
     assert lim["kind"] == "limit" and lim["limits"][0]["num"] == "200"
     assert any(q.startswith("Nunca se borra") for q in quotes)
@@ -364,3 +365,67 @@ def test_list_page_filters_by_section_and_kind_and_pages():
     small = book.list_page(page_chars=400)
     assert small["pages"] > 1
     assert book.list_page(page_chars=400, page=99)["page"] == small["pages"]
+
+
+def test_ordering_rules_are_not_pushed_to_the_end():
+    text = ("## Rules\n\n"
+            "- Each record must have a `name` field.\n"
+            "- Each record must have a `size` field.\n"
+            "- Each record must have a `kind` field.\n"
+            "- Within a batch, points keep their order: later wins.\n"
+            "- Checks run in this order: field validation, then existence, then conflicts.\n"
+            "- When several things are wrong, the first failing check decides the error code.\n")
+    book = cc.CriteriaBook.from_message(text, min_chars=0)
+    order = [c["quote"] for c in book.ordered()]
+    later = next(c for c in book.criteria if "later wins" in c["quote"])
+    assert later["priority"] >= 3
+    for q in ("Within a batch", "Checks run in this order", "the first failing check"):
+        idx = next(i for i, x in enumerate(order) if q in x)
+        assert idx < 3, (q, order)
+
+
+def test_an_abbreviation_does_not_end_a_sentence():
+    crit, _ = cc.extract("Instants use the canonical `...Z` form, e.g. `2026-01-02T03:04:05Z`, in every output.")
+    assert len(crit) == 1 and "`2026-01-02T03:04:05Z`" in crit[0]["quote"]
+
+
+@pytest.mark.parametrize("literal,good,bad", [
+    ("YYYY-MM-DD", "on 2026-10-22 at", "on 22/10/2026"),
+    ("YYYY-MM-DDTHH:MM:SSZ", '"2026-10-22T08:00:00Z"', '"2026-10-22T08:00:00+02:00"'),
+    ("...Z", "2026-10-22T08:00:00Z", "2026-10-22T08:00:00"),
+    ("HH:MM", "opens 09:30", "opens 9h30"),
+    ("+HH:MM", "2026-10-22T08:00:00+02:00", "2026-10-22T08:00:00Z"),
+    ("<series_id>:<YYYY-MM-DD>", '"s1:2026-04-06"', '"s1-2026"'),
+    ("-?[0-9]+", "quantity -3", "quantity three"),
+    ("[0-9]+(\\.[0-9]{1,4})?", "price 12.5", "price twelve"),
+    ("2026-03-30T09:00:00+02:00", "2026-01-01T00:00:00+01:00", "2026-01-01 00:00"),
+])
+def test_format_literals_become_output_regexes(literal, good, bad):
+    m = cc._literal_matcher(literal)
+    assert m and m["on"] == "output" and "re" in m, m
+    assert cc.matcher_shown(m, output=good, command="")
+    assert not cc.matcher_shown(m, output=bad, command="")
+
+
+@pytest.mark.parametrize("literal,command,other", [
+    ("python -m ledger <command> ...", "D:\\venv\\Scripts\\python.exe -m ledger report d.db", "python -m vault get"),
+    ("ingest DB FILE...", "python -m ledger ingest d.db a.csv", "python -m ledger rates d.db r.csv"),
+    ("project-add --id ID --name NAME --tz ZONE [--holidays D1,D2,...]",
+     "python -m tracker --db t.db project-add --name N --tz UTC --id P1", "python -m tracker project-add --id P1"),
+    ("GET /api/report?by=...&tz=...", 'curl "http://127.0.0.1:8000/api/report?by=day"', "curl http://h/api/items"),
+    ("--tz", "python -m meter report m.db --tz Europe/Madrid", "python -m meter report m.db"),
+])
+def test_command_templates_are_matched_against_the_command(literal, command, other):
+    m = cc._literal_matcher(literal)
+    assert m and m["on"] == "command", m
+    assert cc.matcher_shown(m, output="", command=command)
+    assert not cc.matcher_shown(m, output=command, command=other)
+
+
+def test_json_shapes_are_matched_by_their_keys_and_unsafe_regexes_are_refused():
+    m = cc._literal_matcher('{"accepted": n, "duplicates": n, "rejected": [...]}')
+    assert m["json"] == ["accepted", "duplicates", "rejected"]
+    assert cc.matcher_shown(m, output='{"duplicates": 0, "accepted": 2, "rejected": []}', command="")
+    assert not cc.matcher_shown(m, output='{"accepted": 2}', command="")
+    assert cc._literal_matcher("(a+)+b") is None or "re" not in cc._literal_matcher("(a+)+b")
+    assert cc._literal_matcher("<command>") is None
