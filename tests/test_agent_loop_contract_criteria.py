@@ -194,12 +194,13 @@ def test_the_harness_links_a_fresh_run_by_itself_and_the_model_keeps_the_rest(lo
     loop.settings["agent_contract_criteria_auto_link"] = True
     seen, events = loop(_scripted_turn())
     crit = _summary(events)["criteria"]
-    # the bash run shows `corrupt` / exit 1 / one JSON document: no criteria_check needed for these
-    assert "C04" in crit["ids"]["proven"] and "C05" in crit["ids"]["proven"]
-    assert "C01" in crit["ids"]["pending"] and "C06" in crit["ids"]["pending"]
+    # the bash run shows `corrupt` / exit 1: no criteria_check needed for C04. The bare
+    # "one JSON document" rule is not the harness's to prove from just any JSON output.
+    assert "C04" in crit["ids"]["proven"] and "C05" not in crit["ids"]["proven"]
+    assert {"C01", "C05", "C06"} <= set(crit["ids"]["pending"])
     audits = [e for e in events if e.get("reason") == "completion_audit"]
-    assert len(audits) == 1 and audits[0]["criteria"] == 4
-    assert "C05 L" not in seen[4][-1]["content"] and "C01" in seen[4][-1]["content"]
+    assert len(audits) == 1 and audits[0]["criteria"] == 5
+    assert "C04 L" not in seen[4][-1]["content"] and "C01" in seen[4][-1]["content"]
 
 
 def test_the_start_note_is_a_user_role_harness_note_the_trimmer_keeps(loop):
