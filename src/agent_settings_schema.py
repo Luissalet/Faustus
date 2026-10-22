@@ -1582,6 +1582,29 @@ GROUPS: list[dict[str, Any]] = [
                  "when it is a real task list of at least this many characters; an explicit execute "
                  "request such as 'ejecuta este plan' needs no minimum. 0 turns pasted-plan import off.",
                  0, 100000),
+            _select("agent_contract_criteria", "Contract criteria from the task statement",
+                    "Read the requirements of a long task message (must, never, only, exactly, limits, error "
+                    "codes, formats) as one criterion each and ask for a tool call that shows each one "
+                    "(criteria_check). unattended = on unattended runs, with a targeted completion audit and "
+                    "one extra round if some stay open; always = also list and report them on attended turns, "
+                    "without the extra round; off = nothing changes. Never asks, never blocks.",
+                    ["off", "unattended", "always"]),
+            _int("agent_contract_criteria_max", "Contract criteria: most per message",
+                 "Past this many, limits, error codes and formats are kept first and the rest is dropped "
+                 "(and counted).",
+                 5, 500),
+            _int("agent_contract_criteria_min_chars", "Contract criteria: minimum message size",
+                 "A message shorter than this many characters (typed text plus text attachments) is never "
+                 "read as a contract.",
+                 0, 200000),
+            _int("agent_contract_criteria_extra_rounds", "Contract criteria: extra rounds",
+                 "Extra rounds sent when requirements stay without evidence after the completion audit "
+                 "(unattended runs only). 0 = only report them.",
+                 0, 3),
+            _bool("agent_contract_criteria_strict_evidence", "Contract criteria: strict evidence",
+                  "Accept a link only when the call ran after the last change in the workspace and its "
+                  "command or output names the requirement's subject and terms. Off = the call only has to "
+                  "exist in the turn."),
             _bool("agent_plan_autocontinue", "Plan: keep working until every task is done",
                   "While the tracked plan has open tasks, a turn that ends without a tool call (or "
                   "asks 'shall I continue?') is sent on to the next task inside the same turn instead "

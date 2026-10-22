@@ -44,6 +44,7 @@ const CHECK_WORDS: Record<string, string> = {
   plan_tracker: 'Implementation plan',
   plan_continue: 'Continues the plan on its own',
   plan_continue_stop: 'Plan pending',
+  contract_criteria: 'Requirements of the task',
 };
 
 const GATE_WORDS: Record<string, string> = {
@@ -51,6 +52,7 @@ const GATE_WORDS: Record<string, string> = {
   ui_smoke_failed: 'the UI smoke test fails',
   changeset_contradicted: 'the checkpoint contradicts what was claimed',
   changeset_unproved: 'nothing backs what was claimed',
+  criteria_unverified: 'some requirements of the task have no evidence',
 };
 
 const REASON_WORDS: Record<string, string> = {

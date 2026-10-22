@@ -1523,6 +1523,33 @@ DEFAULT_SETTINGS = {
     # is a real task list at least this long (0 = never import pasted text);
     # an explicit execute request ("ejecuta este plan") needs no minimum.
     "agent_plan_tracker_paste_min_chars": 600,
+    # Contract criteria (src/contract_criteria.py, task #1127): the normative
+    # sentences of a long task message (must/never/only/exactly/at most...,
+    # limits with units, error codes and formats in backticks; English and
+    # Spanish) become one criterion each (one per subject: "`put`, `get` and
+    # `compact` stream" is three), persisted beside the plan tracker. The
+    # model links each one to a tool call of the turn with `criteria_check`;
+    # the harness accepts the link only when that call ran after the last
+    # change and mentions the criterion. The completion audit lists the open
+    # ones, one `contract_gap` extra round follows if any stay open (unattended
+    # only), and `harness_summary.criteria` plus the completion gate reason
+    # `criteria_unverified` report the rest. Never asks, never blocks.
+    #   off        nothing changes;
+    #   unattended extract, audit and gap round on unattended runs (default);
+    #   always     also extract and report on attended turns (no extra round).
+    "agent_contract_criteria": "unattended",
+    # Most criteria per message; past it, limits, error codes and formats are
+    # kept first and the rest is counted as dropped.
+    "agent_contract_criteria_max": 60,
+    # Messages shorter than this (typed text plus text attachments) are never
+    # read as a contract.
+    "agent_contract_criteria_min_chars": 1500,
+    # Extra rounds (cause `contract_gap`) when criteria stay open after the
+    # completion audit; 0 = report only.
+    "agent_contract_criteria_extra_rounds": 1,
+    # On: a link is accepted only if the call ran after the last change and
+    # mentions the criterion's subject and terms. Off: the call must exist.
+    "agent_contract_criteria_strict_evidence": True,
     # Keep working INSIDE the turn while the tracked plan has open tasks: when
     # the model ends a round without a tool call (or asks "continue?"), the
     # runtime sends it on to the next task instead of ending the turn, up to

@@ -12663,6 +12663,65 @@ async def _stream_agent_loop_body(
             messages.append({"role": "user", "_harness_note": True, "content": _lang_note(TODOWRITE_REFRESH_NUDGE)})
             _todo_refresh_nudged = True
             logger.info("[harness] todowrite refresh injected at continue turn start")
+    # Contract criteria (src/contract_criteria.py, #1127): the normative
+    # sentences of a long task statement, one criterion per subject, read
+    # BEFORE the plan tracker below may replace an attached plan with its
+    # brief. The model links each one to a tool call (`criteria_check`); the
+    # completion audit lists the open ones and one `contract_gap` round
+    # follows if some stay open. Off, or a short message: nothing changes.
+    _cc_book = None
+    _cc_gap_rounds = 0
+    _cc_gap_limit = 0
+    try:
+        from src import contract_criteria as _cc_mod
+        _cc_mode = str(get_setting("agent_contract_criteria", "unattended") or "off").strip().lower()
+        if (_harness_enabled and workspace and not plan_mode
+                and _cc_mod.mode_applies(_cc_mode, unattended=bool(unattended))):
+            from src import plan_tracker as _cc_pt
+            _cc_scope = _cc_pt.scope_for(str(_hopts.get("project_id") or "") or None, workspace, session_id)
+            _cc_strict = bool(get_setting("agent_contract_criteria_strict_evidence", True))
+            _cc_msg = next((m for m in reversed(messages or []) if m.get("role") == "user"
+                            and not m.get("_agent_injected") and not m.get("_harness_note")
+                            and isinstance(m.get("content"), str)), None)
+            if _cc_msg is not None:
+                _cc_book = _cc_mod.CriteriaBook.from_message(
+                    _cc_msg["content"],
+                    max_items=int(get_setting("agent_contract_criteria_max", 60) or 60),
+                    min_chars=int(get_setting("agent_contract_criteria_min_chars", 1500) or 0),
+                    scope=_cc_scope, strict=_cc_strict)
+            if _cc_book is None and _looks_like_continue_turn(_last_user or ""):
+                # "Continúa" on the same task: the statement's book, with the
+                # states it already earned, instead of nothing.
+                _cc_book = _cc_mod.latest(_cc_scope)
+                if _cc_book is not None:
+                    _cc_book.strict = _cc_strict
+            if _cc_book is not None:
+                _cc_gap_limit = max(0, int(get_setting("agent_contract_criteria_extra_rounds", 1) or 0))
+                _cc_book.save()
+                _ledger.notes.append(f"contract_criteria:{len(_cc_book.criteria)}")
+                if _relevant_tools is not None and "criteria_check" not in disabled_tools:
+                    from src.tool_discovery import permitted_names as _cc_permitted
+                    from src.tool_security import owner_is_admin_or_single_user as _cc_owner_admin
+                    _promote_tool_names(_cc_permitted(
+                        ("criteria_check",), disabled_tools=disabled_tools, tool_policy=tool_policy,
+                        admin=bool(_cc_owner_admin(owner))))
+                if unattended and _cc_book.open():
+                    # Once, compact (id, line, quote), bounded: the statement
+                    # itself is already in the prompt.
+                    messages = _insert_before_latest_user(
+                        messages, {"role": "system", "content": _cc_book.start_note()})
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "contract_criteria", "round": 0,
+                        "count": len(_cc_book.criteria), "open": len(_cc_book.open()),
+                        "dropped": _cc_book.dropped, "resumed": bool(_cc_book.loaded),
+                        "ids": [c["id"] for c in _cc_book.criteria][:80],
+                        "label": f"{len(_cc_book.criteria)} requirements, {len(_cc_book.open())} open",
+                    }) + "\n\n"
+                )
+    except Exception as _cc_err:
+        logger.debug("[harness] contract criteria skipped: %s", _cc_err)
+        _cc_book = None
     try:
         _pid = str(_hopts.get("project_id") or "")
         _is_continue = _looks_like_continue_turn(_last_user)
@@ -16134,15 +16193,59 @@ async def _stream_agent_loop_body(
                 logger.info("[harness] round %s: unattended completion audit before the run ends", round_num)
                 if round_response.strip():
                     messages.append({"role": "assistant", "content": round_response})
+                # With contract criteria still open, the audit names them
+                # (id, line, quote) instead of asking the model to list the
+                # requirements itself (it grouped them, src/contract_criteria.py).
+                _cc_open_now = _cc_book.open() if _cc_book is not None else []
                 messages.append({
                     "role": "user",
                     "_harness_note": True,
-                    "content": COMPLETION_AUDIT_NOTE,
+                    "content": _cc_book.audit_note() if _cc_open_now else COMPLETION_AUDIT_NOTE,
                 })
+                _audit_event = {
+                    "type": "harness_check", "status": "auto_continue", "round": round_num,
+                    "reason": "completion_audit", "attempt": 1, "max_attempts": 1,
+                }
+                if _cc_open_now:
+                    _audit_event["criteria"] = len(_cc_open_now)
+                yield "data: " + json.dumps(_audit_event) + "\n\n"
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+
+            # After the audit, requirements of the task statement that still
+            # have no accepted evidence get ONE more round (cause
+            # `contract_gap`, the completion family's budget), unattended only:
+            # nobody is asked and nothing blocks; whatever stays open is
+            # reported (harness_summary.criteria, gate `criteria_unverified`).
+            if (
+                _cc_book is not None
+                and unattended
+                and workspace
+                and _completion_audit_done
+                and _hc_text
+                and not _boundary_echo_only
+                and _unattended_relay_tool(_tool_names_sent, []) is None
+                and round_num < max_rounds
+                and _cc_book.open()
+                and _xr.permits("contract_gap", _cc_gap_rounds, _cc_gap_limit)
+            ):
+                _cc_gap_rounds += 1
+                _cc_open_gap = _cc_book.open()
+                _ledger.notes.append(f"contract_gap@{round_num}")
+                logger.info("[harness] round %s: %d contract criteria still open — one more round",
+                            round_num, len(_cc_open_gap))
+                if round_response.strip():
+                    messages.append({"role": "assistant", "content": round_response})
+                messages.append({"role": "user", "_harness_note": True, "content": _cc_book.gap_note()})
                 yield (
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "auto_continue", "round": round_num,
-                        "reason": "completion_audit", "attempt": 1, "max_attempts": 1,
+                        "reason": "contract_gap",
+                        "pending": [c["id"] for c in _cc_open_gap if c.get("state") == "pending"][:60],
+                        "unmet": [c["id"] for c in _cc_open_gap if c.get("state") == "unmet"][:60],
+                        **_xr.event("contract_gap", used=_cc_gap_rounds, limit=_cc_gap_limit,
+                                    round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
@@ -17464,6 +17567,10 @@ async def _stream_agent_loop_body(
                             # one already warm.
                             "turn_model": model,
                         "turn_endpoint_url": endpoint_url,
+                        # Contract criteria book of the turn (criteria_check) and the
+                        # paths changed so far (plan_done unverified_files).
+                        "contract_book": _cc_book,
+                        "ledger_mutations": _ledger.mutated_paths(),
                         },
                     ), owner=str(session_id or ""))
                     _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
@@ -17925,6 +18032,10 @@ async def _stream_agent_loop_body(
                                     # one already warm.
                                     "turn_model": model,
                         "turn_endpoint_url": endpoint_url,
+                        # Contract criteria book of the turn (criteria_check) and the
+                        # paths changed so far (plan_done unverified_files).
+                        "contract_book": _cc_book,
+                        "ledger_mutations": _ledger.mutated_paths(),
                                 },
                             ), owner=str(session_id or ""))
                         finally:
@@ -18025,7 +18136,18 @@ async def _stream_agent_loop_body(
 
             # Evidence ledger: record what really ran (success, kind, paths).
             try:
-                _ledger.record(block.tool_type, block.content, result, round_num)
+                _ledger_ev = _ledger.record(block.tool_type, block.content, result, round_num)
+                if _cc_book is not None:
+                    # The contract criteria book keeps what each call ran and
+                    # showed, so a criteria_check link can be judged against it.
+                    try:
+                        _cc_book.record_call(
+                            _call_id, block.tool_type, block.content, result,
+                            kind=str((_ledger_ev or {}).get("kind") or ""),
+                            ok=bool((_ledger_ev or {}).get("ok")),
+                            paths=list((_ledger_ev or {}).get("paths") or []), round_num=round_num)
+                    except Exception as _cc_rec_err:  # noqa: BLE001 - bookkeeping never breaks a turn
+                        logger.debug("[harness] contract criteria call record skipped: %s", _cc_rec_err)
                 if block.tool_type == "todowrite" and isinstance(result, dict) and isinstance(result.get("todos"), list) and not result.get("error"):
                     _annotated_todos = _ledger.record_progress(result["todos"], round_num)
                     try:
@@ -19792,6 +19914,25 @@ async def _stream_agent_loop_body(
         _hsum = _ledger.summary(_git_summary)
         _hsum["round_count"] = len(round_texts)
         _hsum["workspace"] = workspace or None
+        if _cc_book is not None:
+            # Contract criteria: counts and ids per state (the completion
+            # gate below reads it: `criteria_unverified` while some are open).
+            try:
+                _cc_book.save()
+                _hsum["criteria"] = _cc_book.summary()
+                _cc_counts = _cc_book.counts()
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "contract_criteria", "round": round_num,
+                        "final": True, "count": _cc_counts["total"], "open": len(_cc_book.open()),
+                        "proven": _cc_counts["proven"], "pending": _cc_counts["pending"],
+                        "unmet": _cc_counts["unmet"], "not_applicable": _cc_counts["not_applicable"],
+                        "label": (f"{_cc_counts['proven']}/{_cc_counts['total']} requirements shown, "
+                                  f"{_cc_counts['pending']} pending, {_cc_counts['unmet']} unmet"),
+                    }) + "\n\n"
+                )
+            except Exception as _cc_sum_err:  # noqa: BLE001
+                logger.debug("[harness] contract criteria summary skipped: %s", _cc_sum_err)
         logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
                     _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
                     _hsum["failed_calls"], _hsum["rejections"])
