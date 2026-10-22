@@ -94,8 +94,10 @@ _register(
     # bookkeeping, never workspace or external effect, so they join
     # todowrite's class rather than getting a write_private classification
     # that would gate them behind an approval click.
+    # criteria_check only updates the turn's contract criteria book (the
+    # same plan_tracker folder under DATA_DIR) from calls already run.
     {"ask_user", "update_plan", "todowrite",
-     "plan_status", "plan_task", "plan_done", "plan_skip", "plan_next"},
+     "plan_status", "plan_task", "plan_done", "plan_skip", "plan_next", "criteria_check"},
     ToolEffect.USER_INTERACTION,
 )
 _register(

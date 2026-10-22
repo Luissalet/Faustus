@@ -460,6 +460,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "plan_task": "Full text, acceptance criteria and mentioned files for one task of the active persisted plan, by id or key, or the current task if neither is given. Use for 'what does the current task need', 'show me task WP03', 'what are the acceptance criteria for this step'.",
     "plan_done": "Mark one task of the active persisted plan done, with concrete evidence of what was actually run/checked. Use for 'mark this task done', 'this step is finished'.",
     "plan_skip": "Mark one task of the active persisted plan skipped, with a reason. Use for 'skip this task', 'we're not doing this step'.",
+    "criteria_check": "Link the requirements extracted from the task statement (C01, C02...) to the tool calls of this turn that showed them; the harness accepts a link only when that call ran after the last change and mentions the requirement. Use for 'prove each requirement', 'check the contract', 'mark this requirement not applicable'.",
     "plan_next": "Return the next pending task of the active persisted plan and mark it in_progress, without closing the current one. Use for 'what's the next task', 'move on to the next step'.",
     # Lot I: instincts -- small learned behaviours with confidence, mined
     # from real sessions in the background and injected as context (never a

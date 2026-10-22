@@ -3811,6 +3811,37 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "criteria_check",
+            "description": "Link the requirements extracted from the task statement (ids C01, C02...) to evidence: a tool call of THIS turn whose command or output shows the requirement. The harness decides: a link is accepted only if that call exists, ran after your last change to the workspace and mentions the requirement's subject and terms (a non-zero exit is fine when the requirement is about an error). status 'unmet' records a requirement that still fails; 'not_applicable' needs a reason. {\"list\": true} lists all requirements and their states.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "links": {
+                        "type": "array",
+                        "description": "One entry per requirement.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "Requirement id, e.g. 'C07'"},
+                                "status": {"type": "string", "enum": ["proven", "unmet", "not_applicable"], "description": "Default 'proven' (still checked by the harness)."},
+                                "call_id": {"type": "string", "description": "Id of the tool call of this turn that showed it"},
+                                "command": {"type": "string", "description": "Instead of call_id: text of the command you ran (the latest call containing it is used)"},
+                                "test": {"type": "string", "description": "Test name (e.g. tests/test_x.py::test_y); the call that ran it must show it"},
+                                "expected": {"type": "string", "description": "The observable the requirement demands"},
+                                "observed": {"type": "string", "description": "What the call's output showed"},
+                                "reason": {"type": "string", "description": "Required for not_applicable; why it still fails for unmet"}
+                            },
+                            "required": ["id"]
+                        }
+                    },
+                    "list": {"type": "boolean", "description": "List every requirement with its state instead of linking"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "recall_fixes",
             "description": "Look up past solved issues in this project's own fix memory (src/fix_memory.py) that look similar to a query, an error, or a set of files -- so a fix already worked out once is reused instead of rediscovered from scratch. Read-only, never records or changes anything (recording happens automatically after a turn that changed files and ran tests). Use for 'has this come up before', 'how did we fix this last time', 'have I seen this error in this project'.",
             "parameters": {

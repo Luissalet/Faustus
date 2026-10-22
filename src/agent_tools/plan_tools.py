@@ -196,11 +196,16 @@ class PlanDoneTool:
                 )
             else:
                 result["output"] += f' ({report["passed"]} typed goal(s) passed)'
+        # `ledger_mutations`: the paths the turn's ledger saw change so far,
+        # handed in by src/agent_loop.py through the turn options
+        # (src/tool_execution.py puts them in ctx). Workspace-relative there,
+        # as the plan's own file names usually are; compared normalised.
         ledger_mutations = (ctx or {}).get("ledger_mutations")
         files = task.get("files") or []
         if isinstance(ledger_mutations, (list, tuple, set)) and files:
-            mutated = {str(p) for p in ledger_mutations}
-            unverified = [f for f in files if f not in mutated]
+            mutated = {pt._norm_path(str(p)) for p in ledger_mutations}
+            unverified = [f for f in files
+                          if not any(m == pt._norm_path(f) or m.endswith("/" + pt._norm_path(f)) for m in mutated)]
             if unverified:
                 result["unverified_files"] = unverified
         return result

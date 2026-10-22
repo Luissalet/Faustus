@@ -114,6 +114,7 @@ from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionToo
 from .image_inspect_tool import InspectImageTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
 from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
+from .contract_tools import CriteriaCheckTool
 from .prior_art_tools import PriorArtTool
 from .ci_tools import CiFailuresTool
 from .coordination_tool import CoordinationTool
@@ -360,6 +361,9 @@ TOOL_HANDLERS = {
     "night_shift": NightShiftTool().execute,
     "plan_skip": PlanSkipTool().execute,
     "plan_next": PlanNextTool().execute,
+    # Contract criteria of the turn (src/contract_criteria.py): link each one
+    # to the tool call that showed it; the harness decides the state.
+    "criteria_check": CriteriaCheckTool().execute,
     # Prior art (GIT-08): reuse, adapt, or write, with every repository name
     # checked live before it reaches the user. See src/prior_art.py.
     "prior_art": PriorArtTool().execute,
@@ -508,6 +512,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "goal_define", "goal_status", "goal_evaluate", "goal_evidence",
              # P1: plan tracker (src/plan_tracker.py, src/agent_tools/plan_tools.py).
              "plan_status", "plan_task", "plan_done", "plan_skip", "plan_next",
+             # Contract criteria (src/agent_tools/contract_tools.py).
+             "criteria_check",
              # Generic loopback to any UI-button endpoint (cookbook,
              # gallery, email folders, etc.) — agent uses this when
              # there's no named tool wrapper for the action.

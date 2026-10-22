@@ -1433,6 +1433,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "this step of the plan is finished, here's the proof",
         "close out this task with evidence",
     ],
+    "criteria_check": [
+        "enlaza cada requisito del enunciado con la prueba que lo demuestra",
+        "link requirement C03 to the test run that showed it",
+        "which requirements of the task still have no evidence",
+        "marca este requisito como no aplicable con el motivo",
+    ],
     "plan_skip": [
         "salta esta tarea del plan, no la vamos a hacer",
         "skip this step, it's not needed",

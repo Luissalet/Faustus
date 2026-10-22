@@ -1050,6 +1050,12 @@ async def _direct_fallback(
             "run_id": str(_turn_opts.get("run_id") or ""),
             "turn_id": str(_turn_opts.get("turn_id") or ""),
             "disabled_tools": disabled_tools or set(),
+            # The turn's contract criteria book (src/contract_criteria.py),
+            # read by criteria_check; None on a turn without criteria.
+            "contract_book": _turn_opts.get("contract_book"),
+            # Paths the turn's ledger saw change so far (plan_done compares a
+            # task's named files against them).
+            "ledger_mutations": _turn_opts.get("ledger_mutations"),
         }
 
         from src.agent_tools import TOOL_HANDLERS

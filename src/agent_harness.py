@@ -2997,7 +2997,10 @@ def completion_gate(summary: Dict[str, Any], changeset: Optional[Dict[str, Any]]
       not inconclusive) → ``tests_failed``;
     * the harness's own UI smoke ran and failed → ``ui_smoke_failed``;
     * the changeset verdict is ``contradicted``/``unproved`` while the answer
-      actually claimed paths → ``changeset_<verdict>``.
+      actually claimed paths → ``changeset_<verdict>``;
+    * the turn carried contract criteria (``summary["criteria"]``, see
+      src/contract_criteria.py) and some are still ``pending`` or ``unmet``
+      → ``criteria_unverified`` (checked last: the other reasons are harder).
 
     A turn with no mutations and no claims (a pure answer) is never gated:
     there is nothing to have proved.
@@ -3016,6 +3019,9 @@ def completion_gate(summary: Dict[str, Any], changeset: Optional[Dict[str, Any]]
         for kind in ("tests_failed", "ui_smoke_failed", "changeset_contradicted", "changeset_unproved"):
             if kind in kinds:
                 return kind
+        criteria = summary.get("criteria")
+        if isinstance(criteria, dict) and (int(criteria.get("pending") or 0) or int(criteria.get("unmet") or 0)):
+            return "criteria_unverified"
     except Exception:  # noqa: BLE001 - a report about the turn never breaks it
         return None
     return None
