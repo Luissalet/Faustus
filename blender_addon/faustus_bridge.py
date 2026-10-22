@@ -3,7 +3,7 @@
 No socket server or polling loop is duplicated here. Blender Lab owns transport
 and main-thread execution; Faustus owns recipes, persistent jobs and review sheets.
 """
-bl_info = {"name": "Faustus", "author": "Luissalet", "version": (1, 1, 0),
+bl_info = {"name": "Faustus", "author": "Luissalet", "version": (1, 2, 0),
            "blender": (5, 1, 0), "location": "View3D > Sidebar > Faustus",
            "description": "Edit the open scene with the local Faustus copilot", "category": "3D View"}
 
@@ -15,12 +15,14 @@ import importlib
 import json
 import math
 import os
+import shutil
 import sys
 from pathlib import Path
 import time
 import traceback
 import uuid
 import webbrowser
+from urllib.parse import urlencode
 
 import bpy
 from mathutils import Vector
@@ -99,6 +101,152 @@ def value_sha(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def authored_rna(value, depth=0):
+    """Authored scalar/array settings and named references, without evaluated runtime values."""
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, bpy.types.ID):
+        return {"name": value.name_full, "type": value.id_type,
+                "library": getattr(value.library, "filepath", None)}
+    if hasattr(value, "items") and not hasattr(value, "bl_rna"):
+        return {key: authored_rna(item, depth + 1) for key, item in value.items()}
+    if not hasattr(value, "bl_rna"):
+        try:
+            return [authored_rna(item, depth + 1) for item in value]
+        except TypeError:
+            return str(value)
+    result = {}
+    for prop in value.bl_rna.properties:
+        if prop.identifier == "rna_type" or (prop.is_readonly and prop.type != 'COLLECTION'):
+            continue
+        try:
+            item = getattr(value, prop.identifier)
+            if prop.type == 'COLLECTION':
+                if depth < 2:
+                    result[prop.identifier] = [authored_rna(row, depth + 1) for row in item]
+            elif prop.type == 'POINTER':
+                if isinstance(item, bpy.types.ID) or item is None:
+                    result[prop.identifier] = authored_rna(item, depth + 1)
+            elif prop.type == 'ENUM' and isinstance(item, set):
+                result[prop.identifier] = sorted(item)
+            else:
+                result[prop.identifier] = authored_rna(item, depth + 1)
+        except (AttributeError, TypeError, ValueError, ReferenceError):
+            continue
+    return result
+
+
+def node_signature(tree, seen=None):
+    if tree is None:
+        return None
+    seen = set(seen or ())
+    if tree.as_pointer() in seen:
+        return {"cycle": tree.name}
+    seen.add(tree.as_pointer())
+    return {"name": tree.name, "nodes": [{"name": node.name, "type": node.bl_idname,
+        "settings": authored_rna(node), "inputs": [socket_value(s) for s in node.inputs],
+        "nested": node_signature(getattr(node, 'node_tree', None), seen)} for node in tree.nodes],
+        "links": [(link.from_node.name, link.from_socket.identifier, link.to_node.name, link.to_socket.identifier) for link in tree.links]}
+
+
+def custom_properties(value):
+    try:
+        return {key: authored_rna(value[key]) for key in value.keys()}
+    except TypeError:  # Only Geometry Nodes modifiers support ID properties.
+        return {}
+
+
+def image_observation(image):
+    path = Path(bpy.path.abspath(image.filepath, library=image.library)).expanduser() if image.filepath else None
+    packed = image.packed_file
+    return {"name": image.name, "source": image.source, "filepath": str(path) if path else None,
+            "size": list(image.size), "colorspace": image.colorspace_settings.name,
+            "alpha_mode": image.alpha_mode,
+            "content_sha256": hashlib.sha256(bytes(packed.data)).hexdigest() if packed else sha(path) if path and path.is_file() else None,
+            "missing": not packed and bool(path) and not path.is_file()}
+
+
+def checkpoint_record(directory, key):
+    if len(str(key)) != 32 or any(char not in "0123456789abcdef" for char in str(key)):
+        raise ValueError("Expected a checkpoint ID")
+    return directory / "checkpoints" / key / "checkpoint.json"
+
+
+def save_checkpoint(directory, arguments=None):
+    arguments = arguments or {}
+    key = uuid.uuid4().hex
+    metadata_path = checkpoint_record(directory, key)
+    metadata_path.parent.mkdir(parents=True)
+    target = metadata_path.with_name("scene.blend")
+    original = bpy.data.filepath
+    packed_here, unpacked = [], []
+    try:
+        # Embed static images without writing to their original external files.
+        for image in bpy.data.images:
+            if image.packed_file or image.type == 'RENDER_RESULT':
+                continue
+            if image.source not in ('FILE', 'GENERATED'):
+                unpacked.append({"image": image.name, "reason": "Streaming/tiled resources remain external"})
+                continue
+            try:
+                image.pack()
+                packed_here.append(image)
+            except RuntimeError as exc:
+                unpacked.append({"image": image.name, "reason": str(exc)})
+        bpy.ops.wm.save_as_mainfile(filepath=str(target), copy=True, compress=True, relative_remap=True)
+    finally:
+        for image in packed_here:
+            image.unpack(method='REMOVE')
+    if bpy.data.filepath != original:
+        raise RuntimeError("Checkpoint changed the active save destination")
+    record = {"schema": "faustus/blend-checkpoint-1", "checkpoint_id": key,
+              "label": str(arguments.get("label") or "Checkpoint"), "created_at": stamp(),
+              "original_path": original, "blend_path": str(target), "sha256": sha(target),
+              "conversation_id": arguments.get("conversation_id"), "turn_id": arguments.get("turn_id"),
+              "references": arguments.get("references") or [], "external_resources": unpacked,
+              "snapshot": scene_snapshot()}
+    write_json(metadata_path, record)
+    return record
+
+
+def list_checkpoints(directory):
+    result = []
+    for path in (directory / "checkpoints").glob("*/checkpoint.json"):
+        row = json.loads(path.read_text(encoding="utf-8"))
+        result.append({key: row.get(key) for key in ("checkpoint_id", "label", "created_at", "original_path", "conversation_id", "turn_id", "external_resources")})
+    return sorted(result, key=lambda row: row["created_at"], reverse=True)
+
+
+def restore_checkpoint(directory, arguments):
+    record = json.loads(checkpoint_record(directory, arguments["checkpoint_id"]).read_text(encoding="utf-8"))
+    source = Path(record["blend_path"])
+    if sha(source) != record["sha256"]:
+        raise ValueError("The checkpoint file no longer matches its saved digest")
+    original = bpy.data.filepath
+    requested = arguments.get("path") or original or record.get("original_path")
+    target = output_file(requested) if requested else directory / "restored" / (record["checkpoint_id"] + ".blend")
+    if target.suffix.lower() != '.blend':
+        raise ValueError("The restore destination must be a .blend file")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.resolve() == source.resolve():
+        raise ValueError("Choose a working file rather than overwriting the checkpoint")
+    recovery = save_checkpoint(directory, {"label": "Before restoring " + record["label"],
+        "conversation_id": arguments.get("conversation_id"), "turn_id": arguments.get("turn_id")})
+    recovery_path = checkpoint_record(directory, recovery["checkpoint_id"])
+    if target.is_file():
+        disk_backup = recovery_path.with_name("destination-before.blend")
+        shutil.copy2(target, disk_backup)
+        recovery["destination_before"] = {"path": str(target), "backup": str(disk_backup), "sha256": sha(disk_backup)}
+        write_json(recovery_path, recovery)
+    bpy.ops.wm.open_mainfile(filepath=str(source), load_ui=False)
+    bpy.ops.wm.save_as_mainfile(filepath=str(target), check_existing=False, relative_remap=True)
+    return {"checkpoint_id": record["checkpoint_id"], "recovery_checkpoint_id": recovery["checkpoint_id"],
+            "path": bpy.data.filepath, "conversation_id": record.get("conversation_id"),
+            "turn_id": record.get("turn_id"), "external_resources": record.get("external_resources", []),
+            "restore_saved": True, "undo_restore": {"operation": "checkpoint_restore",
+                "arguments": {"checkpoint_id": recovery["checkpoint_id"], "path": str(target)}}}
+
+
 def scene_snapshot(names=None):
     """Compare authored mesh data and named scene state; no evaluation or mutation."""
     import array
@@ -109,7 +257,10 @@ def scene_snapshot(names=None):
         row = scene_info([obj.name])["objects"][0]
         row.update(matrix_local=[list(vector) for vector in obj.matrix_local],
                    hide_render=obj.hide_render, hide_viewport=obj.hide_viewport,
-                   constraints=[{"name": item.name, "type": item.type, "influence": item.influence} for item in obj.constraints])
+                   constraints=[{"name": item.name, "type": item.type, "properties": authored_rna(item)} for item in obj.constraints],
+                   modifiers=[{"name": item.name, "type": item.type, "properties": authored_rna(item),
+                               "nodes": node_signature(getattr(item, 'node_group', None)),
+                               "custom": custom_properties(item)} for item in obj.modifiers])
         if obj.type == "MESH":
             mesh = obj.data
             row["mesh_counts"] = {"vertices": len(mesh.vertices), "edges": len(mesh.edges), "loops": len(mesh.loops), "polygons": len(mesh.polygons)}
@@ -139,7 +290,7 @@ def scene_snapshot(names=None):
         row["animation_sha256"] = value_sha(animation)
         row["materials_sha256"] = value_sha([None if not slot.material else {
             "name": slot.material.name, "diffuse_color": list(slot.material.diffuse_color),
-            "nodes": edit_nodes({"owner": "material", "name": slot.material.name}) if slot.material.use_nodes else None}
+            "nodes": node_signature(slot.material.node_tree) if slot.material.use_nodes else None}
             for slot in obj.material_slots])
         rows[obj.name] = row
     actions = inspect_animation({"object": objects[0].name})["actions"] if objects else []
@@ -147,7 +298,8 @@ def scene_snapshot(names=None):
             "version": bpy.app.version_string, "frame": bpy.context.scene.frame_current,
             "mode": bpy.context.mode, "active": getattr(bpy.context.view_layer.objects.active, "name", None),
             "selected": sorted(obj.name for obj in selected()), "objects": rows,
-            "actions": {action["name"]: value_sha(action) for action in actions}}
+            "actions": {action["name"]: value_sha(action) for action in actions},
+            "images": {image.name: image_observation(image) for image in bpy.data.images if image.type != 'RENDER_RESULT'}}
 
 
 def compare_snapshot(baseline):
@@ -156,12 +308,14 @@ def compare_snapshot(baseline):
     changes = [{"name": name, "fields": [key for key in sorted(set(left[name]) | set(right[name]))
                 if left[name].get(key) != right[name].get(key)]} for name in sorted(left.keys() & right.keys())]
     action_names = baseline["actions"].keys() | current["actions"].keys()
+    image_names = baseline.get("images", {}).keys() | current["images"].keys()
     result = {"added": sorted(right.keys() - left.keys()), "removed": sorted(left.keys() - right.keys()),
               "changed": [row for row in changes if row["fields"]],
               "actions_changed": [name for name in sorted(action_names) if baseline["actions"].get(name) != current["actions"].get(name)],
+              "images_changed": [name for name in sorted(image_names) if baseline.get("images", {}).get(name) != current["images"].get(name)],
               "context_changed": {key: {"before": baseline[key], "after": current[key]} for key in ("file","frame","mode","active","selected") if baseline[key] != current[key]},
               "scope": baseline["scope"], "current": current}
-    result["unchanged"] = not any(result[key] for key in ("added","removed","changed","actions_changed","context_changed"))
+    result["unchanged"] = not any(result[key] for key in ("added","removed","changed","actions_changed","images_changed","context_changed"))
     return result
 
 
@@ -588,6 +742,12 @@ class Job:
         action = job["action"]
         if action == "scene":
             return scene_info(args.get("objects"))
+        if action == "checkpoint_save":
+            return save_checkpoint(self.directory, args)
+        if action == "checkpoint_list":
+            return {"checkpoints": list_checkpoints(self.directory)}
+        if action == "checkpoint_restore":
+            return restore_checkpoint(self.directory, args)
         if action == "snapshot":
             if args.get("objects") is not None:
                 selected(args["objects"])  # An initial named scope must exist; a later diff may contain removals.
@@ -712,6 +872,76 @@ class FAUSTUS_OT_diff(bpy.types.Operator):
         return {'FINISHED'}
 
 
+_checkpoint_items = []
+_checkpoint_enum_numbers = {}
+
+
+def checkpoint_choices(self, context):
+    global _checkpoint_items
+    try:
+        rows = list_checkpoints(data_directory())
+        # Enum values are stored as numbers. New checkpoints must not shift an
+        # already selected item merely because the display list is newest-first.
+        for row in rows:
+            _checkpoint_enum_numbers.setdefault(row['checkpoint_id'], len(_checkpoint_enum_numbers) + 1)
+        _checkpoint_items = [(row['checkpoint_id'], row['label'] + ' · ' + time.strftime('%Y-%m-%d %H:%M', time.localtime(row['created_at'])),
+                              row.get('original_path') or 'Escena sin guardar', 0,
+                              _checkpoint_enum_numbers[row['checkpoint_id']]) for row in rows]
+    except (OSError, ValueError):
+        _checkpoint_items = []
+    return _checkpoint_items or [('none', 'Sin checkpoints', '', 0, 0)]
+
+
+class FAUSTUS_OT_checkpoint(bpy.types.Operator):
+    bl_idname = "faustus.save_checkpoint"
+    bl_label = "Guardar checkpoint"
+    bl_description = "Guardar una copia editable de la escena sin cambiar el destino de Ctrl+S"
+
+    def execute(self, context):
+        try:
+            row = save_checkpoint(data_directory(), {'label': context.window_manager.faustus_checkpoint_label})
+            context.window_manager.faustus_checkpoint = row['checkpoint_id']
+            self.report({'INFO'}, 'Checkpoint guardado')
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc)); return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class FAUSTUS_OT_restore(bpy.types.Operator):
+    bl_idname = "faustus.restore_checkpoint"
+    bl_label = "Restaurar y guardar"
+    bl_description = "Restaurar el checkpoint en el archivo de trabajo; guardar antes la escena actual como recuperación"
+    recovery: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
+
+    def execute(self, context):
+        wm = context.window_manager
+        key = wm.faustus_recovery if self.recovery else wm.faustus_checkpoint
+        try:
+            result = restore_checkpoint(data_directory(), {'checkpoint_id': key})
+            # Opening a blend replaces scene context; acquire the new WindowManager.
+            bpy.context.window_manager.faustus_recovery = result['recovery_checkpoint_id']
+            bpy.context.window_manager.faustus_checkpoint = result['checkpoint_id']
+            self.report({'INFO'}, 'Restaurado y guardado. Estado anterior disponible en Deshacer restauración.')
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc)); return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class FAUSTUS_OT_checkpoint_chat(bpy.types.Operator):
+    bl_idname = "faustus.checkpoint_chat"
+    bl_label = "Abrir conversación del checkpoint"
+
+    def execute(self, context):
+        try:
+            row = json.loads(checkpoint_record(data_directory(), context.window_manager.faustus_checkpoint).read_text(encoding='utf-8'))
+            if not row.get('conversation_id'):
+                raise ValueError('Este checkpoint no está asociado a una conversación')
+            webbrowser.open(os.getenv('FAUSTUS_URL', 'http://127.0.0.1:7000').rstrip('/') + '/studio?' + urlencode({'s': row['conversation_id'], 'blender': 'live'}))
+        except (OSError, ValueError) as exc:
+            self.report({'ERROR'}, str(exc)); return {'CANCELLED'}
+        return {'FINISHED'}
+
+
 class FAUSTUS_PT_scene(bpy.types.Panel):
     bl_label = "Faustus"
     bl_idname = "FAUSTUS_PT_scene"
@@ -735,9 +965,22 @@ class FAUSTUS_PT_scene(bpy.types.Panel):
         row.operator("faustus.compare_scene")
         if context.window_manager.faustus_snapshot_result:
             layout.label(text=context.window_manager.faustus_snapshot_result)
+        layout.separator()
+        layout.prop(context.window_manager, 'faustus_checkpoint_label', text='Nombre')
+        layout.operator('faustus.save_checkpoint')
+        layout.prop(context.window_manager, 'faustus_checkpoint', text='Checkpoint')
+        row = layout.row()
+        row.enabled = context.window_manager.faustus_checkpoint not in ('', 'none')
+        row.operator('faustus.restore_checkpoint')
+        row.operator('faustus.checkpoint_chat', text='', icon='URL')
+        row = layout.row()
+        row.enabled = bool(context.window_manager.faustus_recovery)
+        row.operator('faustus.restore_checkpoint', text='Deshacer restauración').recovery = True
+        layout.label(text='Restaurar guarda el archivo de trabajo.')
 
 
-CLASSES = (FAUSTUS_OT_start, FAUSTUS_OT_stop, FAUSTUS_OT_chat, FAUSTUS_OT_snapshot, FAUSTUS_OT_diff, FAUSTUS_PT_scene)
+CLASSES = (FAUSTUS_OT_start, FAUSTUS_OT_stop, FAUSTUS_OT_chat, FAUSTUS_OT_snapshot, FAUSTUS_OT_diff,
+           FAUSTUS_OT_checkpoint, FAUSTUS_OT_restore, FAUSTUS_OT_checkpoint_chat, FAUSTUS_PT_scene)
 
 
 def connect_local():
@@ -782,6 +1025,9 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.faustus_snapshot_id = bpy.props.StringProperty(options={'SKIP_SAVE'})
     bpy.types.WindowManager.faustus_snapshot_result = bpy.props.StringProperty(options={'SKIP_SAVE'})
+    bpy.types.WindowManager.faustus_checkpoint_label = bpy.props.StringProperty(default='Checkpoint', options={'SKIP_SAVE'})
+    bpy.types.WindowManager.faustus_checkpoint = bpy.props.EnumProperty(items=checkpoint_choices, options={'SKIP_SAVE'})
+    bpy.types.WindowManager.faustus_recovery = bpy.props.StringProperty(options={'SKIP_SAVE'})
     if not bpy.app.background:
         bpy.app.timers.register(auto_connect, first_interval=1, persistent=True)
 
@@ -794,6 +1040,9 @@ def unregister():
         bpy.utils.unregister_class(cls)
     del bpy.types.WindowManager.faustus_snapshot_id
     del bpy.types.WindowManager.faustus_snapshot_result
+    del bpy.types.WindowManager.faustus_checkpoint_label
+    del bpy.types.WindowManager.faustus_checkpoint
+    del bpy.types.WindowManager.faustus_recovery
     if _icons:
         bpy.utils.previews.remove(_icons)
         _icons = None

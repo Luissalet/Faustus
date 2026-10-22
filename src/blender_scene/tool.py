@@ -219,6 +219,13 @@ class BlenderSceneTool:
 
     async def _live(self, action, args, ctx):
         from src.blender_live.service import execute_live
+        if action == "live_submit" and args.get("operation") in ("checkpoint_save", "checkpoint_restore"):
+            arguments = dict(args.get("arguments") or {})
+            if ctx.get("session_id"):
+                arguments.setdefault("conversation_id", ctx["session_id"])
+            if ctx.get("turn_id"):
+                arguments.setdefault("turn_id", ctx["turn_id"])
+            args = {**args, "arguments": arguments}
         out = await execute_live(action, args)
         sheet = out.get("live", {}).get("result", {}).get("sheet")
         if sheet and out.get("images") and not ctx.get("no_gallery"):

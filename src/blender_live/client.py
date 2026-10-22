@@ -9,7 +9,8 @@ import time
 import uuid
 
 OPERATIONS = ("scene", "execute", "api", "nodes", "animation", "asset_check", "views", "save", "load", "export",
-              "recipe_save", "recipe_list", "recipe_run", "snapshot", "diff")
+              "recipe_save", "recipe_list", "recipe_run", "snapshot", "diff",
+              "checkpoint_save", "checkpoint_list", "checkpoint_restore")
 
 
 def connection_directory():

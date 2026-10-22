@@ -84,10 +84,12 @@ MCP. Named scopes compare those objects, including later removals. The default
 scope compares all scene objects, including later additions. A renamed object
 appears as a removal and an addition; snapshots are observations, not undo files.
 
-Mesh digests describe authored object-mode data. This is not a complete binary
-`.blend` comparison: modifier settings, arbitrary constraints/custom properties,
-external textures, evaluated Geometry Nodes output and unflushed edit-mode data
-need their own inspection. Captured animation records use the native action
+Mesh digests describe authored object-mode data. Snapshots also compare authored
+modifier/constraint RNA settings, modifier custom properties, nested node groups
+and static image file/packed-byte digests. This is not a complete binary `.blend`
+comparison: arbitrary object custom properties, evaluated Geometry Nodes output,
+generated unsaved pixels and unflushed edit-mode data need their own inspection.
+Captured animation records use the native action
 reader's documented fields. A matching snapshot establishes equality only for
 the reported fields. The real regression changes one vertex without changing
 topology counts, identifies exactly that object, then restores it and observes
@@ -152,6 +154,41 @@ retained failure diagnostics. The official screenshot tool captured the actual
 Blender window and Faustus panel while `bpy.app.online_access` was false.
 Synthetic assets verify operations, not artistic quality or autonomous modeling
 quality from a live Sparks evaluation.
+
+## Editable checkpoints and recovery
+
+The native operations `checkpoint_save`, `checkpoint_list` and `checkpoint_restore`
+are available through the existing live-submit API, MCP and chat tool. The sidebar
+offers **Guardar checkpoint**, **Restaurar y guardar**, and **Deshacer restauración**.
+Checkpoints are compressed native `.blend` files, separate from observation-only
+JSON snapshots. Saving one uses Blender's copy mode and keeps the working file's
+Ctrl+S destination. Static image resources are packed into the copy; external
+streaming/tiled images are listed in `external_resources`. Linked libraries,
+simulation caches and other external resources still require their source files.
+
+Saving accepts `label`, optional `conversation_id`, `turn_id` and `references`.
+The normal chat tool supplies its current session ID when available. The sidebar
+can open a checkpoint's existing conversation at `/studio?s=…`. This links retained
+history; it does not delete or rewind chat messages. Standalone sidebar checkpoints
+without a chat remain usable and report that no conversation is associated.
+
+Restoring accepts `checkpoint_id` and an optional working `.blend` `path`. It
+checks the stored digest, captures the complete current scene as a recovery
+checkpoint, and backs up the destination's existing disk file separately. It then
+opens the checkpoint and saves to the working path. Thus **restore writes the
+working file** and clears Blender's ordinary undo history. The returned
+`undo_restore` operation restores the recovery; doing so first captures any edits
+made after the previous restore as another recovery. A scene never saved before
+uses a named file inside the bridge's `restored` folder. The addon does not require
+a custom Blender fork or change the readonly `bpy.data.filepath` property.
+
+Normal `.blend` reload semantics apply: animation is evaluated at the saved frame,
+so temporary unkeyed overrides on animated properties may be replaced by their
+curves. Keyframe an intended pose before capturing it. This is file restoration,
+not a byte-for-byte snapshot of Blender's process or arbitrary external services.
+The real installed-engine regression covers two assets, a subdivision-only
+change, changed external image bytes, an editable rig/action, restore to the same
+working path, disk backup and recovery of subsequent authored manual edits.
 
 The live global Sparks evaluation attempted a complete articulated robot and
 three clips three times, using JSON and plain Python response formats. The long

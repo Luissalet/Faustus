@@ -1,7 +1,7 @@
 ---
 name: blender-asset-production
 description: Build and revise editable Blender assets through modeling, materials, rigging and export. Use when producing a 3D asset or correcting a selected scene object.
-version: 1.2.0
+version: 1.3.0
 category: engineering
 tags: [blender, rigging, animation, assets, modelado, huesos, animacion]
 status: published
@@ -23,6 +23,16 @@ and the requested export; a screenshot alone is not a finished asset.
    added/removed objects, shared actions and context. Its authored object-mode
    mesh/material/rig observations do not cover every `.blend` datablock or
    evaluated Geometry Nodes result; use the corresponding deep readers as well.
+   Before a substantial revision, use native `checkpoint_save` with a meaningful
+   label and the reference paths/review sheets used for that revision. Chat links
+   its session automatically; MCP callers can supply `conversation_id`/`turn_id`.
+   A checkpoint is an editable `.blend` copy; a JSON snapshot only observes state.
+   `checkpoint_list` retrieves saved points. `checkpoint_restore(checkpoint_id,
+   path?)` first captures the current scene and the existing destination file,
+   then restores **and saves** to the working path. It resets ordinary Blender
+   undo. Use the returned `undo_restore` operation to recover later manual work;
+   this also captures edits made after the first restore. Preserve conversation
+   history and reopen its linked session rather than deleting messages.
 2. Use `blender_scene` with `action: live_probe` for the connected Blender
    5.1+ scene, and `action: official_tools` to discover the installed official
    Blender Lab tools. `official_call` takes their exact `name` and `arguments`.
@@ -64,6 +74,10 @@ and the requested export; a screenshot alone is not a finished asset.
 - Procedural geometry does not establish quality on realistic faces.
 - Material order, axes and bone naming can break an otherwise valid export.
 - One good view can hide flipped faces or unbaked small UV islands.
+- `.blend` reload evaluates animation at its saved frame: keyframe an intended
+  override of an animated property before checkpointing. External linked
+  libraries and caches remain external; inspect `external_resources` for images
+  that could not be embedded. A checkpoint is not a snapshot of the process.
 
 ## Verification
 

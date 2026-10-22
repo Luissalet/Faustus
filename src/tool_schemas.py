@@ -3398,7 +3398,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "engine": {"type": "string", "enum": ["workbench", "eevee", "cycles"], "description": "smoke action: render engine (default workbench, works without a GPU)"},
                     "operation": {"type": "string", "enum": list(BLENDER_LIVE_OPERATIONS), "description": "live_submit operation. api: identifier bpy.types.Name or bpy.ops.category.operator returns installed RNA signatures/enums; nodes: owner/name/modifier?, ops?; animation: object; asset_check: objects?, observes topology/UV/weights/materials/shape keys without mutation; export: actions can map object names to explicit clip names."},
                     "name": {"type": "string", "description": "Official Blender Lab tool name for official_call; first use official_tools to discover the schema."},
-                    "arguments": {"type": "object", "description": "Live operation arguments; read docs/api/blender-live.md for recipes and rendering"},
+                    "arguments": {"type": "object", "description": "Live operation arguments. checkpoint_save: label?, conversation_id?, turn_id?, references?; checkpoint_list: no args; checkpoint_restore: checkpoint_id, path?; captures recovery then saves restored .blend to working path (ordinary undo resets), returns undo_restore operation. Chat session is linked automatically when available; history is retained. Read docs/api/blender-live.md for recipes and rendering."},
                     "job_id": {"type": "string", "description": "ID returned by a live submission; omit for live_job to list jobs"},
                     "port": {"type": "integer", "description": "Optional local bridge port; default discovered automatically"}
                 },
