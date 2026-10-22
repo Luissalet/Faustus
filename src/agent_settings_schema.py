@@ -1606,6 +1606,12 @@ GROUPS: list[dict[str, Any]] = [
                   "Accept a link only when the call ran after the last change in the workspace and its "
                   "output shows the requirement's subject and terms (a limit as a measurement in its unit). "
                   "Off = the call only has to exist in the turn. A bare echo is never evidence."),
+            _bool("agent_contract_criteria_auto_link", "Contract criteria: the harness links by itself",
+                  "After each tool call the runtime tries the requirements still without evidence against "
+                  "the runs made since the last change (strict rules, and a hard term of the requirement "
+                  "must show: a key, form, limit, exit or HTTP status; one shared word never counts), and "
+                  "again before the completion audit and the final summary. Only proves; never marks a "
+                  "requirement unmet or not applicable. Needs strict evidence."),
             _bool("agent_plan_autocontinue", "Plan: keep working until every task is done",
                   "While the tracked plan has open tasks, a turn that ends without a tool call (or "
                   "asks 'shall I continue?') is sent on to the next task inside the same turn instead "

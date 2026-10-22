@@ -12672,6 +12672,7 @@ async def _stream_agent_loop_body(
     _cc_book = None
     _cc_gap_rounds = 0
     _cc_gap_limit = 0
+    _cc_auto_link_on = False
     try:
         from src import contract_criteria as _cc_mod
         _cc_mode = str(get_setting("agent_contract_criteria", "unattended") or "off").strip().lower()
@@ -12708,6 +12709,7 @@ async def _stream_agent_loop_body(
             if _cc_book is not None:
                 _cc_book.persist = not bool(_hopts.get("incognito"))
                 _cc_gap_limit = min(3, max(0, int(get_setting("agent_contract_criteria_extra_rounds", 1) or 0)))
+                _cc_auto_link_on = bool(get_setting("agent_contract_criteria_auto_link", True)) and _cc_strict
                 _cc_book.save()
                 _ledger.notes.append(f"contract_criteria:{len(_cc_book.criteria)}")
                 if _relevant_tools is not None and "criteria_check" not in disabled_tools:
@@ -16215,6 +16217,8 @@ async def _stream_agent_loop_body(
                 _audit_text = COMPLETION_AUDIT_NOTE
                 if _cc_book is not None:
                     try:
+                        if _cc_auto_link_on:
+                            await _cc_book.auto_link_async()
                         _cc_open_now = _cc_book.open()
                         if _cc_open_now:
                             _audit_text = _cc_book.audit_note(COMPLETION_AUDIT_NOTE)
@@ -16255,6 +16259,8 @@ async def _stream_agent_loop_body(
                 and _xr.permits("contract_gap", _cc_gap_rounds, _cc_gap_limit)
             ):
                 try:
+                    if _cc_auto_link_on:
+                        await _cc_book.auto_link_async()
                     _cc_open_gap = _cc_book.open()
                     _cc_gap_text = _cc_book.gap_note() if _cc_open_gap else None
                 except Exception as _cc_gap_err:  # noqa: BLE001 - no gap round rather than a broken turn
@@ -18174,11 +18180,20 @@ async def _stream_agent_loop_body(
                     # The contract criteria book keeps what each call ran and
                     # showed, so a criteria_check link can be judged against it.
                     try:
-                        _cc_book.record_call(
+                        _cc_call = _cc_book.record_call(
                             _call_id, block.tool_type, block.content, result,
                             kind=str((_ledger_ev or {}).get("kind") or ""),
                             ok=bool((_ledger_ev or {}).get("ok")),
                             paths=list((_ledger_ev or {}).get("paths") or []), round_num=round_num)
+                        # The harness links what this fresh run clearly shows
+                        # (hard terms only; off the event loop, about 1 s at
+                        # most). A mutation recorded above already withdrew
+                        # the earlier auto proofs.
+                        if _cc_call is not None and _cc_auto_link_on and not _cc_call.get("mutation"):
+                            _cc_auto_ids = await _cc_book.auto_link_async([_cc_call])
+                            if _cc_auto_ids:
+                                logger.info("[harness] round %s: %d contract criteria shown by %s (auto-linked)",
+                                            round_num, len(_cc_auto_ids), _cc_call.get("call_id"))
                     except Exception as _cc_rec_err:  # noqa: BLE001 - bookkeeping never breaks a turn
                         logger.debug("[harness] contract criteria call record skipped: %s", _cc_rec_err)
                 if block.tool_type == "todowrite" and isinstance(result, dict) and isinstance(result.get("todos"), list) and not result.get("error"):
@@ -19951,6 +19966,8 @@ async def _stream_agent_loop_body(
             # Contract criteria: counts and ids per state (the completion
             # gate below reads it: `criteria_unverified` while some are open).
             try:
+                if _cc_auto_link_on:
+                    await _cc_book.auto_link_async()
                 _cc_book.save()
                 _hsum["criteria"] = _cc_book.summary()
                 _cc_counts = _cc_book.counts()

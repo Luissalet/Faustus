@@ -86,6 +86,15 @@ START_NOTE_CHARS = 3000
 AUDIT_NOTE_CHARS = 5000
 GAP_NOTE_CHARS = 3000
 LIST_PAGE_CHARS = 12000
+#: Seconds one `auto_link` pass may take in total (all criteria, all calls).
+AUTO_BUDGET_S = 1.0
+#: Longest a single link may take inside an `auto_link` pass.
+AUTO_LINK_S = 0.25
+#: Tools whose calls RUN something; a read, a search or a listing of a file
+#: is not a run, so the harness never takes it as proof on its own.
+AUTO_TOOLS = frozenset({"bash", "python", "powershell"})
+#: Marks a start note in `metadata` so context trimming keeps it.
+NOTE_META = "contract_criteria"
 
 # ---------------------------------------------------------------------------
 # Markers
@@ -1235,6 +1244,28 @@ _DOC_ONLY_RE = re.compile(r"\.(?:md|markdown|txt|rst)$", re.I)
 _ECHO_RE = re.compile(r"^\s*(?:(?:@?echo|printf|write-output|write-host|echo\.)(?:\s|$|\()|cat\s*<<)", re.I)
 
 
+def is_run_call(tool: str, command: str) -> bool:
+    """A call that RUNS a program or code (so its output can show behaviour),
+    as opposed to one that only reads, lists or searches files. A python call
+    is code; for a shell call at least one step must start a program that is
+    not a file viewer (`cat`, `grep`, `ls`, `Get-Content`, `git`, ...)."""
+    if tool not in AUTO_TOOLS:
+        return False
+    if tool == "python":
+        return bool(str(command or "").strip())
+    for step in _split_steps(str(command or "")):
+        argv = _argv(step)
+        if not argv:
+            continue
+        prog = re.sub(r"\.(?:exe|cmd|bat)$", "", argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower())
+        if prog not in _NON_RUN_PROGRAMS and prog not in _NAVIGATION_PROGRAMS:
+            return True
+    return False
+
+
+_NAVIGATION_PROGRAMS = frozenset({"cd", "pushd", "popd", "set-location", "sl", "chdir"})
+
+
 def is_echo_only(tool: str, command: str) -> bool:
     """True when every step of the command just prints literal text (`echo`,
     `printf`, `Write-Output`, `Write-Host`, a here-doc `cat`), or a python
@@ -1484,6 +1515,7 @@ class CriteriaBook:
                 c["state"] = "pending"
                 c["evidence_refs"] = []
                 c["detail"] = "proven in an earlier turn - check again"
+                c["auto"] = False
         self.calls = []
         self.seq = 0
         self.last_mutation_seq = -1
@@ -1622,16 +1654,19 @@ class CriteriaBook:
 
     # -- the turn's calls ----------------------------------------------------
     def record_call(self, call_id: str, tool: str, content: str, result: Any, *,
-                    kind: str = "", ok: bool = True, paths: Sequence[str] = (), round_num: int = 0) -> None:
+                    kind: str = "", ok: bool = True, paths: Sequence[str] = (),
+                    round_num: int = 0) -> Optional[Dict[str, Any]]:
         """One tool call of the turn. `kind`/`ok`/`paths` come from the turn
         ledger's own record of it (src/agent_harness.py TurnLedger.record): a
         successful mutation or effect makes every earlier call stale, except a
-        write that only touched documentation."""
+        write that only touched documentation, and takes back every criterion
+        the harness proved by itself (`auto_link`) from an earlier call.
+        Returns the recorded call (None for `criteria_check`)."""
         if tool == "criteria_check":
-            return
+            return None
         self.seq += 1
         exit_code = result.get("exit_code") if isinstance(result, dict) else None
-        self.calls.append({
+        call = {
             "call_id": str(call_id or f"call_{round_num}_{self.seq}"),
             "seq": self.seq,
             "round": round_num,
@@ -1640,13 +1675,108 @@ class CriteriaBook:
             "output": _bounded(_result_text(result)),
             "exit_code": exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None,
             "mutation": bool(ok and kind in ("mutation", "effect")),
-        })
+        }
+        self.calls.append(call)
         if ok and kind in ("mutation", "effect"):
             docs_only = bool(paths) and all(_DOC_ONLY_RE.search(str(p or "")) for p in paths)
             if not docs_only:
                 self.last_mutation_seq = self.seq
+                self._retract_auto()
         if len(self.calls) > CALLS_MAX:
             del self.calls[: len(self.calls) - CALLS_MAX]
+        return call
+
+    def _retract_auto(self) -> None:
+        """The workspace changed: what the harness proved by itself from an
+        earlier call is stale and goes back to `pending`. (What the model
+        linked is left as it is: it chose the call and answers for it.)"""
+        for c in self.criteria:
+            if c.get("auto") and c.get("state") == "proven":
+                c["state"] = "pending"
+                c["evidence_refs"] = []
+                c["detail"] = "auto proof withdrawn: the workspace changed after that call"
+                c["auto"] = False
+
+    # -- linking by the harness ----------------------------------------------
+    def auto_candidates(self, calls: Optional[Sequence[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+        """The calls the harness may judge by itself, newest first: calls that
+        RAN something (`is_run_call`), are not mutations, and came after the
+        turn's last change to the workspace."""
+        pool = list(self.calls if calls is None else calls)
+        last = self.last_mutation_seq
+        fresh = [c for c in pool
+                 if int(c.get("seq") or 0) > last and not c.get("mutation")
+                 and is_run_call(str(c.get("tool") or ""), str(c.get("command") or ""))]
+        fresh.reverse()
+        return fresh
+
+    def auto_plan(self, calls: Optional[Sequence[Dict[str, Any]]] = None, *,
+                  budget_s: float = AUTO_BUDGET_S) -> List[Dict[str, Any]]:
+        """The criteria `auto_link` would prove, WITHOUT touching the book:
+        safe to run in a worker thread (like `compute_links`). Pending
+        criteria only (what the model called unmet or not applicable is its
+        statement, not ours). Each one is tried against the fresh calls
+        newest first with `verify_contract_link(strict, auto)`; the whole pass
+        stops at `budget_s`, whatever is left stays pending."""
+        from src import verification as _ver
+        fresh = self.auto_candidates(calls)
+        if not fresh:
+            return []
+        deadline = time.monotonic() + max(0.05, float(budget_s))
+        last = self.last_mutation_seq
+        plans: List[Dict[str, Any]] = []
+        for crit in [c for c in self.criteria if c.get("state") == "pending"]:
+            snapshot = dict(crit)
+            for call in fresh:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return plans
+                verdict = _ver.verify_contract_link(
+                    snapshot, call, last_mutation_seq=last, strict=True,
+                    budget_s=min(AUTO_LINK_S, left), auto=True)
+                if verdict.state == "verified":
+                    plans.append({"id": crit["id"], "verdict": verdict, "call_id": call.get("call_id")})
+                    break
+        return plans
+
+    def auto_commit(self, plans: Sequence[Mapping[str, Any]]) -> List[str]:
+        """Apply `auto_plan` results (fast; on the caller's thread). Only
+        `proven`, only for a criterion still pending, never `unmet` or
+        `not_applicable`. Returns the ids proven."""
+        done: List[str] = []
+        for plan in plans or []:
+            crit = self.get(str(plan.get("id") or ""))
+            verdict = plan.get("verdict")
+            if crit is None or crit.get("state") != "pending" or verdict is None or verdict.state != "verified":
+                continue
+            crit["state"] = "proven"
+            crit["evidence_refs"] = list(verdict.evidence_refs)
+            crit["detail"] = f"auto: {plan.get('call_id') or ''}"[:400]
+            crit["auto"] = True
+            crit["updated_at"] = time.time()
+            done.append(crit["id"])
+        return done
+
+    def auto_link(self, calls: Optional[Sequence[Dict[str, Any]]] = None, *,
+                  budget_s: float = AUTO_BUDGET_S) -> List[str]:
+        """The harness links what it can by itself: pending criteria shown,
+        under the strict rules plus a hard term (see `verify_contract_link`
+        `auto`), by a fresh call that ran something. Bounded by `budget_s`.
+        Returns the ids newly proven."""
+        return self.auto_commit(self.auto_plan(calls, budget_s=budget_s))
+
+    async def auto_link_async(self, calls: Optional[Sequence[Dict[str, Any]]] = None, *,
+                              budget_s: float = AUTO_BUDGET_S) -> List[str]:
+        """`auto_link` with the matching off the event loop and a hard
+        timeout; the thread only computes plans, which are applied here, so a
+        thread that outlives the timeout can never change the book."""
+        import asyncio
+        try:
+            plans = await asyncio.wait_for(asyncio.to_thread(self.auto_plan, calls, budget_s=budget_s),
+                                           timeout=budget_s + 0.5)
+        except asyncio.TimeoutError:
+            return []
+        return self.auto_commit(plans)
 
     def find_call(self, *, call_id: str = "", command: str = "", test: str = "") -> Optional[Dict[str, Any]]:
         """A call of this turn by its id, else the LATEST call whose command
@@ -1754,6 +1884,7 @@ class CriteriaBook:
                 crit["evidence_refs"] = list(verdict.evidence_refs)
                 crit["detail"] = (verdict.detail + (" | " + note if note else ""))[:400]
                 crit["updated_at"] = time.time()
+                crit["auto"] = False
             row = {"id": crit["id"], "state": crit["state"], "detail": verdict.detail}
             if verdict.state == "pending":
                 row["accepted"] = False

@@ -56,7 +56,9 @@ def _tool(name, body):
 
 @pytest.fixture
 def loop(monkeypatch, tmp_path):
-    settings = {}
+    # The harness's own linking is off here: these tests drive the model's
+    # `criteria_check` path and count its links; auto-linking has its own tests.
+    settings = {"agent_contract_criteria_auto_link": False}
     monkeypatch.setattr(al, "get_setting", lambda key, default=None: settings.get(key, default), raising=False)
     monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
     monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
@@ -186,6 +188,18 @@ def test_no_gate_of_the_loop_compares_the_round_with_the_first_grant():
     assert stale == [], f"gate(s) compare the round with the first grant: {stale}"
     assert "max_rounds=max_rounds" not in source, "TextRoundState must get the real budget"
     assert "max_rounds=_rounds_budget" in source
+
+
+def test_the_harness_links_a_fresh_run_by_itself_and_the_model_keeps_the_rest(loop):
+    loop.settings["agent_contract_criteria_auto_link"] = True
+    seen, events = loop(_scripted_turn())
+    crit = _summary(events)["criteria"]
+    # the bash run shows `corrupt` / exit 1 / one JSON document: no criteria_check needed for these
+    assert "C04" in crit["ids"]["proven"] and "C05" in crit["ids"]["proven"]
+    assert "C01" in crit["ids"]["pending"] and "C06" in crit["ids"]["pending"]
+    audits = [e for e in events if e.get("reason") == "completion_audit"]
+    assert len(audits) == 1 and audits[0]["criteria"] == 4
+    assert "C05 L" not in seen[4][-1]["content"] and "C01" in seen[4][-1]["content"]
 
 
 def test_mass_not_applicable_keeps_the_audit_the_gap_round_and_the_gate(loop):

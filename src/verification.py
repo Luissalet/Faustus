@@ -245,6 +245,11 @@ import re as _re_mod
 _FAILURE_WORDS = _re_mod.compile(r"\b(?:fail\w*|error\w*|reject\w*|refus\w*|invalid|falla\w*|rechaz\w*)\b", _re_mod.I)
 
 
+#: Distinct content words a call's output must show to prove a criterion that
+#: has no harder term, when the harness (not the model) picks the call.
+AUTO_MIN_WORDS = 2
+
+
 def raw_usage(call: Mapping[str, Any]) -> bool:
     """The output is just a usage message (argparse and the like)."""
     return str(call.get("output") or "").lstrip().lower().startswith("usage:")
@@ -252,7 +257,7 @@ def raw_usage(call: Mapping[str, Any]) -> bool:
 
 def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[str, Any]], *,
                          last_mutation_seq: int = -1, strict: bool = True,
-                         test: str = "", budget_s: float = 0.5) -> CriterionVerdict:
+                         test: str = "", budget_s: float = 0.5, auto: bool = False) -> CriterionVerdict:
     """Does one tool call of the turn show this contract criterion?
 
     The model names the call; this decides. `evidence_ok=True` only when:
@@ -296,6 +301,13 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     criterion `pending` with the reason in `detail` - never `failed`, which
     only the model's own admission (`verify_criterion(evidence_ok=False)`)
     produces.
+
+    `auto=True` is the harness judging a call on its own
+    (`CriteriaBook.auto_link`): nobody pointed at the call, so the last
+    fallback is closed. A criterion with no key, form matcher, limit, exit
+    status or HTTP status is only proven when at least `AUTO_MIN_WORDS`
+    distinct content words of it show in the output - one shared word never
+    proves anything there.
     """
     if call is None:
         return verify_criterion(criterion, evidence_ok=None,
@@ -397,7 +409,11 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
                                 + [f"{l.get('num')} {l.get('unit')}" for l in limits[:2]]
                                 + [f"exit {x}" for x in exits[:2]] + [f"HTTP {s}" for s in statuses[:2]])
     else:
-        ok = not words or any(_mentions(hay, w) for w in words)
+        if auto:
+            hits = {w.lower() for w in words if _mentions(hay, w)}
+            ok = len(hits) >= AUTO_MIN_WORDS
+        else:
+            ok = not words or any(_mentions(hay, w) for w in words)
         shown_terms = ", ".join(words[:6])
     if not ok:
         if timed_out:
