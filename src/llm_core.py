@@ -6371,6 +6371,9 @@ _ollama_caps_cache: Dict[Tuple[str, str], Tuple[float, Optional[frozenset]]] = {
 _OLLAMA_CAPS_TTL = 600.0
 
 
+_NOT_OLLAMA_SHOW_FORMATS = frozenset({"sglang", "vllm", "trtllm", "tensorrt-llm", "lmdeploy"})
+
+
 def _ollama_model_caps(url: str, model: str) -> Optional[frozenset]:
     """Capabilities Ollama reports for `model` (/api/show → ["completion",
     "tools", "thinking", …]), cached 10 min. None when unknown (server down,
@@ -6390,7 +6393,14 @@ def _ollama_model_caps(url: str, model: str) -> Optional[frozenset]:
         r = httpx.post(base + "/api/show", json={"model": model}, timeout=3.0)
         if r.status_code < 400:
             data = r.json() or {}
-            caps = frozenset(str(c) for c in (data.get("capabilities") or []))
+            fmt = str(((data.get("details") or {}).get("format")) or "").strip().lower()
+            if fmt in _NOT_OLLAMA_SHOW_FORMATS:
+                # SGLang (and similar servers) answer /api/show as an Ollama
+                # emulation that always lists just ["completion"]: it says
+                # nothing about images or tools, so it is not an answer.
+                caps = None
+            else:
+                caps = frozenset(str(c) for c in (data.get("capabilities") or []))
     except Exception as e:  # noqa: BLE001 — best effort
         logger.debug("ollama /api/show failed for %s: %s", model, e)
     _ollama_caps_cache[key] = (now, caps)
