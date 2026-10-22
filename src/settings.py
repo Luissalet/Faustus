@@ -1556,9 +1556,11 @@ DEFAULT_SETTINGS = {
     # in its unit, not bare digits). Off: the call must exist. Either way a
     # bare echo/printf/Write-Output is never evidence.
     "agent_contract_criteria_strict_evidence": True,
-    # On: the runtime also links requirements by itself from fresh runs (see
-    # CriteriaBook.auto_link); the model's own criteria_check links still win.
-    "agent_contract_criteria_auto_link": True,
+    # Experimental, OFF by default: when on, the runtime also links
+    # requirements by itself from fresh runs (see CriteriaBook.auto_link); the
+    # model's own criteria_check links still win. On a real 133-requirement
+    # run most of what it proved was not demonstrated, so it is opt-in.
+    "agent_contract_criteria_auto_link": False,
     # Keep working INSIDE the turn while the tracked plan has open tasks: when
     # the model ends a round without a tool call (or asks "continue?"), the
     # runtime sends it on to the next task instead of ending the turn, up to

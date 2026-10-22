@@ -12716,7 +12716,7 @@ async def _stream_agent_loop_body(
             if _cc_book is not None:
                 _cc_book.persist = not bool(_hopts.get("incognito"))
                 _cc_gap_limit = min(3, max(0, int(get_setting("agent_contract_criteria_extra_rounds", 1) or 0)))
-                _cc_auto_link_on = bool(get_setting("agent_contract_criteria_auto_link", True)) and _cc_strict
+                _cc_auto_link_on = bool(get_setting("agent_contract_criteria_auto_link", False)) and _cc_strict
                 _cc_book.save()
                 _ledger.notes.append(f"contract_criteria:{len(_cc_book.criteria)}")
                 if _relevant_tools is not None and "criteria_check" not in disabled_tools:

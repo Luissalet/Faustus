@@ -317,3 +317,16 @@ def test_the_setting_text_says_what_the_code_does():
     assert "one shared word never counts" not in block
     assert "two distinct words" in block and "hard term" in block
     assert verification.AUTO_MIN_WORDS == 2
+
+
+def test_auto_link_is_experimental_and_off_by_default():
+    import pathlib
+    import src.agent_settings_schema as schema
+    from src.settings import DEFAULT_SETTINGS
+    assert DEFAULT_SETTINGS["agent_contract_criteria_auto_link"] is False
+    text = pathlib.Path(schema.__file__).read_text(encoding="utf-8")
+    start = text.index('"agent_contract_criteria_auto_link"')
+    block = text[start:start + 600]
+    assert "Experimental" in block and "off by default" in block
+    loop_src = (pathlib.Path(schema.__file__).parent / "agent_loop.py").read_text(encoding="utf-8")
+    assert 'get_setting("agent_contract_criteria_auto_link", False)' in loop_src
