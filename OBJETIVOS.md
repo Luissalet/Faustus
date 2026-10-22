@@ -20,6 +20,33 @@ de comparación GLM frente a DeepSeek V4.1 Flash TP4 con los mismos oráculos.
 - Auditoría de cierre con verificador externo (oráculo de propiedades generado
   desde el contrato) en vez de solo evidencia enlazada por el modelo.
 
+**Banco DeepSeek V4.1 Flash TP4 (22-10):**
+- meter: 158/163 (GLM 116/163). Los 5 fallos son bordes de día local y cambio de
+  hora (DST).
+- tracker: **98/98 PASS**. 265 rondas, unas 1 h 38, turno limpio. Defecto de
+  interfaz fuera del oráculo: a 1280 px, prioridad y estado comparten celda y las
+  columnas siguientes salen desplazadas.
+- tsdb: enviado el 22-10 a las 15:49Z, ya con el harness corregido (ver abajo).
+
+**Por qué DeepSeek no usaba `criteria_check`.** Diagnóstico en
+`research-inbox/sparks835/runtime-audit/resume-20261020/CRITERIA-DSV41-DIAGNOSIS.md`.
+Corregido en master 6a2d4583, con revisión independiente en dos rondas:
+- La auditoría de cierre, la ronda de huecos y los reintentos usan el
+  presupuesto real de rondas (antes, una sola concesión de 150).
+- Las notas del contrato y del plan van como notas de usuario etiquetadas.
+  El recorte y las dos compactaciones las conservan, y la compactación ya no
+  las toma por el objetivo.
+
+**Abierto: enlace automático de requisitos por el harness.**
+- Es experimental y está apagado por defecto. En el rastro de meter, ~50 de sus
+  69 pruebas eran falsas, incluidas tres reglas de DST que el oráculo suspende.
+- Se están endureciendo las reglas en la rama `fix/criteria-autolink-precision`:
+  - tope de 3 criterios por llamada;
+  - solo términos distintivos;
+  - las ejecuciones fallidas no prueban nada aunque el envoltorio salga con 0;
+  - un bucle que solo hace grep no cuenta como ejecución.
+- Solo se encenderá con una precisión revisada a mano de al menos el 80 %.
+
 Historial:
 
 Encargo de Luis: demostrar que Faustus con el servicio global de las Sparks
