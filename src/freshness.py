@@ -141,6 +141,33 @@ _CALENDAR_MATH = re.compile(
 )
 
 
+# How a public thing (a game, a film, a product, a company, a launch) is
+# doing is news even without a time word. Seen live (22-10): "¿Ha sido
+# Minecraft Dungeons 2 un fracaso? Parece que se habla de él aún menos de lo
+# que se habló del 1" matched nothing, the typed decision was not loaded, and
+# the turn started with no web tools at all. Only counted when the message
+# names a specific public subject (a capitalised name after the first word,
+# or a name with a number such as "Dungeons 2"), so "explícame el fracaso
+# escolar" stays timeless.
+_RECEPTION = re.compile(
+    r"\b(fracaso|fracas(?:ó|o|ado|ando)|[eé]xito|exitoso|flop|bomba comercial|ventas|vendid[oa]s?|"
+    r"ha vendido|cu[aá]nto (?:ha )?vendido|recepci[oó]n|cr[ií]ticas|rese[nñ]as|valoraciones|"
+    r"nota media|jugadores|usuarios activos|audiencia|taquilla|se habla|qu[eé] tal (?:est[aá]|le va|ha ido|funciona|va)|"
+    r"c[oó]mo (?:le )?(?:est[aá]|ha) (?:ido|funcionando|yendo)|"
+    r"sales|sold|reception|reviews?|ratings?|player ?count|box office|flopped|a flop|a success|"
+    r"how (?:is|did|has) .{1,60} (?:doing|done|performed|perform|sold|sell))\b",
+    re.IGNORECASE,
+)
+_PUBLIC_SUBJECT = re.compile(
+    # A capitalised word in the middle of a sentence ("ha sido Minecraft"),
+    # a capitalised name with a sequel number ("Dungeons 2", "Hades II"), or
+    # a quoted title. A capital after a full stop or a question mark is just
+    # the next sentence.
+    r"(?<=[a-záéíóúñü0-9,;:])\s+[A-ZÁÉÍÓÚÑ][\w'’.-]+"
+    r"|\b[A-ZÁÉÍÓÚÑ][\w'’-]+\s+(?:\d{1,3}|II|III|IV|V)\b"
+    r"|[\"“«][^\"”»]{2,60}[\"”»]")
+
+
 def freshness_reasons(text: str) -> List[str]:
     """Return the labels of every freshness pattern that fired on ``text``.
 
@@ -150,6 +177,8 @@ def freshness_reasons(text: str) -> List[str]:
     if not raw.strip():
         return []
     hits = [label for label, pattern in _PATTERNS if pattern.search(raw)]
+    if _RECEPTION.search(raw) and _PUBLIC_SUBJECT.search(raw) and not _OWN_THINGS.search(raw):
+        hits.append("public_reception")
     if hits and all(label in _WEAK_LABELS for label in hits) and (
             _OWN_THINGS.search(raw) or _CALENDAR_MATH.search(raw)):
         return []
@@ -216,6 +245,8 @@ def freshness_assessment(text: str) -> dict:
     if not stripped:
         return {"time_sensitive": False, "confident": True, "reasons": [], "why": "empty"}
     all_hits = [label for label, pattern in _PATTERNS if pattern.search(raw)]
+    if "public_reception" in reasons:
+        all_hits.append("public_reception")
     if any(label not in _WEAK_LABELS for label in all_hits):
         return {"time_sensitive": verdict, "confident": True, "reasons": reasons, "why": "strong_label"}
     if len(stripped) > _MAX_DECISION_CHARS or "```" in raw:
