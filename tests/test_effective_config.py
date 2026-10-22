@@ -294,6 +294,8 @@ def test_agent_loop_live_agent_rules_text_preserved():
     (tests/test_agent_asks_before_a_new_system.py already pins its behaviour;
     this pins that its TEXT specifically is what survived)."""
     from src import agent_loop
-    assert "A NEW SYSTEM IS DECIDED WITH THE USER FIRST" in agent_loop._AGENT_RULES
+    # The rule itself was turned round on 15-10 (d3475e1c): build the
+    # recommended design instead of asking first.
+    assert "DO THE WORK, DO NOT STOP TO ASK" in agent_loop._AGENT_RULES
     # The dead first block's distinctive UI-conventions section must be gone.
     assert "click to switch" not in agent_loop._AGENT_RULES

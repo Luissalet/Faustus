@@ -9,6 +9,12 @@ in the workspace coding block, which is where "implement X in this
 project" lands. Note: src/agent_loop.py defines _AGENT_RULES twice; the
 second definition is the one the model sees, so these tests read the
 module attributes, never the file.
+
+15-10-2026 (d3475e1c): the rule was turned round on purpose. Asking first
+stalled unattended and benchmark runs; the agent now builds the design it
+would recommend and says in one line which one it picked, so the user can
+redirect. `ask_user` stays for what it cannot find out or infer. These
+tests pin the current rule.
 """
 from src import agent_loop
 
@@ -21,20 +27,20 @@ def _rule_in(rules: str, marker: str) -> str:
 def test_both_effective_rule_sets_carry_the_rule_once():
     for rules in (agent_loop._AGENT_RULES, agent_loop._API_AGENT_RULES):
         assert rules.startswith("## Base rules"), "the second definition is the live one"
-        assert rules.count("A NEW SYSTEM IS DECIDED WITH THE USER FIRST") == 1
-        rule = _rule_in(rules, "A NEW SYSTEM IS DECIDED")
-        assert "`ask_user`" in rule
-        assert "2-4 options" in rule
-        assert "write NOTHING until they answer" in rule
-        # Scoped: edits keep their bias toward action.
-        assert "A small edit has one obvious reading - just do it" in rule
+        assert rules.count("DO THE WORK, DO NOT STOP TO ASK") == 1
+        assert "A NEW SYSTEM IS DECIDED WITH THE USER FIRST" not in rules
+        rule = _rule_in(rules, "DO THE WORK, DO NOT STOP TO ASK")
+        assert "pick the design you would recommend, build it" in rule
+        assert "say in one line which one you picked" in rule
+        # ask_user stays for what the agent cannot find out itself.
+        assert "`ask_user` is only for what you cannot find out or infer yourself" in rule
 
 
 def test_the_workspace_coding_block_says_it_too():
     block = agent_loop._workspace_coding_rules("D:/some/project")
-    rule = _rule_in(block, "A new system is decided with the user first")
-    assert "`ask_user`" in rule and "BEFORE writing any file" in rule
-    assert block.index("Start by orienting") < block.index("A new system is decided")
+    rule = _rule_in(block, "Do the work, do not stop to ask")
+    assert "pick the one you would recommend, build it" in rule and "`ask_user`" in rule
+    assert block.index("Start by orienting") < block.index("Do the work, do not stop to ask")
     assert agent_loop._workspace_coding_rules(None) == ""
 
 
