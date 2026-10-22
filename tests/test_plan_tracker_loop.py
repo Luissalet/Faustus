@@ -101,6 +101,10 @@ def test_second_chat_without_attachment_gets_the_brief_not_the_plan(ws, monkeypa
               and "plan" in str(m.get("content", "")).lower()
               and "WP03" in str(m.get("content", ""))]
     assert briefs, [m.get("content", "")[:80] for m in prompt]
+    # labelled as the runtime's own message, like the contract note: consecutive
+    # user messages get merged downstream and must not read as the person's text
+    assert all(m["content"].startswith("[Harness check - automatic message from the runtime, not from the user]")
+               for m in briefs)
     assert all("Detail line 5" not in str(m.get("content", "")) for m in prompt)
     # The plan tools were offered to the model.
     metrics = [e for e in events if e.get("type") == "metrics"]

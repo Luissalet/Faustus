@@ -8238,6 +8238,9 @@ PLAN_MODE_DIRECTIVE = (
     "is finished. End your turn with the checklist."
 )
 
+# Prefix of the active-plan brief sent as a user-role harness note.
+PLAN_NOTE_LABEL = "[Harness check - automatic message from the runtime, not from the user] "
+
 
 def build_active_plan_note(approved_plan: str) -> str:
     """System note that pins an approved plan during execution.
@@ -12880,7 +12883,11 @@ async def _stream_agent_loop_body(
                 messages = _insert_before_latest_user(
                     messages, {"role": "user", "_harness_note": True,
                                "metadata": {"plan_note": True},
-                               "content": _pt.brief(_plan_tracker, _ledger.language)}
+                               # labelled like the other runtime notes: the
+                               # provider layer merges consecutive user
+                               # messages, and without the label the brief
+                               # would read as part of the person's request
+                               "content": PLAN_NOTE_LABEL + _pt.brief(_plan_tracker, _ledger.language)}
                 )
                 logger.info("[harness] active plan brief injected")
             except Exception as _pb_err:
