@@ -14143,7 +14143,7 @@ async def _stream_agent_loop_body(
                          # 3 and 7 on back-to-back loops before any tool ran.
                          # Keep retrying within the same budget.
                          or unattended)
-                    and round_num < max_rounds
+                    and round_num < _rounds_budget
                 ):
                     _degenerate_output_hit = True
                     _degenerate_output_reason = str(error_data.get("error") or "")[:500]
@@ -14151,7 +14151,7 @@ async def _stream_agent_loop_body(
                 if (
                     _xr.permits("image_input_refused", int(_images_refused), 1)
                     and _image_input_refused(error_data)
-                    and round_num < max_rounds
+                    and round_num < _rounds_budget
                 ):
                     _image_input_refused_now = True
                     break
@@ -14162,7 +14162,7 @@ async def _stream_agent_loop_body(
                 _ctx_action = (_stuck.observe_provider_error(error_data)
                                if _is_ctx_error(error_data) and not error_data.get("request_preparation")
                                else "none")
-                if _ctx_action == "compact" and round_num < max_rounds and not _force_answer:
+                if _ctx_action == "compact" and round_num < _rounds_budget and not _force_answer:
                     _context_overflow_hit = True
                     break
                 # A clean empty completion is not a transport failure. The
@@ -14202,7 +14202,7 @@ async def _stream_agent_loop_body(
                 if (
                     _looks_like_engine_lost(error_data, terminal_status)
                     and _xr.permits("engine_lost_recovered", int(_engine_lost_recovered), 1)
-                    and round_num < max_rounds
+                    and round_num < _rounds_budget
                     and engine_swap.recoverable_url(endpoint_url)
                 ):
                     _engine_lost_recovered = True
@@ -14240,7 +14240,7 @@ async def _stream_agent_loop_body(
                     and not (round_response or "").strip()
                     and _unattended_transport_retryable(error_data, terminal_status)
                     and _transport_retries < _UNATTENDED_TRANSPORT_RETRIES
-                    and round_num < max_rounds
+                    and round_num < _rounds_budget
                 ):
                     _transport_retries += 1
                     _wait_s = _unattended_transport_wait(_transport_retries)
@@ -14269,7 +14269,7 @@ async def _stream_agent_loop_body(
                 if (
                     interrupted_response(error_data)
                     and _harness_enabled and not _force_answer and not plan_mode
-                    and round_num < max_rounds
+                    and round_num < _rounds_budget
                 ):
                     _round_finish_reason = "interrupted"
                     native_tool_calls = []
@@ -15712,7 +15712,7 @@ async def _stream_agent_loop_body(
                 if (
                     _consecutive_echo_rounds >= 2
                     and _xr.permits("context_echo_retry", int(_echo_clean_retry_done), 1)
-                    and round_num < max_rounds
+                    and round_num < _rounds_budget
                 ):
                     _echo_clean_retry_done = True
                     _dropped_untrusted = sum(
@@ -15878,7 +15878,7 @@ async def _stream_agent_loop_body(
                 empty_nudges=_empty_round_nudges, empty_limit=_empty_round_max_nudges,
                 wrong_language=bool(_observed_wrong_lang and _required_reply_lang),
                 language_nudges=_language_mismatch_nudges,
-                round_num=round_num, max_rounds=max_rounds,
+                round_num=round_num, max_rounds=_rounds_budget,
             ), _xr.permits)
             # ── (1) Truncated output: continue instead of accepting a cut-off
             # answer as the end of the turn.
@@ -16149,7 +16149,7 @@ async def _stream_agent_loop_body(
             if (
                 _relay_tool
                 and _relay_nudges < _UNATTENDED_RELAY_NUDGE_LIMIT
-                and round_num < max_rounds
+                and round_num < _rounds_budget
             ):
                 _relay_nudges += 1
                 _ledger.notes.append(f"relay_nudge@{round_num}")
@@ -16199,7 +16199,7 @@ async def _stream_agent_loop_body(
                 and _hc_text
                 and not _boundary_echo_only
                 and _unattended_relay_tool(_tool_names_sent, []) is None
-                and round_num < max_rounds
+                and round_num < _rounds_budget
             ):
                 _completion_audit_done = True
                 _ledger.notes.append(f"completion_audit@{round_num}")
@@ -16251,7 +16251,7 @@ async def _stream_agent_loop_body(
                 and _hc_text
                 and not _boundary_echo_only
                 and _unattended_relay_tool(_tool_names_sent, []) is None
-                and round_num < max_rounds
+                and round_num < _rounds_budget
                 and _xr.permits("contract_gap", _cc_gap_rounds, _cc_gap_limit)
             ):
                 try:
@@ -16288,7 +16288,7 @@ async def _stream_agent_loop_body(
                 _boundary_echo_only
                 and not _harness_scope_active
                 and _xr.permits("context_echo_nudge", _echo_nudges, 1)
-                and round_num < max_rounds
+                and round_num < _rounds_budget
             ):
                 _echo_nudges += 1
                 _ledger.notes.append(f"echo_nudge@{round_num}")
@@ -16320,7 +16320,7 @@ async def _stream_agent_loop_body(
                 and not _requires_project_objective_apply
                 and not _project_objective_unavailable
                 and _xr.permits("no_action_nudge", _no_action_nudges, 1)
-                and round_num < max_rounds
+                and round_num < _rounds_budget
                 and (
                     _boundary_echo_only
                     or (
@@ -16433,7 +16433,7 @@ async def _stream_agent_loop_body(
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
             if (_hc_text and _xr.permits("answer_rewrite", int(_answer_rewrite_used), 1)
-                    and not plan_mode and round_num < max_rounds):
+                    and not plan_mode and round_num < _rounds_budget):
                 try:
                     from src import answer_checks as _answer_checks
                     try:
@@ -16992,7 +16992,7 @@ async def _stream_agent_loop_body(
             if (cleaned_round.strip() and not _editorial_review_started
                     and (_editorial_artifact_only or (not _effectful_used and not _ledger.effects))
                     and not plan_mode
-                    and round_num < max_rounds
+                    and round_num < _rounds_budget
                     and any(is_web_research_tool((event or {}).get("tool"))
                             and (event or {}).get("exit_code") == 0
                             for event in tool_events)):
@@ -19674,7 +19674,7 @@ async def _stream_agent_loop_body(
     # If the loop hit the round cap while still working, tell the client so it
     # can show a "Continue" affordance instead of the turn just stopping.
     if _exhausted_rounds:
-        logger.info("[agent] round cap (%d) reached mid-task — emitting rounds_exhausted", max_rounds)
+        logger.info("[agent] round cap (%d) reached mid-task — emitting rounds_exhausted", _rounds_budget)
         _ledger.stop_reason = "rounds_exhausted"
         yield f'data: {json.dumps({"type": "rounds_exhausted", "rounds": _rounds_budget})}\n\n'
 

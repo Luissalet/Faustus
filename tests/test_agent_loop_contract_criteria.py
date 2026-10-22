@@ -150,6 +150,44 @@ def test_unattended_contract_turn_audits_the_criteria_and_takes_one_gap_round(lo
     assert final and final[0]["proven"] == 1
 
 
+def test_audit_and_gap_round_fire_after_the_round_budget_was_extended(loop):
+    # max_rounds is ONE grant (3 here); the turn's real budget grows with every
+    # automatic extension. Round 4 is past the first grant, so a gate that still
+    # compared with max_rounds would silently skip the audit and the gap round.
+    rounds = [
+        _tool("bash", "python -m arc unpack damaged.arc"),
+        _tool("glob", json.dumps({"pattern": "src/**/*.py"})),
+        _tool("glob", json.dumps({"pattern": "tests/**/*.py"})),
+        _text("Done: the archive tool is ready."),
+        _text("Checked every requirement listed."),
+        _text("Final answer."),
+        _text("unexpected extra round"),
+    ]
+    seen, events = loop(rounds, max_rounds=3)
+    audits = [e for e in events if e.get("reason") == "completion_audit"]
+    gaps = [e for e in events if e.get("reason") == "contract_gap"]
+    assert len(audits) == 1 and audits[0]["round"] == 4 and audits[0]["criteria"] == 6, events
+    assert len(gaps) == 1 and gaps[0]["round"] == 5, [e.get("reason") for e in events if e.get("type") == "harness_check"]
+    assert seen[4][-1]["content"].startswith(al.COMPLETION_AUDIT_NOTE)
+    assert "still have no accepted evidence" in seen[5][-1]["content"]
+    notes = _summary(events)["notes"]
+    assert "completion_audit@4" in notes and "contract_gap@5" in notes
+    assert any(n.startswith("auto_continue_rounds@") for n in notes), notes
+
+
+def test_no_gate_of_the_loop_compares_the_round_with_the_first_grant():
+    # `max_rounds` never changes; `_rounds_budget` is the turn's real budget
+    # (src/agent_loop.py). A comparison with the grant is false after the first
+    # automatic extension and turns the guarded recovery paths off.
+    import re
+    from pathlib import Path
+    source = Path(al.__file__).read_text(encoding="utf-8")
+    stale = re.findall(r"round_num\s*(?:<=?|>=?|==)\s*max_rounds\b|\bmax_rounds\s*(?:<=?|>=?)\s*round_num\b", source)
+    assert stale == [], f"gate(s) compare the round with the first grant: {stale}"
+    assert "max_rounds=max_rounds" not in source, "TextRoundState must get the real budget"
+    assert "max_rounds=_rounds_budget" in source
+
+
 def test_mass_not_applicable_keeps_the_audit_the_gap_round_and_the_gate(loop):
     links = [{"id": f"C{i:02d}", "status": "not_applicable", "reason": "covered by design"} for i in range(1, 30)]
     rounds = [
