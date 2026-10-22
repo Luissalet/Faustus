@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import re
 from typing import Dict, Any
 
 from src.constants import MAX_OUTPUT_CHARS
@@ -118,6 +119,74 @@ def _evidence_for_fetch(url: str, text: str, *, owner_id: str, project_id, trunc
     )
 
 
+_BROWSER = "mcp__builtin_browser__"
+_CHALLENGE = re.compile(
+    r"just a moment|checking your browser|verify you are human|attention required|"
+    r"enable javascript and cookies|cf-browser-verification|un momento",
+    re.IGNORECASE)
+
+
+async def _read_with_browser(url: str, ctx: dict, *, why: str = "") -> "dict | None":
+    """A page a plain fetch was refused on (HTTP 403, a Cloudflare or bot
+    challenge, a page that needs JavaScript) read through the integrated
+    browser instead, as the person would. None when the browser is off,
+    not offered to this turn or cannot read it either: the caller keeps the
+    original error.
+
+    Seen live (22-10): "¿Ha sido Minecraft Dungeons 2 un fracaso?" -- SteamDB
+    and Wikipedia answered 403 / a Cloudflare challenge to web_fetch, the
+    error said "open the site in a browser", and the model, with the
+    browser offered, never did; the answer had to say it could not get the
+    first game's numbers.
+    """
+    disabled = ctx.get("disabled_tools") if isinstance(ctx, dict) else None
+    disabled = {str(x) for x in (disabled or ())}
+    if "builtin_browser" in disabled or any(
+            f"{_BROWSER}{name}" in disabled for name in ("browser_navigate", "browser_snapshot")):
+        return None
+    try:
+        from src.tool_utils import get_mcp_manager
+        mgr = get_mcp_manager()
+    except Exception:  # noqa: BLE001
+        mgr = None
+    if mgr is None or not hasattr(mgr, "call_tool"):
+        return None
+
+    async def call(name: str, args: dict, timeout: float) -> "dict | None":
+        try:
+            res = await asyncio.wait_for(mgr.call_tool(f"{_BROWSER}{name}", args), timeout=timeout)
+        except Exception:  # noqa: BLE001 - the original error stands
+            return None
+        if not isinstance(res, dict) or res.get("exit_code") not in (0, None) or res.get("error"):
+            return None
+        return res
+
+    nav = await call("browser_navigate", {"url": url}, 60)
+    if nav is None:
+        return None
+    text = str(nav.get("stdout") or "")
+    for _ in range(3):
+        if text and not _CHALLENGE.search(text[:4000]):
+            break
+        await call("browser_wait_for", {"time": 4}, 15)
+        snap = await call("browser_snapshot", {}, 45)
+        text = str((snap or {}).get("stdout") or text)
+    if not text.strip() or _CHALLENGE.search(text[:4000]):
+        return None
+    note = (f"[read with the integrated browser: a plain fetch was refused ({why[:160]}). "
+            "This is the page's accessibility snapshot; refs like [ref=e12] can be used with the "
+            "browser tools to click or read further.]\n\n")
+    body = text[:MAX_OUTPUT_CHARS - len(note)]
+    output = note + body
+    evidence = _evidence_for_fetch(
+        url, body, owner_id=str(ctx.get("owner") or "system") if isinstance(ctx, dict) else "system",
+        project_id=(ctx.get("project_id") or None) if isinstance(ctx, dict) else None,
+        truncated=len(text) > len(body), fetched_bytes=len(text.encode("utf-8")), total_bytes=None,
+    ).to_mapping()
+    return {"output": output, "exit_code": 0, "read_with": "integrated_browser", "read_status": "ok",
+            "untrusted_content": True, "evidence_refs": [evidence]}
+
+
 class WebFetchTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.search.content import fetch_webpage_content
@@ -184,6 +253,9 @@ class WebFetchTool:
             return {"error": f"web_fetch: {url}: {e}", "exit_code": 1}
         err = result.get("error")
         if not inspect_http and result.get("read_status") == "blocked":
+            via_browser = await _read_with_browser(url, ctx, why=str(err or ""))
+            if via_browser is not None:
+                return via_browser
             return {"error": f"web_fetch: {url}: {err}", "exit_code": 1,
                     "read_status": "blocked", "blocked_reason": result.get("blocked_reason"),
                     "http_status": result.get("http_status"), "final_url": result.get("final_url"),
