@@ -1914,6 +1914,9 @@ class CriteriaBook:
         verified: Dict[str, List[Tuple[int, str, Any]]] = {}
         stop = False
         for crit in work:
+            if crit is self.criteria[0] and not (crit.get("keys") or crit.get("matchers") or crit.get("limits")
+                                                 or crit.get("exits") or crit.get("statuses")):
+                continue  # the task statement itself: nothing a single run could demonstrate
             snapshot = dict(crit)
             for call in fresh:
                 pair = (crit["id"], call.get("call_id"))

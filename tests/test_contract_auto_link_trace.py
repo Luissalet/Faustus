@@ -38,21 +38,29 @@ def _auto(crit, call, df=None, terms=None):
 
 def _cap_book():
     rows = [
-        _crit("C01", "The scan reports alpha1 for a good archive.", keys=["alpha1"]),
-        _crit("C02", "The scan reports alpha2 for a good archive.", keys=["alpha2"]),
-        _crit("C03", "The scan reports alpha3 and beta3 for a good archive.", keys=["alpha3", "beta3"]),
-        _crit("C04", "The scan reports alpha4 for a good archive.", keys=["alpha4"]),
-        _crit("C05", "The scan reports alpha5 and beta5 for a good archive.", keys=["alpha5", "beta5"]),
+        _crit("C01", "The scan reports alpha1 and beta1 for a good archive.", keys=["alpha1", "beta1"]),
+        _crit("C02", "The scan reports alpha2 and beta2 for a good archive.", keys=["alpha2", "beta2"]),
+        _crit("C03", "The scan reports alpha3, beta3 and gamma3 for a good archive.",
+              keys=["alpha3", "beta3", "gamma3"]),
+        _crit("C04", "The scan reports alpha4 and beta4 for a good archive.", keys=["alpha4", "beta4"]),
+        _crit("C05", "The scan reports alpha5, beta5 and gamma5 for a good archive.",
+              keys=["alpha5", "beta5", "gamma5"]),
     ]
     return cc.CriteriaBook(rows)
+
+
+def _doc(*names):
+    """A JSON line that shows the given keys (a key counts when it shows quoted)."""
+    return "{" + ", ".join('"%s": 1' % n for n in names) + "}"
 
 
 def test_one_call_proves_at_most_three_criteria_ranked_by_terms_then_id():
     book = _cap_book()
     book.record_call("c1", "bash", "python -m arc scan good.arc",
-                     {"exit_code": 0, "output": "alpha1 alpha2 alpha3 beta3 alpha4 alpha5 beta5"}, kind="shell")
+                     {"exit_code": 0, "output": _doc("alpha1", "beta1", "alpha2", "beta2", "alpha3", "beta3", "gamma3",
+                                                    "alpha4", "beta4", "alpha5", "beta5", "gamma5")}, kind="shell")
     proven = book.auto_link()
-    # C03 and C05 show two terms each, then the tie between C01/C02/C04 goes by id
+    # C03 and C05 show three terms each, then the tie between C01/C02/C04 goes by id
     assert sorted(proven) == ["C01", "C03", "C05"]
     assert [c["id"] for c in book.criteria if c["state"] == "pending"] == ["C02", "C04"]
 
@@ -60,12 +68,13 @@ def test_one_call_proves_at_most_three_criteria_ranked_by_terms_then_id():
 def test_the_cap_counts_what_the_call_already_proved_in_an_earlier_pass():
     book = _cap_book()
     book.record_call("c1", "bash", "python -m arc scan good.arc",
-                     {"exit_code": 0, "output": "alpha1 alpha2 alpha3 beta3 alpha4 alpha5 beta5"}, kind="shell")
+                     {"exit_code": 0, "output": _doc("alpha1", "beta1", "alpha2", "beta2", "alpha3", "beta3", "gamma3",
+                                                    "alpha4", "beta4", "alpha5", "beta5", "gamma5")}, kind="shell")
     first = book.auto_link()
     assert len(first) == 3
     assert book.auto_link() == []
     # a different call has its own three
-    book.record_call("c2", "bash", "python -m arc scan other.arc", {"exit_code": 0, "output": "alpha2 alpha4"},
+    book.record_call("c2", "bash", "python -m arc scan other.arc", {"exit_code": 0, "output": _doc("alpha2", "beta2", "alpha4", "beta4")},
                      kind="shell")
     assert book.auto_link() == ["C02", "C04"]
 
@@ -80,25 +89,28 @@ def test_a_generic_key_never_proves_alone(key):
 
 def test_a_key_in_many_criteria_needs_a_second_term():
     crit = _crit("C1", "The frobnicate step logs a wibble line.", keys=["frobnicate", "wibble"])
-    assert _auto(crit, _call("frobnicate done"), df={"frobnicate": 1, "wibble": 1}) == "verified"
+    both, one = _doc("frobnicate", "wibble"), _doc("frobnicate")
+    rare = {"frobnicate": 1, "wibble": 1}
+    assert _auto(crit, _call(both), df=rare) == "verified"
+    assert _auto(crit, _call(one), df=rare) == "pending"          # one of two keys is not the sentence
+    assert _auto(crit, _call("frobnicate wibble done"), df=rare) == "pending"   # bare words are not output
     shared = {"frobnicate": 3, "wibble": 3}
-    assert _auto(crit, _call("frobnicate done"), df=shared) == "pending"
-    assert _auto(crit, _call("frobnicate wibble done"), df=shared) == "verified"
+    assert _auto(crit, _call(both), df=shared) == "verified"
     common = {"frobnicate": 9, "wibble": 9}
-    assert _auto(crit, _call("frobnicate wibble done"), df=common) == "pending"
+    assert _auto(crit, _call(both), df=common) == "pending"
 
 
 def test_a_word_in_many_criteria_does_not_count():
-    crit = _crit("C1", "Rounding happens once on the exact group sums.", words=["rounding", "exact", "group"])
-    out = "rounding exact group"
-    assert _auto(crit, _call(out), df={"rounding": 1, "exact": 1, "group": 1}) == "verified"
-    assert _auto(crit, _call(out), df={"rounding": 1, "exact": 6, "group": 7}) == "pending"
+    crit = _crit("C1", "Rounding happens on the exact group_sums.", words=["rounding", "exact", "group_sums"])
+    out = "rounding exact group_sums"
+    assert _auto(crit, _call(out), df={"rounding": 1, "exact": 1, "group_sums": 1}) == "verified"
+    assert _auto(crit, _call(out), df={"rounding": 1, "exact": 6, "group_sums": 7}) == "pending"
 
 
 def test_three_distinct_words_are_needed_not_two():
-    crit = _crit("C1", "Rounding happens once on the exact group sums.", words=["rounding", "exact", "group"])
+    crit = _crit("C1", "Rounding happens on the exact group_sums.", words=["rounding", "exact", "group_sums"])
     assert _auto(crit, _call("rounding exact"), df={}) == "pending"
-    assert _auto(crit, _call("rounding exact group"), df={}) == "verified"
+    assert _auto(crit, _call("rounding exact group_sums"), df={}) == "verified"
 
 
 @pytest.mark.parametrize("quote", ["meters", "`meters`", "Z", "'1'"])
@@ -107,12 +119,15 @@ def test_a_criterion_that_is_a_bare_token_is_never_proven(quote):
     assert _auto(crit, _call(f"output with {quote.strip(chr(96) + chr(39))} in it"), df={}) == "pending"
 
 
-def test_a_sentence_with_many_terms_needs_about_half_of_them():
+def test_a_sentence_with_many_terms_needs_about_two_thirds_of_them_shown_together():
     keys = ["pk1", "pk2", "pk3", "pk4", "pk5"]
-    crit = _crit("C1", "Five things: pk1, pk2, pk3, pk4 and pk5 are all there.", keys=keys)
-    assert _auto(crit, _call("pk1 only"), df={}) == "pending"
-    assert _auto(crit, _call("pk1 pk2"), df={}) == "pending"
-    assert _auto(crit, _call("pk1 pk2 pk3"), df={}) == "verified"
+    crit = _crit("C1", "Five things: pk1, pk2, pk3, pk4 and pk5 are there.", keys=keys)
+    assert _auto(crit, _call(_doc("pk1")), df={}) == "pending"
+    assert _auto(crit, _call(_doc("pk1", "pk2", "pk3")), df={}) == "pending"
+    assert _auto(crit, _call(_doc("pk1", "pk2", "pk3", "pk4")), df={}) == "verified"
+    # the same keys scattered over unrelated lines of a long output are not one record
+    scattered = "\n".join([_doc("pk1"), "x", "x", "x", "x", _doc("pk2"), "x", "x", "x", "x", _doc("pk3", "pk4")])
+    assert _auto(crit, _call(scattered), df={}) == "pending"
 
 
 def test_a_limit_needs_a_unit_that_touches_its_number_for_one_letter_units():
@@ -160,20 +175,24 @@ def test_shell_loops_are_judged_by_the_commands_inside(command, expected):
     "tests done, exit code: 1",
 ])
 def test_a_wrapper_that_exited_zero_but_printed_a_failure_proves_nothing(output):
-    crit = _crit("C1", "The scan reports alpha1 for a good archive.", keys=["alpha1"])
-    assert _auto(crit, _call("alpha1 " + output, exit_code=0), df={}) == "pending"
-    assert _auto(crit, _call("alpha1"), df={}) == "verified"
+    crit = _crit("C1", "The scan reports alpha1 and beta1 for a good archive.", keys=["alpha1", "beta1"])
+    assert _auto(crit, _call(_doc("alpha1", "beta1") + " " + output, exit_code=0), df={}) == "pending"
+    assert _auto(crit, _call(_doc("alpha1", "beta1")), df={}) == "verified"
 
 
 @pytest.mark.parametrize("output", ["FAIL: 0", "failures: 0, rc=0", "0 FAIL", "exit status 0", "no failures"])
 def test_a_clean_report_of_zero_failures_is_not_a_failure(output):
-    crit = _crit("C1", "The scan reports alpha1 for a good archive.", keys=["alpha1"])
-    assert _auto(crit, _call("alpha1 " + output), df={}) == "verified"
+    crit = _crit("C1", "The scan reports alpha1 and beta1 for a good archive.", keys=["alpha1", "beta1"])
+    assert _auto(crit, _call(_doc("alpha1", "beta1") + " " + output), df={}) == "verified"
 
 
 def test_the_failure_rule_has_no_exemption_for_a_criterion_about_tests():
-    crit = _crit("C1", "The tests report alpha1 for every archive.", keys=["alpha1"])
-    assert _auto(crit, _call("alpha1 rc=1 FAIL No module named x"), df={}) == "pending"
+    crit = _crit("C1", "The tests report alpha1 and beta1 for archives.", keys=["alpha1", "beta1"])
+    assert _auto(crit, _call(_doc("alpha1", "beta1") + " rc=1 FAIL No module named x"), df={}) == "pending"
+    for summary in ("3 failed, 20 passed in 1.2s", "1 error in 0.3s", "ERROR tests/test_cli.py - ImportError: x",
+                    "FAILED tests/test_cli.py::test_a - assert 1 == 2"):
+        assert _auto(crit, _call(_doc("alpha1", "beta1") + "\n" + summary), df={}) == "pending", summary
+    assert _auto(crit, _call(_doc("alpha1", "beta1") + "\n20 passed in 1.2s"), df={}) == "verified"
 
 
 # -- 5. regression: the real outputs of a 133-criteria task ------------------------
@@ -210,7 +229,7 @@ def test_trace_the_readme_grep_loop_is_not_a_run():
     assert all(c["state"] == "pending" for c in book.criteria)
 
 
-def test_trace_the_readme_check_proves_a_few_criteria_it_really_shows():
+def test_trace_the_readme_check_proves_at_most_what_it_really_shows():
     book = _trace_book()
     _record(book, "readme_grep_loop")
     _record(book, "failed_wrapper")
@@ -218,7 +237,7 @@ def test_trace_the_readme_check_proves_a_few_criteria_it_really_shows():
     assert call["exit_code"] == 0 and "ALL README CHECKS PASSED" in call["output"]
     proven = book.auto_link()
     # before: 42 criteria; now at most three, and only ones the output shows
-    assert 1 <= len(proven) <= cc.AUTO_CALL_CAP
+    assert len(proven) <= cc.AUTO_CALL_CAP
     assert set(proven) <= {"C048", "C124", "C125"}
     # the criteria about time zones, buckets and limits are not shown by a README check
     for cid in ("C067", "C070", "C087", "C132", "C028", "C077", "C078", "C104"):

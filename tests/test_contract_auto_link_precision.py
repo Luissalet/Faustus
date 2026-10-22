@@ -59,12 +59,12 @@ def test_a_bare_exit_status_rule_is_not_proven_by_just_any_clean_run():
 def test_an_exit_status_counts_together_with_subject_key_or_two_words():
     words = ["tool", "exits", "archive", "healthy"]
     quote = "The tool exits with status 0 when the archive is healthy."
+    # the subject is only the setting: it never is a second piece of evidence
     with_subject = _crit(quote, exits=[0], words=words, subject="scan")
-    assert _verdict(with_subject, _call("scan: 3 members ok")) == "verified"
-    # the subject must show (in the output, or as the command's own argument)
-    assert _verdict(with_subject, _call("all done", command="python -m arc pack good.arc")) == "pending"
-    with_key = _crit(quote, exits=[0], words=words, keys=["members"])
-    assert _verdict(with_key, _call("3 members ok")) == "verified"
+    assert _verdict(with_subject, _call("scan: 3 members ok")) == "pending"
+    with_key = _crit(quote, exits=[0], words=words, keys=["member_count"])
+    assert _verdict(with_key, _call('{"member_count": 3}')) == "verified"
+    assert _verdict(with_key, _call("3 member_count ok")) == "pending"       # not quoted: not the program's output
     two_words = _crit(quote, exits=[0], words=words)
     assert _verdict(two_words, _call("tool archive healthy")) == "verified"
     assert _verdict(two_words, _call("archive healthy")) == "pending"
@@ -116,11 +116,13 @@ def test_a_crashed_or_failed_test_run_does_not_prove_a_failure_rule(output, code
 
 
 def test_a_failed_run_only_proves_a_rule_that_is_about_a_failure():
-    delete = _crit("The tool must never delete the source files.", words=["delete", "source", "files"])
-    out = "no source files to delete: nothing was deleted"
-    assert _verdict(delete, _call(out)) == "verified"
-    assert _verdict(delete, _call(out, exit_code=1)) == "pending"
-    fails = _crit("A damaged archive fails with `corrupt`.", keys=["corrupt"], words=["damaged", "archive", "fails"])
+    scan = _crit("The scan reports `member_count` and `archive_id` for a healthy archive.",
+                 keys=["member_count", "archive_id"])
+    out = '{"member_count": 3, "archive_id": "a1"}'
+    assert _verdict(scan, _call(out)) == "verified"
+    assert _verdict(scan, _call(out, exit_code=1)) == "pending"
+    fails = _crit("A damaged archive fails with `corrupt` and `crc`.", keys=["corrupt", "crc"],
+                  words=["damaged", "archive", "fails"])
     assert _verdict(fails, _call(CORRUPT, exit_code=1)) == "verified"
     # about a failure and failing: plain words are not enough
     only_words = _crit("A damaged archive is rejected loudly.", words=["damaged", "archive", "rejected"])
