@@ -1340,3 +1340,6 @@ No fue un fallo de GLM ni de las Sparks. El FAIL se conserva y la racha de tres 
 - Ambos oráculos escriben su salida en UTF-8: antes abortaban al imprimir un detalle no ASCII con la consola en cp1252.
 
 Un cuarto trabajo nuevo con interfaz (biblioteca de préstamos, 77 casos, 22 mutantes detectados) está preparado; antes de congelarlo se corrigen los once puntos de la auditoría de equidad entre contrato y oráculo. Vault y Ledger pasan la misma auditoría antes de enviarse.
+
+
+The native Unity tool reads and edits an open local editor through the project bridge: serialized fields, materials, prefabs, scenes, Undo/Redo, Play mode and retained Test Runner results. Agent, HTTP and MCP share the operation. Discovery starts no editor. The gamedev skill and project profile reader route Unity, Godot, Unreal and Three.js by local metadata; live editor control currently covers Unity. [Unity editor](docs/api/unity.md).

@@ -1697,6 +1697,7 @@ from routes.run_report_routes import setup_run_report_routes
 from routes.agent_mailbox_routes import setup_agent_mailbox_routes
 from routes.prior_art_routes import setup_prior_art_routes
 from routes.blender_scene_routes import setup_blender_scene_routes
+from routes.unity_routes import setup_unity_routes
 from routes.extraction_routes import setup_extraction_routes
 from routes.visual_index_routes import setup_visual_index_routes
 from routes.chat_bridge_routes import setup_chat_bridge_routes
@@ -1713,6 +1714,7 @@ app.include_router(setup_run_report_routes())
 app.include_router(setup_agent_mailbox_routes())
 app.include_router(setup_prior_art_routes())
 app.include_router(setup_blender_scene_routes())
+app.include_router(setup_unity_routes())
 # Structured extraction into the user's JSON Schema (src/schema_extraction.py).
 app.include_router(setup_extraction_routes())
 app.include_router(setup_visual_index_routes())

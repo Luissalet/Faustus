@@ -574,6 +574,11 @@ class Skill:
     @classmethod
     def from_markdown(cls, text: str, *, path: Optional[str] = None) -> "Skill":
         fm, body = parse_frontmatter(text)
+        # Portable agent skills keep application-specific fields in metadata.
+        # Explicit native fields remain authoritative on existing skills.
+        metadata = fm.get("metadata")
+        if isinstance(metadata, dict):
+            fm = {**{k: metadata[k] for k in ("version", "category", "tags", "status", "source") if k in metadata}, **fm}
         sections = parse_body(body)
         raw_name = fm.get("name")
         name = slugify(raw_name if raw_name not in (None, "") else fm.get("description", ""), fallback="skill")

@@ -40,6 +40,7 @@ BOARD_TOOL_NAMES: frozenset[str] = frozenset({
 })
 
 EXAMPLES: Dict[str, List[str]] = {
+    "unity": ["edita este componente del prefab en Unity y comprueba el resultado", "asigna un material HDRP a este objeto de Blood Arrows", "ejecuta las pruebas PlayMode y lee los errores de compilacion del proyecto Unity"],
     # -- Shared coordination board (tasks, locks and reviews with other agents) --
     "coordination_board": ["qué hay en el tablero de coordinación", "quién está trabajando en qué ahora", "show me the shared task board", "what are the other agents doing"],
     "coordination_poll": ["¿hay algo nuevo para mí en el tablero?", "mira si me han escrito los otros agentes", "any new messages or reviews for me", "check my coordination inbox"],

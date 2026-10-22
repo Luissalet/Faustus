@@ -746,3 +746,6 @@ Silver muestra los cambios guardados antes de acabar la respuesta, actualiza
 la vista y conserva las ediciones del entrenador sin guardar. Herramientas y
 ejecución del turno no cambian. Contrato en `docs/COPILOT_LIVE_REFRESH.md` de
 Silver; los demás hosts requieren su sincronización habitual y sus callbacks.
+
+
+La herramienta nativa Unity consulta y edita el editor local abierto mediante el puente del proyecto: campos serializados, materiales, prefabs, escenas, Undo/Redo, modo Play y resultados conservados del Test Runner. Chat, HTTP y MCP comparten la operación. La consulta del catálogo no arranca el editor. La habilidad gamedev y el lector de perfiles seleccionan Unity, Godot, Unreal y Three.js por sus metadatos locales; el control directo del editor cubre Unity. [Editor Unity](docs/api/unity.md).

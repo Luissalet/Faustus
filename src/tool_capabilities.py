@@ -765,7 +765,7 @@ _register(
     # operations and the official Blender tools also execute bpy, edit the open
     # scene and write caller-selected project/export files. Loopback MCP needs
     # no external service. Full access uses the existing authority policy.
-    {"blender_scene"},
+    {"blender_scene", "unity"},
     ToolEffect.READ_WORKSPACE,
     ToolEffect.WRITE_PRIVATE,
     ToolEffect.WRITE_WORKSPACE,
