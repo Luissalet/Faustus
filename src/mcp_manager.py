@@ -2187,7 +2187,23 @@ class McpManager:
         marked, and with `browser_snapshot_paging` the budget becomes a window
         size instead of a cut (src/browser_snapshot_window.py).
         """
-        if not isinstance(result, dict) or tool_name not in _BROWSER_SNAPSHOT_TOOLS:
+        if not isinstance(result, dict):
+            return result
+        # Newer builds write the snapshot to .playwright-mcp/*.yml and return
+        # only a link the model cannot open: put the file back inline first,
+        # for every browser tool that returns one (wait_for, tabs, ...).
+        stdout = result.get("stdout")
+        if isinstance(stdout, str) and str(tool_name).startswith("browser_") and "napshot](" in stdout:
+            try:
+                from src.browser_snapshot_file import inline_snapshot_links
+                inlined = inline_snapshot_links(stdout)
+            except Exception as exc:  # noqa: BLE001 - the link stays, nothing lost
+                logger.debug(f"browser snapshot inlining skipped: {exc}")
+                inlined = stdout
+            if inlined is not stdout:
+                result = dict(result)
+                result["stdout"] = inlined
+        if tool_name not in _BROWSER_SNAPSHOT_TOOLS:
             return result
         if result.get("exit_code") not in (None, 0) or result.get("error"):
             return result

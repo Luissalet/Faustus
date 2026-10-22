@@ -124,6 +124,24 @@ _CHALLENGE = re.compile(
     r"just a moment|checking your browser|verify you are human|attention required|"
     r"enable javascript and cookies|cf-browser-verification|un momento",
     re.IGNORECASE)
+_HTTP_STATUS = re.compile(r"HTTP status:\s*(\d{3})", re.IGNORECASE)
+_BANNED = re.compile(
+    r"you have been (?:banned|blocked)|your ip (?:address )?has been (?:banned|blocked)|"
+    r"access denied|403 forbidden|has been rate[- ]limited|too many requests",
+    re.IGNORECASE)
+
+
+def _snapshot_words(text: str) -> str:
+    """The readable words of a short snapshot (headings, paragraphs)."""
+    words = []
+    for line in (text or "").splitlines():
+        line = line.strip(" -")
+        m = re.match(r'^(?:heading|paragraph|text|link)\b[^:"]*"?([^"\[]*)"?[^:]*:?\s*(.*)$', line, re.IGNORECASE)
+        if m:
+            piece = " ".join(p for p in (m.group(1).strip(), m.group(2).strip()) if p)
+            if piece and piece not in words:
+                words.append(piece)
+    return " ".join(words)
 
 
 async def _read_with_browser(url: str, ctx: dict, *, why: str = "") -> "dict | None":
@@ -173,6 +191,18 @@ async def _read_with_browser(url: str, ctx: dict, *, why: str = "") -> "dict | N
         text = str((snap or {}).get("stdout") or text)
     if not text.strip() or _CHALLENGE.search(text[:4000]):
         return None
+    status_m = _HTTP_STATUS.search(text[:3000])
+    status = int(status_m.group(1)) if status_m else 0
+    if status >= 400 or (len(text) < 6000 and _BANNED.search(text)):
+        # The browser was refused too (a ban, a 403 page): say so plainly
+        # with what the page itself says, so the model moves on to another
+        # source instead of reading an error page as content.
+        said = _snapshot_words(text)[:500]
+        return {"error": (f"web_fetch: {url}: the integrated browser was refused as well"
+                          f"{f' (HTTP {status})' if status else ''}. The page says: {said or '(nothing readable)'} "
+                          "-- use another source for this data."),
+                "exit_code": 1, "read_with": "integrated_browser", "read_status": "blocked",
+                "http_status": status or None, "untrusted_content": True}
     note = (f"[read with the integrated browser: a plain fetch was refused ({why[:160]}). "
             "This is the page's accessibility snapshot; refs like [ref=e12] can be used with the "
             "browser tools to click or read further.]\n\n")
