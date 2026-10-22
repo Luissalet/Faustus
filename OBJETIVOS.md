@@ -26,7 +26,13 @@ de comparación GLM frente a DeepSeek V4.1 Flash TP4 con los mismos oráculos.
 - tracker: **98/98 PASS**. 265 rondas, unas 1 h 38, turno limpio. Defecto de
   interfaz fuera del oráculo: a 1280 px, prioridad y estado comparten celda y las
   columnas siguientes salen desplazadas.
-- tsdb: enviado el 22-10 a las 15:49Z, ya con el harness corregido (ver abajo).
+- tsdb: **85/85 PASS** con el harness ya corregido. 278 rondas en unas 3 h 26, turno
+  limpio. DeepSeek llamó a `criteria_check` 36 veces por su cuenta y cerró con 143 de 144
+  requisitos probados (el otro lo marcó como no aplicable). La auditoría de cierre saltó en la
+  ronda 107 y la ronda de huecos en la 212.
+- Conclusión: DeepSeek V4.1 Flash TP4 queda como modelo principal. Ve imágenes (comprobado
+  con una petición real) y los Hoards lo usan para texto y visión por `/api/link/chat`.
+  Punto débil abierto: bordes de día local en los cambios de hora (meter).
 
 **Por qué DeepSeek no usaba `criteria_check`.** Diagnóstico en
 `research-inbox/sparks835/runtime-audit/resume-20261020/CRITERIA-DSV41-DIAGNOSIS.md`.
@@ -37,15 +43,23 @@ Corregido en master 6a2d4583, con revisión independiente en dos rondas:
   El recorte y las dos compactaciones las conservan, y la compactación ya no
   las toma por el objetivo.
 
-**Abierto: enlace automático de requisitos por el harness.**
-- Es experimental y está apagado por defecto. En el rastro de meter, ~50 de sus
-  69 pruebas eran falsas, incluidas tres reglas de DST que el oráculo suspende.
-- Se están endureciendo las reglas en la rama `fix/criteria-autolink-precision`:
-  - tope de 3 criterios por llamada;
-  - solo términos distintivos;
-  - las ejecuciones fallidas no prueban nada aunque el envoltorio salga con 0;
-  - un bucle que solo hace grep no cuenta como ejecución.
-- Solo se encenderá con una precisión revisada a mano de al menos el 80 %.
+**Enlace automático de requisitos por el harness** (experimental, apagado por defecto).
+- Endurecido tras dos revisiones independientes:
+  - tope de 3 criterios por llamada y solo términos distintivos;
+  - las ejecuciones con fallos o errores no prueban nada, aunque el envoltorio salga con 0;
+  - los nombres de fichero, el eco de etiquetas y los bucles que solo hacen grep no cuentan;
+  - los límites necesitan una medida real de la operación nombrada.
+- Resultado sobre 7 rastros, revisado a mano: 41 pruebas, 39 genuinas, 0 falsas y 2 dudosas.
+- Prueba muy poco: por eso sigue apagado. El aviso de requisitos arreglado ya hace que
+  el modelo los compruebe él mismo (tsdb).
+
+**Visión con SGLang.** SGLang responde a `/api/show` imitando a Ollama con una lista fija
+`["completion"]`. Faustus la tomaba por la respuesta de Ollama y trataba a DeepSeek como
+modelo sin visión, así que las imágenes de las herramientas no le llegaban. Corregido: esa
+imitación se ignora y decide la prueba con imagen real.
+
+**Siguiente:** reducir los fallos de fechas y cambios de hora con un verificador externo con
+datos realistas (bordes de DST, días locales), dentro de la auditoría de cierre.
 
 Historial:
 
