@@ -43,12 +43,14 @@ def test_other_requests_do_not(text):
 
 def test_the_floor_adds_route_level_browser_intent_before_expansion():
     src = inspect.getsource(al)
-    floor = src.index("browser offered for a request about a web page")
+    floor = src.index("[tool-floor] browser offered for a %s")
     expansion = src.index("_relevant_tools = _expand_browser_mcp_tools(_relevant_tools, mcp_mgr)\n")
     assert floor < expansion
     block = src[src.rindex("if (not guide_only", 0, floor):floor]
     assert "not relevant_tools" in block            # a caller-pinned scope is a ceiling
     assert "builtin_browser\" not in disabled_tools" in block
+    assert "_research_turn" in block               # web research turns get the browser too
+    assert '{"web_search", "web_fetch"}' in src[src.rindex("_research_turn = ", 0, floor):floor]
 
 
 class _Mgr:

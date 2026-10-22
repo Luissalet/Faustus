@@ -10409,10 +10409,18 @@ async def _stream_agent_loop_body(
     # retrieval ranked the desktop or page-reading tools higher (see
     # _browser_request). A caller-pinned selection is a ceiling and wins;
     # disabled tools and the browser policy are honoured by the expansion.
-    if (not guide_only and _relevant_tools is not None and not relevant_tools and _last_user
-            and "builtin_browser" not in disabled_tools and _browser_request(_last_user)):
+    # A research turn (web search on) gets it too: plenty of the pages that
+    # hold the answer (SteamDB, shops, dashboards) refuse a plain fetch or
+    # only render in a browser. Seen live (22-10): "¿Ha sido Minecraft
+    # Dungeons 2 un fracaso?" searched 12 times, got search-engine stubs and
+    # never opened a page that had the player counts.
+    _research_turn = bool({"web_search", "web_fetch"} & set(_relevant_tools or ()))
+    if (not guide_only and _relevant_tools is not None and not relevant_tools
+            and "builtin_browser" not in disabled_tools
+            and ((_last_user and _browser_request(_last_user)) or _research_turn)):
         if "builtin_browser" not in _relevant_tools:
-            logger.info("[tool-floor] browser offered for a request about a web page")
+            logger.info("[tool-floor] browser offered for a %s",
+                        "research turn" if _research_turn else "request about a web page")
         _relevant_tools.add("builtin_browser")
 
     if not guide_only and _relevant_tools is not None:
