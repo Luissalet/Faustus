@@ -308,6 +308,15 @@ class WebFetchTool:
             capture_block = f"\n\n---\n{look.marker()}\n{look.text}"
 
         if not text and not capture_block:
+            # Nothing readable came back: a refusal reported as a network
+            # error ("NetworkError: blocked: HTTP 403 forbidden"), a page
+            # that needs JavaScript, an empty shell. The browser reads what a
+            # person would see.
+            if not inspect_http:
+                via_browser = await _read_with_browser(
+                    url, ctx, why=str(err or "no readable text content (the page may need JavaScript)"))
+                if via_browser is not None:
+                    return via_browser
             if look_note:
                 return {"error": f"web_fetch: {url}: no readable text content. {look_note}", "exit_code": 1,
                         "look": look.as_dict() if look is not None else None, "untrusted_content": True}

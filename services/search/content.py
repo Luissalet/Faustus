@@ -61,13 +61,28 @@ def _get_local_public_url(url, headers, timeout, max_redirects=5, max_bytes=None
         transport_factory=_PinnedTransport,
     )
 
+def _decoded_headers(headers) -> dict:
+    """The family fetcher hands back the body already decoded but the
+    server's headers as they came. Rebuilding an httpx.Response with
+    ``Content-Encoding: gzip`` (or br/zstd) on a decoded body makes httpx
+    inflate it again: "Error -3 while decompressing data: incorrect header
+    check" on every compressed page (seen live 22-10 on Metacritic and
+    steamdata.ai). Drop the encoding and the stale length."""
+    out = {}
+    for key, value in dict(headers or {}).items():
+        if str(key).lower() in ("content-encoding", "content-length", "transfer-encoding"):
+            continue
+        out[key] = value
+    return out
+
+
 def _get_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
     from src import family_services
     result = family_services.fetch(url, tier="auto", accept="any", timeout=timeout,
                                    max_bytes=max_bytes, respect_robots=True)
     if result.get("ok") and isinstance(result.get("body"), bytes):
         response = httpx.Response(result.get("status", 200), content=result["body"],
-                                  headers=result.get("headers", {}),
+                                  headers=_decoded_headers(result.get("headers", {})),
                                   request=httpx.Request("GET", result.get("final_url") or result.get("url") or url))
         response.truncated = bool(result.get("truncated"))
         response.declared_bytes = result.get("total_bytes")
@@ -75,7 +90,7 @@ def _get_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
     # Preserve received access/rate-limit errors without retrying another tier.
     if result.get("status") in (403, 429):
         return httpx.Response(result["status"], content=result.get("body") or b"",
-                              headers=result.get("headers", {}),
+                              headers=_decoded_headers(result.get("headers", {})),
                               request=httpx.Request("GET", result.get("final_url") or url))
     # Policy/HTTP errors remain authoritative; only unavailable transport falls back.
     if result.get("status") not in (None, 401, 404, 503) and result.get("error") != "hub unreachable":

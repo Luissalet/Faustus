@@ -75,3 +75,31 @@ def test_a_browser_error_keeps_the_original_error(monkeypatch):
     _blocked(monkeypatch, mgr)
     out = _run({"disabled_tools": set()})
     assert out["exit_code"] == 1 and out["read_status"] == "blocked"
+
+
+def test_a_refusal_reported_as_a_network_error_is_read_with_the_browser(monkeypatch):
+    # The family fetcher's refusal reaches web_fetch as "NetworkError: blocked: HTTP 403 forbidden"
+    # with no read_status (seen live on Wikipedia, 22-10).
+    mgr = _Mgr(["- heading \"Minecraft Dungeons II\"\n- text: released 29 September 2026"])
+    import src.search.content as content
+    monkeypatch.setattr(content, "fetch_webpage_content", lambda url, **kw: {
+        "error": "NetworkError: blocked: HTTP 403 forbidden; not retrying for 22 more minute(s)",
+        "content": "", "title": ""})
+    import src.tool_utils as tu
+    monkeypatch.setattr(tu, "get_mcp_manager", lambda: mgr)
+    out = asyncio.run(wt.WebFetchTool().execute("https://en.wikipedia.org/wiki/X", {"disabled_tools": set()}))
+    assert out["exit_code"] == 0 and "29 September 2026" in out["output"]
+
+
+def test_a_compressed_page_from_the_family_fetcher_is_not_inflated_twice():
+    # The family fetcher returns a decoded body with the server's Content-Encoding header;
+    # rebuilding the response with it made httpx inflate it again ("incorrect header check").
+    import gzip
+
+    import httpx
+    from services.search import content as sc
+    body = b"<html><title>Minecraft Dungeons II Reviews</title><p>Metascore 75</p></html>"
+    headers = sc._decoded_headers({"Content-Encoding": "gzip", "Content-Length": str(len(gzip.compress(body))),
+                                   "Content-Type": "text/html"})
+    response = httpx.Response(200, content=body, headers=headers, request=httpx.Request("GET", "https://x.test/"))
+    assert response.text.endswith("</html>") and "content-encoding" not in {k.lower() for k in headers}
