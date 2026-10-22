@@ -249,6 +249,24 @@ _FAILURE_WORDS = _re_mod.compile(r"\b(?:fail\w*|error\w*|reject\w*|refus\w*|inva
 #: has no harder term, when the harness (not the model) picks the call.
 AUTO_MIN_WORDS = 2
 
+#: What a CRASHED run prints: the runtime or the test runner failing, as
+#: opposed to the program under test reporting an error on purpose
+#: (`{"error": {"code": "corrupt"}}`, `error: unknown command`). A traceback,
+#: an uncaught exception line, pytest's `FAILED path::test` / `ERROR path`
+#: lines or `N failed`, a command that does not exist.
+_CRASH_RE = _re_mod.compile(
+    r"Traceback \(most recent call last\)|\b[A-Z][A-Za-z_]*(?:Error|Exception):|"
+    r"^\s*(?:FAILED|ERROR)\s+\S*(?:::|\.py\b)|\b[1-9]\d*\s+(?:failed|errors?)\b|"
+    r"command not found|is not recognized as|No such file or directory",
+    _re_mod.M)
+_ABOUT_CRASH_RE = _re_mod.compile(r"traceback|exception|crash|stack\s*trace|\btests?\b|pytest", _re_mod.I)
+
+
+def output_shows_failure(text: str) -> bool:
+    """The output of a run that crashed or failed its tests (see `_CRASH_RE`).
+    Used when the harness, not the model, picks the call."""
+    return bool(_CRASH_RE.search(text or ""))
+
 
 def raw_usage(call: Mapping[str, Any]) -> bool:
     """The output is just a usage message (argparse and the like)."""
@@ -303,11 +321,16 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     produces.
 
     `auto=True` is the harness judging a call on its own
-    (`CriteriaBook.auto_link`): nobody pointed at the call, so the last
-    fallback is closed. A criterion with no key, form matcher, limit, exit
-    status or HTTP status is only proven when at least `AUTO_MIN_WORDS`
-    distinct content words of it show in the output - one shared word never
-    proves anything there.
+    (`CriteriaBook.auto_link`): nobody pointed at the call, so it is stricter:
+      * a run that failed (exit code other than 0, a traceback, a failed test
+        line) proves nothing, unless the criterion is itself about a failure,
+        and then only by a specific term (never by plain words);
+      * an exit status or a bare "JSON document" only counts together with
+        the criterion's subject, one of its keys, or `AUTO_MIN_WORDS` of its
+        words (a bare "exit 0" rule is never proven by just any clean run);
+      * a criterion with no key, form matcher, limit, exit status or HTTP
+        status is only proven when at least `AUTO_MIN_WORDS` distinct content
+        words of it show in the output - one shared word proves nothing.
     """
     if call is None:
         return verify_criterion(criterion, evidence_ok=None,
@@ -336,6 +359,20 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     # (first 2 KB + last 8 KB); only the linear test-id scan sees it all.
     raw_out = _window(full_out)
     out = raw_out.lower()
+    about_failure = bool(_FAILURE_WORDS.search(str(criterion.get("quote") or "")))
+    crashed = bool(auto and output_shows_failure(raw_out))
+    failing = bool(auto and (crashed or call.get("exit_code") not in (0, None)))
+    if crashed and not _ABOUT_CRASH_RE.search(str(criterion.get("quote") or "")):
+        # The harness picked this call: a crash or a failed test run shows
+        # nothing about the program's behaviour, whatever words it contains.
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="that run crashed or failed its tests; a clean run is needed")
+    if failing and not about_failure and not crashed:
+        # A non-zero exit shows a failure, so it can only prove a criterion
+        # that is about one (and then only by a specific term, never plain words).
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="that run failed (exit "
+                                       f"{call.get('exit_code')}); a clean run is needed")
     located = (command + "\n" + raw_out).lower()
     passing_tests = _test_ids(command, full_out, test) if call.get("exit_code") == 0 else []
     tests_text = "\n".join(passing_tests).lower()
@@ -400,18 +437,31 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     statuses = [x for x in (criterion.get("statuses") or []) if isinstance(x, int)]
     words = [str(w) for w in (criterion.get("words") or []) if str(w).strip()]
     if keys or out_matchers or limits or exits or statuses:
-        ok = (any(_mentions(hay, k) or (not k.isalnum() and k.lower() in hay) for k in keys)
-              or any(shown(m) for m in out_matchers)
-              or any(_limit_shown(hay, l) for l in limits)
-              or (call.get("exit_code") in exits)
-              or any(_status_shown(raw_out, s) for s in statuses))
+        key_hit = any(_mentions(hay, k) or (not k.isalnum() and k.lower() in hay) for k in keys)
+        if auto:
+            # Nobody pointed at this call. A term that fits any clean run
+            # (an exit status, a bare "JSON document") only counts together
+            # with the criterion's subject, one of its keys or two of its words.
+            co = bool(subject) or key_hit or len(
+                {w.lower() for w in words if _mentions(hay, w)}) >= AUTO_MIN_WORDS
+            ok = (key_hit
+                  or any(shown(m) for m in out_matchers if co or not m.get("json_doc"))
+                  or any(_limit_shown(hay, l) for l in limits)
+                  or (co and call.get("exit_code") in exits)
+                  or any(_status_shown(raw_out, s) for s in statuses))
+        else:
+            ok = (key_hit
+                  or any(shown(m) for m in out_matchers)
+                  or any(_limit_shown(hay, l) for l in limits)
+                  or (call.get("exit_code") in exits)
+                  or any(_status_shown(raw_out, s) for s in statuses))
         shown_terms = ", ".join(keys[:3] + [str(m.get("src")) for m in out_matchers[:2]]
                                 + [f"{l.get('num')} {l.get('unit')}" for l in limits[:2]]
                                 + [f"exit {x}" for x in exits[:2]] + [f"HTTP {s}" for s in statuses[:2]])
     else:
         if auto:
             hits = {w.lower() for w in words if _mentions(hay, w)}
-            ok = len(hits) >= AUTO_MIN_WORDS
+            ok = len(hits) >= AUTO_MIN_WORDS and not failing
         else:
             ok = not words or any(_mentions(hay, w) for w in words)
         shown_terms = ", ".join(words[:6])

@@ -1252,18 +1252,113 @@ def is_run_call(tool: str, command: str) -> bool:
     if tool not in AUTO_TOOLS:
         return False
     if tool == "python":
-        return bool(str(command or "").strip())
+        code = str(command or "")
+        return bool(code.strip()) and not python_reads_only(code)
     for step in _split_steps(str(command or "")):
         argv = _argv(step)
         if not argv:
             continue
         prog = re.sub(r"\.(?:exe|cmd|bat)$", "", argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower())
-        if prog not in _NON_RUN_PROGRAMS and prog not in _NAVIGATION_PROGRAMS:
-            return True
+        if prog in _NON_RUN_PROGRAMS or prog in _NAVIGATION_PROGRAMS or prog in _FILTER_PROGRAMS:
+            continue
+        m = _INLINE_CODE_RE.match(step.strip())
+        if m and m.group(2) is not None and python_reads_only(m.group(2)):
+            continue  # `python -c "print(open('f').read())"` reads a file
+        return True
     return False
 
 
 _NAVIGATION_PROGRAMS = frozenset({"cd", "pushd", "popd", "set-location", "sl", "chdir"})
+#: Programs that only filter or show text (`cat f | jq .`, `sort`, `Test-Path`):
+#: they run nothing of the project, alone or at the end of a pipeline.
+_FILTER_PROGRAMS = frozenset("""
+jq yq sort uniq cut tr column nl tac rev fold fmt paste join comm diff cmp test sha256sum md5sum base64
+test-path get-item get-itemproperty measure-object get-filehash resolve-path
+""".split())
+#: What a read-only python snippet may import and call.
+_PY_READ_IMPORTS = frozenset({"os", "sys", "pathlib", "json", "re", "glob", "io", "textwrap", "itertools",
+                              "collections", "csv", "string", "hashlib", "fnmatch"})
+_PY_READ_CALLS = frozenset("""
+print open len sorted list str repr int float bool min max sum set tuple dict enumerate zip range any all
+isinstance reversed map filter abs round format
+read readline readlines read_text read_bytes splitlines split rsplit strip rstrip lstrip join lower upper
+startswith endswith find rfind count encode decode items keys values get index title
+exists isfile isdir islink listdir glob rglob iterdir getsize stat walk Path PurePath resolve absolute
+abspath basename dirname splitext expanduser getcwd getenv relpath normpath
+dumps load loads search match fullmatch findall finditer compile sub
+reader DictReader sha256 md5 hexdigest digest fnmatch
+""".split())
+
+
+def python_reads_only(code: str) -> bool:
+    """A python snippet that only reads files and prints (`print(open('a.py')
+    .read())`, `json.load(open('x'))`): no import beyond the standard readers,
+    no call but reads, string handling and printing, and no write mode. Such
+    a snippet runs none of the project's code, so its output is not a check.
+    A snippet that does not parse is not treated as read-only (it is a run,
+    and a failing one)."""
+    import ast
+    try:
+        tree = ast.parse(str(code or ""))
+    except (SyntaxError, ValueError, RecursionError):
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(a.name.split(".")[0] not in _PY_READ_IMPORTS for a in node.names):
+                return False
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[0] not in _PY_READ_IMPORTS:
+                return False
+        elif isinstance(node, ast.Call):
+            f = node.func
+            name = f.id if isinstance(f, ast.Name) else (f.attr if isinstance(f, ast.Attribute) else "")
+            if name not in _PY_READ_CALLS:
+                return False
+            if name == "open":
+                modes = [a for a in node.args[1:2]] + [k.value for k in node.keywords if k.arg == "mode"]
+                for mode in modes:
+                    if not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)) \
+                            or re.search(r"[wax+]", mode.value):
+                        return False
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            return False
+    return True
+
+
+_SCRIPT_INTERPRETERS = frozenset("""
+python python3 py pythonw node deno bun tsx ts-node ruby perl php bash sh zsh pwsh powershell
+""".split())
+_SCRIPT_EXT_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|sh|ps1|rb|pl|php)$", re.I)
+_GENERATIVE_WORDS = frozenset({"build", "gen", "generate", "migrate", "install", "setup"})
+_CHECK_WORDS = frozenset({"test", "tests", "check", "verify", "lint"})
+
+
+def is_generative_script(command: str) -> bool:
+    """A shell call that runs a script whose name says it produces files
+    (`python build.py`, `node gen.js`, `./setup.sh`, `python -m build`): the
+    ledger files it as a plain shell call, but for the criteria it changes the
+    workspace, so earlier checks are stale and it cannot be a check itself."""
+    for step in _split_steps(str(command or "")):
+        argv = _argv(step)
+        if not argv:
+            continue
+        prog = re.sub(r"\.(?:exe|cmd|bat)$", "", argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower())
+        target = ""
+        if _SCRIPT_EXT_RE.search(prog):
+            target = prog
+        elif re.sub(r"[0-9.]+$", "", prog) in _SCRIPT_INTERPRETERS:
+            rest = argv[1:]
+            if "-m" in rest and rest.index("-m") + 1 < len(rest):
+                target = rest[rest.index("-m") + 1]
+            else:
+                target = next((a for a in rest if not a.startswith("-")), "")
+        if not target:
+            continue
+        stem = _SCRIPT_EXT_RE.sub("", target.replace("\\", "/").rsplit("/", 1)[-1].lower())
+        tokens = {t for t in re.split(r"[^a-z0-9]+", stem) if t}
+        if tokens & _GENERATIVE_WORDS and not tokens & _CHECK_WORDS:
+            return True
+    return False
 
 
 def is_echo_only(tool: str, command: str) -> bool:
@@ -1355,7 +1450,10 @@ def _echo_step(step: str) -> bool:
     return False
 
 
-def _result_text(result: Any) -> str:
+def _result_text(result: Any, *, fallback: bool = True) -> str:
+    """The text a tool result shows. With `fallback`, a result with no text
+    field at all is dumped as JSON (so a manual link has something to read);
+    without it, such a call printed nothing."""
     if isinstance(result, str):
         return result
     if not isinstance(result, dict):
@@ -1370,6 +1468,8 @@ def _result_text(result: Any) -> str:
                 pieces.append(json.dumps(v, ensure_ascii=False, default=str))
             except Exception:  # noqa: BLE001
                 pass
+    if not pieces and not fallback:
+        return ""
     if not pieces:
         try:
             pieces.append(json.dumps(result, ensure_ascii=False, default=str))
@@ -1461,6 +1561,10 @@ class CriteriaBook:
         self.calls: List[Dict[str, Any]] = []
         self.seq = 0
         self.last_mutation_seq = -1
+        #: (criterion id, call id) pairs `auto_link` already judged, and where
+        #: the next pass starts when the last one ran out of time
+        self._auto_tried: set = set()
+        self._auto_next = ""
         self.loaded = False
         #: Whether the model was shown the criteria this turn (start note or
         #: audit). The completion gate only counts criteria it was shown.
@@ -1519,6 +1623,8 @@ class CriteriaBook:
         self.calls = []
         self.seq = 0
         self.last_mutation_seq = -1
+        self._auto_tried = set()
+        self._auto_next = ""
         self.shown = False
         self.shown_audit = set()
 
@@ -1666,13 +1772,24 @@ class CriteriaBook:
             return None
         self.seq += 1
         exit_code = result.get("exit_code") if isinstance(result, dict) else None
+        command = _bounded(_command_text(tool, content))
+        # A script whose name says it produces files (`python build.py`) is a
+        # plain shell call for the ledger, but for the criteria it changes the
+        # workspace: earlier checks are stale and it is no check itself.
+        generative = bool(ok and kind not in ("mutation", "effect") and tool in AUTO_TOOLS
+                          and tool != "python" and is_generative_script(command))
+        if generative:
+            kind, paths = "mutation", ()
         call = {
             "call_id": str(call_id or f"call_{round_num}_{self.seq}"),
             "seq": self.seq,
             "round": round_num,
             "tool": tool,
-            "command": _bounded(_command_text(tool, content)),
+            "command": command,
             "output": _bounded(_result_text(result)),
+            #: the tool printed nothing (the output above may be a JSON dump
+            #: of the result record, which is not something the program said)
+            "silent": not _result_text(result, fallback=False).strip(),
             "exit_code": exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None,
             "mutation": bool(ok and kind in ("mutation", "effect")),
         }
@@ -1682,6 +1799,7 @@ class CriteriaBook:
             if not docs_only:
                 self.last_mutation_seq = self.seq
                 self._retract_auto()
+                self._auto_tried.clear()
         if len(self.calls) > CALLS_MAX:
             del self.calls[: len(self.calls) - CALLS_MAX]
         return call
@@ -1700,15 +1818,31 @@ class CriteriaBook:
     # -- linking by the harness ----------------------------------------------
     def auto_candidates(self, calls: Optional[Sequence[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         """The calls the harness may judge by itself, newest first: calls that
-        RAN something (`is_run_call`), are not mutations, and came after the
-        turn's last change to the workspace."""
+        RAN something (`is_run_call`), printed something (a call with no
+        output has nothing to show), are not mutations, and came after the
+        turn's last change to the workspace. (Whether the run went well is
+        judged per criterion: a failing run can still show a failure rule.)"""
         pool = list(self.calls if calls is None else calls)
         last = self.last_mutation_seq
         fresh = [c for c in pool
                  if int(c.get("seq") or 0) > last and not c.get("mutation")
+                 and not c.get("silent") and str(c.get("output") or "").strip()
                  and is_run_call(str(c.get("tool") or ""), str(c.get("command") or ""))]
         fresh.reverse()
         return fresh
+
+    def _auto_pending_work(self, fresh: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Pending criteria that still have a fresh call they were not tried
+        against, in rotated order: a pass that ran out of time resumes at the
+        criterion it stopped at, so in a big book the later ones get a turn."""
+        rows = [c for c in self.criteria if c.get("state") == "pending"
+                and any((c.get("id"), k.get("call_id")) not in self._auto_tried for k in fresh)]
+        if self._auto_next:
+            ids = [c.get("id") for c in rows]
+            if self._auto_next in ids:
+                k = ids.index(self._auto_next)
+                rows = rows[k:] + rows[:k]
+        return rows
 
     def auto_plan(self, calls: Optional[Sequence[Dict[str, Any]]] = None, *,
                   budget_s: float = AUTO_BUDGET_S) -> List[Dict[str, Any]]:
@@ -1717,7 +1851,8 @@ class CriteriaBook:
         criteria only (what the model called unmet or not applicable is its
         statement, not ours). Each one is tried against the fresh calls
         newest first with `verify_contract_link(strict, auto)`; the whole pass
-        stops at `budget_s`, whatever is left stays pending."""
+        stops at `budget_s`, whatever is left stays pending and the next
+        pass starts there. A (criterion, call) pair is judged once."""
         from src import verification as _ver
         fresh = self.auto_candidates(calls)
         if not fresh:
@@ -1725,11 +1860,17 @@ class CriteriaBook:
         deadline = time.monotonic() + max(0.05, float(budget_s))
         last = self.last_mutation_seq
         plans: List[Dict[str, Any]] = []
-        for crit in [c for c in self.criteria if c.get("state") == "pending"]:
+        work = self._auto_pending_work(fresh)
+        self._auto_next = ""
+        for crit in work:
             snapshot = dict(crit)
             for call in fresh:
+                pair = (crit["id"], call.get("call_id"))
+                if pair in self._auto_tried:
+                    continue
                 left = deadline - time.monotonic()
                 if left <= 0:
+                    self._auto_next = crit["id"]
                     return plans
                 verdict = _ver.verify_contract_link(
                     snapshot, call, last_mutation_seq=last, strict=True,
@@ -1737,6 +1878,8 @@ class CriteriaBook:
                 if verdict.state == "verified":
                     plans.append({"id": crit["id"], "verdict": verdict, "call_id": call.get("call_id")})
                     break
+                if "matcher timeout" not in str(verdict.detail or "") or left >= AUTO_LINK_S:
+                    self._auto_tried.add(pair)
         return plans
 
     def auto_commit(self, plans: Sequence[Mapping[str, Any]]) -> List[str]:
@@ -1769,8 +1912,13 @@ class CriteriaBook:
                               budget_s: float = AUTO_BUDGET_S) -> List[str]:
         """`auto_link` with the matching off the event loop and a hard
         timeout; the thread only computes plans, which are applied here, so a
-        thread that outlives the timeout can never change the book."""
+        thread that outlives the timeout can never change the book. Returns at
+        once, without a thread, when nothing new could match: no pending
+        criterion, or no fresh run with output that has not been tried."""
         import asyncio
+        fresh = self.auto_candidates(calls)
+        if not fresh or not self._auto_pending_work(fresh):
+            return []
         try:
             plans = await asyncio.wait_for(asyncio.to_thread(self.auto_plan, calls, budget_s=budget_s),
                                            timeout=budget_s + 0.5)

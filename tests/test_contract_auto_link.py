@@ -59,7 +59,8 @@ def test_a_call_before_a_later_edit_is_stale_and_does_not_prove():
 def test_an_edit_withdraws_what_the_harness_proved_from_an_earlier_call_but_not_the_models_links():
     book = _book()
     _run(book, "c1", "python -m arc unpack damaged.arc", CORRUPT, exit_code=1)
-    assert {"C04", "C05"} <= set(book.auto_link())
+    # the bare JSON-document rule C05 is not the harness's to prove here
+    assert book.auto_link() == ["C04"]
     # the model links C05 itself with the same call
     book.apply_links([{"id": "C05", "call_id": "c1"}])
     assert book.get("C05")["auto"] is False

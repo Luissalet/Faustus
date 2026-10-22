@@ -212,8 +212,19 @@ def _only_offered(body: str, path: str) -> bool:
     return bool(sentences) and all(_OFFER_SENTENCE_RE.search(s) for s in sentences)
 
 
+# `make test`, `npm run lint`, `yarn check`: a project's own test-like targets
+# run checks, they do not change the tree (`make` alone, `make install` and
+# `npm run build` still count).
+_TEST_TARGET_RE = re.compile(
+    r"(?:^|(?<=[\s;&|(]))(?:make|npm\s+run|pnpm(?:\s+run)?|yarn(?:\s+run)?)\s+"
+    r"(?:test|tests|check|lint|verify)\b[\w:.-]*",
+    re.IGNORECASE,
+)
+
+
 def shell_command_looks_mutating(command: str) -> bool:
-    return bool(_MUTATING_SHELL_RE.search(_strip_quoted(command or "")))
+    stripped = _TEST_TARGET_RE.sub(" ", _strip_quoted(command or ""))
+    return bool(_MUTATING_SHELL_RE.search(stripped))
 
 
 # The `python` tool runs Python, not a shell line: `if u > 100:` is a

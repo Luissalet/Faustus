@@ -77,6 +77,8 @@ def main() -> int:
                     help="what-if: one shared content word proves (the model-link tier)")
     ap.add_argument("--any-tool", action="store_true",
                     help="what-if: reads and searches count as runs too")
+    ap.add_argument("--explain", action="store_true",
+                    help="list each proven criterion with the call that proved it")
     ap.add_argument("--budget", type=float, default=cc.AUTO_BUDGET_S, help="seconds per auto_link pass")
     args = ap.parse_args()
     if args.lenient_words:
@@ -133,6 +135,13 @@ def main() -> int:
         f"{k} {sum(1 for c in proven if c['kind'] == k)}/{sum(1 for c in book.criteria if c['kind'] == k)}"
         for k in sorted({c["kind"] for c in book.criteria})))
     print(f"auto_link invocations: {passes} per-call + 1 final; slowest {slowest:.2f}s (final {final_s:.2f}s)")
+    if args.explain:
+        calls_by_id = {c["call_id"]: c for c in book.calls}
+        for c in proven:
+            ref = (c.get("evidence_refs") or [""])[0]
+            call = calls_by_id.get(ref) or {}
+            print(f"  {c['id']} [{c['kind']}] {str(c.get('quote'))[:80]!r}\n"
+                  f"      <- {ref}: {str(call.get('command'))[:100]!r} exit={call.get('exit_code')}")
     return 0
 
 
