@@ -94,7 +94,7 @@ def test_only_runs_count_not_reads_or_file_viewers():
     assert "C04" in book.auto_link()
 
 
-def test_one_shared_word_does_not_prove_but_two_do():
+def test_words_alone_never_prove_a_rule_without_a_number_or_an_identifier():
     spec = (
         "# Tool\n\n" + "Context about the nightly backup job of the team. " * 30 + "\n\n"
         "## Rules\n\n"
@@ -115,7 +115,8 @@ def test_one_shared_word_does_not_prove_but_two_do():
     book.seq = 1
     assert book.auto_link() == [] and _state(book, delete["id"]) == "pending"
     _run(book, "c2", "python -m arc scan", "no source files to delete: nothing was deleted")
-    assert delete["id"] in book.auto_link()
+    # the words show, but nothing in the sentence (a number, an identifier) is shown
+    assert delete["id"] not in book.auto_link()
 
 
 def test_the_harness_never_sets_unmet_or_not_applicable_and_leaves_them_alone():

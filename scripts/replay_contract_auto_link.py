@@ -31,8 +31,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from src import contract_criteria as cc  # noqa: E402
 from src.agent_harness import FILE_MUTATION_TOOLS, SHELL_TOOLS, shell_command_looks_mutating  # noqa: E402
 
-_OUTPUT_RE = re.compile(r"^###[^\n]*\n(?:[^\n]*\n)?```\n?(.*?)\n?```(?:\n\*\*data:\*\*|\s*$)", re.S)
-_EXIT_RE = re.compile(r'"exit_code":\s*(-?\d+)')
+_OUTPUT_RE = re.compile(
+    r"^###[^\n]*\n(?:[^\n]*\n){0,3}?```\n?(.*?)\n?```(?:\n\*\*(?:data|exit_code):\*\*|\s*$)", re.S)
+#: the tool reports the status as `**exit_code:** N` after the output block (older
+#: records carry it as a JSON field)
+_EXIT_RE = re.compile(r'\*\*exit_code:\*\*\s*(-?\d+)|"exit_code":\s*(-?\d+)')
 
 
 def _pick_line(path: str, wanted: int | None) -> dict:
@@ -64,7 +67,8 @@ def _tool_result(content: str) -> dict:
     m = _OUTPUT_RE.match(content or "")
     output = m.group(1) if m else (content or "")
     exit_code = _EXIT_RE.search(content or "")
-    return {"output": output, "exit_code": int(exit_code.group(1)) if exit_code else 0}
+    value = (exit_code.group(1) or exit_code.group(2)) if exit_code else None
+    return {"output": output, "exit_code": int(value) if value is not None else 0}
 
 
 def main() -> int:

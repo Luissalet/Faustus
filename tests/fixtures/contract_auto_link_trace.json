@@ -1,0 +1,1721 @@
+{
+ "calls": {
+  "failed_wrapper": {
+   "call_id": "call_61485daac4b9477e807ef16b",
+   "command": "import subprocess, os, sys, time, ctypes, tempfile, datetime\nfrom ctypes import wintypes\n\nws = r\"C:\\work\\meter\"\nenv = dict(os.environ); env[\"PYTHONPATH\"] = ws\nwork = tempfile.mkdtemp(prefix=\"lim\"); os.chdir(work)\n\nclass PMC(ctypes.Structure):\n    _fields_ = [(\"cb\", wintypes.DWORD), (\"PageFaultCount\", wintypes.DWORD),\n                (\"PeakWorkingSetSize\", ctypes.c_size_t), (\"WorkingSetSize\", ctypes.c_size_t),\n                (\"q1\", ctypes.c_size_t), (\"q2\", ctypes.c_size_t), (\"q3\", ctypes.c_size_t),\n                (\"q4\", ctypes.c_size_t), (\"PagefileUsage\", ctypes.c_size_t),\n                (\"PeakPagefileUsage\", ctypes.c_size_t)]\n\ndef measure(args, label):\n    t = time.time()\n    p = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)\n    peak = 0\n    h = ctypes.windll.kernel32.OpenProcess(0x1000 | 0x0400, False, p.pid)\n    while p.poll() is None:\n        pmc = PMC(); pmc.cb = ctypes.sizeof(pmc)\n        if ctypes.windll.psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), pmc.cb):\n            peak = max(peak, pmc.PeakWorkingSetSize)\n        time.sleep(0.02)\n    pmc = PMC(); pmc.cb = ctypes.sizeof(pmc)\n    if ctypes.windll.psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), pmc.cb):\n        peak = max(peak, pmc.PeakWorkingSetSize)\n    ctypes.windll.kernel32.CloseHandle(h)\n    elapsed = time.time() - t\n    print(\"  %-34s rc=%d %6.1fs %5.0f MB\" % (label, p.returncode, elapsed, peak / 1e6))\n# ... (abbreviated)",
+   "exit_code": 0,
+   "output": "data: 2000000 readings in 4 files of 500000\r\n\r\n== limits ==\r\n  ingest 2M (limit 1200s/300MB)      rc=1    0.0s    11 MB\r\n    -> FAIL\r\n  ingest 10k batch (limit 120s)      rc=1    0.0s    11 MB\r\n    -> FAIL\r\n  report meter,day Madrid (180s)     rc=1    0.0s    11 MB\r\n  report period (180s)               rc=1    0.1s    11 MB\r\n  one meter, 7 days (15s)            rc=1    0.0s    11 MB\r\n  report meter,hour,period           rc=1    0.0s    11 MB\r\n  report hour as CSV                 rc=1    0.0s    11 MB\r\n    meter,day          FAIL (0.0s, 11 MB)\r\n    period             FAIL (0.1s, 11 MB)\r\n    one meter 7 days   FAIL (0.0s, 11 MB)\r\n    meter,hour,period  FAIL (0.0s, 11 MB)\r\n\r\n== a 700,000-line file killed in the middle ==\r\n  after kill: db exists=False journal=False\r\n  meters   rc=1 b'{\"error\":{\"code\":\"not_found\",\"message\":\"database not found: kill.db\"}}\\n'\r\n  report   rc=1 b'{\"error\":{\"code\":\"not_found\",\"message\":\"database not found: kill.db\"}}\\n'\r\n  tariff   rc=0 b'{\"accepted\":0,\"replaced\":0,\"duplicates\":0,\"rejected\":[{\"file\":\"batch.csv\",\"line\"'\r\n  ingest after kill rc=0, meters rc=0, meters=b'{\"meters\":[{\"meter_id\":\"batch0\",\"readings\":100,\"first_at\":\"2027-01-01T'\nSTDERR: C:\\Python313\\python.EXE: No module named meter",
+   "tool": "python"
+  },
+  "readme_check": {
+   "call_id": "call_6fcf29bb28ad4311865bed6e",
+   "command": "import subprocess, os, re, json, tempfile\n\nws = r\"C:\\work\\meter\"\nenv = dict(os.environ); env[\"PYTHONPATH\"] = ws\nfor k in (\"PYTHONUTF8\", \"PYTHONIOENCODING\"):\n    env.pop(k, None)\n\nreadings = \"\"\"reading_id,meter_id,read_at,register_wh,rev\ns1,solar-1,2026-06-01T08:00:00Z,1000,0\ns2,solar-1,2026-06-01T10:30:00Z,1700,0\ns3,solar-1,2026-06-01T23:00:00Z,2500,0\ns4,grid-1,2026-06-01T00:00:00Z,100,0\ns5,grid-1,2026-06-02T00:00:00Z,900,0\n\"\"\"\ntariffs = \"\"\"effective_from,zone,period,weekdays,start,end,cents_per_kwh\n2026-01-01,Europe/Madrid,peak,1111111,10:00,14:00,25\n2026-01-01,Europe/Madrid,off,1111111,00:00,10:00,10\n2026-01-01,Europe/Madrid,off,1111111,14:00,24:00,10\n\"\"\"\nfolder = tempfile.mkdtemp(prefix=\"readme2\")\nfor name, body in ((\"readings.csv\", readings), (\"tariffs.csv\", tariffs)):\n    open(os.path.join(folder, name), \"w\", encoding=\"utf-8\", newline=\"\\n\").write(body)\nassert sorted(os.listdir(folder)) == [\"readings.csv\", \"tariffs.csv\"]\n\ndef quick_block():\n    lines = open(os.path.join(ws, \"README.md\"), encoding=\"utf-8\").read().splitlines()\n    start = level = None\n    for i, line in enumerate(lines):\n        m = re.match(r\"^(#{1,6})\\s+Quick start\\s*$\", line)\n        if m:\n# ... (abbreviated)",
+   "exit_code": 0,
+   "output": "run lines: 7 | has ingest/tariff/meters/report: True | no serve: True\r\n  rc=0 python -m meter ingest meter.db readings.csv                         \r\n  rc=0 python -m meter meters meter.db                                      \r\n  rc=0 python -m meter report meter.db --by meter,day --tz Europe/Madrid    report -> total {'energy_wh': '2300.000', 'cost': '0.00', 'intervals': 3}\r\n  rc=0 python -m meter tariff meter.db tariffs.csv                          \r\n  rc=0 python -m meter report meter.db --by period --tz Europe/Madrid       report -> total {'energy_wh': '2300.000', 'cost': '0.37', 'intervals': 3}\r\n  rc=0 python -m meter report meter.db --by meter,day,period --tz Europe/Ma \r\n  rc=0 python -m meter report meter.db --by meter,day --tz Europe/Madrid >  \r\n\r\nreports compared: 2\r\n  before the tariff line: cost 0.00 groups 4\r\n  after  the tariff line: cost 0.37 periods ['off', 'peak']\r\n  out.json total: {'energy_wh': '2300.000', 'cost': '0.37', 'intervals': 3}\r\n\r\nno-args: rc=1 b'{\"error\":{\"code\":\"invalid\",\"message\":\"no command given\"}}\\n'\r\nfolder now: ['meter.db', 'out.json', 'readings.csv', 'tariffs.csv']\r\n\r\nALL README CHECKS PASSED",
+   "tool": "python"
+  },
+  "readme_grep_loop": {
+   "call_id": "call_262b587bbe0548f9a1eea7a8",
+   "command": "cd /c/work/meter && grep -n \"^#\" README.md && echo \"--- option mentions ---\" && for o in --by --tz --from --to --meter --format --port --max-seconds; do printf \"%-14s %s\\n\" \"$o\" \"$(grep -c -- \"$o\" README.md)\"; done && echo \"--- sections words ---\" && for w in Installation \"python -m pip install\" serve dashboard pytest; do printf \"%-22s %s\\n\" \"$w\" \"$(grep -c -- \"$w\" README.md)\"; done",
+   "exit_code": 0,
+   "output": "1:# meter — local energy-metering analytics\n12:## Installation\n30:## Quick start\n74:## Conventions\n97:## `ingest DB FILE...`\n140:## `tariff DB FILE...`\n169:## `meters DB`\n180:## `report DB --by KEYS [--tz ZONE] [--from DATE] [--to DATE] [--meter ID] [--format json|csv]`\n182:### Options\n195:### Intervals\n209:### Seconds, days, hours, periods\n221:### Result\n248:## `serve DB --port N [--max-seconds S]`\n274:## Tests\n--- option mentions ---\n--by           8\n--tz           8\n--from         4\n--to           4\n--meter        2\n--format       4\n--port         2\n--max-seconds  2\n--- sections words ---\nInstallation           1\npython -m pip install  1\nserve                  1\ndashboard              2\npytest                 2",
+   "tool": "bash"
+  }
+ },
+ "criteria": [
+  {
+   "exits": [],
+   "id": "C001",
+   "keys": [
+    "meter"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "Build a small Python program, `meter`, that keeps register readings of electricity meters and tariff tables in one SQLite file and answers questions about them with exact results: how much energy each meter used, per local day or local hour or tariff period, and what it cost.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "build",
+    "small",
+    "python",
+    "program",
+    "keeps",
+    "register",
+    "readings",
+    "electricity"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C004",
+   "keys": [
+    "requirements.txt",
+    "tzdata",
+    "pytest"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "`requirements.txt`: the packages needed beyond the standard library (only `tzdata` and `pytest` exist on the machine; do not use anything else).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "packages",
+    "needed",
+    "beyond",
+    "standard",
+    "library",
+    "exist",
+    "machine",
+    "anything"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C010",
+   "keys": [
+    "sys.stdout.buffer.write"
+   ],
+   "kind": "behaviour",
+   "limits": [
+    {
+     "num": "8",
+     "unit": "bytes"
+    }
+   ],
+   "matchers": [],
+   "quote": "so the console code page is not UTF-8: write your output as UTF-8 bytes yourself (for example `sys.stdout.buffer.write`)",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "console",
+    "write",
+    "output",
+    "bytes",
+    "yourself",
+    "example"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C012",
+   "keys": [
+    "\\r\\n",
+    "\\n"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "never produce `\\r\\n` line ends in what you print (write bytes with `\\n`).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "produce",
+    "print",
+    "write",
+    "bytes"
+   ]
+  },
+  {
+   "exits": [
+    1
+   ],
+   "id": "C015",
+   "keys": [
+    "\\n"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [
+    {
+     "json": [
+      "error",
+      "code",
+      "message"
+     ],
+     "on": "output",
+     "src": "{\"error\": {\"code\": \"<code>\", \"message\": \"<text>\"}}"
+    }
+   ],
+   "quote": "**Failure**: exit code 1, standard output holds exactly `{\"error\": {\"code\": \"<code>\", \"message\": \"<text>\"}}` and `\\n`.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "failure",
+    "standard",
+    "output",
+    "holds"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C016",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "Never print a Python traceback on standard error.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "print",
+    "python",
+    "traceback",
+    "standard",
+    "error"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C017",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "**Order of checks** when several things are wrong at once: (1) unknown command, wrong number of positional arguments, unknown or repeated option, option without a value:",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "order",
+    "checks",
+    "several",
+    "things",
+    "wrong",
+    "unknown",
+    "command",
+    "number"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C021",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "In rejection reports a file is named exactly as it was written on the command line.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "rejection",
+    "reports",
+    "named",
+    "written",
+    "command"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C022",
+   "keys": [
+    "ingest",
+    "tariff",
+    "not_found"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "**The database** is created by `ingest` and `tariff` when it does not exist (but never when a command fails with `not_found`).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "database",
+    "created",
+    "exist",
+    "command",
+    "fails"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C026",
+   "keys": [
+    "report"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "`report`",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": []
+  },
+  {
+   "exits": [],
+   "id": "C027",
+   "keys": [
+    "meters"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "`meters` and every GET request of the server never change the database file (not one byte, not its modification time)",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "request",
+    "server",
+    "change",
+    "database",
+    "modification"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C028",
+   "keys": [
+    "report",
+    "meters"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "with one exception: the first command of any kind (including `report` and `meters`) that runs after an earlier command was killed in the middle (section 4.5) may finish recovering the database",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "exception",
+    "first",
+    "command",
+    "including",
+    "earlier",
+    "killed",
+    "middle",
+    "section"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C030",
+   "keys": [
+    "invalid"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "A file with bytes that are not valid UTF-8 makes the whole command fail with `invalid` and nothing of that command is applied.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "bytes",
+    "valid",
+    "makes",
+    "whole",
+    "command",
+    "nothing",
+    "applied"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C032",
+   "keys": [
+    "line",
+    "invalid"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "If it is not (including an empty file, a file with only a byte order mark, other names, other order, more or fewer columns), the whole file is rejected with one rejection, `line` 1, code `invalid`;",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "including",
+    "empty",
+    "order",
+    "names",
+    "fewer",
+    "columns",
+    "whole",
+    "rejected"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C042",
+   "keys": [
+    "reading_id",
+    "meter_id"
+   ],
+   "kind": "limit",
+   "limits": [],
+   "matchers": [],
+   "quote": "The database holds at most one stored reading per `reading_id` and at most one reading per (`meter_id`, instant).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "database",
+    "holds",
+    "stored",
+    "reading",
+    "instant"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C044",
+   "keys": [
+    "ingest"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "The result of `ingest` is, whatever order or splitting of the files was used for the same final set of records, as if all revisions had been applied: only the highest revision of every reading counts.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "result",
+    "whatever",
+    "order",
+    "splitting",
+    "files",
+    "final",
+    "records",
+    "revisions"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C046",
+   "keys": [
+    "code",
+    "invalid",
+    "stale",
+    "conflict"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "`code` is `invalid`, `stale` or `conflict`;",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": []
+  },
+  {
+   "exits": [],
+   "id": "C048",
+   "keys": [],
+   "kind": "format",
+   "limits": [],
+   "matchers": [
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "tariff DB FILE...",
+     "tokens": [
+      "tariff"
+     ]
+    }
+   ],
+   "quote": "`tariff DB FILE...`.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": []
+  },
+  {
+   "exits": [],
+   "id": "C050",
+   "keys": [],
+   "kind": "format",
+   "limits": [],
+   "matchers": [
+    {
+     "on": "output",
+     "re": "(?<!\\d)\\d{4}\\-\\d{2}\\-\\d{2}(?!\\d)",
+     "src": "YYYY-MM-DD"
+    }
+   ],
+   "quote": "`YYYY-MM-DD`, ASCII digits, a real date, year 2000 to 2099.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "ascii",
+    "digits"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C051",
+   "keys": [
+    "weekdays",
+    "0",
+    "1",
+    "1111100"
+   ],
+   "kind": "limit",
+   "limits": [],
+   "matchers": [],
+   "quote": "`weekdays`: exactly seven characters `0` or `1`, Monday first, at least one `1` (`1111100` is Monday to Friday).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "seven",
+    "characters",
+    "monday",
+    "first",
+    "friday"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C054",
+   "keys": [
+    "start",
+    "end"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "`start` must be before `end`.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": []
+  },
+  {
+   "exits": [],
+   "id": "C057",
+   "keys": [],
+   "kind": "format",
+   "limits": [],
+   "matchers": [
+    {
+     "json": [
+      "accepted",
+      "replaced",
+      "duplicates",
+      "rejected"
+     ],
+     "on": "output",
+     "src": "{\"accepted\": n, \"replaced\": n, \"duplicates\": n, \"rejected\": [...]}"
+    }
+   ],
+   "quote": "`{\"accepted\": n, \"replaced\": n, \"duplicates\": n, \"rejected\": [...]}` (exactly these four keys), with `rejected` as in 4.4.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": []
+  },
+  {
+   "exits": [],
+   "id": "C061",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "For each meter take its stored readings (after all revisions) in order of instant.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "meter",
+    "stored",
+    "readings",
+    "revisions",
+    "order",
+    "instant"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C065",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [
+    {
+     "num": "86,400",
+     "unit": "seconds"
+    }
+   ],
+   "matchers": [],
+   "quote": "(Exactly 86,400 seconds is not a gap.)",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "seconds"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C067",
+   "keys": [
+    "+00:00",
+    "Z",
+    "Asia/Kolkata",
+    "+05:30"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [
+    {
+     "on": "output",
+     "re": "(?<!\\d)\\d\\d\\d\\d\\-\\d\\d\\-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\+\\d\\d:\\d\\d(?!\\d)",
+     "src": "2026-03-29T03:00:00+02:00"
+    }
+   ],
+   "quote": "The bucket is labelled with the local time of its start in ISO 8601 with the offset in force at that moment, for example `2026-03-29T03:00:00+02:00` (UTC is `+00:00`, never `Z`; zones such as `Asia/Kolkata` have `+05:30`).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "bucket",
+    "labelled",
+    "local",
+    "start",
+    "offset",
+    "force",
+    "moment",
+    "example"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C068",
+   "keys": [
+    "start",
+    "end",
+    "10:59:59",
+    "10:00-11:00",
+    "11:00:00"
+   ],
+   "kind": "limit",
+   "limits": [],
+   "matchers": [],
+   "quote": "and the local minute of the day is at least `start` and below `end` (a minute is evaluated at the second: `10:59:59` is inside `10:00-11:00`, `11:00:00` is not).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "local",
+    "minute",
+    "evaluated",
+    "second",
+    "inside"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C070",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "--meter",
+     "tokens": [
+      "--meter"
+     ]
+    },
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "--from",
+     "tokens": [
+      "--from"
+     ]
+    },
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "--to",
+     "tokens": [
+      "--to"
+     ]
+    }
+   ],
+   "quote": "Only seconds of the selected meters (all meters, or the `--meter`) whose local day is inside the `--from`/`--to` range (when given) are used",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "seconds",
+    "selected",
+    "meters",
+    "whose",
+    "local",
+    "inside",
+    "range"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C071",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "only seconds of energy-carrying intervals (normal or rollover intervals, even with energy 0; gaps and resets carry none).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "seconds",
+    "energy",
+    "carrying",
+    "intervals",
+    "normal",
+    "rollover",
+    "resets",
+    "carry"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C073",
+   "keys": [
+    "intervals"
+   ],
+   "kind": "limit",
+   "limits": [],
+   "matchers": [],
+   "quote": "`intervals`: an integer, the number of distinct energy-carrying intervals having at least one second in the group.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "integer",
+    "number",
+    "distinct",
+    "energy",
+    "carrying",
+    "intervals",
+    "second",
+    "group"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C075",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "Rounding happens once, on the exact sums: a group is never the sum of rounded pieces and the total (6.6) is never the sum of rounded groups, so group values may not add up to the total.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "rounding",
+    "happens",
+    "exact",
+    "group",
+    "rounded",
+    "pieces",
+    "total",
+    "groups"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C076",
+   "keys": [
+    "energy_wh",
+    "cost",
+    "intervals"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "--by",
+     "tokens": [
+      "--by"
+     ]
+    }
+   ],
+   "quote": "A group object has exactly the keys of `--by` plus `energy_wh`, `cost`, `intervals`.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "group",
+    "object"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C077",
+   "keys": [
+    "energy_wh",
+    "intervals"
+   ],
+   "kind": "limit",
+   "limits": [],
+   "matchers": [],
+   "quote": "`energy_wh` and `cost` rounded once as above, and `intervals` the number of distinct energy-carrying intervals with at least one second inside the selection (a day range or a meter filter shrinks it).",
+   "statuses": [],
+   "subject": "energy_wh",
+   "subject_matcher": null,
+   "words": [
+    "rounded",
+    "number",
+    "distinct",
+    "energy",
+    "carrying",
+    "intervals",
+    "second",
+    "inside"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C078",
+   "keys": [
+    "cost",
+    "intervals"
+   ],
+   "kind": "limit",
+   "limits": [],
+   "matchers": [],
+   "quote": "`energy_wh` and `cost` rounded once as above, and `intervals` the number of distinct energy-carrying intervals with at least one second inside the selection (a day range or a meter filter shrinks it).",
+   "statuses": [],
+   "subject": "cost",
+   "subject_matcher": null,
+   "words": [
+    "rounded",
+    "number",
+    "distinct",
+    "energy",
+    "carrying",
+    "intervals",
+    "second",
+    "inside"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C081",
+   "keys": [
+    "\\n",
+    "\\r\\n",
+    "meter",
+    "day",
+    "hour",
+    "period",
+    "energy_wh"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "--format csv",
+     "tokens": [
+      "--format",
+      "csv"
+     ]
+    },
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "--by",
+     "tokens": [
+      "--by"
+     ]
+    }
+   ],
+   "quote": "With `--format csv` the standard output is only the CSV text (UTF-8, no byte order mark, line ends `\\n`, never `\\r\\n`): a header with the `--by` keys in the canonical order (`meter`, `day`, `hour`, `period`) followed by `energy_wh`",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "standard",
+    "output",
+    "order",
+    "header",
+    "canonical",
+    "followed"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C082",
+   "keys": [
+    "intervals"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "`intervals`",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": []
+  },
+  {
+   "exits": [],
+   "id": "C083",
+   "keys": [
+    "intervals"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [
+    {
+     "json_doc": true,
+     "on": "output",
+     "src": "JSON document"
+    }
+   ],
+   "quote": "values as in the JSON (`intervals` as digits).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "digits"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C087",
+   "keys": [
+    "00:30+01:00",
+    "04:30+02:00"
+   ],
+   "kind": "limit",
+   "limits": [
+    {
+     "num": "3",
+     "unit": "hours"
+    }
+   ],
+   "matchers": [],
+   "quote": "`00:30+01:00` with 5000 to `04:30+02:00` with 5300 is 300 Wh over 3 hours;",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "hours"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C089",
+   "keys": [
+    "readings",
+    "first_at",
+    "last_at"
+   ],
+   "kind": "format",
+   "limits": [],
+   "matchers": [
+    {
+     "on": "output",
+     "re": "(?<!\\d)\\d{4}\\-\\d{2}\\-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z(?!\\d)",
+     "src": "YYYY-MM-DDTHH:MM:SSZ"
+    }
+   ],
+   "quote": "`readings` is the number of stored readings, `first_at`/`last_at` are the earliest and latest instants, in UTC in the form `YYYY-MM-DDTHH:MM:SSZ`.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "number",
+    "stored",
+    "readings",
+    "earliest",
+    "latest",
+    "instants"
+   ]
+  },
+  {
+   "exits": [
+    1
+   ],
+   "id": "C093",
+   "keys": [
+    "invalid"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "`invalid`, exit 1.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": []
+  },
+  {
+   "exits": [
+    1
+   ],
+   "id": "C094",
+   "keys": [
+    "not_found"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "`not_found`, exit 1 (checked after the option values, section 3).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "checked",
+    "option",
+    "section"
+   ]
+  },
+  {
+   "exits": [
+    1
+   ],
+   "id": "C095",
+   "keys": [
+    "invalid"
+   ],
+   "kind": "limit",
+   "limits": [
+    {
+     "num": "30",
+     "unit": "seconds"
+    }
+   ],
+   "matchers": [],
+   "quote": "`invalid`, exit 1, quickly (within 30 seconds; the checker waits up to 45), without leaving a process behind.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "quickly",
+    "seconds",
+    "checker",
+    "waits",
+    "leaving",
+    "process",
+    "behind"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C097",
+   "keys": [],
+   "kind": "limit",
+   "limits": [
+    {
+     "num": "5",
+     "unit": "seconds"
+    },
+    {
+     "num": "12",
+     "unit": "seconds"
+    }
+   ],
+   "matchers": [],
+   "quote": "The server must be answering requests within 5 seconds of the process being started (the checker is patient: it waits up to 12 seconds on a busy machine).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "server",
+    "answering",
+    "requests",
+    "seconds",
+    "process",
+    "started",
+    "checker",
+    "patient"
+   ]
+  },
+  {
+   "exits": [
+    0
+   ],
+   "id": "C098",
+   "keys": [
+    "S",
+    "S - 0.5"
+   ],
+   "kind": "limit",
+   "limits": [
+    {
+     "num": "20",
+     "unit": "seconds"
+    }
+   ],
+   "matchers": [
+    {
+     "kind": "sub",
+     "on": "command",
+     "src": "--max-seconds S",
+     "tokens": [
+      "--max-seconds"
+     ]
+    }
+   ],
+   "quote": "With `--max-seconds S` it stops by itself, with exit code 0, `S` seconds after it started (not earlier than `S - 0.5` seconds after the process started, and within 20 seconds after that).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "stops",
+    "seconds",
+    "started",
+    "earlier",
+    "process"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C100",
+   "keys": [
+    "/index.html",
+    "not_found"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [
+    {
+     "json": [
+      "error",
+      "code"
+     ],
+     "on": "output",
+     "src": "{\"error\": {\"code\": \"not_found\", ...}}"
+    }
+   ],
+   "quote": "**Routes** (anything else, including other methods on these paths, a trailing slash, and `/index.html`, answers status 404 with the error document `{\"error\": {\"code\": \"not_found\", ...}}`):",
+   "statuses": [
+    404
+   ],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "routes",
+    "anything",
+    "including",
+    "methods",
+    "paths",
+    "trailing",
+    "slash",
+    "answers"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C103",
+   "keys": [
+    "ingest",
+    "name",
+    "\\r\\n"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "answers like `ingest` (status 200), the text processed as the content of a file called `name` (a leading BOM character is ignored, `\\r\\n` is fine)",
+   "statuses": [
+    200
+   ],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "answers",
+    "status",
+    "processed",
+    "content",
+    "called",
+    "leading",
+    "character",
+    "ignored"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C104",
+   "keys": [
+    "by"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "a parameter given twice, an unknown parameter or any bad value is an error exactly as for the CLI options (`by` is required).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "parameter",
+    "twice",
+    "unknown",
+    "error",
+    "options"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C105",
+   "keys": [
+    "invalid",
+    "404",
+    "not_found"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "Errors have the error document as body and the status `422` for `invalid` and `404` for `not_found`.",
+   "statuses": [
+    422
+   ],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "errors",
+    "error",
+    "document",
+    "status"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C106",
+   "keys": [
+    "line"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "a file whose header is wrong is the normal rejection with `line` 1 (status 200).",
+   "statuses": [
+    200
+   ],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "whose",
+    "header",
+    "wrong",
+    "normal",
+    "rejection",
+    "status"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C107",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "A body of several megabytes (40,000 readings) must be accepted.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "several",
+    "megabytes",
+    "readings",
+    "accepted"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C112",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "long meter ids and many groups must not break the layout.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "meter",
+    "groups",
+    "break",
+    "layout"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C116",
+   "keys": [
+    "<input type=\"file\">",
+    "file"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "has an `<input type=\"file\">` written in that HTML text (not only created by a script)",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "written",
+    "created",
+    "script"
+   ]
+  },
+  {
+   "exits": [
+    0
+   ],
+   "id": "C121",
+   "keys": [
+    "> out.json",
+    "2>nul",
+    "report"
+   ],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "A line may redirect its output (`> out.json`, `2>nul`): it must still exit with 0, and a redirected `report` is not compared.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "redirect",
+    "output",
+    "still",
+    "redirected",
+    "compared"
+   ]
+  },
+  {
+   "exits": [
+    0
+   ],
+   "id": "C122",
+   "keys": [],
+   "kind": "error_code",
+   "limits": [],
+   "matchers": [],
+   "quote": "A line chained with `&&`, `&` or `|` is only checked for exit code 0, and the reports after it are not compared.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "chained",
+    "checked",
+    "reports",
+    "compared"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C123",
+   "keys": [
+    "report"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "Only `report` lines are required to print a document.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "lines",
+    "print",
+    "document"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C124",
+   "keys": [
+    "ingest",
+    "tariff",
+    "meters",
+    "report",
+    "serve"
+   ],
+   "kind": "limit",
+   "limits": [],
+   "matchers": [],
+   "quote": "The block must have at least 4 such lines, including `ingest`, `tariff`, `meters` and `report`, and no `serve`.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "block",
+    "lines",
+    "including"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C125",
+   "keys": [
+    "readings.csv",
+    "tariffs.csv",
+    "meter.db"
+   ],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "Use only relative file names `readings.csv`, `tariffs.csv` and a database called as you like (for example `meter.db`).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "relative",
+    "names",
+    "database",
+    "called",
+    "example"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C128",
+   "keys": [
+    "ingest",
+    "report"
+   ],
+   "kind": "limit",
+   "limits": [
+    {
+     "num": "300",
+     "unit": "MB"
+    }
+   ],
+   "matchers": [],
+   "quote": "Peak memory of `ingest` and of every `report`, at most 300 MB, even with 2,000,000 readings (so do not load all readings, or all intervals, into memory).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "memory",
+    "readings",
+    "intervals"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C129",
+   "keys": [
+    "ingest"
+   ],
+   "kind": "limit",
+   "limits": [
+    {
+     "num": "500,000",
+     "unit": "lines"
+    },
+    {
+     "num": "20",
+     "unit": "minutes"
+    },
+    {
+     "num": "10",
+     "unit": "minutes"
+    }
+   ],
+   "matchers": [],
+   "quote": "`ingest` of 2,000,000 readings (4 files of 500,000 lines): at most 20 minutes (10 minutes per 1,000,000 readings).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "readings",
+    "files",
+    "lines",
+    "minutes"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C132",
+   "keys": [],
+   "kind": "limit",
+   "limits": [
+    {
+     "num": "15",
+     "unit": "seconds"
+    }
+   ],
+   "matchers": [],
+   "quote": "A report for one meter and a 7-day date range on that database: at most 15 seconds (use an index; do not scan everything).",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "report",
+    "meter",
+    "range",
+    "database",
+    "seconds",
+    "index",
+    "everything"
+   ]
+  },
+  {
+   "exits": [],
+   "id": "C133",
+   "keys": [],
+   "kind": "behaviour",
+   "limits": [],
+   "matchers": [],
+   "quote": "If two rules seem to contradict each other, the one in the more specific section wins (6 over 2 and 3, 4 and 5 over 3), and the order of checks in section 3 decides between error codes.",
+   "statuses": [],
+   "subject": null,
+   "subject_matcher": null,
+   "words": [
+    "rules",
+    "contradict",
+    "specific",
+    "section",
+    "order",
+    "checks",
+    "decides",
+    "error"
+   ]
+  }
+ ],
+ "df": {
+  "+00:00": 1,
+  "+05:30": 1,
+  "/index.html": 1,
+  "0": 1,
+  "00:30+01:00": 1,
+  "04:30+02:00": 1,
+  "1": 1,
+  "10:00-11:00": 1,
+  "10:59:59": 1,
+  "1111100": 1,
+  "11:00:00": 1,
+  "2>nul": 1,
+  "404": 1,
+  "<input type=\"file\">": 1,
+  "> out.json": 1,
+  "\\n": 4,
+  "\\r\\n": 5,
+  "accepted": 1,
+  "answering": 1,
+  "answers": 3,
+  "anything": 2,
+  "applied": 1,
+  "ascii": 6,
+  "asia/kolkata": 1,
+  "behind": 1,
+  "beyond": 1,
+  "block": 2,
+  "break": 2,
+  "bucket": 1,
+  "build": 1,
+  "by": 1,
+  "bytes": 3,
+  "called": 2,
+  "canonical": 1,
+  "carry": 1,
+  "carrying": 4,
+  "chained": 1,
+  "change": 2,
+  "character": 1,
+  "characters": 2,
+  "checked": 3,
+  "checker": 3,
+  "checks": 4,
+  "code": 1,
+  "columns": 1,
+  "command": 7,
+  "compared": 2,
+  "conflict": 2,
+  "console": 2,
+  "content": 1,
+  "contradict": 1,
+  "cost": 2,
+  "created": 3,
+  "database": 8,
+  "day": 1,
+  "decides": 1,
+  "digits": 7,
+  "distinct": 3,
+  "document": 7,
+  "earlier": 2,
+  "earliest": 1,
+  "electricity": 1,
+  "empty": 2,
+  "end": 2,
+  "energy": 5,
+  "energy_wh": 3,
+  "error": 7,
+  "errors": 2,
+  "evaluated": 1,
+  "everything": 2,
+  "exact": 3,
+  "example": 3,
+  "exception": 2,
+  "exist": 3,
+  "fails": 1,
+  "failure": 1,
+  "fewer": 1,
+  "file": 1,
+  "files": 6,
+  "final": 2,
+  "first": 4,
+  "first_at": 2,
+  "followed": 3,
+  "force": 1,
+  "friday": 1,
+  "group": 5,
+  "groups": 2,
+  "happens": 1,
+  "header": 4,
+  "holds": 3,
+  "hour": 1,
+  "hours": 1,
+  "ignored": 2,
+  "including": 4,
+  "index": 1,
+  "ingest": 7,
+  "inside": 6,
+  "instant": 4,
+  "instants": 2,
+  "integer": 2,
+  "intervals": 8,
+  "invalid": 8,
+  "keeps": 1,
+  "killed": 2,
+  "labelled": 1,
+  "last_at": 2,
+  "latest": 2,
+  "layout": 1,
+  "leading": 3,
+  "leaving": 1,
+  "library": 1,
+  "line": 2,
+  "lines": 4,
+  "local": 3,
+  "machine": 1,
+  "makes": 1,
+  "megabytes": 1,
+  "memory": 1,
+  "meter": 8,
+  "meter.db": 1,
+  "meter_id": 3,
+  "meters": 8,
+  "methods": 1,
+  "middle": 1,
+  "minute": 1,
+  "minutes": 5,
+  "modification": 1,
+  "moment": 2,
+  "monday": 1,
+  "name": 1,
+  "named": 1,
+  "names": 2,
+  "needed": 2,
+  "normal": 2,
+  "not_found": 4,
+  "nothing": 3,
+  "number": 7,
+  "object": 1,
+  "offset": 1,
+  "option": 2,
+  "options": 1,
+  "order": 11,
+  "output": 5,
+  "packages": 1,
+  "parameter": 1,
+  "paths": 1,
+  "patient": 1,
+  "period": 1,
+  "pieces": 1,
+  "print": 8,
+  "process": 4,
+  "processed": 2,
+  "produce": 1,
+  "program": 3,
+  "pytest": 2,
+  "python": 2,
+  "quickly": 1,
+  "range": 2,
+  "reading": 2,
+  "reading_id": 2,
+  "readings": 11,
+  "readings.csv": 1,
+  "records": 2,
+  "redirect": 1,
+  "redirected": 1,
+  "register": 2,
+  "rejected": 1,
+  "rejection": 2,
+  "relative": 1,
+  "report": 10,
+  "reports": 2,
+  "request": 1,
+  "requests": 2,
+  "requirements.txt": 1,
+  "resets": 1,
+  "result": 2,
+  "revisions": 2,
+  "rollover": 1,
+  "rounded": 4,
+  "rounding": 1,
+  "routes": 1,
+  "rules": 1,
+  "s": 1,
+  "s - 0.5": 1,
+  "s:cost": 1,
+  "s:energy_wh": 1,
+  "script": 1,
+  "second": 6,
+  "seconds": 9,
+  "section": 4,
+  "selected": 1,
+  "serve": 3,
+  "server": 5,
+  "seven": 1,
+  "several": 3,
+  "slash": 1,
+  "small": 1,
+  "specific": 1,
+  "splitting": 1,
+  "stale": 1,
+  "standard": 5,
+  "start": 3,
+  "started": 4,
+  "status": 3,
+  "still": 2,
+  "stops": 1,
+  "stored": 5,
+  "sys.stdout.buffer.write": 1,
+  "tariff": 3,
+  "tariffs.csv": 1,
+  "things": 1,
+  "total": 1,
+  "traceback": 1,
+  "trailing": 1,
+  "twice": 2,
+  "tzdata": 1,
+  "unknown": 2,
+  "valid": 4,
+  "waits": 2,
+  "weekdays": 1,
+  "whatever": 1,
+  "whole": 2,
+  "whose": 3,
+  "write": 2,
+  "written": 7,
+  "wrong": 2,
+  "yourself": 1,
+  "z": 2
+ }
+}

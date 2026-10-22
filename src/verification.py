@@ -184,7 +184,7 @@ def _unit_family(unit: str) -> Tuple[str, ...]:
     return (u, u + "s")
 
 
-def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
+def _limit_shown(haystack: str, limit: Mapping[str, Any], *, tight: bool = False) -> bool:
     """A limit is shown by a measurement in its unit family (`31 MB` or
     `31457280 bytes` for "under 64 MiB", `12 ms` for "within 5 ms", also
     inside an identifier: `test_put_under_64mb`) or by its own number in a
@@ -193,6 +193,10 @@ def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
     import re as _re
     num = str(limit.get("num") or "").strip()
     fam = [_re.escape(u) for u in _unit_family(str(limit.get("unit") or "")) if u]
+    if tight:
+        # The harness judging alone: a one-letter unit has to touch its
+        # number (`5s`, `300b`); `1 b'` in `rc=1 b'{...}'` is not a size.
+        fam = [u for u in fam if len(u) > 1] + ["(?<=\\d)" + u for u in fam if len(u) == 1]
     if fam and _re.search(r"(?<![A-Za-z0-9.])\d+(?:[.,]\d+)?[ _]?(?:" + "|".join(sorted(fam, key=len, reverse=True))
                           + r")(?![A-Za-z])", haystack, _re.I):
         return True
@@ -200,6 +204,83 @@ def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
                           r"at least|less than|more than|menos de|m[áa]s de|m[áa]ximo|m[íi]nimo)\b)\s*"
                           + _re.escape(num) + r"(?![\d.])", haystack, _re.I):
         return True
+    return False
+
+
+import re as _re_mod  # noqa: E402
+
+_UNIT_FACTORS = {
+    **{u: 1.0 for u in ("b", "byte", "bytes")},
+    **{u: 1024.0 for u in ("kb", "kib", "kilobytes")},
+    **{u: 1024.0 ** 2 for u in ("mb", "mib", "megabytes")},
+    **{u: 1024.0 ** 3 for u in ("gb", "gib", "gigabytes")},
+    **{u: 1024.0 ** 4 for u in ("tb", "tib")},
+    **{u: 1e-3 for u in ("ms", "msec", "milliseconds", "millisecond")},
+    **{u: 1e-6 for u in ("us", "µs", "microseconds")},
+    **{u: 1.0 for u in ("s", "sec", "secs", "second", "seconds", "segundo", "segundos")},
+    **{u: 60.0 for u in ("min", "mins", "minute", "minutes", "minuto", "minutos")},
+    **{u: 3600.0 for u in ("h", "hr", "hrs", "hour", "hours", "hora", "horas")},
+}
+_UPPER_WORDS = _re_mod.compile(
+    r"(?:<=?|≤|\b(?:at most|no more than|up to|under|below|less than|within|max(?:imum)?|"
+    r"menos de|m[áa]ximo|hasta|en menos de)\b)\s*[^\d\n]{0,12}$", _re_mod.I)
+_LOWER_WORDS = _re_mod.compile(
+    r"(?:>=?|≥|\b(?:at least|no fewer than|no less than|over|above|more than|min(?:imum)?|"
+    r"m[áa]s de|m[íi]nimo)\b)\s*[^\d\n]{0,12}$", _re_mod.I)
+
+
+def _limit_measured(haystack: str, limit: Mapping[str, Any], quote: str, near_terms: Sequence[str]) -> bool:
+    """The harness judging alone: a limit is shown by a measurement in the
+    limit's unit family that is not zero, that respects the bound the sentence
+    states (`at most 300 MB` is not shown by `400 MB`; `at least 4 lines` is not
+    shown by `2 lines`), and that sits on a line (or next to one) naming a term
+    of the criterion: the measured operation, not any `4 passed in 0.99s`."""
+    import re as _re
+    unit = str(limit.get("unit") or "").strip().lower()
+    try:
+        bound = float(str(limit.get("num") or "").replace(",", ""))
+    except ValueError:
+        return False
+    fam = [u for u in _unit_family(unit) if u]
+    if not fam:
+        return False
+    factor = _UNIT_FACTORS.get(unit)
+    q = str(quote or "")
+    direction = ""
+    for m in _re.finditer(r"(?<![\d.,])" + _re.escape(str(limit.get("num") or "")) + r"(?![\d])", q):
+        before = q[max(0, m.start() - 30):m.start()]
+        if _UPPER_WORDS.search(before):
+            direction = "upper"
+            break
+        if _LOWER_WORDS.search(before):
+            direction = "lower"
+            break
+    if not direction:
+        return False  # a size or a count the sentence states, not a bound to be shown
+    pat = _re.compile(r"(?<![A-Za-z0-9.])(\d+(?:[.,]\d+)?)(?:[ _]?)(" + "|".join(
+        sorted((_re.escape(u) if len(u) > 1 else "(?<=\\d)" + _re.escape(u) for u in fam), key=len, reverse=True))
+        + r")(?![A-Za-z])", _re.I)
+    lines = haystack.splitlines()
+    terms = [t.lower() for t in near_terms if t]
+    for i, line in enumerate(lines):
+        for m in pat.finditer(line):
+            try:
+                value = float(m.group(1).replace(",", "."))
+            except ValueError:
+                continue
+            if value <= 0:
+                continue
+            f_out = _UNIT_FACTORS.get(m.group(2).lower())
+            if factor is not None and f_out is not None:
+                value_c, bound_c = value * f_out, bound * factor
+            else:
+                value_c, bound_c = value, bound
+            if direction == "upper" and value_c >= bound_c * 0.9999999:
+                continue  # at or over the bound: the limit itself being echoed, or a breach
+            if direction == "lower" and value_c < bound_c * 0.9999999:
+                continue
+            if any(_mentions(line.lower(), t) for t in terms):
+                return True
     return False
 
 
@@ -247,7 +328,13 @@ _FAILURE_WORDS = _re_mod.compile(r"\b(?:fail\w*|error\w*|reject\w*|refus\w*|inva
 
 #: Distinct content words a call's output must show to prove a criterion that
 #: has no harder term, when the harness (not the model) picks the call.
-AUTO_MIN_WORDS = 2
+AUTO_KEY_WINDOW = 4
+AUTO_MIN_WORDS = 3
+
+#: A key carried by at most this many criteria (but more than `AUTO_MAX_KEY_DF`)
+#: counts as one unit of evidence next to another; a key in more of them
+#: only counts next to a measurement (a limit, a format, an exit/status).
+AUTO_SMALL_KEY_DF = 4
 
 #: What a CRASHED run prints: the runtime or the test runner failing, as
 #: opposed to the program under test reporting an error on purpose
@@ -259,13 +346,130 @@ _CRASH_RE = _re_mod.compile(
     r"^\s*(?:FAILED|ERROR)\s+\S*(?:::|\.py\b)|\b[1-9]\d*\s+(?:failed|errors?)\b|"
     r"command not found|is not recognized as|No such file or directory",
     _re_mod.M)
-_ABOUT_CRASH_RE = _re_mod.compile(r"traceback|exception|crash|stack\s*trace|\btests?\b|pytest", _re_mod.I)
+_ABOUT_CRASH_RE = _re_mod.compile(r"traceback|exception|crash|stack\s*trace", _re_mod.I)
+
+#: What a WRAPPER prints when the thing it ran did not work, even if the
+#: wrapper itself exited 0: a `FAIL` / `-> FAIL` verdict line (upper case, not
+#: `FAIL: 0`), `rc=1` / `exit status 2` beside a failure word, an interpreter
+#: that could not start the program (`No module named meter`,
+#: `ModuleNotFoundError`, `command not found`). Unlike `_CRASH_RE` no
+#: criterion is exempt from it: a run that printed this did not succeed.
+_HARD_FAIL_RE = _re_mod.compile(
+    r"(?<!\b0 )\bFAIL(?:ED|URE)?\b(?!\s*[:=]?\s*0\b)|"
+    r"\brc\s*=\s*[1-9]\d*\b[^\n]*\b(?:FAIL\w*|ERROR\w*|Traceback|No module named)|"
+    r"\bexit(?:ed)?\s+(?:status|code)[:= ]+\s*[1-9]\d*\b|"
+    r"No module named\b|ModuleNotFoundError|command not found|is not recognized as|"
+    r"\b[1-9]\d*\s+(?:failed|errors?)\b|^\s*ERROR\s+\S+\.py\b", _re_mod.M)
 
 
 def output_shows_failure(text: str) -> bool:
     """The output of a run that crashed or failed its tests (see `_CRASH_RE`).
     Used when the harness, not the model, picks the call."""
     return bool(_CRASH_RE.search(text or ""))
+
+
+def output_shows_hard_failure(text: str) -> bool:
+    """The output of a run that reports its own failure (see `_HARD_FAIL_RE`)."""
+    return bool(_HARD_FAIL_RE.search(text or ""))
+
+
+#: A term that is in most sentences of any task says nothing about one of
+#: them. Used with the book's term frequencies (`CriteriaBook.term_df`).
+AUTO_MAX_KEY_DF = 2      # a key counts alone when at most this many criteria carry it
+AUTO_MAX_WORD_DF = 5     # a word counts at all when at most this many criteria carry it
+_GENERIC_TERMS = frozenset("""
+a an the and or not no yes true false none null nil ok okay error errors fail failed failure pass passed
+id ids name names value values type types data file files path paths line lines text string strings number
+numbers count total start starts end ends begin stop run runs running report reports result results output
+outputs input inputs list lists item items key keys json csv time date day days hour hours minute minutes
+second seconds command commands option options default defaults field fields format formats code status
+state message messages index main test tests set get put post delete open close read write version help
+usage example examples python python3 py echo bash sh zsh node npm pip cmd powershell pwsh git make curl
+new old issue issues comment comments body author created updated deleted state title label labels store
+item items user users project projects record records page pages size entry entries event events member
+members account accounts owner message group groups summary total amount price cost
+""".split())
+#: A sentence that states a condition or a relation (only when, never, except,
+#: computed from, A -> B) is not shown by the names in it appearing in an output.
+_RELATION_RE = _re_mod.compile(
+    r"\b(?:only|never|not|no|unless|except|differ\w*|different|computed|derived|applied|equal\w*|same|"
+    r"before|after|than|without|kept|each|every|all|whenever|if|iff|when|once|previous|next|most|least|"
+    r"unique|duplicate\w*|sorted|sort|order\w*|ascending|descending|more|less|fewer|larger|smaller|greater|"
+    r"lower|higher|first|last|latest|earliest)\b|->|=>|\u2192",
+    _re_mod.I)
+_ESCAPE_KEY_RE = _re_mod.compile(r"\\[A-Za-z0-9\\'\"]")
+#: A file name says the file exists (`ls`, `test -f`, `grep -c` show it), not
+#: what it contains: it never proves alone.
+_FILE_KEY_RE = _re_mod.compile(
+    r"\.(?:md|markdown|txt|rst|exe|dll|cmd|bat|ps1|sh|json|jsonl|csv|tsv|toml|cfg|ini|conf|yaml|yml|xml|html|css|js|ts|"
+    r"py|db|sqlite|log|lock|zip|png|jpg|pdf)$", _re_mod.I)
+
+
+def generic_key(key: str) -> bool:
+    """A key too generic to prove anything alone: no letters (`'1'`, `0.5`,
+    `\\n`), a single character (`Z`), an escape sequence, or a common word."""
+    k = str(key or "").strip().strip("`'\"").strip()
+    if not k:
+        return True
+    if _ESCAPE_KEY_RE.search(k) or _FILE_KEY_RE.search(k):
+        return True
+    alnum = _re_mod.sub(r"[^A-Za-z0-9]", "", k)
+    if len(alnum) <= 1 or not _re_mod.search(r"[A-Za-z]", alnum):
+        return True
+    if k.endswith("/") or _re_mod.match(r"^python[0-9.]*\s+-", k, _re_mod.I):  # a directory, `python -c`
+        return True
+    if len(alnum) == 2 and alnum.isalpha():  # `by`, `db`, `to`: a word, not an identifier
+        return True
+    return k.lower() in _GENERIC_TERMS
+
+
+_LABEL_ECHO_RE = _re_mod.compile(
+    r"\bC\d{2,4}\b|\[(?:OK|PASS|PASSED|ok)\b|^\s*(?:PASS|OK|ok|\u2713|\u2714)[ :\t]+\S", _re_mod.M)
+
+
+def strip_label_echo(text: str) -> str:
+    """Drop the output lines that carry a criterion id or a `[OK ...]` label: a
+    script printing `[OK C012: the paraphrase]` proves its own label, not the
+    behaviour."""
+    if not text or not _LABEL_ECHO_RE.search(text):
+        return text
+    return "\n".join(l for l in text.split("\n") if not _LABEL_ECHO_RE.search(l))
+
+
+def _quoted_in(hay: str, key: str) -> bool:
+    """`key` appears between quotes (`"energy_wh"`, `'code'`, `"conflict"`)."""
+    k = _re_mod.escape(key.strip().lower())
+    return _re_mod.search(r"[\"']" + k + r"[\"']", hay) is not None
+
+
+def strip_command_echo(output: str, command: str) -> str:
+    """Drop the output lines that are text the model typed into its own command
+    (a `print("env X not set ...")` literal): the program did not say it."""
+    if not output or not command:
+        return output
+    cmd = command
+    kept = []
+    for line in output.split("\n"):
+        t = line.strip()
+        if len(t) >= 14 and t in cmd:
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def quote_anchors(quote: str) -> List[str]:
+    """Numbers and identifier-like tokens (`snake_case`, `a.b`, `camelCase`) of
+    a sentence: what a words-only criterion must show besides its words."""
+    q = str(quote or "")
+    nums = [n for n in _re_mod.findall(r"(?<![\w.])\d[\d.,]*(?![\w])", q) if n.strip(".,") not in ("0", "1", "")]
+    idents = _re_mod.findall(r"\b[A-Za-z]+(?:[_.][A-Za-z0-9]+)+\b|\b[a-z]+[A-Z][A-Za-z]+\b", q)
+    return [t.strip(".,").lower() for t in nums + idents if t.strip(".,")]
+
+
+def bare_token_quote(quote: str) -> bool:
+    """A criterion whose whole sentence is one token (`meters`, `Z`): there is
+    nothing to demonstrate beyond the token showing up."""
+    return len(_re_mod.findall(r"[A-Za-z0-9_]+", str(quote or ""))) <= 1
 
 
 def raw_usage(call: Mapping[str, Any]) -> bool:
@@ -275,7 +479,9 @@ def raw_usage(call: Mapping[str, Any]) -> bool:
 
 def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[str, Any]], *,
                          last_mutation_seq: int = -1, strict: bool = True,
-                         test: str = "", budget_s: float = 0.5, auto: bool = False) -> CriterionVerdict:
+                         test: str = "", budget_s: float = 0.5, auto: bool = False,
+                         df: Optional[Mapping[str, int]] = None,
+                         terms_out: Optional[List[str]] = None) -> CriterionVerdict:
     """Does one tool call of the turn show this contract criterion?
 
     The model names the call; this decides. `evidence_ok=True` only when:
@@ -330,7 +536,37 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
         words (a bare "exit 0" rule is never proven by just any clean run);
       * a criterion with no key, form matcher, limit, exit status or HTTP
         status is only proven when at least `AUTO_MIN_WORDS` distinct content
-        words of it show in the output - one shared word proves nothing.
+        words of it show in the output - one shared word proves nothing;
+      * a run that reports its own failure (`FAIL`, `rc=1 ... FAIL`,
+        `No module named`, `command not found`) proves nothing, whatever its
+        exit code, and a criterion whose whole sentence is one token is never
+        proven;
+      * only DISTINCTIVE terms count (`df` = in how many criteria of the book
+        each term occurs). A key counts only QUOTED in the output
+        (`"energy_wh":`, `'code': 'invalid'`), together with the other keys of
+        its sentence inside a few lines (`AUTO_KEY_WINDOW`); a file name
+        (`README.md`, `cmd.exe`), a digit, one character, an escape sequence or
+        a common noun is generic and never counts. A key, a form, a limit, an
+        exit status or an HTTP status is one piece of evidence and the harness
+        needs two independent ones (the criterion's subject only sets the
+        scene); several keys count as two when nearly all of them show and one
+        is rare (`AUTO_SMALL_KEY_DF`); a word counts only when at most
+        `AUTO_MAX_WORD_DF` criteria carry it;
+      * a limit is a measurement in its unit family that is not zero, respects
+        the bound the sentence states (direction included) and sits on a line
+        that names a term of the criterion (`_limit_measured`);
+      * a sentence of conditions (only, never, at most, sorted, A -> B) is not
+        shown by keys alone, and a sentence about HTTP statuses needs a status
+        in the output; a criterion with only words needs `AUTO_MIN_WORDS`
+        distinct words AND a number or identifier of the sentence
+        (`quote_anchors`), and the task statement itself is never auto-proven;
+      * output lines that carry a criterion id or an `[OK ...]`/`PASS` label
+        and text the model typed into its own command are not the program's
+        output (`strip_label_echo`, `strip_command_echo`); pytest summaries
+        with failures or errors (`3 failed`, `1 error`, `ERROR x.py`) are
+        failures, with no exemption for a criterion about tests.
+        `terms_out` receives the labels of the matched terms (the harness ranks
+        the criteria one call proves by their number).
     """
     if call is None:
         return verify_criterion(criterion, evidence_ok=None,
@@ -358,11 +594,20 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     # Every term search runs on the same bounded window as the form matchers
     # (first 2 KB + last 8 KB); only the linear test-id scan sees it all.
     raw_out = _window(full_out)
+    if auto:
+        raw_out = strip_command_echo(strip_label_echo(raw_out), command)
     out = raw_out.lower()
     about_failure = bool(_FAILURE_WORDS.search(str(criterion.get("quote") or "")))
+    if auto and bare_token_quote(str(criterion.get("quote") or "")):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="the criterion is a single token; it is not proven by a call on its own")
+    if auto and output_shows_hard_failure(raw_out):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="that run reports a failure (FAIL, rc=1, a missing module or command); "
+                                       "a clean run is needed")
     crashed = bool(auto and output_shows_failure(raw_out))
     failing = bool(auto and (crashed or call.get("exit_code") not in (0, None)))
-    if crashed and not _ABOUT_CRASH_RE.search(str(criterion.get("quote") or "")):
+    if crashed and not _ABOUT_CRASH_RE.search(str(criterion.get("quote") or "")):  # tests are not exempt
         # The harness picked this call: a crash or a failed test run shows
         # nothing about the program's behaviour, whatever words it contains.
         return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
@@ -420,6 +665,9 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
         return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
                                 detail=f"that call does not run or show `{test}`")
     from src.contract_criteria import invocation_only
+    if auto and invocation_only(dict(criterion)):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="an invocation form is shown by a run the model points at, not by any clean run")
     if invocation_only(dict(criterion)):
         # Nothing but an invocation form: running it is the proof - and it
         # must succeed, unless the sentence is about a failure.
@@ -439,16 +687,71 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     if keys or out_matchers or limits or exits or statuses:
         key_hit = any(_mentions(hay, k) or (not k.isalnum() and k.lower() in hay) for k in keys)
         if auto:
-            # Nobody pointed at this call. A term that fits any clean run
-            # (an exit status, a bare "JSON document") only counts together
-            # with the criterion's subject, one of its keys or two of its words.
-            co = bool(subject) or key_hit or len(
-                {w.lower() for w in words if _mentions(hay, w)}) >= AUTO_MIN_WORDS
-            ok = (key_hit
-                  or any(shown(m) for m in out_matchers if co or not m.get("json_doc"))
-                  or any(_limit_shown(hay, l) for l in limits)
-                  or (co and call.get("exit_code") in exits)
-                  or any(_status_shown(raw_out, s) for s in statuses))
+            # Nobody pointed at this call, so only terms that tell this
+            # criterion from the others count (see the docstring).
+            dfm = df or {}
+            nk: List[str] = []
+            for k in keys:
+                kk = k.strip().strip("`'\"").strip()
+                if kk and not generic_key(kk) and kk.lower() not in {x.lower() for x in nk}:
+                    nk.append(kk)
+            # a key counts when it shows QUOTED (`"energy_wh":`, `'code': 'invalid'`):
+            # a bare word in a log line, a source listing or a test label is not the
+            # program's output
+            hit_keys = [k for k in nk if _quoted_in(hay, k)]
+            if len(nk) >= 2 and len(hit_keys) >= 2:
+                # the keys of one sentence have to show together (one record, a few
+                # lines), not scattered over unrelated commands of a long output
+                lines_ = hay.split("\n")[:4000]
+                best: List[str] = []
+                for i_ in range(len(lines_)):
+                    win = "\n".join(lines_[i_:i_ + AUTO_KEY_WINDOW])
+                    got = [k for k in hit_keys if _quoted_in(win, k)]
+                    if len(got) > len(best):
+                        best = got
+                        if len(best) == len(hit_keys):
+                            break
+                hit_keys = best
+            kdf = lambda k: int(dfm.get(k.strip().lower(), 0))  # noqa: E731
+            dwords = {w.lower() for w in words
+                      if int(dfm.get(w.lower(), 0)) <= AUTO_MAX_WORD_DF and _mentions(hay, w)}
+            word_unit = len(dwords) >= AUTO_MIN_WORDS
+            subj_unit = bool(subject) and int(dfm.get("s:" + subject.strip().lower(), 0)) <= AUTO_MAX_WORD_DF
+            # A term that fits any clean run (an exit status, a bare "JSON
+            # document") only counts together with the subject, a key or
+            # enough distinctive words.
+            co = subj_unit or bool(hit_keys) or word_unit
+            hit_low = [k.lower() for k in hit_keys]
+            matched = [m for m in out_matchers
+                       if (co or not m.get("json_doc")) and shown(m)
+                       and not any(k in str(m.get("src") or "").lower() for k in hit_low)]
+            near = list(nk) + sorted(dwords)
+            limit_hits = [l for l in limits
+                          if _limit_measured(hay, l, str(criterion.get("quote") or ""), near)]
+            exit_hit = bool(co and call.get("exit_code") in exits)
+            status_hits = [s_ for s_ in statuses if _status_shown(raw_out, s_)]
+            # Keys: several keys count when (nearly) all of them show and at least
+            # one is rare in the book; a lone key is one unit and has to be rare.
+            if len(nk) >= 2:
+                need_keys = len(nk) if len(nk) <= 3 else (2 * len(nk) + 2) // 3
+                key_units = 2 if (len(nk) <= 6 and len(hit_keys) >= need_keys
+                                  and any(kdf(k) <= AUTO_SMALL_KEY_DF for k in hit_keys)) else 0
+            else:
+                key_units = 1 if (hit_keys and kdf(hit_keys[0]) <= AUTO_MAX_KEY_DF) else 0
+            units = (key_units + int(bool(matched)) + int(bool(limit_hits)) + int(exit_hit)
+                     + int(bool(status_hits)) + int(word_unit))
+            ok = units >= 2
+            others = int(bool(matched)) + int(bool(limit_hits)) + int(exit_hit) + int(bool(status_hits)) + int(word_unit)
+            if ok and others == 0 and _RELATION_RE.search(str(criterion.get("quote") or "")):
+                ok = False  # names appearing in an output do not show a condition
+            if ok and statuses and not status_hits:
+                ok = False  # a sentence about HTTP statuses needs a status in the output
+            if terms_out is not None and ok:
+                terms_out.extend(["k:" + k.strip().lower() for k in hit_keys]
+                                 + ["w:" + w for w in sorted(dwords)]
+                                 + ["m:" + str(m.get("src")) for m in matched]
+                                 + ["l:" + str(l.get("num")) + str(l.get("unit")) for l in limit_hits]
+                                 + (["exit"] if exit_hit else []) + ["s:%d" % s_ for s_ in status_hits])
         else:
             ok = (key_hit
                   or any(shown(m) for m in out_matchers)
@@ -460,8 +763,14 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
                                 + [f"exit {x}" for x in exits[:2]] + [f"HTTP {s}" for s in statuses[:2]])
     else:
         if auto:
-            hits = {w.lower() for w in words if _mentions(hay, w)}
-            ok = len(hits) >= AUTO_MIN_WORDS and not failing
+            dfm = df or {}
+            hits = {w.lower() for w in words
+                    if int(dfm.get(w.lower(), 0)) <= AUTO_MAX_WORD_DF and _mentions(hay, w)}
+            anchors = quote_anchors(str(criterion.get("quote") or ""))
+            anchored = any(_mentions(hay, a) or a in hay for a in anchors)
+            ok = len(hits) >= AUTO_MIN_WORDS and not failing and anchored
+            if terms_out is not None and ok:
+                terms_out.extend(["w:" + w for w in sorted(hits)])
         else:
             ok = not words or any(_mentions(hay, w) for w in words)
         shown_terms = ", ".join(words[:6])

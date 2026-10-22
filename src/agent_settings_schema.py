@@ -1607,15 +1607,20 @@ GROUPS: list[dict[str, Any]] = [
                   "output shows the requirement's subject and terms (a limit as a measurement in its unit). "
                   "Off = the call only has to exist in the turn. A bare echo is never evidence."),
             _bool("agent_contract_criteria_auto_link", "Contract criteria: the harness links by itself",
-                  "Experimental, off by default: on a real long task most of what it proved was not "
-                  "demonstrated. When on, after each tool call the runtime tries the requirements still "
-                  "without evidence against the clean runs (with output) made since the last change, with the strict rules: the "
-                  "output must show a hard term of the requirement (a key, form, limit or HTTP status; an "
-                  "exit status or a bare JSON document only together with its subject, a key or two of its "
-                  "words) or, when it has none, at least two distinct words of it. Runs that fail (unless the "
-                  "requirement is about a failure), only read files or print literals prove nothing. It tries again before the completion audit and the "
-                  "final summary. Only proves; never marks a requirement unmet or not applicable. "
-                  "Needs strict evidence."),
+                  "Experimental, off by default: on long real tasks most of what it proved was not demonstrated. "
+                  "When on, after each tool call the runtime tries the requirements still without evidence against "
+                  "the clean runs (with output) made since the last change, with the strict rules: only terms that "
+                  "tell a requirement from the others count; a key counts only quoted in the output and together "
+                  "with the other keys of its sentence (a file name or a common word never does); a key, a form, "
+                  "a limit or a status needs a second, independent piece of evidence; a limit must be a measurement "
+                  "of the named operation inside its bound, never 0; a requirement with only words needs "
+                  "three distinct words and a number or identifier of it; conditions (only, never, at most, "
+                  "sorted) and "
+                  "HTTP statuses are not shown by names. A run that fails or prints FAIL, rc=1, failed or error "
+                  "test lines or a missing module, only reads or searches files, or prints literals or its own "
+                  "labels proves nothing, and one call proves at most three requirements. It tries again before "
+                  "the completion audit and the final summary. Only proves; never marks a requirement unmet or not "
+                  "applicable. Needs strict evidence."),
             _bool("agent_plan_autocontinue", "Plan: keep working until every task is done",
                   "While the tracked plan has open tasks, a turn that ends without a tool call (or "
                   "asks 'shall I continue?') is sent on to the next task inside the same turn instead "
