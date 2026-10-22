@@ -66,8 +66,8 @@ def test_an_exit_status_counts_together_with_subject_key_or_two_words():
     with_key = _crit(quote, exits=[0], words=words, keys=["members"])
     assert _verdict(with_key, _call("3 members ok")) == "verified"
     two_words = _crit(quote, exits=[0], words=words)
-    assert _verdict(two_words, _call("archive healthy")) == "verified"
-    assert _verdict(two_words, _call("archive only")) == "pending"
+    assert _verdict(two_words, _call("tool archive healthy")) == "verified"
+    assert _verdict(two_words, _call("archive healthy")) == "pending"
 
 
 # -- silent runs and the JSON document ------------------------------------------
@@ -93,7 +93,7 @@ def test_a_bare_json_document_needs_a_key_a_subject_or_two_words():
     book.apply_links([{"id": "C05", "call_id": "j1"}])
     assert book.get("C05")["state"] == "proven"
     book2 = _book()
-    _run(book2, "j2", "python -m arc scan x.arc", '{"command": "scan", "document": 1}')
+    _run(book2, "j2", "python -m arc scan x.arc", '{"command": "scan", "document": 1, "stdout": "one"}')
     assert book2.auto_link() == ["C05"]
 
 
@@ -315,8 +315,8 @@ def test_the_setting_text_says_what_the_code_does():
     start = text.index('"agent_contract_criteria_auto_link"')
     block = text[start:start + 1500]
     assert "one shared word never counts" not in block
-    assert "two distinct words" in block and "hard term" in block
-    assert verification.AUTO_MIN_WORDS == 2
+    assert "three distinct words" in block and "at most three requirements" in block
+    assert verification.AUTO_MIN_WORDS == 3
 
 
 def test_auto_link_is_experimental_and_off_by_default():

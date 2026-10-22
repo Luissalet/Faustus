@@ -93,6 +93,8 @@ AUTO_LINK_S = 0.25
 #: Tools whose calls RUN something; a read, a search or a listing of a file
 #: is not a run, so the harness never takes it as proof on its own.
 AUTO_TOOLS = frozenset({"bash", "python", "powershell"})
+#: One call proves at most this many criteria by itself.
+AUTO_CALL_CAP = 3
 #: Marks a start note in `metadata` so context trimming keeps it.
 NOTE_META = "contract_criteria"
 
@@ -602,7 +604,7 @@ MATCH_BUDGET_S = 0.5
 _NON_RUN_PROGRAMS = frozenset("""
 grep egrep fgrep rg ag ack ls dir cat type more less head tail select-string sls findstr get-content gc
 gci get-childitem find wc sed awk echo printf write-output write-host git code notepad vi vim nano strings od
-xxd hexdump file stat tree
+xxd hexdump file stat tree read true false : [ [[ export unset shift
 """.split())
 _INVOCATION_RE = re.compile(
     r"\b(?:runnable\s+as|run\s+as|started\s+as|invoked\s+as|called\s+as|launched\s+as|entry\s+point|"
@@ -1255,6 +1257,9 @@ def is_run_call(tool: str, command: str) -> bool:
         code = str(command or "")
         return bool(code.strip()) and not python_reads_only(code)
     for step in _split_steps(str(command or "")):
+        step = _strip_shell_keyword(step)
+        if not step:
+            continue
         argv = _argv(step)
         if not argv:
             continue
@@ -1266,6 +1271,30 @@ def is_run_call(tool: str, command: str) -> bool:
             continue  # `python -c "print(open('f').read())"` reads a file
         return True
     return False
+
+
+#: Shell compound keywords are not programs: `for o in a b; do grep -c $o f;
+#: done` runs `grep` (a file search), not a program called `for`.
+_LOOP_HEADS = frozenset({"for", "case", "select"})          # the whole step is a header
+_STEP_PREFIXES = frozenset({"while", "until", "if", "elif", "do", "then", "else", "time", "!"})
+_SHELL_ENDS = frozenset({"done", "fi", "esac", "{", "}", "in"})
+
+
+def _strip_shell_keyword(step: str) -> str:
+    """The command a step stands for once shell compound keywords are looked
+    through (`do printf ...` -> `printf ...`, `if grep -q x f` -> `grep -q x
+    f`); empty for a loop header (`for o in ...`), `done`, `fi`, `esac`."""
+    s = str(step or "").strip()
+    while s:
+        word = re.match(r"[^\s;|&()]+", s)
+        head = word.group(0) if word else ""
+        if head in _LOOP_HEADS or head in _SHELL_ENDS:
+            return ""
+        if head in _STEP_PREFIXES:
+            s = s[len(head):].lstrip()
+            continue
+        break
+    return s
 
 
 _NAVIGATION_PROGRAMS = frozenset({"cd", "pushd", "popd", "set-location", "sl", "chdir"})
@@ -1831,6 +1860,25 @@ class CriteriaBook:
         fresh.reverse()
         return fresh
 
+    def term_df(self) -> Dict[str, int]:
+        """In how many criteria of the book each key and word occurs (and, as
+        `s:<subject>`, each subject): the harness only trusts a term that
+        tells a criterion from the others (`verify_contract_link` `df`)."""
+        cached = getattr(self, "_df_cache", None)
+        if cached is not None and cached[0] == len(self.criteria):
+            return cached[1]
+        df: Dict[str, int] = {}
+        for c in self.criteria:
+            terms = {str(t).strip().lower() for t in list(c.get("keys") or []) + list(c.get("words") or [])
+                     if str(t).strip()}
+            for t in terms:
+                df[t] = df.get(t, 0) + 1
+            subj = str(c.get("subject") or "").strip().lower()
+            if subj:
+                df["s:" + subj] = df.get("s:" + subj, 0) + 1
+        self._df_cache = (len(self.criteria), df)
+        return df
+
     def _auto_pending_work(self, fresh: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Pending criteria that still have a fresh call they were not tried
         against, in rotated order: a pass that ran out of time resumes at the
@@ -1859,9 +1907,12 @@ class CriteriaBook:
             return []
         deadline = time.monotonic() + max(0.05, float(budget_s))
         last = self.last_mutation_seq
-        plans: List[Dict[str, Any]] = []
         work = self._auto_pending_work(fresh)
         self._auto_next = ""
+        df = self.term_df()
+        # (call id) -> verified (score, criterion id, verdict) rows
+        verified: Dict[str, List[Tuple[int, str, Any]]] = {}
+        stop = False
         for crit in work:
             snapshot = dict(crit)
             for call in fresh:
@@ -1871,15 +1922,40 @@ class CriteriaBook:
                 left = deadline - time.monotonic()
                 if left <= 0:
                     self._auto_next = crit["id"]
-                    return plans
+                    stop = True
+                    break
+                terms: List[str] = []
                 verdict = _ver.verify_contract_link(
                     snapshot, call, last_mutation_seq=last, strict=True,
-                    budget_s=min(AUTO_LINK_S, left), auto=True)
+                    budget_s=min(AUTO_LINK_S, left), auto=True, df=df, terms_out=terms)
                 if verdict.state == "verified":
-                    plans.append({"id": crit["id"], "verdict": verdict, "call_id": call.get("call_id")})
-                    break
-                if "matcher timeout" not in str(verdict.detail or "") or left >= AUTO_LINK_S:
+                    verified.setdefault(str(call.get("call_id")), []).append(
+                        (len(set(terms)), crit["id"], verdict))
+                elif "matcher timeout" not in str(verdict.detail or "") or left >= AUTO_LINK_S:
                     self._auto_tried.add(pair)
+            if stop:
+                break
+        # One call proves at most AUTO_CALL_CAP criteria (counting what it
+        # already proved in an earlier pass): the ones that match the most
+        # distinct terms, then by id. The rest stay pending.
+        used: Dict[str, int] = {}
+        for c in self.criteria:
+            if c.get("auto") and c.get("state") == "proven":
+                for ref in c.get("evidence_refs") or []:
+                    used[str(ref)] = used.get(str(ref), 0) + 1
+        plans: List[Dict[str, Any]] = []
+        taken: set = set()
+        for call in fresh:
+            cid = str(call.get("call_id"))
+            rows = sorted((r for r in verified.get(cid, []) if r[1] not in taken), key=lambda r: (-r[0], r[1]))
+            slots = max(0, AUTO_CALL_CAP - used.get(cid, 0))
+            for score, crit_id, verdict in rows:
+                if slots > 0:
+                    plans.append({"id": crit_id, "verdict": verdict, "call_id": cid, "terms": score})
+                    taken.add(crit_id)
+                    slots -= 1
+                else:
+                    self._auto_tried.add((crit_id, cid))
         return plans
 
     def auto_commit(self, plans: Sequence[Mapping[str, Any]]) -> List[str]:

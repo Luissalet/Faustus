@@ -184,7 +184,7 @@ def _unit_family(unit: str) -> Tuple[str, ...]:
     return (u, u + "s")
 
 
-def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
+def _limit_shown(haystack: str, limit: Mapping[str, Any], *, tight: bool = False) -> bool:
     """A limit is shown by a measurement in its unit family (`31 MB` or
     `31457280 bytes` for "under 64 MiB", `12 ms` for "within 5 ms", also
     inside an identifier: `test_put_under_64mb`) or by its own number in a
@@ -193,6 +193,10 @@ def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
     import re as _re
     num = str(limit.get("num") or "").strip()
     fam = [_re.escape(u) for u in _unit_family(str(limit.get("unit") or "")) if u]
+    if tight:
+        # The harness judging alone: a one-letter unit has to touch its
+        # number (`5s`, `300b`); `1 b'` in `rc=1 b'{...}'` is not a size.
+        fam = [u for u in fam if len(u) > 1] + ["(?<=\\d)" + u for u in fam if len(u) == 1]
     if fam and _re.search(r"(?<![A-Za-z0-9.])\d+(?:[.,]\d+)?[ _]?(?:" + "|".join(sorted(fam, key=len, reverse=True))
                           + r")(?![A-Za-z])", haystack, _re.I):
         return True
@@ -247,7 +251,12 @@ _FAILURE_WORDS = _re_mod.compile(r"\b(?:fail\w*|error\w*|reject\w*|refus\w*|inva
 
 #: Distinct content words a call's output must show to prove a criterion that
 #: has no harder term, when the harness (not the model) picks the call.
-AUTO_MIN_WORDS = 2
+AUTO_MIN_WORDS = 3
+
+#: A key carried by at most this many criteria (but more than `AUTO_MAX_KEY_DF`)
+#: counts as one unit of evidence next to another; a key in more of them
+#: only counts next to a measurement (a limit, a format, an exit/status).
+AUTO_SMALL_KEY_DF = 4
 
 #: What a CRASHED run prints: the runtime or the test runner failing, as
 #: opposed to the program under test reporting an error on purpose
@@ -261,11 +270,66 @@ _CRASH_RE = _re_mod.compile(
     _re_mod.M)
 _ABOUT_CRASH_RE = _re_mod.compile(r"traceback|exception|crash|stack\s*trace|\btests?\b|pytest", _re_mod.I)
 
+#: What a WRAPPER prints when the thing it ran did not work, even if the
+#: wrapper itself exited 0: a `FAIL` / `-> FAIL` verdict line (upper case, not
+#: `FAIL: 0`), `rc=1` / `exit status 2` beside a failure word, an interpreter
+#: that could not start the program (`No module named meter`,
+#: `ModuleNotFoundError`, `command not found`). Unlike `_CRASH_RE` no
+#: criterion is exempt from it: a run that printed this did not succeed.
+_HARD_FAIL_RE = _re_mod.compile(
+    r"(?<!\b0 )\bFAIL(?:ED|URE)?\b(?!\s*[:=]?\s*0\b)|"
+    r"\brc\s*=\s*[1-9]\d*\b[^\n]*\b(?:FAIL\w*|ERROR\w*|Traceback|No module named)|"
+    r"\bexit(?:ed)?\s+(?:status|code)[:= ]+\s*[1-9]\d*\b|"
+    r"No module named\b|ModuleNotFoundError|command not found|is not recognized as")
+
 
 def output_shows_failure(text: str) -> bool:
     """The output of a run that crashed or failed its tests (see `_CRASH_RE`).
     Used when the harness, not the model, picks the call."""
     return bool(_CRASH_RE.search(text or ""))
+
+
+def output_shows_hard_failure(text: str) -> bool:
+    """The output of a run that reports its own failure (see `_HARD_FAIL_RE`)."""
+    return bool(_HARD_FAIL_RE.search(text or ""))
+
+
+#: A term that is in most sentences of any task says nothing about one of
+#: them. Used with the book's term frequencies (`CriteriaBook.term_df`).
+AUTO_MAX_KEY_DF = 2      # a key counts alone when at most this many criteria carry it
+AUTO_MAX_WORD_DF = 5     # a word counts at all when at most this many criteria carry it
+_GENERIC_TERMS = frozenset("""
+a an the and or not no yes true false none null nil ok okay error errors fail failed failure pass passed
+id ids name names value values type types data file files path paths line lines text string strings number
+numbers count total start starts end ends begin stop run runs running report reports result results output
+outputs input inputs list lists item items key keys json csv time date day days hour hours minute minutes
+second seconds command commands option options default defaults field fields format formats code status
+state message messages index main test tests set get put post delete open close read write version help
+usage example examples
+""".split())
+_ESCAPE_KEY_RE = _re_mod.compile(r"\\[A-Za-z0-9\\'\"]")
+
+
+def generic_key(key: str) -> bool:
+    """A key too generic to prove anything alone: no letters (`'1'`, `0.5`,
+    `\\n`), a single character (`Z`), an escape sequence, or a common word."""
+    k = str(key or "").strip().strip("`'\"").strip()
+    if not k:
+        return True
+    if _ESCAPE_KEY_RE.search(k):
+        return True
+    alnum = _re_mod.sub(r"[^A-Za-z0-9]", "", k)
+    if len(alnum) <= 1 or not _re_mod.search(r"[A-Za-z]", alnum):
+        return True
+    if len(alnum) == 2 and alnum.isalpha():  # `by`, `db`, `to`: a word, not an identifier
+        return True
+    return k.lower() in _GENERIC_TERMS
+
+
+def bare_token_quote(quote: str) -> bool:
+    """A criterion whose whole sentence is one token (`meters`, `Z`): there is
+    nothing to demonstrate beyond the token showing up."""
+    return len(_re_mod.findall(r"[A-Za-z0-9_]+", str(quote or ""))) <= 1
 
 
 def raw_usage(call: Mapping[str, Any]) -> bool:
@@ -275,7 +339,9 @@ def raw_usage(call: Mapping[str, Any]) -> bool:
 
 def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[str, Any]], *,
                          last_mutation_seq: int = -1, strict: bool = True,
-                         test: str = "", budget_s: float = 0.5, auto: bool = False) -> CriterionVerdict:
+                         test: str = "", budget_s: float = 0.5, auto: bool = False,
+                         df: Optional[Mapping[str, int]] = None,
+                         terms_out: Optional[List[str]] = None) -> CriterionVerdict:
     """Does one tool call of the turn show this contract criterion?
 
     The model names the call; this decides. `evidence_ok=True` only when:
@@ -330,7 +396,19 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
         words (a bare "exit 0" rule is never proven by just any clean run);
       * a criterion with no key, form matcher, limit, exit status or HTTP
         status is only proven when at least `AUTO_MIN_WORDS` distinct content
-        words of it show in the output - one shared word proves nothing.
+        words of it show in the output - one shared word proves nothing;
+      * a run that reports its own failure (`FAIL`, `rc=1 ... FAIL`,
+        `No module named`, `command not found`) proves nothing, whatever its
+        exit code, and a criterion whose whole sentence is one token is never
+        proven;
+      * only DISTINCTIVE terms count (`df` = in how many criteria of the book
+        each term occurs): a key proves alone only when at most
+        `AUTO_MAX_KEY_DF` criteria carry it and it is not generic (digits, one
+        character, an escape sequence, a common word); any other key needs a
+        second term (another key, a matcher, a limit, an exit/status match,
+        or two words); a word counts only when at most `AUTO_MAX_WORD_DF`
+        criteria carry it. `terms_out` receives the labels of the matched
+        terms (the harness ranks the criteria one call proves by their number).
     """
     if call is None:
         return verify_criterion(criterion, evidence_ok=None,
@@ -360,6 +438,13 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     raw_out = _window(full_out)
     out = raw_out.lower()
     about_failure = bool(_FAILURE_WORDS.search(str(criterion.get("quote") or "")))
+    if auto and bare_token_quote(str(criterion.get("quote") or "")):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="the criterion is a single token; it is not proven by a call on its own")
+    if auto and output_shows_hard_failure(raw_out):
+        return verify_criterion(criterion, evidence_ok=None, evidence_refs=[ref],
+                                detail="that run reports a failure (FAIL, rc=1, a missing module or command); "
+                                       "a clean run is needed")
     crashed = bool(auto and output_shows_failure(raw_out))
     failing = bool(auto and (crashed or call.get("exit_code") not in (0, None)))
     if crashed and not _ABOUT_CRASH_RE.search(str(criterion.get("quote") or "")):
@@ -439,16 +524,46 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
     if keys or out_matchers or limits or exits or statuses:
         key_hit = any(_mentions(hay, k) or (not k.isalnum() and k.lower() in hay) for k in keys)
         if auto:
-            # Nobody pointed at this call. A term that fits any clean run
-            # (an exit status, a bare "JSON document") only counts together
-            # with the criterion's subject, one of its keys or two of its words.
-            co = bool(subject) or key_hit or len(
-                {w.lower() for w in words if _mentions(hay, w)}) >= AUTO_MIN_WORDS
-            ok = (key_hit
-                  or any(shown(m) for m in out_matchers if co or not m.get("json_doc"))
-                  or any(_limit_shown(hay, l) for l in limits)
-                  or (co and call.get("exit_code") in exits)
-                  or any(_status_shown(raw_out, s) for s in statuses))
+            # Nobody pointed at this call, so only terms that tell this
+            # criterion from the others count (see the docstring).
+            dfm = df or {}
+            hit_keys = [k for k in keys if _mentions(hay, k) or (not k.isalnum() and k.lower() in hay)]
+            kdf = lambda k: int(dfm.get(k.strip().lower(), 0))  # noqa: E731
+            strong = [k for k in hit_keys if not generic_key(k) and kdf(k) <= AUTO_MAX_KEY_DF]
+            small = [k for k in hit_keys if k not in strong and not generic_key(k) and kdf(k) <= AUTO_SMALL_KEY_DF]
+            big = [k for k in hit_keys if k not in strong and k not in small and not generic_key(k)]
+            dwords = {w.lower() for w in words
+                      if int(dfm.get(w.lower(), 0)) <= AUTO_MAX_WORD_DF and _mentions(hay, w)}
+            word_unit = len(dwords) >= AUTO_MIN_WORDS
+            subj_unit = bool(subject) and int(dfm.get("s:" + subject.strip().lower(), 0)) <= AUTO_MAX_WORD_DF
+            # A term that fits any clean run (an exit status, a bare "JSON
+            # document") only counts together with the subject, a strong key
+            # or enough distinctive words.
+            co = subj_unit or bool(strong) or word_unit
+            matched = [m for m in out_matchers if (co or not m.get("json_doc")) and shown(m)]
+            limit_hits = [l for l in limits if _limit_shown(hay, l, tight=True)]
+            exit_hit = bool(co and call.get("exit_code") in exits)
+            status_hits = [s for s in statuses if _status_shown(raw_out, s)]
+            measured = bool(matched or limit_hits or exit_hit or status_hits)
+            # Formats and limits are one kind of evidence however many there
+            # are (any timestamp shows every date format; any `12 s` shows
+            # every limit in seconds); a key carried by many criteria only
+            # counts next to one of them.
+            units = (len(small) + int(bool(big) and measured) + int(bool(matched)) + int(bool(limit_hits))
+                     + int(exit_hit) + int(bool(status_hits)) + int(word_unit) + int(subj_unit))
+            hits = (len(strong) + len(small) + len(big) + len(matched) + len(limit_hits) + int(exit_hit)
+                    + len(status_hits) + int(word_unit) + int(subj_unit))
+            hard = len(keys) + len(out_matchers) + len(limits) + len(exits) + len(statuses)
+            # A sentence with many terms is not shown by one of them.
+            need = 1 if hard <= 2 else (hard + 1) // 2
+            ok = (bool(strong) or units >= 2) and hits >= need
+            if terms_out is not None and ok:
+                terms_out.extend(["k:" + k.strip().lower() for k in hit_keys]
+                                 + ["w:" + w for w in sorted(dwords)]
+                                 + ["m:" + str(m.get("src")) for m in matched]
+                                 + ["l:" + str(l.get("num")) + str(l.get("unit")) for l in limit_hits]
+                                 + (["exit"] if exit_hit else []) + ["s:%d" % s for s in status_hits]
+                                 + (["subject"] if subj_unit else []))
         else:
             ok = (key_hit
                   or any(shown(m) for m in out_matchers)
@@ -460,8 +575,12 @@ def verify_contract_link(criterion: Mapping[str, Any], call: Optional[Mapping[st
                                 + [f"exit {x}" for x in exits[:2]] + [f"HTTP {s}" for s in statuses[:2]])
     else:
         if auto:
-            hits = {w.lower() for w in words if _mentions(hay, w)}
+            dfm = df or {}
+            hits = {w.lower() for w in words
+                    if int(dfm.get(w.lower(), 0)) <= AUTO_MAX_WORD_DF and _mentions(hay, w)}
             ok = len(hits) >= AUTO_MIN_WORDS and not failing
+            if terms_out is not None and ok:
+                terms_out.extend(["w:" + w for w in sorted(hits)])
         else:
             ok = not words or any(_mentions(hay, w) for w in words)
         shown_terms = ", ".join(words[:6])

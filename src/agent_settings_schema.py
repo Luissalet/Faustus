@@ -1609,12 +1609,16 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_contract_criteria_auto_link", "Contract criteria: the harness links by itself",
                   "Experimental, off by default: on a real long task most of what it proved was not "
                   "demonstrated. When on, after each tool call the runtime tries the requirements still "
-                  "without evidence against the clean runs (with output) made since the last change, with the strict rules: the "
-                  "output must show a hard term of the requirement (a key, form, limit or HTTP status; an "
-                  "exit status or a bare JSON document only together with its subject, a key or two of its "
-                  "words) or, when it has none, at least two distinct words of it. Runs that fail (unless the "
-                  "requirement is about a failure), only read files or print literals prove nothing. It tries again before the completion audit and the "
-                  "final summary. Only proves; never marks a requirement unmet or not applicable. "
+                  "without evidence against the clean runs (with output) made since the last change, with "
+                  "the strict rules: only terms that tell a requirement from the others count (a key that "
+                  "few requirements share and that is not a common word, a form, a limit, a status; an "
+                  "exit status or a bare JSON document only together with its subject, such a key or "
+                  "three of its words), a sentence with many terms needs about half of them, and a "
+                  "requirement with no hard term needs three distinct words of it. A run that fails or "
+                  "prints FAIL, rc=1 or a missing module (unless the requirement is about a failure), only "
+                  "reads or searches files (also in a shell loop) or prints literals proves nothing, and "
+                  "one call proves at most three requirements. It tries again before the completion audit "
+                  "and the final summary. Only proves; never marks a requirement unmet or not applicable. "
                   "Needs strict evidence."),
             _bool("agent_plan_autocontinue", "Plan: keep working until every task is done",
                   "While the tracked plan has open tasks, a turn that ends without a tool call (or "
