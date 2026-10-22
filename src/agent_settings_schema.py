@@ -1589,10 +1589,11 @@ GROUPS: list[dict[str, Any]] = [
                     "one extra round if some stay open; always = also list and report them on attended turns, "
                     "without the extra round; off = nothing changes. Never asks, never blocks.",
                     ["off", "unattended", "always"]),
-            _int("agent_contract_criteria_max", "Contract criteria: most per message",
-                 "Past this many, limits, error codes and formats are kept first and the rest is dropped "
-                 "(and counted).",
-                 5, 500),
+            _int("agent_contract_criteria_max", "Contract criteria: safety cap per message",
+                 "Protection against pathological input only: every requirement up to this many stays in the "
+                 "book and counts; what the model is shown is paged. Past it, limits, error codes and formats "
+                 "are kept first and the rest is dropped (and counted).",
+                 10, 1000),
             _int("agent_contract_criteria_min_chars", "Contract criteria: minimum message size",
                  "A message shorter than this many characters (typed text plus text attachments) is never "
                  "read as a contract.",
@@ -1603,8 +1604,8 @@ GROUPS: list[dict[str, Any]] = [
                  0, 3),
             _bool("agent_contract_criteria_strict_evidence", "Contract criteria: strict evidence",
                   "Accept a link only when the call ran after the last change in the workspace and its "
-                  "command or output names the requirement's subject and terms. Off = the call only has to "
-                  "exist in the turn."),
+                  "output shows the requirement's subject and terms (a limit as a measurement in its unit). "
+                  "Off = the call only has to exist in the turn. A bare echo is never evidence."),
             _bool("agent_plan_autocontinue", "Plan: keep working until every task is done",
                   "While the tracked plan has open tasks, a turn that ends without a tool call (or "
                   "asks 'shall I continue?') is sent on to the next task inside the same turn instead "

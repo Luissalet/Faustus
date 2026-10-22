@@ -29,7 +29,9 @@ def _parse(content: str) -> Optional[Dict[str, Any]]:
 
 class CriteriaCheckTool:
     """`{"links": [{"id", "status"?, "call_id"? | "command"? | "test"?, "reason"?,
-    "expected"?, "observed"?}]}` or `{"list": true}`."""
+    "expected"?, "observed"?}]}` or `{"list": true, "section"?, "kind"?, "page"?,
+    "only_open"?}` (one page of at most 12 KB, priority order, sections in
+    turn)."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _parse(content)
@@ -46,9 +48,24 @@ class CriteriaCheckTool:
         if not links:
             if not args.get("list"):
                 return {"error": "criteria_check: 'links' required (or {\"list\": true})", "exit_code": 1}
+            try:
+                page = int(args.get("page") or 1)
+            except (TypeError, ValueError):
+                page = 1
+            only_open = args.get("only_open")
+            listing = book.list_page(section=str(args.get("section") or ""), kind=str(args.get("kind") or ""),
+                                     page=page, only_open=True if only_open is None else bool(only_open))
+            head = (f"Page {listing['page']} of {listing['pages']} ({listing['rows']} "
+                    f"{'open ' if only_open is not False else ''}requirements"
+                    + (f", section ~ {args.get('section')!r}" if args.get("section") else "")
+                    + (f", kind {args.get('kind')}" if args.get("kind") else "") + ")")
+            secs = " · ".join(f"{s}: {n}" for s, n in book.sections(book.open()))
             return {
-                "output": book.compact_list(max_chars=12000, quote_chars=300) + "\n\n" + _counts_line(book),
+                "output": head + "\n" + (listing["text"] or "(none)") + "\n\nOpen by section: " + secs
+                          + "\n" + _counts_line(book),
                 "exit_code": 0,
+                "page": listing["page"],
+                "pages": listing["pages"],
                 "criteria": book.counts(),
                 "open": [c["id"] for c in book.open()],
             }
@@ -82,5 +99,8 @@ def _counts_line(book) -> str:
     n = book.counts()
     open_ids = [c["id"] for c in book.open()]
     tail = (" Open: " + ", ".join(open_ids[:30]) + (" ..." if len(open_ids) > 30 else "")) if open_ids else ""
+    if book.na_mass():
+        tail += (" More than a quarter are claimed not applicable, so those claims count as open: give them "
+                 "evidence or a real reason each.")
     return (f"{n['proven']} proven, {n['pending']} pending, {n['unmet']} unmet, "
             f"{n['not_applicable']} not applicable of {n['total']}.{tail}")

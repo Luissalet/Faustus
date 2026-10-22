@@ -3812,7 +3812,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "criteria_check",
-            "description": "Link the requirements extracted from the task statement (ids C01, C02...) to evidence: a tool call of THIS turn whose command or output shows the requirement. The harness decides: a link is accepted only if that call exists, ran after your last change to the workspace and mentions the requirement's subject and terms (a non-zero exit is fine when the requirement is about an error). status 'unmet' records a requirement that still fails; 'not_applicable' needs a reason. {\"list\": true} lists all requirements and their states.",
+            "description": "Link the requirements extracted from the task statement (ids C01, C02...) to evidence: a tool call of THIS turn whose output shows the requirement. The harness decides: a link is accepted only if that call exists, is not a bare echo/printf, ran after your last change to the workspace and its OUTPUT shows the requirement's subject and terms (a non-zero exit is fine when the requirement is about an error). status 'unmet' records a requirement that still fails; 'not_applicable' needs a reason. {\"list\": true} lists open requirements a page at a time (filters: section, kind, page).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -3834,7 +3834,11 @@ FUNCTION_TOOL_SCHEMAS = [
                             "required": ["id"]
                         }
                     },
-                    "list": {"type": "boolean", "description": "List every requirement with its state instead of linking"}
+                    "list": {"type": "boolean", "description": "List requirements (open ones by default) instead of linking, one page at a time"},
+                    "section": {"type": "string", "description": "With list: only requirements whose section contains this text"},
+                    "kind": {"type": "string", "enum": ["limit", "error_code", "format", "behaviour"], "description": "With list: only this kind"},
+                    "page": {"type": "integer", "description": "With list: page number (1 = first)"},
+                    "only_open": {"type": "boolean", "description": "With list: false lists settled requirements too"}
                 }
             }
         }

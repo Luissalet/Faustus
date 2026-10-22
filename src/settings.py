@@ -1530,25 +1530,31 @@ DEFAULT_SETTINGS = {
     # `compact` stream" is three), persisted beside the plan tracker. The
     # model links each one to a tool call of the turn with `criteria_check`;
     # the harness accepts the link only when that call ran after the last
-    # change and mentions the criterion. The completion audit lists the open
-    # ones, one `contract_gap` extra round follows if any stay open (unattended
+    # change and its output shows the criterion. The completion audit keeps
+    # its generic text and appends the open ones (paged by priority, sections
+    # in turn), one `contract_gap` extra round follows if any stay open (unattended
     # only), and `harness_summary.criteria` plus the completion gate reason
     # `criteria_unverified` report the rest. Never asks, never blocks.
     #   off        nothing changes;
     #   unattended extract, audit and gap round on unattended runs (default);
     #   always     also extract and report on attended turns (no extra round).
     "agent_contract_criteria": "unattended",
-    # Most criteria per message; past it, limits, error codes and formats are
-    # kept first and the rest is counted as dropped.
-    "agent_contract_criteria_max": 60,
+    # Safety cap on criteria per message (10-1000), against pathological input
+    # only: every criterion up to it stays in the book and counts toward the
+    # gate; what the model is shown is paged within fixed budgets instead.
+    # Past the cap, limits, error codes and formats are kept first and the
+    # rest is counted as dropped.
+    "agent_contract_criteria_max": 500,
     # Messages shorter than this (typed text plus text attachments) are never
     # read as a contract.
     "agent_contract_criteria_min_chars": 1500,
     # Extra rounds (cause `contract_gap`) when criteria stay open after the
-    # completion audit; 0 = report only.
+    # completion audit; 0 = report only, at most 3.
     "agent_contract_criteria_extra_rounds": 1,
-    # On: a link is accepted only if the call ran after the last change and
-    # mentions the criterion's subject and terms. Off: the call must exist.
+    # On: a link is accepted only if the call ran after the last change and its
+    # OUTPUT shows the criterion's subject and terms (a limit as a measurement
+    # in its unit, not bare digits). Off: the call must exist. Either way a
+    # bare echo/printf/Write-Output is never evidence.
     "agent_contract_criteria_strict_evidence": True,
     # Keep working INSIDE the turn while the tracked plan has open tasks: when
     # the model ends a round without a tool call (or asks "continue?"), the

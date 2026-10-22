@@ -2999,11 +2999,16 @@ def completion_gate(summary: Dict[str, Any], changeset: Optional[Dict[str, Any]]
     * the changeset verdict is ``contradicted``/``unproved`` while the answer
       actually claimed paths → ``changeset_<verdict>``;
     * the turn carried contract criteria (``summary["criteria"]``, see
-      src/contract_criteria.py) and some are still ``pending`` or ``unmet``
-      → ``criteria_unverified`` (checked last: the other reasons are harder).
+      src/contract_criteria.py) that the model was shown (``shown``: the
+      unattended start note or audit listed them) and some are still open -
+      ``pending``, ``unmet``, or ``not_applicable`` claimed for more than a
+      quarter of them (``open_total``) → ``criteria_unverified`` (checked
+      last: the other reasons are harder).
 
-    A turn with no mutations and no claims (a pure answer) is never gated:
-    there is nothing to have proved.
+    Apart from that last reason, a turn with no mutations and no claims (a
+    pure answer) is never gated: there is nothing to have proved. The criteria
+    reason does gate such a turn, because a statement's requirements were
+    left without evidence whether or not anything changed.
     """
     try:
         if str(summary.get("stop_reason") or "") != "complete":
@@ -3020,8 +3025,12 @@ def completion_gate(summary: Dict[str, Any], changeset: Optional[Dict[str, Any]]
             if kind in kinds:
                 return kind
         criteria = summary.get("criteria")
-        if isinstance(criteria, dict) and (int(criteria.get("pending") or 0) or int(criteria.get("unmet") or 0)):
-            return "criteria_unverified"
+        if isinstance(criteria, dict) and criteria.get("shown"):
+            open_total = criteria.get("open_total")
+            if open_total is None:
+                open_total = int(criteria.get("pending") or 0) + int(criteria.get("unmet") or 0)
+            if int(open_total or 0) > 0:
+                return "criteria_unverified"
     except Exception:  # noqa: BLE001 - a report about the turn never breaks it
         return None
     return None

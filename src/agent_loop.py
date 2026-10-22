@@ -12680,23 +12680,34 @@ async def _stream_agent_loop_body(
             from src import plan_tracker as _cc_pt
             _cc_scope = _cc_pt.scope_for(str(_hopts.get("project_id") or "") or None, workspace, session_id)
             _cc_strict = bool(get_setting("agent_contract_criteria_strict_evidence", True))
-            _cc_msg = next((m for m in reversed(messages or []) if m.get("role") == "user"
-                            and not m.get("_agent_injected") and not m.get("_harness_note")
-                            and isinstance(m.get("content"), str)), None)
-            if _cc_msg is not None:
-                _cc_book = _cc_mod.CriteriaBook.from_message(
-                    _cc_msg["content"],
-                    max_items=int(get_setting("agent_contract_criteria_max", 60) or 60),
-                    min_chars=int(get_setting("agent_contract_criteria_min_chars", 1500) or 0),
-                    scope=_cc_scope, strict=_cc_strict)
-            if _cc_book is None and _looks_like_continue_turn(_last_user or ""):
-                # "Continúa" on the same task: the statement's book, with the
-                # states it already earned, instead of nothing.
-                _cc_book = _cc_mod.latest(_cc_scope)
-                if _cc_book is not None:
-                    _cc_book.strict = _cc_strict
+            # Clamped here, not only in the settings screen.
+            _cc_max = min(_cc_mod.SAFETY_CAP_MAX, max(
+                10, int(get_setting("agent_contract_criteria_max", _cc_mod.DEFAULT_MAX) or _cc_mod.DEFAULT_MAX)))
+            _cc_min_chars = max(0, int(get_setting("agent_contract_criteria_min_chars", 1500) or 0))
+            _cc_messages = list(messages or [])
+            _cc_is_continue = _looks_like_continue_turn(_last_user or "")
+            try:
+                # Off the event loop, within a time budget: a pathological
+                # statement never stalls the server; on timeout the feature
+                # is skipped for this turn and the skip is recorded.
+                _cc_book = await asyncio.wait_for(asyncio.to_thread(
+                    _cc_mod.build_for_turn, _cc_messages, scope=_cc_scope, session_id=session_id,
+                    is_continue=_cc_is_continue, max_items=_cc_max, min_chars=_cc_min_chars,
+                    strict=_cc_strict), timeout=_cc_mod.TIME_BUDGET_S)
+            except asyncio.TimeoutError:
+                _cc_book = None
+                _ledger.notes.append("contract_criteria:skipped_timeout")
+                logger.warning("[harness] contract criteria extraction exceeded %.1fs - skipped this turn",
+                               _cc_mod.TIME_BUDGET_S)
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "contract_criteria", "round": 0,
+                        "skipped": "timeout", "label": "requirements not read (time budget)",
+                    }) + "\n\n"
+                )
             if _cc_book is not None:
-                _cc_gap_limit = max(0, int(get_setting("agent_contract_criteria_extra_rounds", 1) or 0))
+                _cc_book.persist = not bool(_hopts.get("incognito"))
+                _cc_gap_limit = min(3, max(0, int(get_setting("agent_contract_criteria_extra_rounds", 1) or 0)))
                 _cc_book.save()
                 _ledger.notes.append(f"contract_criteria:{len(_cc_book.criteria)}")
                 if _relevant_tools is not None and "criteria_check" not in disabled_tools:
@@ -12706,10 +12717,12 @@ async def _stream_agent_loop_body(
                         ("criteria_check",), disabled_tools=disabled_tools, tool_policy=tool_policy,
                         admin=bool(_cc_owner_admin(owner))))
                 if unattended and _cc_book.open():
-                    # Once, compact (id, line, quote), bounded: the statement
-                    # itself is already in the prompt.
+                    # Once, bounded (counts per section, the first open
+                    # criteria by priority): the statement itself is already
+                    # in the prompt; the rest is paged by criteria_check.
                     messages = _insert_before_latest_user(
                         messages, {"role": "system", "content": _cc_book.start_note()})
+                    _cc_book.shown = True
                 yield (
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "contract_criteria", "round": 0,
@@ -16193,14 +16206,25 @@ async def _stream_agent_loop_body(
                 logger.info("[harness] round %s: unattended completion audit before the run ends", round_num)
                 if round_response.strip():
                     messages.append({"role": "assistant", "content": round_response})
-                # With contract criteria still open, the audit names them
-                # (id, line, quote) instead of asking the model to list the
-                # requirements itself (it grouped them, src/contract_criteria.py).
-                _cc_open_now = _cc_book.open() if _cc_book is not None else []
+                # With contract criteria still open, the generic audit is kept
+                # and the open criteria (id, line, quote) are appended to it:
+                # the model grouped the requirements when it listed them
+                # itself (src/contract_criteria.py), and requirements the
+                # extractor did not catch still need the generic step 1.
+                _cc_open_now = []
+                _audit_text = COMPLETION_AUDIT_NOTE
+                if _cc_book is not None:
+                    try:
+                        _cc_open_now = _cc_book.open()
+                        if _cc_open_now:
+                            _audit_text = _cc_book.audit_note(COMPLETION_AUDIT_NOTE)
+                    except Exception as _cc_audit_err:  # noqa: BLE001 - fall back to the generic audit
+                        logger.debug("[harness] contract criteria audit note skipped: %s", _cc_audit_err)
+                        _cc_open_now, _audit_text = [], COMPLETION_AUDIT_NOTE
                 messages.append({
                     "role": "user",
                     "_harness_note": True,
-                    "content": _cc_book.audit_note() if _cc_open_now else COMPLETION_AUDIT_NOTE,
+                    "content": _audit_text,
                 })
                 _audit_event = {
                     "type": "harness_check", "status": "auto_continue", "round": round_num,
@@ -16218,6 +16242,7 @@ async def _stream_agent_loop_body(
             # `contract_gap`, the completion family's budget), unattended only:
             # nobody is asked and nothing blocks; whatever stays open is
             # reported (harness_summary.criteria, gate `criteria_unverified`).
+            _cc_gap_text = None
             if (
                 _cc_book is not None
                 and unattended
@@ -16227,23 +16252,30 @@ async def _stream_agent_loop_body(
                 and not _boundary_echo_only
                 and _unattended_relay_tool(_tool_names_sent, []) is None
                 and round_num < max_rounds
-                and _cc_book.open()
                 and _xr.permits("contract_gap", _cc_gap_rounds, _cc_gap_limit)
             ):
+                try:
+                    _cc_open_gap = _cc_book.open()
+                    _cc_gap_text = _cc_book.gap_note() if _cc_open_gap else None
+                except Exception as _cc_gap_err:  # noqa: BLE001 - no gap round rather than a broken turn
+                    logger.debug("[harness] contract criteria gap note skipped: %s", _cc_gap_err)
+                    _cc_gap_text = None
+            if _cc_gap_text:
                 _cc_gap_rounds += 1
-                _cc_open_gap = _cc_book.open()
                 _ledger.notes.append(f"contract_gap@{round_num}")
                 logger.info("[harness] round %s: %d contract criteria still open — one more round",
                             round_num, len(_cc_open_gap))
                 if round_response.strip():
                     messages.append({"role": "assistant", "content": round_response})
-                messages.append({"role": "user", "_harness_note": True, "content": _cc_book.gap_note()})
+                messages.append({"role": "user", "_harness_note": True, "content": _cc_gap_text})
                 yield (
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "auto_continue", "round": round_num,
                         "reason": "contract_gap",
                         "pending": [c["id"] for c in _cc_open_gap if c.get("state") == "pending"][:60],
                         "unmet": [c["id"] for c in _cc_open_gap if c.get("state") == "unmet"][:60],
+                        "claimed_not_applicable": [c["id"] for c in _cc_open_gap
+                                                   if c.get("state") == "not_applicable"][:60],
                         **_xr.event("contract_gap", used=_cc_gap_rounds, limit=_cc_gap_limit,
                                     round_num=round_num),
                     }) + "\n\n"
@@ -16848,7 +16880,8 @@ async def _stream_agent_loop_body(
                             # be sealed complete (None = it will).
                             "gate": _harness.completion_gate(
                                 {"stop_reason": "complete", "tests": _ledger.tests,
-                                 "ui_smoke": _ledger.ui_smoke, "mutations": _ledger.mutated_paths()}, None),
+                                 "ui_smoke": _ledger.ui_smoke, "mutations": _ledger.mutated_paths(),
+                                 **({"criteria": _cc_book.summary_safe()} if _cc_book is not None else {})}, None),
                             # The one verified / unverified / uncertain answer
                             # for the evidence so far (src/outcome_verification.py).
                             "verification": _ledger.verify_outcome(_check),

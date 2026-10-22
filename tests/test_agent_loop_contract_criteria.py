@@ -76,7 +76,7 @@ def loop(monkeypatch, tmp_path):
         return block.tool_type, {"output": "src/arc/__init__.py", "exit_code": 0}
     monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
 
-    def run(rounds, *, unattended=True, user=SPEC, max_rounds=12):
+    def run(rounds, *, unattended=True, user=SPEC, max_rounds=12, messages=None):
         seen = []
 
         async def _fake_stream(_candidates, messages, **kwargs):
@@ -86,7 +86,7 @@ def loop(monkeypatch, tmp_path):
                 yield chunk
         monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
         gen = al.stream_agent_loop(
-            "http://127.0.0.1:11434/v1", "qwen3-coder:30b", [{"role": "user", "content": user}],
+            "http://127.0.0.1:11434/v1", "qwen3-coder:30b", messages or [{"role": "user", "content": user}],
             max_rounds=max_rounds, relevant_tools={"read_file", "glob", "bash"},
             workspace=str(tmp_path), unattended=unattended,
         )
@@ -130,6 +130,8 @@ def test_unattended_contract_turn_audits_the_criteria_and_takes_one_gap_round(lo
     audits = [e for e in events if e.get("reason") == "completion_audit"]
     assert len(audits) == 1 and audits[0]["criteria"] == start[0]["count"] - 1
     audit_text = seen[4][-1]["content"]
+    # the generic audit is kept whole; the open criteria are appended to it
+    assert audit_text.startswith(al.COMPLETION_AUDIT_NOTE + "\n\n")
     assert "C01" in audit_text and "[unpack]" in audit_text and "C04 L" not in audit_text
     gaps = [e for e in events if e.get("reason") == "contract_gap"]
     assert len(gaps) == 1, [e.get("reason") for e in events if e.get("type") == "harness_check"]
@@ -148,23 +150,50 @@ def test_unattended_contract_turn_audits_the_criteria_and_takes_one_gap_round(lo
     assert final and final[0]["proven"] == 1
 
 
-def test_no_gap_round_when_every_criterion_is_settled(loop):
+def test_mass_not_applicable_keeps_the_audit_the_gap_round_and_the_gate(loop):
     links = [{"id": f"C{i:02d}", "status": "not_applicable", "reason": "covered by design"} for i in range(1, 30)]
     rounds = [
         _tool("glob", json.dumps({"pattern": "*.py"})),
         _tool("criteria_check", json.dumps({"links": links})),
         _text("Done."),
         _text("Checked."),
+        _text("Final."),
         _text("unexpected extra round"),
     ]
     seen, events = loop(rounds)
-    # Nothing open: the audit keeps its generic text and no gap round follows.
+    audits = [e for e in events if e.get("reason") == "completion_audit"]
+    assert len(audits) == 1 and audits[0]["criteria"] == 6
+    assert "Claimed not applicable" in seen[3][-1]["content"]
+    gaps = [e for e in events if e.get("reason") == "contract_gap"]
+    assert len(gaps) == 1 and gaps[0]["claimed_not_applicable"] == [f"C{i:02d}" for i in range(1, 7)]
+    assert len(seen) == 5
+    summary = _summary(events)
+    assert summary["criteria"]["mass_not_applicable"] and summary["criteria"]["open_total"] == 6
+    assert summary["stop_reason"] == "complete_unverified"
+
+
+def test_no_gap_round_when_every_criterion_is_settled(loop):
+    # lenient evidence: any real call of the turn proves; one not_applicable
+    # (under a quarter) is accepted as settled.
+    loop.settings["agent_contract_criteria_strict_evidence"] = False
+    links = [{"id": f"C{i:02d}", "command": "unpack damaged"} for i in range(1, 6)]
+    links.append({"id": "C06", "status": "not_applicable", "reason": "the tool never touches sources"})
+    rounds = [
+        _tool("bash", "python -m arc unpack damaged.arc"),
+        _tool("criteria_check", json.dumps({"links": links})),
+        _text("Done: the archive tool is ready."),
+        _text("Checked every requirement listed."),
+        _text("unexpected extra round"),
+    ]
+    seen, events = loop(rounds)
     audits = [e for e in events if e.get("reason") == "completion_audit"]
     assert len(audits) == 1 and "criteria" not in audits[0]
     assert seen[3][-1]["content"] == al.COMPLETION_AUDIT_NOTE
     assert not [e for e in events if e.get("reason") == "contract_gap"]
     assert len(seen) == 4
-    assert _summary(events)["criteria"]["not_applicable"] == _summary(events)["criteria"]["total"]
+    summary = _summary(events)
+    assert summary["criteria"]["open_total"] == 0 and summary["criteria"]["proven"] == 5
+    assert summary["stop_reason"] == "complete"
 
 
 def test_gap_rounds_setting_zero_reports_only(loop):
@@ -174,6 +203,14 @@ def test_gap_rounds_setting_zero_reports_only(loop):
     assert not [e for e in events if e.get("reason") == "contract_gap"]
     assert len(seen) == 5
     assert _summary(events)["criteria"]["pending"] > 0
+
+
+def test_gap_rounds_setting_is_clamped(loop):
+    loop.settings["agent_contract_criteria_extra_rounds"] = 50
+    rounds = _scripted_turn()[:5] + [_text("again")] * 8
+    seen, events = loop(rounds, max_rounds=20)
+    gaps = [e for e in events if e.get("reason") == "contract_gap"]
+    assert len(gaps) == 3 and gaps[-1]["budget_limit"] == 3
 
 
 def test_setting_off_keeps_the_generic_audit_and_no_criteria(loop):
@@ -197,7 +234,35 @@ def test_short_message_changes_nothing(loop):
     assert len(seen) == 3
 
 
-def test_attended_turn_extracts_with_always_but_takes_no_extra_round(loop):
+def test_extraction_over_its_time_budget_skips_the_feature_for_the_turn(loop, monkeypatch):
+    import time as _time
+    from src import contract_criteria as cc
+
+    def _slow(*a, **k):
+        _time.sleep(0.6)
+        return None
+    monkeypatch.setattr(cc, "TIME_BUDGET_S", 0.05)
+    monkeypatch.setattr(cc, "build_for_turn", _slow)
+    rounds = [_tool("glob", json.dumps({"pattern": "*.py"})), _text("Done."), _text("Checked."),
+              _text("unexpected extra round")]
+    seen, events = loop(rounds)
+    skipped = [e for e in events if e.get("status") == "contract_criteria"]
+    assert len(skipped) == 1 and skipped[0]["skipped"] == "timeout"
+    assert seen[2][-1]["content"] == al.COMPLETION_AUDIT_NOTE
+    assert "contract_criteria:skipped_timeout" in _summary(events)["notes"]
+
+
+def test_the_latest_message_is_read_even_with_list_content(loop):
+    old = SPEC.replace("archive tool", "legacy tool").replace("`corrupt`", "`broken`")
+    msgs = [{"role": "user", "content": old}, {"role": "assistant", "content": "Done."},
+            {"role": "user", "content": [{"type": "text", "text": SPEC}]}]
+    seen, events = loop(_scripted_turn(), messages=msgs)
+    first = json.dumps(seen[0], ensure_ascii=False)
+    assert "`corrupt`" in first.split("[Contract criteria", 1)[1][:3000]
+    assert _summary(events)["criteria"]["ids"]["proven"] == ["C04"]
+
+
+def test_attended_turn_extracts_with_always_but_takes_no_extra_round_and_no_gate(loop):
     loop.settings["agent_contract_criteria"] = "always"
     rounds = [_tool("glob", json.dumps({"pattern": "*.py"})), _text("Done."), _text("unexpected extra round")]
     seen, events = loop(rounds, unattended=False)
@@ -205,6 +270,9 @@ def test_attended_turn_extracts_with_always_but_takes_no_extra_round(loop):
     assert not [e for e in events if e.get("reason") in ("completion_audit", "contract_gap")]
     assert "[Contract criteria" not in json.dumps(seen[0])
     assert len(seen) == 2
+    summary = _summary(events)
+    assert summary["criteria"]["open_total"] == 6 and not summary["criteria"]["shown"]
+    assert "evidence_grade:criteria_unverified" not in summary["notes"]
 
 
 def test_attended_turn_with_the_default_mode_is_untouched(loop):
@@ -214,12 +282,14 @@ def test_attended_turn_with_the_default_mode_is_untouched(loop):
     assert len(seen) == 2
 
 
-def test_a_continue_turn_resumes_the_book_with_the_states_it_earned(loop):
+def test_a_continue_turn_resumes_the_book_but_proven_must_be_earned_again(loop):
     loop.settings["agent_contract_criteria_extra_rounds"] = 0
-    loop(_scripted_turn())
+    first_seen, first = loop(_scripted_turn())
+    assert _summary(first)["criteria"]["ids"]["proven"] == ["C04"]
     rounds = [_tool("glob", json.dumps({"pattern": "*.py"})), _text("Done."), _text("Checked."),
               _text("unexpected extra round")]
     seen, events = loop(rounds, user="continúa")
     start = [e for e in events if e.get("status") == "contract_criteria" and not e.get("final")]
-    assert len(start) == 1 and start[0]["resumed"] and start[0]["open"] == start[0]["count"] - 1
-    assert _summary(events)["criteria"]["ids"]["proven"] == ["C04"]
+    assert len(start) == 1 and start[0]["resumed"] and start[0]["open"] == start[0]["count"]
+    crit = _summary(events)["criteria"]
+    assert crit["ids"]["proven"] == [] and "C04" in crit["ids"]["pending"]

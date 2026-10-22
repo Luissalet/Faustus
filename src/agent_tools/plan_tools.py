@@ -56,6 +56,13 @@ def _parse_args(content: str) -> Optional[Dict[str, Any]]:
     return parsed
 
 
+def _turn_of(ctx: Dict[str, Any]) -> Optional[str]:
+    """The id of the turn running the tool: `ctx["turn"]` when a caller sets
+    it, else the turn id src/tool_execution.py passes (`turn_id`)."""
+    value = (ctx or {}).get("turn") or (ctx or {}).get("turn_id")
+    return str(value) if value else None
+
+
 def _compact_task_line(task: Dict[str, Any], status: str) -> str:
     return f'{task.get("id")} {task.get("key")} {status} {task.get("title", "")}'
 
@@ -152,7 +159,8 @@ class PlanDoneTool:
         task = pt.find_task(tracker, ident)
         if not task:
             return {"error": f"plan_done: no such task {ident!r}", "exit_code": 1}
-        turn = (ctx or {}).get("turn")
+        turn = _turn_of(ctx)
+        prior = dict(tracker.get("state", {}).get(task["id"], {}) or {})
         # Typed goals (OBJ-47): run them BEFORE sealing. A failing goal leaves
         # the task open and hands the failures back; skipped goals (not
         # checkable, or refused by policy) are reported, never counted as passed.
@@ -200,14 +208,21 @@ class PlanDoneTool:
         # handed in by src/agent_loop.py through the turn options
         # (src/tool_execution.py puts them in ctx). Workspace-relative there,
         # as the plan's own file names usually are; compared normalised.
+        # Only for a task worked in THIS turn: the ledger is per turn, so a
+        # task started (plan_next) or closed in an earlier turn of a long plan
+        # had its files changed then, not now, and is not flagged.
         ledger_mutations = (ctx or {}).get("ledger_mutations")
         files = task.get("files") or []
-        if isinstance(ledger_mutations, (list, tuple, set)) and files:
+        started_earlier = bool(
+            prior.get("status") in ("in_progress", "done") and turn and prior.get("turn")
+            and str(prior.get("turn")) != turn)
+        if isinstance(ledger_mutations, (list, tuple, set)) and files and not started_earlier:
             mutated = {pt._norm_path(str(p)) for p in ledger_mutations}
             unverified = [f for f in files
                           if not any(m == pt._norm_path(f) or m.endswith("/" + pt._norm_path(f)) for m in mutated)]
             if unverified:
                 result["unverified_files"] = unverified
+                result["unverified_files_note"] = "named by the task but not changed in this turn (information only)"
         return result
 
 
@@ -230,7 +245,7 @@ class PlanSkipTool:
         task = pt.find_task(tracker, ident)
         if not task:
             return {"error": f"plan_skip: no such task {ident!r}", "exit_code": 1}
-        turn = (ctx or {}).get("turn")
+        turn = _turn_of(ctx)
         updated = pt.mark(scope, tracker["hash"], task["id"], "skipped", reason, turn)
         if not updated:
             return {"error": "plan_skip: failed to persist", "exit_code": 1}
@@ -261,7 +276,7 @@ class PlanNextTool:
             }
         status = tracker.get("state", {}).get(nxt["id"], {}).get("status", "pending")
         if status != "in_progress":
-            turn = (ctx or {}).get("turn")
+            turn = _turn_of(ctx)
             updated = pt.mark(scope, tracker["hash"], nxt["id"], "in_progress", "", turn)
             if updated:
                 tracker = updated
