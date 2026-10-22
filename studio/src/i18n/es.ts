@@ -6300,6 +6300,8 @@ export const es: Record<string, string> = {
   "Search the web": "Buscar en la web",
   "Search the web for what changed this week on the topic I give you": "Busca en la web qué ha cambiado esta semana en el tema que te diga",
   "Search the web via SearXNG": "Busca en la web con SearXNG",
+  "Integrated browser": "Navegador integrado",
+  "Open web pages, read them, click, fill in forms and take screenshots": "Abre páginas web, las lee, hace clic, rellena formularios y hace capturas",
   "Search this corpus": "Buscar en este corpus",
   "Search title or text…": "Buscar título o texto…",
   "Search titles, places, notes…": "Buscar títulos, lugares, notas…",

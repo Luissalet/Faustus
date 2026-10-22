@@ -3482,18 +3482,42 @@ def setup_model_routes(model_discovery):
         tools = []
         for tag in sorted(TOOL_TAGS):
             tools.append({"id": tag, "enabled": tag not in disabled})
-        return {"tools": tools}
+        # `tools` stays exactly TOOL_TAGS: the transcript's fence stripping
+        # reads its tag list from here. Switches that are not tool tags ride
+        # in their own key.
+        switches = [{"id": sid, "enabled": sid not in disabled} for sid in sorted(_EXTRA_SWITCHES)]
+        return {"tools": tools, "switches": switches}
+
+    _EXTRA_SWITCHES = frozenset({"builtin_browser"})
+
+    def _listed_tool_ids() -> set:
+        """What the Tools screen lists and may switch: the native tools plus
+        the integrated browser (an MCP server whose off switch is the id
+        ``builtin_browser`` in ``disabled_tools``). Before it was listed, the
+        browser could be switched off (by the agent's ui_control or an older
+        screen) but never back on from the interface."""
+        from src.agent_tools import TOOL_TAGS
+        return set(TOOL_TAGS) | set(_EXTRA_SWITCHES)
 
     class ToolsUpdate(BaseModel):
         disabled: list = []
 
     @router.post("/tools")
     def update_tools(body: ToolsUpdate, request: Request):
-        """Update which tools are disabled."""
+        """Update which of the listed tools are disabled.
+
+        Entries this screen does not list (disabled MCP servers, per-tool MCP
+        wildcards) are kept: the screen only knows its own ids, so replacing
+        the whole list used to switch those back on behind the user's back.
+        """
         require_admin(request)
         settings = _load_settings()
-        settings["disabled_tools"] = body.disabled
+        listed = _listed_tool_ids()
+        kept = [str(x) for x in (settings.get("disabled_tools") or []) if str(x) not in listed]
+        wanted = [str(x) for x in (body.disabled or []) if str(x) in listed]
+        merged = list(dict.fromkeys(kept + wanted))
+        settings["disabled_tools"] = merged
         _save_settings(settings)
-        return {"ok": True, "disabled": body.disabled}
+        return {"ok": True, "disabled": merged}
 
     return router

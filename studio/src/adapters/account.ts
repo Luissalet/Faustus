@@ -157,6 +157,7 @@ export const TOOL_META: Record<string, { name: string; desc: string; cat: string
   read_file: { name: 'Read file', desc: 'Read files from disk', cat: 'Code' },
   write_file: { name: 'Write file', desc: 'Write or create files', cat: 'Code' },
   web_search: { name: 'Web search', desc: 'Search the web via SearXNG', cat: 'Search' },
+  builtin_browser: { name: 'Integrated browser', desc: 'Open web pages, read them, click, fill in forms and take screenshots', cat: 'Search' },
   search_chats: { name: 'Search chats', desc: 'Search the conversation history', cat: 'Search' },
   create_document: { name: 'Create document', desc: 'Create new documents', cat: 'Documents' },
   update_document: { name: 'Update document', desc: 'Modify existing documents', cat: 'Documents' },
@@ -193,10 +194,12 @@ export const TOOL_META: Record<string, { name: string; desc: string; cat: string
 };
 
 export async function listTools(): Promise<ToolFlag[]> {
-  const d = await getJson<{ tools?: ToolFlag[] }>('/api/tools');
-  return d.tools ?? [];
+  // `switches` carries on/off ids that are not tool tags (the integrated browser).
+  const d = await getJson<{ tools?: ToolFlag[]; switches?: ToolFlag[] }>('/api/tools');
+  return [...(d.tools ?? []), ...(d.switches ?? [])];
 }
-/** The route replaces the whole disabled list, so it is always rebuilt from a fresh read. */
+/** The route replaces the listed ids' part of the disabled list (entries it does not list, such as
+ * disabled MCP servers, are kept), so it is always rebuilt from a fresh read. */
 export async function setDisabledTools(disabled: string[]): Promise<void> {
   await ok(await fetch('/api/tools', { method: 'POST', credentials: 'same-origin', headers: JSON_HEADERS, body: JSON.stringify({ disabled }) }), 'tools');
 }
