@@ -13891,27 +13891,44 @@ cancelación de una revisión restaura también el color Workbench capturado por
 valor, cámara, fotograma y contexto. QAoffline, sin llamadas a Sparks; la calidad
 de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.
 
-### Theseus: reconstrucción local (18-10-2026)
+### Theseus: inspección dentro de Vitruvius (22-10-2026)
 
-Theseus's Hoard está integrado y activo en `http://127.0.0.1:5217`, Main
-`4b2838a`, con aprobación cruzada CAS2. Sus 33 herramientas MCP y 18 operaciones
-nativas conservan análisis por formatos, sesiones persistentes de Ghidra libre y
-comparaciones de bytes que distinguen constantes diferentes aunque cambien las
-direcciones. La pestaña Reconstrucción relaciona obligaciones, preguntas,
-hallazgos, escenarios y dependencias; congela la entrega al constructor y conserva
-los recibos del oráculo con mutantes y de cada verificación o reintento. La
-cobertura registrada depende del contrato, programas, casos y sensibilidad
-vigentes; las preguntas abiertas no se convierten en verificadas. El documento
-builder-only excluye hallazgos y rutas del lector, sin certificar automáticamente
-la independencia de la prosa del analista.
+Theseus se desarrolla como módulo Inspección de Vitruvius. El servidor antiguo
+del puerto 5217 no se utiliza y la aplicación compartida del 5191 permanece
+apagada. Consultar el catálogo MCP no inicia el servidor ni reanuda trabajos.
+La fuente revisada `b5b5f0d` ofrece 40 herramientas MCP de Theseus, 72 operaciones
+estáticas, 52 de sesión binaria y 40 de ejecución; estos recuentos no acreditan
+el alcance semántico completo. La instalación y publicación de este lote tienen
+sus propios recibos y no se deducen de una revisión de fuente.
 
-Pruebas de composición en Main: 40 correctas y dos Ghidra opt-in omitidas en esa
-pasada; esas dos se ejecutaron con el motor real tanto por el autor como por el
-revisor. La activación conservó todas las tablas y el token existentes. La paridad
-completa sigue abierta en `docs/SOURCE-COVERAGE.md` de Theseus. La ampliación
-posterior de transferencia de evidencias está probada en worktree y pendiente de
-revisión propia. Estas operaciones y sus pruebas no han utilizado las Sparks ni
-otro modelo. Manual nativo y grafo actualizados; tarea Ágora 779 abierta.
+Los lectores contrastan fixtures originales de compiladores y codificadores:
+metadatos Go/Rust, SQLite, EVM, firmware, .NET/CIL, Mach-O y sus dependencias,
+recursos PE, inventarios, plist y archivos keyed, capturas de red y cabeceras
+Flutter/Dart. Conservan bytes, identidades, diagnósticos y límites explícitos.
+Flutter observa build-id, diseños AOT separados o unificados y símbolos con
+extensión comprobada; no recupera el grafo de objetos ni el comportamiento de
+una aplicación. El formulario de símbolos conserva entradas literales y usa
+stdin. Las consultas binarias de solo lectura conservan resultados y errores.
+
+Las sesiones Ghidra libres conservan navegación, anotaciones, referencias,
+grafos, desensamblado y dossieres. Los destinos calculados sin recuperar siguen
+sin resolver; la memoria reescrita no recibe un offset original sin comprobar
+los bytes. Los resultados guardados y transferidos se leen sin sus originales.
+Las capacidades de reconstrucción, comparaciones, escenarios, obligaciones,
+hallazgos y recibos anteriores se mantienen. Las coincidencias finitas no
+demuestran equivalencia general ni independencia automática de la prosa.
+
+El ledger de 207 contratos en `docs/THESEUS-COVERAGE.json` de Vitruvius mantiene
+el desarrollo incompleto, sin porcentaje. Siguen abiertos Cutter, ejecución
+arbitraria de órdenes binarias, depuradores libres y los contratos semánticos
+individuales pendientes. La tarea Ágora 1040 permanece abierta; 1148 sincroniza
+esta documentación. La validación completa conservó un fallo de montaje de una
+prueba de navegador; la corrección exclusiva de pruebas y la repetición de sus
+31 casos tienen revisión independiente. Se conservan ambas corridas, sin
+presentarlas como una sola suite verde. El trabajo actual no usa Sparks,
+modelos de texto alternativos, GPU, SABER ni ADB compartido. El manual nativo
+ya refleja el alcance revisado; instalación, grafo y publicación se registran
+separadamente.
 
 
 ## Silver: análisis de equipos y motivos locales — 18-10-2026
