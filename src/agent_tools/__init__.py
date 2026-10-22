@@ -96,6 +96,7 @@ from .doc_lint_tool import DocLintTool
 from .prune_tools import PagePruneTool
 from .blender_scene_tool import BlenderSceneTool
 from .unity_tool import UnityTool
+from .godot_tool import GodotTool
 from .schema_extraction_tool import ExtractToSchemaTool
 from .visual_index_tool import (
     VisualIndexAddTool, VisualSearchTool, ViewTileTool, VisualIndexListTool, VisualIndexRemoveTool,
@@ -312,6 +313,7 @@ TOOL_HANDLERS = {
     # schema, validate, run, smoke. See src/agent_tools/blender_scene_tool.py.
     "blender_scene": BlenderSceneTool().execute,
     "unity": UnityTool().execute,
+    "godot": GodotTool().execute,
     # H11: one lifecycle for a process, its stdin and its output, addressed by
     # opaque handles (src/process_manager.py). H02: real allowed/forbidden
     # access checks per operation (src/sandbox_probe.py).
@@ -568,6 +570,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Typed 3D scenes rendered with Blender -- src/agent_tools/blender_scene_tool.py.
              "blender_scene",
              "unity",
+             "godot",
              # Process handles and the sandbox probe -- src/agent_tools/process_tools.py,
              # src/agent_tools/sandbox_probe_tool.py.
              "process_start", "process_read", "process_write_stdin", "process_stop", "process_list",

@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from src.agent_tools import ToolBlock, TOOL_TAGS
 from src.blender_live.client import OPERATIONS as BLENDER_LIVE_OPERATIONS
 from src.unity.tool import DESCRIPTION as UNITY_DESCRIPTION, SCHEMA as UNITY_SCHEMA
+from src.godot.tool import DESCRIPTION as GODOT_DESCRIPTION, SCHEMA as GODOT_SCHEMA
 from src.tool_parsing import _TOOL_NAME_MAP
 from src.tool_security import BUILTIN_EMAIL_TOOLS
 from src.tool_authority import AUTHORITY
@@ -45,6 +46,7 @@ _emit_schema = AUTHORITY.emit
 
 FUNCTION_TOOL_SCHEMAS = [
     {"type": "function", "function": {"name": "unity", "description": UNITY_DESCRIPTION, "parameters": UNITY_SCHEMA}},
+    {"type": "function", "function": {"name": "godot", "description": GODOT_DESCRIPTION, "parameters": GODOT_SCHEMA}},
     {"type": "function", "function": {"name": "hoard_project_search", "description": "Find prior Hoard work by title, conversation, app and actual activity dates. Use for 'that project we made the other day' / 'aquel proyecto del otro día'. Returns native project IDs and evidence to continue with the app tools.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "app_id": {"type": "string"}, "data_space_id": {"type": "string"}, "after": {"type": "string", "description": "ISO date/time; resolve relative dates using the user timezone."}, "before": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}}}}},
     {"type": "function", "function": {"name": "hoard_project_recall", "description": "Recall one Hoard project link, canonical chats, project memory scope and existing workspace. Read the current native object before editing; historic selections are not restored.", "parameters": {"type": "object", "properties": {"project_link_id": {"type": "string"}}, "required": ["project_link_id"]}}},
     {"type": "function", "function": {"name": "visual_index_add", "description": "Index PDFs, pictures and web pages as screenshot strips for visual search (tablas, diagramas, escaneados). Accepts paths and/or URLs; re-indexing re-embeds only strips whose pixels changed. Needs the optional visual embedder (torch + transformers).", "parameters": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}, "description": "Files in the workspace: PDF or picture"}, "urls": {"type": "array", "items": {"type": "string"}, "description": "http(s) pages, PDFs or pictures"}, "collection": {"type": "string", "description": "Collection name (default: default)"}, "pages": {"type": "string", "description": "PDF pages to index, e.g. \"1-5,9\" (default: all, up to the configured limit)"}, "force": {"type": "boolean", "description": "Re-render even if the file is unchanged"}}}}},

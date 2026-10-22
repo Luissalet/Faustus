@@ -112,6 +112,7 @@ _BUILTIN_SERVERS = {
     # (BLENDER_SCENES_DIR/mcp); no owner-scoped data.
     "blender_scene": ("mcp_servers/blender_scene_server.py", "Built-in: Blender scenes"),
     "unity": ("mcp_servers/unity_server.py", "Built-in: Unity editor"),
+    "godot": ("mcp_servers/godot_server.py", "Built-in: local scenes and debugging"),
     # Execution: process handles (start/read/write_stdin/stop/list) and the
     # sandbox probe (src/process_manager.py, src/sandbox_probe.py). The server
     # process holds its own handles in its own store; it is not owner-scoped.
@@ -153,7 +154,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "github"})
+NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "godot", "github"})
 
 # Single tools of other built-in servers that copy a native tool of the same name and accept nothing the native one
 # does not (checked against the live schemas by tests/test_native_twin_tools.py). Same treatment as the servers above:
