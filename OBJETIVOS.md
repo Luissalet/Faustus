@@ -86,6 +86,15 @@ nuevo con otro proyecto (nunca el mismo con otro nombre).
 - Tras tres PASS consecutivos: evaluar DeepSeek V4.1 Flash TP4 frente a la
   configuración actual con los mismos oráculos.
 
+## Navegador en investigación — medida: «¿Ha sido Minecraft Dungeons 2 un fracaso?» (22/23-10-2026)
+
+**Hecho:** interruptor del navegador en Ajustes, suelo de navegador en turnos de investigación, etiqueta de frescura `public_reception`, `web_fetch` con respaldo de navegador, instantáneas de Playwright de vuelta en el resultado, errores honestos (baneo, tiempo agotado), descompresión doble arreglada y herramientas de escritorio solo con la app abierta. El banco #5 iguala o supera la respuesta de referencia (FAUSTUS.md, misma fecha).
+
+**Siguiente:**
+- Cortesía por dominio en las lecturas automáticas (intervalo mínimo y tope por hora) para no provocar baneos como el de SteamDB; hoy solo hay un enfriamiento tras un bloqueo.
+- Leer con el navegador de perfil con cabeza (`browser_headless` off, perfil real) cuando Cloudflare no deja pasar al headless, preguntando antes.
+- Mantener la pregunta como prueba de regresión del navegador tras cambios en búsqueda, frescura o selección de herramientas, y medir que cite al menos una declaración oficial cuando exista (la referencia citaba a un directivo de Xbox).
+
 ## Fuentes incorporadas como capacidades locales — #779–#783
 
 Encargo de Luis: incorporar las funciones útiles de las fuentes investigadas,
