@@ -1124,9 +1124,16 @@ async def maybe_compact(
     # Split into system preface and conversation
     system_msgs = []
     convo_msgs = []
+    # The pinned start notes (contract criteria, active plan) are user-role
+    # messages, but folding them into the summary would lose the very text
+    # the run is judged on: they are set aside like the system preface and
+    # put back, in order, right before the kept half.
+    pinned_msgs = []
     for msg in messages:
         if msg.get("role") == "system":
             system_msgs.append(msg)
+        elif is_pinned_note(msg):
+            pinned_msgs.append(msg)
         else:
             convo_msgs.append(msg)
 
@@ -1186,7 +1193,7 @@ async def maybe_compact(
         return _finish_compaction(
             session, messages, system_msgs, older, recent, summary, used,
             context_length, owner, persist, compaction_state, split_point,
-            kind="extract",
+            kind="extract", pinned_msgs=pinned_msgs,
         )
 
     try:
@@ -1211,13 +1218,13 @@ async def maybe_compact(
     return _finish_compaction(
         session, messages, system_msgs, older, recent, summary, used,
         context_length, owner, persist, compaction_state, split_point,
-        kind="llm_summary",
+        kind="llm_summary", pinned_msgs=pinned_msgs,
     )
 
 
 def _finish_compaction(session, messages, system_msgs, older, recent, summary, used,
                        context_length, owner, persist, compaction_state, split_point,
-                       *, kind: str):
+                       *, kind: str, pinned_msgs=()):
     """The part of ``maybe_compact`` after the summary text exists, shared by
     the model summary and the extractive digest."""
     # A14: what the LLM summary above must not be allowed to lose — built
@@ -1277,7 +1284,8 @@ def _finish_compaction(session, messages, system_msgs, older, recent, summary, u
     # the summary is lossy and the plan is the first thing it loses. Never
     # allowed to break compaction — the helper returns None on any failure.
     reminder = post_compact_reminder(session, owner)
-    compacted = system_msgs + [summary_msg] + ([reminder] if reminder else []) + recent
+    compacted = (system_msgs + [summary_msg] + ([reminder] if reminder else [])
+                 + list(pinned_msgs) + recent)
 
     # Update the session history to match. The rows to delete are named
     # individually by the history stamps the prompt builder left on them
@@ -1761,6 +1769,11 @@ def _is_user_instruction_message(msg: Any) -> bool:
     from arbitrary user text or treat quoted instructions as consent.
     """
     if not isinstance(msg, dict) or msg.get("role") != "user":
+        return False
+    # Runtime notes ride in the user role for the models that ignore
+    # mid-prompt system messages; they are the harness talking, never an
+    # objective or a constraint of the person.
+    if msg.get("_harness_note") or msg.get("_agent_injected"):
         return False
     metadata = msg.get("metadata")
     if not isinstance(metadata, dict):
@@ -2415,6 +2428,10 @@ def compact_with_integrity(
     for i, msg in enumerate(convo):
         if not isinstance(msg, dict):
             protected_idx.add(i)  # never fold a malformed entry silently
+            continue
+        if is_pinned_note(msg):
+            # the contract and plan start notes are never folded
+            protected_idx.add(i)
             continue
         if _has_pasted_code_block(msg) or _is_ask_user_decision(convo, i):
             protected_idx.add(i)

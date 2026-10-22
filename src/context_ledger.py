@@ -76,6 +76,10 @@ def classify(message: Dict[str, Any], *, is_last_user: bool = False) -> str:
     if role == "tool":
         return "tool_results"
     meta = message.get("metadata")
+    if isinstance(meta, dict) and (meta.get("contract_criteria") or meta.get("plan_note")):
+        # the pinned start notes ride in the user role but are the harness's
+        # own standing instructions, so they count with the system prompt
+        return "system"
     if isinstance(meta, dict) and meta.get("trusted") is False:
         label = str(meta.get("source") or "").lower()
         for key, needles in _LABEL_RULES:

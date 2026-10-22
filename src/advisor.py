@@ -279,7 +279,9 @@ def build_transcript(messages: Sequence[Dict[str, Any]], tool_names: Iterable[st
     omitted = 0
     if sum(_tok(r) for r in rendered) + fixed > budget and len(rendered) > 4:
         keep_head = 1
-        first_user = next((i for i, m in enumerate(body_msgs) if m.get("role") == "user"), 0)
+        # the opening request, not a runtime note that rides in the user role
+        first_user = next((i for i, m in enumerate(body_msgs)
+                           if m.get("role") == "user" and not m.get("_harness_note")), 0)
         keep_head = first_user + 1
         head_part, rest = rendered[:keep_head], rendered[keep_head:]
         used = sum(_tok(r) for r in head_part) + fixed + 30
