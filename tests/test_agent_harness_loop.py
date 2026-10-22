@@ -176,7 +176,10 @@ def test_runaway_thinking_is_cut_off_and_retried_with_light_thinking(tmp_path, m
             yield "data: [DONE]\n\n"
             return
         retried_with.append("\n".join(str(m.get("content") or "") for m in messages))
-        yield f'data: {json.dumps({"delta": "I could not find a project counter in this repository."})}\n\n'
+        # in the language of the request: the retry is free (it grows the round
+        # budget), so a round is left and a reply in another language would be
+        # redone, which is not what this test is about
+        yield f'data: {json.dumps({"delta": "No encontré ningún contador de proyectos en este repositorio."})}\n\n'
         yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
         yield "data: [DONE]\n\n"
     monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)

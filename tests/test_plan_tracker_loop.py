@@ -94,7 +94,11 @@ def test_second_chat_without_attachment_gets_the_brief_not_the_plan(ws, monkeypa
     events = _run(ws, user="Continua", harness_options={"project_id": "proj-sil2"})
     assert any(e.get("type") == "plan_tracker" for e in events)
     prompt = calls["messages"][0]
-    briefs = [m for m in prompt if m.get("role") == "system" and "plan" in str(m.get("content", "")).lower()
+    # the brief is a user-role harness note (models that ignore mid-prompt
+    # system messages still read it, and trimming keeps it)
+    briefs = [m for m in prompt if m.get("role") == "user" and m.get("_harness_note")
+              and (m.get("metadata") or {}).get("plan_note")
+              and "plan" in str(m.get("content", "")).lower()
               and "WP03" in str(m.get("content", ""))]
     assert briefs, [m.get("content", "")[:80] for m in prompt]
     assert all("Detail line 5" not in str(m.get("content", "")) for m in prompt)
