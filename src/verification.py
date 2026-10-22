@@ -205,15 +205,16 @@ def _limit_shown(haystack: str, limit: Mapping[str, Any]) -> bool:
 
 def _status_shown(haystack: str, status: int) -> bool:
     """An HTTP status in an output: a response line (`HTTP/1.1 404 Not
-    Found`), a `status: 404`/`status_code=404` field, a curl `-w
-    "%{http_code}"` line of its own, or the code followed by its reason
-    phrase."""
+    Found`), a `status: 404`/`status_code=404` field, or a curl `-w
+    "%{http_code}"` line of its own (bare, or with the reason phrase). The
+    number as a word in a body (`{"error": "404"}`, "item 404 Not Found in
+    ...") is not a status."""
     import re as _re
     n = str(int(status))
     return bool(_re.search(r"HTTP/\d(?:\.\d)?\s+" + n + r"\b", haystack, _re.I)
                 or _re.search(r"status(?:[_ ]?code)?[\"']?\s*[:=]\s*[\"']?" + n + r"\b", haystack, _re.I)
-                or _re.search(r"(?m)^\s*" + n + r"\s*$", haystack)
-                or _re.search(r"(?<!\d)" + n + r"\s+[A-Z][a-z]+(?:\s[A-Z][a-z]+)*", haystack))
+                or _re.search(r"(?m)^[ \t]*" + n + r"(?:[ \t]+[A-Z][A-Za-z]*(?:[ \t-][A-Z][A-Za-z]*)*)?[ \t]*$",
+                              haystack))
 
 
 _TEST_ID_RE = None
@@ -232,7 +233,7 @@ def _test_ids(command: str, output: str, named: str = "") -> List[str]:
     for line in (output or "").splitlines():
         if "::" in line and "PASSED" in line:
             parts = line.split()
-            ids += [p for p, nxt in zip(parts, parts[1:]) if "::" in p and nxt.startswith("PASSED")]
+            ids += [p for p, nxt in zip(parts, parts[1:]) if "::" in p and nxt == "PASSED"]
     named = (named or "").strip()
     if named and (named.lower() in (command or "").lower() or named.lower() in (output or "").lower()
                   or named.split("::")[-1].lower() in (command or "").lower()):

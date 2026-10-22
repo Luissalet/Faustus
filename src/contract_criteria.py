@@ -38,7 +38,7 @@ import os
 import re
 import tempfile
 import time
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 STATES = ("pending", "proven", "unmet", "not_applicable")
 OPEN_STATES = ("pending", "unmet")
@@ -132,9 +132,26 @@ _EXIT_RE = re.compile(
 #: "status code 422", "answers status 404", "código HTTP 404".
 _HTTP_RE = re.compile(
     r"(?<!exit )\b(?:returns?\s+(?:status|code)|answers?\s+(?:with\s+)?status|status(?:\s+code)?|HTTP(?:\s+status)?|"
-    r"responde\s+con(?:\s+(?:el\s+)?(?:estado|c[óo]digo))?|c[óo]digo\s+HTTP)\s*(?:of\s+|de\s+)?([1-5]\d\d)\b",
+    r"responde\s+con(?:\s+(?:el\s+)?(?:estado|c[óo]digo))?|c[óo]digo\s+HTTP)\s*(?:of\s+|de\s+)?`?([1-5]\d\d)\b",
     re.I,
 )
+#: A status in backticks right after a reply verb: "`GET /items/{id}` returns
+#: `404`", "responds with `422`", "Return `401 Unauthorized`", "devuelve
+#: `204`". Read as a status only in a rule about HTTP (`_HTTP_CONTEXT_RE`):
+#: "`count` returns `100`" stays a plain key.
+_HTTP_TICK_RE = re.compile(
+    r"\b(?:returns?|responds?|answers?|repl(?:y|ies)|fails?|devuelve|responde|contesta|falla)"
+    r"(?:\s+(?:with|con))?(?:\s+(?:an?|the|un|una|el|la))?"
+    r"(?:\s+(?:HTTP|status|code|estado|c[óo]digo)){0,3}\s*`([1-5]\d\d)(?:\s+[A-Za-z][A-Za-z' -]{0,40})?`",
+    re.I,
+)
+_HTTP_CONTEXT_RE = re.compile(
+    r"\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/|\b(?:HTTP|status|endpoint|route|request|response|API|"
+    r"URL|estado|petici[óo]n|respuesta|ruta)\b",
+    re.I,
+)
+#: The literal of a status as a backtick key (`404`, `401 Unauthorized`).
+_STATUS_LITERAL_RE = re.compile(r"([1-5]\d\d)(?:\s+[A-Za-z][A-Za-z' -]*)?")
 #: An explicit ordering or precedence rule: shown early, never demoted.
 _ORDER_RE = re.compile(
     r"\b(?:in\s+(?:this|that|the\s+following|the\s+given|file|document)\s+order|in\s+order|first\b[^.;]{0,120}\bthen\b|"
@@ -420,13 +437,13 @@ def is_normative(text: str, section: str = "") -> bool:
     if len(s) < 12 or s.endswith("?") or s.startswith("¿"):
         return False
     return bool(_NORMATIVE_RE.search(s) or _has_limit(s) or _ERROR_CODE_RE.search(s) or _EXIT_RE.search(s)
-                or _HTTP_RE.search(s) or _ORDER_RE.search(s) or _has_format(s) or _imperative(s, section))
+                or _has_http_status(s) or _ORDER_RE.search(s) or _has_format(s) or _imperative(s, section))
 
 
 def _kind(text: str) -> str:
     if _has_limit(text) or re.search(r"\b(?:at\s+most|at\s+least|como\s+m[áa]ximo|al\s+menos)\b", text, re.I):
         return "limit"
-    if _ERROR_CODE_RE.search(text) or _EXIT_RE.search(text) or _HTTP_RE.search(text):
+    if _ERROR_CODE_RE.search(text) or _EXIT_RE.search(text) or _has_http_status(text):
         return "error_code"
     if _has_format(text):
         return "format"
@@ -533,7 +550,23 @@ def _exit_codes(text: str) -> List[int]:
 
 
 def _http_statuses(text: str) -> List[int]:
-    return sorted({int(m.group(1)) for m in _HTTP_RE.finditer(text)})[:4]
+    """HTTP statuses a rule names: in prose ("returns status 404") or in
+    backticks after a reply verb in a rule about HTTP ("returns `404`")."""
+    found = {int(m.group(1)) for m in _HTTP_RE.finditer(text)}
+    if _HTTP_CONTEXT_RE.search(text):
+        found |= {int(m.group(1)) for m in _HTTP_TICK_RE.finditer(text)}
+    return sorted(found)[:4]
+
+
+def _has_http_status(text: str) -> bool:
+    return bool(_HTTP_RE.search(text) or (_HTTP_TICK_RE.search(text) and _HTTP_CONTEXT_RE.search(text)))
+
+
+def _is_status_literal(key: str, statuses: Sequence[int]) -> bool:
+    """`404` or `401 Unauthorized` when the rule names that status: it is
+    shown by the response status, never by the number in a body."""
+    m = _STATUS_LITERAL_RE.fullmatch(key.strip())
+    return bool(m and int(m.group(1)) in statuses)
 
 
 # -- literals that describe a form rather than a value ----------------------
@@ -1036,11 +1069,14 @@ class _Basis:
         # The field names of a JSON shape are not keys of their own either:
         # the shape needs ALL of them, one alone must not do.
         fields = {k for m in self.matchers for k in (m.get("json") or [])}
-        self.keys = [k for k in _keys(text) if k not in forms and k not in fields]
+        # A status the rule names (`404`) is shown by the response status
+        # line, a status field or a `-w` line, never as a word in a body.
+        self.statuses = _http_statuses(text)
+        self.keys = [k for k in _keys(text) if k not in forms and k not in fields
+                     and not _is_status_literal(k, self.statuses)]
         self.words = _words(text)
         self.limits = _limits(text)
         self.exits = _exit_codes(text)
-        self.statuses = _http_statuses(text)
 
 
 def _criterion(quote: str, basis: _Basis, *, line: int, section: str, source: str,
@@ -1646,44 +1682,70 @@ class CriteriaBook:
 
     # -- linking -------------------------------------------------------------
     def apply_links(self, links: Sequence[Any], *, round_num: int = 0) -> List[Dict[str, Any]]:
-        """Apply the model's links. The model proposes; the harness decides:
-        `proven` needs a call of this turn that passes
-        `verification.verify_contract_link`; `unmet` is taken as said (a
-        failure the model admits needs no proof); `not_applicable` needs a
-        reason (and past NA_FRACTION of the book it no longer settles the
-        criterion, see `open`). Returns one row per link."""
+        """Apply the model's links: `compute_links` then `commit_links`.
+        The model proposes; the harness decides: `proven` needs a call of
+        this turn that passes `verification.verify_contract_link`; `unmet` is
+        taken as said (a failure the model admits needs no proof);
+        `not_applicable` needs a reason (and past NA_FRACTION of the book it
+        no longer settles the criterion, see `open`). Returns one row per
+        link."""
+        return self.commit_links(self.compute_links(links))
+
+    def compute_links(self, links: Sequence[Any]) -> List[Dict[str, Any]]:
+        """Decide every link WITHOUT touching the book: the slow part (the
+        matching), safe to run in a worker thread. A thread that outlives its
+        time limit can only return plans nobody commits; it never changes a
+        state."""
         from src import verification as _ver
-        rows: List[Dict[str, Any]] = []
+        plans: List[Dict[str, Any]] = []
         for raw in links or []:
             if not isinstance(raw, dict):
-                rows.append({"id": None, "state": None, "error": "each link must be an object"})
+                plans.append({"id": None, "error": "each link must be an object"})
                 continue
             crit = self.get(str(raw.get("id") or ""))
             if crit is None:
-                rows.append({"id": raw.get("id"), "state": None, "error": "no such criterion"})
+                plans.append({"id": raw.get("id"), "error": "no such criterion"})
                 continue
             status = str(raw.get("status") or "proven").strip().lower()
             if status not in ("proven", "unmet", "not_applicable"):
-                rows.append({"id": crit["id"], "state": crit["state"],
-                             "error": "status must be proven, unmet or not_applicable"})
+                plans.append({"id": crit["id"], "error": "status must be proven, unmet or not_applicable"})
                 continue
             note = " | ".join(f"{k}: {str(raw.get(k))[:160]}" for k in ("expected", "observed")
                               if str(raw.get(k) or "").strip())
+            snapshot = dict(crit)
             if status == "not_applicable":
                 try:
-                    verdict = _ver.mark_not_verifiable(crit, reason=str(raw.get("reason") or ""))
+                    verdict = _ver.mark_not_verifiable(snapshot, reason=str(raw.get("reason") or ""))
                 except ValueError:
-                    rows.append({"id": crit["id"], "state": crit["state"],
-                                 "error": "not_applicable needs a reason"})
+                    plans.append({"id": crit["id"], "error": "not_applicable needs a reason"})
                     continue
             elif status == "unmet":
-                verdict = _ver.verify_criterion(crit, evidence_ok=False,
+                verdict = _ver.verify_criterion(snapshot, evidence_ok=False,
                                                 detail=str(raw.get("reason") or raw.get("observed") or "")[:300])
             else:
                 call = self.find_call(call_id=str(raw.get("call_id") or ""), command=str(raw.get("command") or ""),
                                       test=str(raw.get("test") or ""))
-                verdict = _ver.verify_contract_link(crit, call, last_mutation_seq=self.last_mutation_seq,
+                verdict = _ver.verify_contract_link(snapshot, call, last_mutation_seq=self.last_mutation_seq,
                                                     strict=self.strict, test=str(raw.get("test") or ""))
+            plans.append({"id": crit["id"], "verdict": verdict, "note": note})
+        return plans
+
+    def commit_links(self, plans: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+        """Apply plans from `compute_links` to the book (on the caller's
+        thread, normally the event loop). Fast: no matching here."""
+        from src import verification as _ver
+        rows: List[Dict[str, Any]] = []
+        for plan in plans or []:
+            crit = self.get(str(plan.get("id") or "")) if plan.get("id") is not None else None
+            if plan.get("error"):
+                rows.append({"id": plan.get("id"), "state": crit["state"] if crit else None,
+                             "error": plan["error"]})
+                continue
+            if crit is None:
+                rows.append({"id": plan.get("id"), "state": None, "error": "no such criterion"})
+                continue
+            verdict = plan["verdict"]
+            note = str(plan.get("note") or "")
             state = _ver.contract_state(verdict.state)
             # A proof that does not hold leaves an earlier state alone: a
             # weak link never undoes a criterion already proven or admitted.

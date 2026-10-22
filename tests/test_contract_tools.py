@@ -799,3 +799,89 @@ def test_a_matcher_timeout_is_not_proven_never_an_exception(monkeypatch):
                                      "output": "x\n" * 50 + "2026-10-22", "exit_code": 0},
                                  last_mutation_seq=1, budget_s=-1.0)
     assert v.state == "pending" and "matcher timeout" in v.detail
+
+
+# -- verification of F1/F2: P1, P3, P5 ---------------------------------------------
+
+def test_a_backticked_http_status_is_a_status_not_a_key():
+    c = _crit(ROUTE)
+    assert c["statuses"] == [404] and "404" not in c["keys"], (c["statuses"], c["keys"])
+    url = "http://127.0.0.1:8000/items/999"
+    # A 200 whose body happens to say 404 proves nothing.
+    assert _verdict(c, f"curl -i {url}", 'HTTP/1.1 200 OK\n\n{"note": "not a 404"}').state == "pending"
+    assert _verdict(c, f"curl -s {url}", '{"error": "404"}').state == "pending"
+    assert _verdict(c, f"curl -s {url}", "Item 404 Not Found in the archive").state == "pending"
+    # The status line, a status field or a -w line does.
+    assert _verdict(c, f"curl -i {url}", "HTTP/1.1 404 Not Found").state == "verified"
+    assert _verdict(c, f"curl -s -o /dev/null -w '%{{http_code}}' {url}", "404").state == "verified"
+    assert _verdict(c, f"python client.py {url}", '{"status": 404, "body": null}').state == "verified"
+
+
+@pytest.mark.parametrize("sentence,status", [
+    ("`POST /orders` responds with `422` when the payload is invalid.", 422),
+    ("The endpoint returns status `409` on a duplicate id.", 409),
+    ("Return `401 Unauthorized` when the API token is missing.", 401),
+    ("`DELETE /items/{id}` devuelve `204` si el elemento existe.", 204),
+])
+def test_backticked_statuses_in_http_rules(sentence, status):
+    c = _crit(sentence)
+    assert status in c["statuses"] and str(status) not in c["keys"], (c["statuses"], c["keys"])
+
+
+def test_a_backticked_number_outside_an_http_rule_stays_a_key():
+    c = _crit("`count` returns `100` when the list is full.")
+    assert c["statuses"] == [] and "100" in c["keys"]
+
+
+def test_the_test_id_scan_needs_passed_as_a_whole_word():
+    assert ver._test_ids("python -m pytest -v", "tests/a.py::test_x PASSEDX") == []
+    assert ver._test_ids("python -m pytest -v", "tests/a.py::test_x PASSED_LATER") == []
+    assert ver._test_ids("python -m pytest -v", "tests/a.py::test_x PASSED   [ 50%]") == ["tests/a.py::test_x"]
+
+
+def test_link_verdicts_are_computed_without_touching_the_book():
+    book = _book()
+    cid = _id(book, needle="exit code 1")
+    _call(book, "c1", "python -m arc unpack broken.arc", "error: corrupt", exit_code=1)
+    before = json.dumps(book.criteria, sort_keys=True, default=str)
+    plans = book.compute_links([{"id": cid, "call_id": "c1"}])
+    assert json.dumps(book.criteria, sort_keys=True, default=str) == before
+    rows = book.commit_links(plans)
+    assert rows[0]["state"] == "proven" and book.get(cid)["state"] == "proven"
+
+
+def test_a_timed_out_criteria_check_never_applies_anything(monkeypatch):
+    import threading
+    import time as _t
+    from src.agent_tools import contract_tools as ct
+    book = _book()
+    cid = _id(book, needle="exit code 1")
+    _call(book, "c1", "python -m arc unpack broken.arc", "error: corrupt", exit_code=1)
+    release = threading.Event()
+    real = cc.CriteriaBook.compute_links
+    slow_calls = []
+
+    def slow(self, links, **kw):
+        slow_calls.append(1)
+        if len(slow_calls) == 1:
+            release.wait(5)               # the first call outlives its time limit
+        return real(self, links, **kw)
+    monkeypatch.setattr(cc.CriteriaBook, "compute_links", slow)
+    monkeypatch.setattr(ct, "CALL_BUDGET_S", 0.2)
+
+    async def scenario():
+        first = await CriteriaCheckTool().execute(json.dumps({"links": [{"id": cid, "call_id": "c1"}]}),
+                                                  {"contract_book": book})
+        assert first["exit_code"] == 1 and "no link was applied" in first["error"]
+        assert book.get(cid)["state"] == "pending"
+        # A second call while the first thread is still running: an admitted failure.
+        second = await CriteriaCheckTool().execute(
+            json.dumps({"links": [{"id": cid, "status": "unmet", "reason": "still crashes"}]}),
+            {"contract_book": book})
+        assert second["exit_code"] == 0 and book.get(cid)["state"] == "unmet"
+        release.set()                     # let the stale thread finish
+        await asyncio.sleep(0.3)
+    asyncio.run(scenario())
+    _t.sleep(0.1)
+    # The stale thread computed a proof, but nothing applied it.
+    assert book.get(cid)["state"] == "unmet"

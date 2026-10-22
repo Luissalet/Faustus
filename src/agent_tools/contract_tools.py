@@ -78,13 +78,17 @@ class CriteriaCheckTool:
         links = links[:80]
         # Matching runs off the event loop, under a time limit: every link has
         # its own budget inside (verification.verify_contract_link, 0.5 s),
-        # and the whole call is bounded here as well.
+        # and the whole call is bounded here as well. The thread only
+        # computes verdicts; they are applied here, on the loop, and only on
+        # success - a thread that outlives the limit can never change the
+        # book, nor race a later call.
         try:
-            rows = await asyncio.wait_for(asyncio.to_thread(book.apply_links, links),
-                                          timeout=CALL_BUDGET_S + 0.5 * len(links))
+            plans = await asyncio.wait_for(asyncio.to_thread(book.compute_links, links),
+                                           timeout=CALL_BUDGET_S + 0.5 * len(links))
         except asyncio.TimeoutError:
             return {"error": "criteria_check: matching took too long; no link was applied - link fewer "
                              "criteria per call", "exit_code": 1}
+        rows = book.commit_links(plans)
         book.save()
         lines = []
         for r in rows:
