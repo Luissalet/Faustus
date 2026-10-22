@@ -5501,8 +5501,8 @@ def _unattended_dropped_sections() -> tuple:
     """
     drop = ["## Answer quality and presentation"]
     try:
-        from src.host_tools import unavailable_tools
-        if "desktop_screenshot" in unavailable_tools():
+        from src.host_tools import turn_unavailable_tools
+        if "desktop_screenshot" in turn_unavailable_tools():
             drop.append("## Desktop rules")
     except Exception:  # noqa: BLE001 - keep the rules when unsure
         pass
@@ -10414,7 +10414,10 @@ async def _stream_agent_loop_body(
     # only render in a browser. Seen live (22-10): "¿Ha sido Minecraft
     # Dungeons 2 un fracaso?" searched 12 times, got search-engine stubs and
     # never opened a page that had the player counts.
-    _research_turn = bool({"web_search", "web_fetch"} & set(_relevant_tools or ()))
+    # Web search on for the turn is the signal, not retrieval ranking
+    # web_fetch: "Mira mi calendario de esta semana" got web_fetch from the
+    # index and would have carried 25 browser schemas into a calendar turn.
+    _research_turn = "web_search" in set(_relevant_tools or ())
     if (not guide_only and _relevant_tools is not None and not relevant_tools
             and "builtin_browser" not in disabled_tools
             and ((_last_user and _browser_request(_last_user)) or _research_turn)):
@@ -12088,7 +12091,9 @@ async def _stream_agent_loop_body(
         # A tool this host cannot run at all (PowerShell in a Linux container,
         # the desktop tools without a display) is never offered: the call
         # could only fail and cost a round (src/host_tools.py).
-        from src.host_tools import unavailable_tools as _host_off
+        # On Windows the desktop tools also need the desktop app open (their
+        # on-screen indicator lives there); closed, they are not offered.
+        from src.host_tools import turn_unavailable_tools as _host_off
         _off = _host_off()
         if _off:
             schemas = [

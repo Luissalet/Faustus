@@ -36,7 +36,12 @@ function startDesktopControl({BrowserWindow,screen,globalShortcut},root){
       clear();
     }finally{busy=false;}
   }
+  // Liveness for the server: on Windows the desktop tools are offered only
+  // while this app runs (src/host_tools.py reads desktop-app.json).
+  const beat=(updated)=>{try{write('desktop-app.json',{pid:process.pid,updated});}catch{}};
+  beat(Date.now()/1000);
+  const beatTimer=setInterval(()=>beat(Date.now()/1000),2000);
   const timer=setInterval(()=>void tick(),100);
-  return ()=>{clearInterval(timer);clear();};
+  return ()=>{clearInterval(timer);clearInterval(beatTimer);clear();beat(0);};
 }
 module.exports={startDesktopControl};

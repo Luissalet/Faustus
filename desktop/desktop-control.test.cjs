@@ -21,6 +21,8 @@ test('six non-interactive overlays acknowledge readiness and Escape cancels',asy
   }
   const stop=startDesktopControl({BrowserWindow:Window,screen:{getAllDisplays:()=>Array.from({length:6},(_,i)=>({bounds:{x:(i-2)*1920,y:0,width:1920,height:1080}}))},globalShortcut:{register:(key,fn)=>{escape=fn;return true;},unregister:()=>{}}},root);
   try{
+    const alive=JSON.parse(readFileSync(join(dir,'desktop-app.json')));
+    assert.equal(alive.pid,process.pid);assert.ok(Date.now()/1000-alive.updated<5,'the app announces it is running');
     writeFileSync(join(dir,'desktop-control.json'),JSON.stringify({token:'test',updated:Date.now()/1000}));
     for(let i=0;i<30&&!made.length;i++)await new Promise(r=>setTimeout(r,30));
     assert.equal(made.length,6);
@@ -31,5 +33,7 @@ test('six non-interactive overlays acknowledge readiness and Escape cancels',asy
     assert.ok(made.every(w=>w.destroyed));
     await new Promise(r=>setTimeout(r,150));
     assert.equal(made.length,6,'cancelled run must not reactivate');
-  }finally{stop();rmSync(root,{recursive:true,force:true});}
+  }finally{stop();}
+  assert.equal(JSON.parse(readFileSync(join(dir,'desktop-app.json'))).updated,0,'closing the app withdraws the desktop tools');
+  rmSync(root,{recursive:true,force:true});
 });

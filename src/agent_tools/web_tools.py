@@ -144,12 +144,28 @@ def _snapshot_words(text: str) -> str:
     return " ".join(words)
 
 
+def _with_browser_outcome(err, via_browser) -> str:
+    """The fetch error, told that the integrated browser was tried too.
+
+    Without this the model read "This fetch did not start a browser" after
+    the browser had in fact been tried, and tried it again by hand."""
+    text = str(err or "")
+    failed = (via_browser or {}).get("browser_failed") if isinstance(via_browser, dict) else None
+    if not failed:
+        return text
+    note = f"The integrated browser was tried as well and could not read it ({failed}); use another source."
+    if "This fetch did not start a browser." in text:
+        return text.replace("This fetch did not start a browser.", note)
+    return f"{text} {note}".strip()
+
+
 async def _read_with_browser(url: str, ctx: dict, *, why: str = "") -> "dict | None":
     """A page a plain fetch was refused on (HTTP 403, a Cloudflare or bot
     challenge, a page that needs JavaScript) read through the integrated
-    browser instead, as the person would. None when the browser is off,
-    not offered to this turn or cannot read it either: the caller keeps the
-    original error.
+    browser instead, as the person would. None when the browser is off or
+    not offered to this turn: the caller keeps the original error. When it
+    was tried and could not read the page either, ``{"browser_failed":
+    reason}``: the caller keeps the original error and says so.
 
     Seen live (22-10): "¿Ha sido Minecraft Dungeons 2 un fracaso?" -- SteamDB
     and Wikipedia answered 403 / a Cloudflare challenge to web_fetch, the
@@ -170,18 +186,28 @@ async def _read_with_browser(url: str, ctx: dict, *, why: str = "") -> "dict | N
     if mgr is None or not hasattr(mgr, "call_tool"):
         return None
 
+    failure = {"why": ""}
+
     async def call(name: str, args: dict, timeout: float) -> "dict | None":
         try:
             res = await asyncio.wait_for(mgr.call_tool(f"{_BROWSER}{name}", args), timeout=timeout)
-        except Exception:  # noqa: BLE001 - the original error stands
+        except asyncio.TimeoutError:
+            failure["why"] = f"{name} timed out after {int(timeout)} s"
+            return None
+        except Exception as exc:  # noqa: BLE001 - the original error stands
+            failure["why"] = f"{name} failed: {type(exc).__name__}"
             return None
         if not isinstance(res, dict) or res.get("exit_code") not in (0, None) or res.get("error"):
+            detail = str((res or {}).get("error") or (res or {}).get("stderr") or (res or {}).get("stdout") or "")
+            failure["why"] = f"{name} failed: {detail.strip()[:160]}" if detail.strip() else f"{name} failed"
             return None
         return res
 
-    nav = await call("browser_navigate", {"url": url}, 60)
+    # The first navigate after a restart also launches Chromium (and npx may
+    # resolve the package): 60 s was not always enough (seen live 22-10).
+    nav = await call("browser_navigate", {"url": url}, 120)
     if nav is None:
-        return None
+        return {"browser_failed": failure["why"] or "the browser did not answer"}
     text = str(nav.get("stdout") or "")
     for _ in range(3):
         if text and not _CHALLENGE.search(text[:4000]):
@@ -189,8 +215,10 @@ async def _read_with_browser(url: str, ctx: dict, *, why: str = "") -> "dict | N
         await call("browser_wait_for", {"time": 4}, 15)
         snap = await call("browser_snapshot", {}, 45)
         text = str((snap or {}).get("stdout") or text)
-    if not text.strip() or _CHALLENGE.search(text[:4000]):
-        return None
+    if not text.strip():
+        return {"browser_failed": failure["why"] or "the page came back empty in the browser too"}
+    if _CHALLENGE.search(text[:4000]):
+        return {"browser_failed": "the page stayed on a bot check in the browser too"}
     status_m = _HTTP_STATUS.search(text[:3000])
     status = int(status_m.group(1)) if status_m else 0
     if status >= 400 or (len(text) < 6000 and _BANNED.search(text)):
@@ -284,8 +312,9 @@ class WebFetchTool:
         err = result.get("error")
         if not inspect_http and result.get("read_status") == "blocked":
             via_browser = await _read_with_browser(url, ctx, why=str(err or ""))
-            if via_browser is not None:
+            if via_browser is not None and "browser_failed" not in via_browser:
                 return via_browser
+            err = _with_browser_outcome(err, via_browser)
             return {"error": f"web_fetch: {url}: {err}", "exit_code": 1,
                     "read_status": "blocked", "blocked_reason": result.get("blocked_reason"),
                     "http_status": result.get("http_status"), "final_url": result.get("final_url"),
@@ -345,8 +374,10 @@ class WebFetchTool:
             if not inspect_http:
                 via_browser = await _read_with_browser(
                     url, ctx, why=str(err or "no readable text content (the page may need JavaScript)"))
-                if via_browser is not None:
+                if via_browser is not None and "browser_failed" not in via_browser:
                     return via_browser
+                if err:
+                    err = _with_browser_outcome(err, via_browser)
             if look_note:
                 return {"error": f"web_fetch: {url}: no readable text content. {look_note}", "exit_code": 1,
                         "look": look.as_dict() if look is not None else None, "untrusted_content": True}

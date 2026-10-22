@@ -16,6 +16,16 @@ def no_live_hoard_services(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def desktop_app_seen_open(monkeypatch):
+    """On Windows the desktop tools are offered only while the desktop app runs
+    (src/host_tools.py). Tests must not depend on whether this machine has it
+    open: they see it open unless a test patches the probe itself."""
+    from src import host_tools
+    monkeypatch.setattr(host_tools, "_app_process_running", lambda: True)
+    monkeypatch.setattr(host_tools, "_app_cache", [0.0, False])
+
+
+@pytest.fixture(autouse=True)
 def no_live_browser_lanes(monkeypatch):
     """Browser reads take a lane at the family Hub (#265): tests never reach the running one (a test opts in with its own stub)."""
     monkeypatch.setenv("FAUSTUS_BROWSER_LANES", "0")
