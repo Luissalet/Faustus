@@ -12,8 +12,12 @@ The book of the turn travels in the tool context as `ctx["contract_book"]`
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, Optional
+
+#: Base time limit of one criteria_check call (plus 0.5 s per link).
+CALL_BUDGET_S = 3.0
 
 
 def _parse(content: str) -> Optional[Dict[str, Any]]:
@@ -71,7 +75,16 @@ class CriteriaCheckTool:
             }
         if not isinstance(links, list):
             return {"error": "criteria_check: 'links' must be a list", "exit_code": 1}
-        rows = book.apply_links(links[:80])
+        links = links[:80]
+        # Matching runs off the event loop, under a time limit: every link has
+        # its own budget inside (verification.verify_contract_link, 0.5 s),
+        # and the whole call is bounded here as well.
+        try:
+            rows = await asyncio.wait_for(asyncio.to_thread(book.apply_links, links),
+                                          timeout=CALL_BUDGET_S + 0.5 * len(links))
+        except asyncio.TimeoutError:
+            return {"error": "criteria_check: matching took too long; no link was applied - link fewer "
+                             "criteria per call", "exit_code": 1}
         book.save()
         lines = []
         for r in rows:

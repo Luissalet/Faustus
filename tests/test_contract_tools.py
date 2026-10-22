@@ -18,7 +18,7 @@ SPEC = """# Archive tool
 - Every command prints exactly one JSON document on stdout.
 - The tool must never delete the source files.
 - Every reply must arrive within 5 ms.
-- The help command exits with status 0.
+- The `version` command exits with status 0.
 - Logs must use the format `YYYY-MM-DD`.
 - Temporary files must be removed.
 """
@@ -144,10 +144,10 @@ def test_numbers_count_only_with_their_unit_or_a_comparison():
 def test_an_exit_status_criterion_is_shown_by_the_exit_code():
     book = _book()
     cid = _id(book, needle="exits with status 0")
-    _call(book, "c1", "python -m arc help", "usage: arc ...", 0)
+    _call(book, "c1", "python -m arc version", "arc 1.0", 0)
     assert book.apply_links([{"id": cid, "call_id": "c1"}])[0]["state"] == "proven"
     other = _book()
-    _call(other, "c1", "python -m arc help", "usage: arc ...", 2)
+    _call(other, "c1", "python -m arc version", "arc: unknown option", 2)
     assert other.apply_links([{"id": _id(other, needle="exits with status 0"), "call_id": "c1"}])[0]["state"] == "pending"
 
 
@@ -575,14 +575,14 @@ SERIES = Path(r"D:\LocalAI\research-inbox\sparks835\runtime-audit\resume-2026102
 #: and prints for each format criterion.
 REALISTIC = [
     ("series21-job3-ledger", "runnable as `python -m ledger <command> ...`",
-     "python -m ledger report d.db --by day", '{"rows": []}'),
+     "python -m ledger report d.db --by day && type requirements.txt", '{"rows": []}\ntzdata'),
     ("series21-job3-ledger", "`YYYY-MM-DDTHH:MM:SS` followed by `Z`",
      "python -m ledger events d.db", '{"occurred_at": "2026-03-30T09:00:00+02:00"}'),
     ("series21-job3-ledger", "`-?[0-9]+`, not zero", "python -m ledger events d.db", '{"quantity": -2}'),
     ("series21-job3-ledger", "`[0-9]+(\\.[0-9]{1,4})?`", "python -m ledger events d.db", '{"unit_price": 12.5}'),
     ("series21-job3-ledger", "`rates` prints", "python -m ledger rates d.db r.csv",
      '{"accepted": 2, "duplicates": 1, "replaced": 0, "rejected": []}'),
-    ("series21-job3-ledger", "written `YYYY-MM-DD`", "python -m ledger report d.db --by day",
+    ("series21-job3-ledger", "written `YYYY-MM-DD`", "python -m ledger report d.db --by day --tz Europe/Madrid",
      '{"rows": [{"day": "2026-03-30", "total": "10.00"}]}'),
     ("series21-job3-ledger", "`GET /api/report?by=", 'curl -s "http://127.0.0.1:8765/api/report?by=day"', '{"rows": []}'),
     ("series21-job1-agenda", "`<series_id>:<YYYY-MM-DD>`", "python -m agenda --db a.db bookings",
@@ -601,7 +601,8 @@ REALISTIC = [
     ("series21-job6-meter", "in UTC in the form `YYYY-MM-DDTHH:MM:SSZ`", "python -m meter meters m.db",
      '{"meters": [{"readings": 3, "first_at": "2026-01-01T00:00:00Z", "last_at": "2026-01-02T00:00:00Z"}]}'),
     ("series21-job7-tracker", "`project-add --id ID --name NAME --tz ZONE",
-     "python -m tracker --db t.db project-add --id P1 --name Demo --tz Europe/Madrid", '{"id": "P1"}'),
+     "python -m tracker --db t.db project-add --id P1 --name Demo --tz Europe/Madrid --holidays 2026-12-25",
+     '{"id": "P1", "name": "Demo", "tz": "Europe/Madrid", "holidays": ["2026-12-25"]}'),
     ("series21-job7-tracker", "`{version: 3, ...}` again", "python -m tracker --db t.db issue-update I1 --version 3",
      '{"error": {"code": "stale_version", "message": "x"}}'),
     ("series21-job7-tracker", "listings return", "python -m tracker --db t.db issues --limit 2",
@@ -622,3 +623,179 @@ def test_series_format_criteria_are_provable_by_a_correct_run(job, fragment, com
     _call(book, "c1", command, output)
     results = book.apply_links([{"id": c["id"], "call_id": "c1"} for c in rows])
     assert any(r["state"] == "proven" for r in results), (fragment, results, [c["keys"] for c in rows])
+
+
+# -- final review fixes (F1, F2, M1, M4) -------------------------------------------
+
+def _crit(sentence, i=0):
+    rows, _ = cc.extract(sentence, max_items=50)
+    return rows[i]
+
+
+def _verdict(c, command, output, exit_code=0, tool="bash", test=""):
+    call = {"call_id": "k", "seq": 5, "tool": tool, "command": command, "output": output, "exit_code": exit_code}
+    return ver.verify_contract_link(c, call, last_mutation_seq=1, strict=True, test=test)
+
+
+INGEST = "`ingest DB FILE...` and `rates DB FILE...` create the database file if it does not exist."
+ISSUES = ("`python -m pkg issues ID` prints the issue as one JSON document and exits 0; "
+          "an unknown id fails with `not_found`.")
+ROUTE = "`GET /items/{id}` returns `404` when the item is missing."
+
+
+@pytest.mark.parametrize("command,output,exit_code", [
+    ("python -m ledger ingest --help", "usage: ledger ingest [-h] DB FILE [FILE ...]", 0),
+    ("grep -rn ingest README.md", "README.md:3: ingest stuff", 0),
+    ("ls ingest", "ls: cannot access 'ingest': No such file", 2),
+    ("python -m ledger ingest new.db a.csv", '{"accepted": 3}', 0),          # ran, but shows no file effect
+])
+def test_a_template_alone_never_proves_a_behaviour_rule_ingest(command, output, exit_code):
+    assert _verdict(_crit(INGEST), command, output, exit_code).state == "pending"
+
+
+def test_the_behaviour_of_a_template_rule_must_show_in_the_output():
+    c = _crit(INGEST)
+    ok = _verdict(c, "python -m ledger ingest new.db a.csv && python -c \"import os; "
+                     "print('database exists:', os.path.exists('new.db'))\"",
+                  '{"accepted": 3}\ndatabase exists: True')
+    assert ok.state == "verified", ok.detail
+
+
+@pytest.mark.parametrize("command,output,exit_code", [
+    ("python -m pkg issues --help", "usage: pkg issues [-h] ID", 0),
+    ("python -m pkg issues 7", "error: unknown command issues 7", 1),
+    ("type pkg\\issues.py", "def issues(id): ...", 0),
+])
+def test_a_template_alone_never_proves_a_behaviour_rule_issues(command, output, exit_code):
+    assert _verdict(_crit(ISSUES), command, output, exit_code).state == "pending"
+
+
+def test_an_issues_run_proves_by_its_output():
+    c = _crit(ISSUES)
+    assert _verdict(c, "python -m pkg issues 7", '{"id": 7, "title": "x"}', 0).state == "verified"
+    assert _verdict(c, "python -m pkg issues 99", '{"error": {"code": "not_found"}}', 1).state == "verified"
+
+
+def test_a_route_template_needs_the_status_in_the_response():
+    c = _crit(ROUTE)
+    assert _verdict(c, "curl -s http://127.0.0.1:8000/items/1", '{"id": 1}').state == "pending"
+    assert _verdict(c, "curl -i http://127.0.0.1:8000/items/1", "HTTP/1.1 200 OK\n\n{\"id\": 1}").state == "pending"
+    assert _verdict(c, "curl -i http://127.0.0.1:8000/items/999", "HTTP/1.1 404 Not Found").state == "verified"
+    assert _verdict(c, "curl -i http://127.0.0.1:8000/other/999", "HTTP/1.1 404 Not Found").state == "pending"
+
+
+def test_an_invocation_only_rule_is_proven_by_a_successful_run_of_it():
+    only = _crit("The program is started as `<python> -m meter ...`.")
+    assert cc.invocation_only(only)
+    assert _verdict(only, "python -m meter report m.db", '{"rows": []}', 0).state == "verified"
+    assert _verdict(only, "python -m meter report m.db", "boom", 1).state == "pending"
+    assert _verdict(only, "python -m meter --help", "usage: meter", 0).state == "pending"
+    assert _verdict(only, "grep -rn \"python -m meter\" README.md", "README.md:1: python -m meter", 0).state == "pending"
+    bare = _crit("`tariff DB FILE...` and `rates DB FILE...`.")
+    assert cc.invocation_only(bare)
+    assert _verdict(bare, "python -m meter tariff m.db t.csv", '{"accepted": 1}').state == "verified"
+
+
+def test_help_and_usage_calls_are_never_evidence():
+    get = _crit("`put`, `get` and `delete` must reject an empty key with `empty_key`.", 1)
+    v = _verdict(get, "python -m vault get --help", "usage: vault get [-h] KEY  (errors: empty_key, not_found)")
+    assert v.state == "pending" and "help" in v.detail
+    assert _verdict(get, "python -m vault get ''", "error: empty_key", 1).state == "verified"
+    assert cc.is_help_call("python -m vault help get") and cc.is_help_call("tool.exe /?")
+    assert not cc.is_help_call("python -m vault get key") and not cc.is_help_call("grep -h foo x.txt")
+
+
+def test_a_json_shape_needs_all_of_its_keys():
+    js = _crit('`report` prints `{"accepted": n, "replaced": n, "duplicates": n, "rejected": [...]}` '
+               "(exactly these four keys).")
+    assert not {"accepted", "replaced"} & set(js["keys"])
+    assert _verdict(js, "python -m meter report x.csv",
+                    '{"accepted": 3, "replaced": 0, "duplicates": 1, "rejected": []}').state == "verified"
+    assert _verdict(js, "python -m meter report x.csv", '{"accepted": 3, "replaced": 0}').state == "pending"
+
+
+PATHOLOGICAL = [
+    ("(a|aa)+$", "a" * 40 + "!"),
+    ("(a|aa)+[0-9]", "a" * 5000 + "!"),
+    ("((a+))+[0-9]", "a" * 40 + "!"),
+    ("([a-z]|[a-z])+[0-9]", "a" * 40 + "!"),
+    ("[a-z]+[a-z]+[a-z]+[a-z]+[0-9]", "a" * 5000 + "!"),
+    ("\\d+.*\\d+.*\\d+.*[a-z]Q", "1 " * 6000),
+    ("(\\d+)+x", "1" * 40),
+    ("[a-z]+[a-z]+[0-9]", "a" * 20000 + "!"),
+    ("[a-z][a-z0-9_]*[a-z0-9]", "_" * 20000),
+    ("[0-9]+(\\.[0-9]{1,4})?", "x" * 20000),
+]
+
+
+@pytest.mark.parametrize("literal,output", PATHOLOGICAL)
+def test_regexes_from_the_statement_cannot_block(literal, output):
+    import time as _t
+    t0 = _t.perf_counter()
+    m = cc._literal_matcher(literal)
+    c = _crit(f"Each value must match `{literal}` exactly.")
+    v = _verdict(c, "python -m app x", output)
+    assert _t.perf_counter() - t0 < 1.0
+    assert v.state == "pending"
+    if any(x in literal for x in ("|", "((", ")+")) or literal.count("+") + literal.count("*") > 2:
+        assert m is None or "re" not in m                 # refused: outside the safe subset
+
+
+def test_term_and_test_id_scans_stay_linear_on_huge_outputs():
+    import time as _t
+    c = _crit("Each value must match `[a-z]+[a-z]+[0-9]` exactly.")
+    for blob in ("a" * 200_000 + "!", ("x::" * 50_000) + " PASSED", "z" * 100_000 + "\n" + "q" * 100_000):
+        t0 = _t.perf_counter()
+        assert _verdict(c, "python -m pytest -v", blob).state == "pending"
+        assert _t.perf_counter() - t0 < 0.3
+    ok = "tests/test_a.py::test_put PASSED\n" + "noise\n" * 50_000 + "1 passed"
+    assert ver._test_ids("python -m pytest -v", ok) == ["tests/test_a.py::test_put"]
+
+
+@pytest.mark.parametrize("literal,good,bad", [
+    ("[0-9]+(\\.[0-9]{1,4})?", "price 12.5", "price twelve"),
+    ("-?[0-9]+", "quantity -3", "quantity three"),
+    ("[A-Za-z0-9_.-]{1,64}", "ab_1.x", "### ###"),
+    ("[a-z][a-z0-9_]*[a-z0-9]", "abc_1", "_9 _ 42"),
+    ("^v\\d+\\.\\d+$", "v1.2", "version"),
+])
+def test_safe_spec_regexes_still_match_correct_output(literal, good, bad):
+    m = cc._literal_matcher(literal)
+    assert m and "re" in m, m
+    assert cc.matcher_shown(m, output=good, command="")
+    assert not cc.matcher_shown(m, output=bad, command="")
+
+
+def test_matching_runs_off_the_event_loop_and_the_loop_stays_responsive():
+    book = cc.CriteriaBook.from_message(
+        "\n\n".join(f"Value {i} must match `[a-z]+[a-z]+[0-9]` exactly." for i in range(3)) +
+        "\n\nIt must never crash.\n\nIt must log.", min_chars=0)
+    _call(book, "c1", "python -m app x", "a" * 6000 + "!")
+    links = [{"id": c["id"], "call_id": "c1"} for c in book.criteria]
+
+    async def scenario():
+        import time as _t
+        ticks = []
+
+        async def heartbeat():
+            while True:
+                ticks.append(_t.perf_counter())
+                await asyncio.sleep(0.01)
+        hb = asyncio.create_task(heartbeat())
+        t0 = _t.perf_counter()
+        out = await CriteriaCheckTool().execute(json.dumps({"links": links}), {"contract_book": book})
+        elapsed = _t.perf_counter() - t0
+        hb.cancel()
+        return out, elapsed, ticks
+    out, elapsed, ticks = asyncio.run(scenario())
+    assert out["exit_code"] == 0 and elapsed < 1.0
+    gaps = [b - a for a, b in zip(ticks, ticks[1:])]
+    assert ticks and (not gaps or max(gaps) < 0.5)
+
+
+def test_a_matcher_timeout_is_not_proven_never_an_exception(monkeypatch):
+    c = _crit("Every date in the output must use the `YYYY-MM-DD` form.")
+    v = ver.verify_contract_link(c, {"call_id": "k", "seq": 5, "tool": "bash", "command": "python -m a list",
+                                     "output": "x\n" * 50 + "2026-10-22", "exit_code": 0},
+                                 last_mutation_seq=1, budget_s=-1.0)
+    assert v.state == "pending" and "matcher timeout" in v.detail

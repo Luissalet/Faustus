@@ -509,7 +509,9 @@ def _keys(text: str) -> List[str]:
         add(t)
     for t in re.findall(r'"([A-Za-z_][\w .:/-]{1,39})"', text):
         add(t)
-    for t in re.findall(r"\b[A-Za-z][A-Za-z0-9]*(?:[_.-][A-Za-z0-9]+)+\b", _TICK_RE.sub(" ", text)):
+    # Snake and dotted names in prose (`next_cursor`, `config.json`); a
+    # hyphenated word there is ordinary English ("comma-separated").
+    for t in re.findall(r"\b[A-Za-z][A-Za-z0-9]*(?:[_.][A-Za-z0-9]+)+\b", _TICK_RE.sub(" ", text)):
         parts = re.split(r"[_.-]", t)
         if _JUNK_DOTTED_RE.match(t) or all(len(p) <= 1 for p in parts):
             continue
@@ -538,63 +540,213 @@ def _http_statuses(text: str) -> List[int]:
 
 _HTTP_METHOD_RE = re.compile(r"^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/\S*)")
 _PYTHON_CMD_RE = re.compile(r"^(?:<python>|python[0-9.]*|py)\s+(?:-m\s+\S+|\S+\.py)", re.I)
+_PYTHON_PROG_RE = re.compile(r"^(?:python[0-9.]*|py|pythonw)$", re.I)
 _PLACEHOLDER_TOKEN_RE = re.compile(r"^(?:<[^<>]+>|\[.*\]|\.\.\.|…|[A-Z][A-Z0-9_]*(?:\.\.\.)?)$")
 _FORMAT_HINT_RE = re.compile(r"YYYY|HH:MM|hh:mm|MM-DD|DD/MM|\.\.\.Z|…Z|<[^<>]+>")
 _REGEX_HINT_RE = re.compile(r"\[[^\]]*(?:0-9|a-z|A-Z|\\d)[^\]]*\]|\\[dws]")
-_UNSAFE_REGEX_RE = re.compile(r"\([^()]*[+*][^()]*\)[+*{]|\\[1-9]")
 _EXAMPLE_INSTANT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})?)?$")
+#: Unbounded quantifiers a translated pattern may carry, and the total span
+#: its bounded quantifiers may add (protection against slow matching).
+_MAX_UNBOUNDED = 2
+_MAX_BOUNDED_SPAN = 128
+#: Matching works on a window of the output (its head and tail), in segments
+#: of at most this many characters, within a per-link time budget.
+_WINDOW_HEAD = 2000
+_WINDOW_TAIL = 8000
+_SEGMENT = 300
+MATCH_BUDGET_S = 0.5
+#: Programs that read, list or search files: a template named in their argv
+#: was not run.
+_NON_RUN_PROGRAMS = frozenset("""
+grep egrep fgrep rg ag ack ls dir cat type more less head tail select-string sls findstr get-content gc
+gci get-childitem find wc sed awk echo printf write-output write-host git code notepad vi vim nano strings od
+xxd hexdump file stat tree
+""".split())
+_INVOCATION_RE = re.compile(
+    r"\b(?:runnable\s+as|run\s+as|started\s+as|invoked\s+as|called\s+as|launched\s+as|entry\s+point|"
+    r"command\s+line\s+is|usage\s+is|se\s+(?:ejecuta|invoca|lanza)\s+como|punto\s+de\s+entrada)\b",
+    re.I,
+)
+_FAILURE_RE = re.compile(r"\b(?:fail\w*|error\w*|reject\w*|refus\w*|invalid|falla\w*|rechaz\w*)\b", re.I)
 
 
-def _command_tokens(lit: str) -> Optional[List[str]]:
-    """The fixed tokens of a command template (`python -m ledger <command>
-    ...`, `ingest DB FILE...`, `report --format csv`, `--tz`): placeholders
-    and optional parts dropped. None when `lit` is not a command template."""
+def _command_tokens(lit: str) -> Optional[Tuple[str, List[str]]]:
+    """The kind and fixed tokens of a command template: `python -m ledger
+    <command> ...` -> ("python", ["-m", "ledger"]); `ingest DB FILE...`,
+    `report --format csv`, `--tz` -> ("sub", [...]). Placeholders and
+    optional parts are dropped. None when `lit` is not a command template."""
     s = lit.strip()
     toks = s.split()
     if not toks:
         return None
-    is_cmd = bool(_PYTHON_CMD_RE.match(s))
-    if not is_cmd and re.match(r"^--?[a-z][\w-]*$", toks[0]) and len(toks) <= 3:
-        is_cmd = True                                    # an option: `--tz`, `--from`
-    if (not is_cmd and re.match(r"^[a-z][a-z0-9_-]*$", toks[0]) and len(toks) >= 2
+    kind = ""
+    if _PYTHON_CMD_RE.match(s):
+        kind = "python"
+    elif re.match(r"^--?[a-z][\w-]*$", toks[0]) and len(toks) <= 3:
+        kind = "sub"                                     # an option: `--tz`, `--from`
+    elif (re.match(r"^[a-z][a-z0-9_-]*$", toks[0]) and len(toks) >= 2
             and any(_PLACEHOLDER_TOKEN_RE.match(t) or t.startswith("--") for t in toks[1:])):
-        is_cmd = True
-    if not is_cmd:
+        kind = "sub"
+    if not kind:
         return None
     s = re.sub(r"\[[^\]]*\]", " ", s)                   # optional parts
-    fixed = []
+    fixed: List[str] = []
     for t in s.split():
         if _PLACEHOLDER_TOKEN_RE.match(t) or t.startswith("<"):
             continue
         t = t.rstrip(".…")
         if t and t not in fixed:
             fixed.append(t)
-    return fixed or None
+    if kind == "python" and fixed and _PYTHON_PROG_RE.match(fixed[0]):
+        fixed = fixed[1:]
+    return (kind, fixed) if fixed else None
+
+
+def _safe_spec_regex(s: str) -> Optional[str]:
+    """Translate a regex written in the task statement into an equivalent
+    pattern from a safe subset, or refuse it. Allowed: literal characters,
+    escapes `\\d \\w \\s` and escaped punctuation, character classes, `.`,
+    quantifiers on single atoms, unquantified or optional (`?`) groups without
+    nesting, alternation or unbounded quantifiers inside, and `^`/`$`. At most
+    two unbounded quantifiers, bounded spans (at most 64 each) summing to at
+    most 128, groups atomic; with two unbounded quantifiers both become
+    possessive. Matching also runs on short segments of the output under a
+    per-link deadline (`matcher_shown`)."""
+    if not s or len(s) > 120 or "|" in s:
+        return None
+    unbounded = 0
+    span = 0
+
+    def quant(i: int, in_group: bool) -> Tuple[Optional[str], int]:
+        nonlocal unbounded, span
+        if i >= len(s):
+            return "", i
+        c = s[i]
+        if c == "?":
+            span += 1
+            return "?", i + 1
+        if c in "*+":
+            if in_group:
+                return None, i
+            unbounded += 1
+            return c + "\x00", i + 1
+        if c == "{":
+            m = re.match(r"\{(\d{1,3})(?:(,)(\d{0,3}))?\}", s[i:])
+            if not m:
+                return None, i
+            lo = int(m.group(1))
+            if m.group(2) and not m.group(3):
+                if in_group:
+                    return None, i
+                unbounded += 1
+                return m.group(0) + "\x00", i + len(m.group(0))
+            hi = int(m.group(3)) if m.group(3) else lo
+            if hi < lo or hi > 64:
+                return None, i
+            span += hi - lo
+            return m.group(0), i + len(m.group(0))
+        return "", i
+
+    def atoms(i: int, end: int, in_group: bool) -> Tuple[Optional[str], int]:
+        parts: List[str] = []
+        while i < end:
+            c = s[i]
+            if c == "^" and i == 0:
+                i += 1
+                continue
+            if c == "$" and i == len(s) - 1:
+                i += 1
+                continue
+            if c == "\\":
+                if i + 1 >= end:
+                    return None, i
+                n = s[i + 1]
+                if n in "dwsDWS":
+                    atom = "\\" + n
+                elif not n.isalnum():
+                    atom = re.escape(n)
+                else:
+                    return None, i                       # backreferences, \b, \A ...
+                i += 2
+            elif c == "[":
+                j = i + 1
+                if j < end and s[j] == "^":
+                    j += 1
+                if j < end and s[j] == "]":
+                    j += 1
+                while j < end and s[j] != "]":
+                    if s[j] == "\\":
+                        j += 1
+                    elif s[j] == "[":
+                        return None, i
+                    j += 1
+                if j >= end:
+                    return None, i
+                atom = s[i:j + 1]
+                i = j + 1
+            elif c == "(":
+                if in_group:
+                    return None, i
+                j = s.find(")", i + 1)
+                if j < 0 or "(" in s[i + 1:j]:
+                    return None, i
+                inner, _ = atoms(i + 1 + (2 if s.startswith("?:", i + 1) else 0), j, True)
+                if inner is None:
+                    return None, i
+                i = j + 1
+                q, i2 = quant(i, False)
+                if q is None or q not in ("", "?"):
+                    return None, i
+                parts.append("(?>" + inner + ")" + q)
+                i = i2
+                continue
+            elif c in ")*+?{}|":
+                return None, i
+            elif c == ".":
+                atom = "."
+                i += 1
+            else:
+                atom = re.escape(c)
+                i += 1
+            q, i = quant(i, in_group)
+            if q is None:
+                return None, i
+            parts.append(atom + q)
+        return "".join(parts), i
+
+    body, _ = atoms(0, len(s), False)
+    if not body or unbounded > _MAX_UNBOUNDED or span > _MAX_BOUNDED_SPAN:
+        return None
+    # One unbounded quantifier backtracks in linear time per position: keep it
+    # greedy (exact meaning). Two of them can go polynomial: make both
+    # possessive (they never give back what they took; a rare legitimate
+    # match may be missed, never a slow one).
+    body = body.replace("\x00", "+" if unbounded >= 2 else "")
+    try:
+        re.compile(body)
+    except re.error:
+        return None
+    return r"(?<![\w.])(?:" + body + r")(?![\w])"
 
 
 def _format_regex(lit: str) -> Optional[str]:
     """A regex for the form a literal describes, to be matched against output:
     `YYYY-MM-DD` -> `\\d{4}-\\d{2}-\\d{2}`, `...Z` -> an instant ending in Z,
     `<series_id>:<YYYY-MM-DD>` -> `\\S+?:\\d{4}-\\d{2}-\\d{2}`, an example
-    instant with its digits generalised, or a literal that is itself a safe
-    regex (`-?[0-9]+`). None for anything else."""
+    instant with its digits generalised, or a regex of the statement
+    translated into the safe subset (`_safe_spec_regex`). None otherwise."""
     s = lit.strip()
     if not s or len(s) > 120:
         return None
     if _REGEX_HINT_RE.search(s) and not _FORMAT_HINT_RE.search(s):
-        if _UNSAFE_REGEX_RE.search(s):
-            return None
-        try:
-            re.compile(s)
-        except re.error:
-            return None
-        return r"(?<![\w.])(?:" + s + r")(?![\w])"
+        return _safe_spec_regex(s)
     if _EXAMPLE_INSTANT_RE.match(s):
         return r"(?<!\d)" + re.sub(r"\d", r"\\d", re.escape(s)) + r"(?!\d)"
     if not _FORMAT_HINT_RE.search(s):
         return None
     out: List[str] = []
     fixed = 0
+    unbounded = 0
     i, n = 0, len(s)
     while i < n:
         if s.startswith("...Z", i) or s.startswith("…Z", i):
@@ -609,6 +761,7 @@ def _format_regex(lit: str) -> Optional[str]:
                 fixed += 1
             else:
                 out.append(r"\S+?")
+                unbounded += 1
             i = j + 1
         elif s.startswith("YYYY", i):
             out.append(r"\d{4}")
@@ -620,9 +773,11 @@ def _format_regex(lit: str) -> Optional[str]:
             i += 2
         elif s.startswith("...", i) or s[i] == "…":
             out.append(r".*?")
+            unbounded += 1
             i += 3 if s[i] == "." else 1
         elif s[i].isspace():
             out.append(r"\s+")
+            unbounded += 1
             while i < n and s[i].isspace():
                 i += 1
         else:
@@ -630,7 +785,7 @@ def _format_regex(lit: str) -> Optional[str]:
             if s[i].isalnum():
                 fixed += 1
             i += 1
-    if fixed == 0:
+    if fixed == 0 or unbounded > _MAX_UNBOUNDED:
         return None
     pat = "".join(out)
     if pat.startswith(r"\d"):
@@ -653,19 +808,20 @@ def _json_keys(lit: str) -> Optional[List[str]]:
 
 def _literal_matcher(lit: str) -> Optional[Dict[str, Any]]:
     """How a literal is shown when it describes a FORM, not a value:
-    a route or command template by the command that ran it (the command
-    demonstrates the invocation), a JSON shape by its keys in the output, a
-    date/instant/regex format by a regex over the output."""
+    a route or command template by an invocation in the command (it only
+    LOCATES the call: the behaviour must still show in the output), a JSON
+    shape by all of its keys in the output, a date/instant/regex format by a
+    pattern over the output."""
     s = (lit or "").strip()
     if not s:
         return None
     m = _HTTP_METHOD_RE.match(s)
     if m:
         path = re.split(r"[?<{]|\.\.\.|…", m.group(1))[0].rstrip("/") or "/"
-        return {"on": "command", "tokens": [path], "src": s}
-    toks = _command_tokens(s)
-    if toks:
-        return {"on": "command", "tokens": toks, "src": s}
+        return {"on": "command", "kind": "route", "tokens": [path], "src": s}
+    ct = _command_tokens(s)
+    if ct:
+        return {"on": "command", "kind": ct[0], "tokens": ct[1], "src": s}
     keys = _json_keys(s)
     if keys:
         return {"on": "output", "json": keys, "src": s}
@@ -681,27 +837,142 @@ def _matchers(text: str) -> List[Dict[str, Any]]:
         m = _literal_matcher(t)
         if m and all(x["src"] != m["src"] for x in out) and len(out) < 8:
             out.append(m)
+    # "prints one JSON document": the output must be one.
+    if re.search(r"\bJSON\b", _TICK_RE.sub(" ", text)) and len(out) < 9:
+        out.append({"on": "output", "json_doc": True, "src": "JSON document"})
     return out
 
 
-def matcher_shown(matcher: Dict[str, Any], *, output: str, command: str) -> bool:
-    """Does a call show a form matcher (see `_literal_matcher`)?"""
+def _argv(step: str) -> List[str]:
+    return [t.strip("\"'") for t in step.split() if t.strip("\"'")]
+
+
+def is_help_call(command: str) -> bool:
+    """A call that asks a program for its help or usage (`-h`, `--help`,
+    `/?`, a `help` subcommand): it shows documentation, not behaviour."""
+    for step in _split_steps(command or ""):
+        argv = _argv(step)
+        if len(argv) < 2:
+            continue
+        prog = re.sub(r"\.(?:exe|cmd|bat)$", "", argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower())
+        if prog in _NON_RUN_PROGRAMS:
+            continue
+        rest = [a.lower() for a in argv[1:]]
+        if any(a in ("-h", "--help", "/?", "-?") for a in rest):
+            return True
+        if _PYTHON_PROG_RE.match(prog) and "-m" in rest:
+            k = rest.index("-m")
+            if "help" in rest[k + 2:k + 3]:
+                return True
+        elif rest[:1] == ["help"]:
+            return True
+    return False
+
+
+def template_ran(matcher: Dict[str, Any], *, command: str, output: str = "") -> bool:
+    """Did the call RUN the program a command/route template describes, with
+    the template's fixed tokens as its arguments? Not when the tokens are
+    arguments of grep/ls/cat/type/... , not for a help or usage call, and not
+    when the output is just a usage message."""
+    if (output or "").lstrip().lower().startswith("usage:"):
+        return False
+    kind = str(matcher.get("kind") or "sub")
+    tokens = [str(t) for t in (matcher.get("tokens") or [])]
+    if not tokens:
+        return False
+    for step in _split_steps(command or ""):
+        argv = _argv(step)
+        if not argv:
+            continue
+        prog = re.sub(r"\.(?:exe|cmd|bat)$", "", argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower())
+        if prog in _NON_RUN_PROGRAMS or is_help_call(step):
+            continue
+        rest = argv[1:]
+        low = [a.lower() for a in rest]
+        if kind == "route":
+            if any(tokens[0].lower() in a.lower() for a in argv):
+                return True
+            continue
+        if kind == "python":
+            if not _PYTHON_PROG_RE.match(prog):
+                continue
+            want = [t.lower() for t in tokens]
+            if any(low[k:k + len(want)] == want for k in range(len(low) - len(want) + 1)):
+                return True
+            continue
+
+        def has(t: str) -> bool:
+            t = t.lower()
+            return any(a == t or (t.startswith("-") and a.startswith(t + "=")) for a in low)
+        if all(has(t) for t in tokens):
+            return True
+    return False
+
+
+def _window(text: str) -> str:
+    text = text or ""
+    if len(text) <= _WINDOW_HEAD + _WINDOW_TAIL:
+        return text
+    return text[:_WINDOW_HEAD] + "\n" + text[-_WINDOW_TAIL:]
+
+
+def _segments(text: str) -> Iterable[str]:
+    for line in _window(text).splitlines():
+        if len(line) <= _SEGMENT:
+            yield line
+        else:
+            for k in range(0, len(line), _SEGMENT * 2 // 3):
+                yield line[k:k + _SEGMENT]
+
+
+def matcher_shown(matcher: Dict[str, Any], *, output: str, command: str,
+                  deadline: Optional[float] = None) -> Optional[bool]:
+    """Does a call show a form matcher (see `_literal_matcher`)? None when the
+    per-link time budget ran out before an answer (treated as not shown)."""
     try:
         if matcher.get("on") == "command":
-            cmd = command or ""
-            # A route path follows a host (`http://127.0.0.1:8000/api/x`); other
-            # tokens stand on their own.
-            return all(re.search(("" if str(t).startswith("/") else r"(?<![\w-])") + re.escape(str(t))
-                                 + r"(?![\w-])", cmd, re.I)
-                       for t in matcher.get("tokens") or [])
+            return template_ran(matcher, command=command, output=output)
+        if matcher.get("json_doc"):
+            text = (output or "").strip()
+            if not text or len(text) > 200_000:
+                return False
+            try:
+                json.loads(text)
+                return True
+            except ValueError:
+                return False
         if matcher.get("json"):
-            return all(re.search(r"[\"']?" + re.escape(str(k)) + r"[\"']?\s*:", output or "")
-                       for k in matcher["json"])
+            win = _window(output)
+            return all(re.search(r"[\"']?" + re.escape(str(k)) + r"[\"']?\s*:", win) for k in matcher["json"])
         if matcher.get("re"):
-            return re.search(str(matcher["re"]), (output or "")[:20000]) is not None
+            rx = re.compile(str(matcher["re"]))
+            for seg in _segments(output):
+                if deadline is not None and time.monotonic() > deadline:
+                    return None
+                if rx.search(seg):
+                    return True
+            return False
     except re.error:
         return False
     return False
+
+
+def invocation_only(c: Dict[str, Any]) -> bool:
+    """A criterion that is nothing but an invocation form (`tariff DB
+    FILE...`; "`python -m meter ...` is the only entry point"): a template,
+    no other term, and either no other words or an invocation phrase."""
+    templates = [m for m in (c.get("matchers") or []) if m.get("on") == "command"]
+    sm = c.get("subject_matcher")
+    if isinstance(sm, dict) and sm.get("on") == "command":
+        templates.append(sm)
+    if not templates:
+        return False
+    if (c.get("keys") or c.get("limits") or c.get("exits") or c.get("statuses")
+            or any(m.get("on") == "output" for m in (c.get("matchers") or []))):
+        return False
+    rest = re.sub(r"[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+", " ", _TICK_RE.sub(" ", str(c.get("quote") or "")))
+    words = [w for w in rest.split() if len(w) > 2 and w.lower() not in ("and", "the", "with", "y", "con", "los")]
+    return not words or bool(_INVOCATION_RE.search(str(c.get("quote") or "")))
 
 
 def _compound_subjects(sentence: str) -> List[str]:
@@ -762,7 +1033,10 @@ class _Basis:
         forms = {m["src"] for m in self.matchers}
         # A literal that describes a form is shown through its matcher, never
         # verbatim: `YYYY-MM-DD` does not occur in a correct program's output.
-        self.keys = [k for k in _keys(text) if k not in forms]
+        # The field names of a JSON shape are not keys of their own either:
+        # the shape needs ALL of them, one alone must not do.
+        fields = {k for m in self.matchers for k in (m.get("json") or [])}
+        self.keys = [k for k in _keys(text) if k not in forms and k not in fields]
         self.words = _words(text)
         self.limits = _limits(text)
         self.exits = _exit_codes(text)
