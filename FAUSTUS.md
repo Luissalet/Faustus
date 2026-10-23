@@ -14706,7 +14706,7 @@ Z. Evidencia: research-inbox/silver-special1327 y Silver/docs/VISUAL_PRESENTATIO
 La ampliación tras vídeos de Espada/Escudo y Z encadena recogida, lanzamiento
 de Poké Ball y aparición gigante, con recetas por movimiento: remolino HydroVortex,
 lluvia dorada GoldRush y estrellas/luz espectral de Ultra Necrozma. Ultra tiene PMD
-normal y shiny publicados; no se añade UltraBurst. Las52Max/Gigamax y35Z comparten
+normal y shiny publicados; su activación se añade en las reglas14 descritas debajo. Las52Max/Gigamax y35Z comparten
 primitivas y texturas; no son87secuencias independientes ni una certificación de
 paridad con competidores o rendimiento.
 
@@ -14765,3 +14765,23 @@ sin reintentar su borrado. Manual y grafo propios actualizados; evidencias y
 limitaciones en research-inbox/hypatia1194/CONTINUIDAD.md y
 C:/Users/luism/.codex/scratch/hoard-loop23/docs-next57/. La función1340 de estadística
 descriptiva y los frentes1338Ledger/1339Talos aún están en curso y no se cuentan.
+
+
+## Silver: Ultraexplosión durante el combate — 23-10-2026, #1337
+
+Las reglas14 de tiempo real permiten activar Ultra Burst desde Necrozma Melena
+Crepuscular o Alas del Alba con Ultranecrostal Z, una vez por entrenador, compartida
+en dobles. M y el control de megaevolución del mando activan su botón propio sin
+gastar megaenergía, megaevolución ni el uso Z. Cambian estadísticas, tipos
+Psíquico/Dragón, Fuerza Cerebral y PMD normal/shiny. La forma se mantiene al cambiar
+y vuelve a la fusión al debilitarse o terminar. Ultra no se elige como forma inicial
+en los nuevos combates RT; las repeticiones1–13 conservan su comportamiento.
+
+Géiser Fotónico permite después Fotodestrucción Apocalíptica. La separación de un
+segundo para preparar Z adapta al tiempo real la transformación y el posterior
+turno Z del cartucho; no se presenta como una duración original. Un movimiento
+normal puede acompañar a Ultra Burst. La UI, IA, nuevos HTML, grabador y las
+herramientas nativas rt_rules/rt_cooldowns/battle_rt_inspect comparten la mecánica.
+Se han consultado los clips oficiales de ambas fusiones; la presentación concentra
+luz, abre un prisma y revela el PMD sin generar sprites nuevos. Evidencias en
+research-inbox/silver-ultra1337 y Silver/docs/RT_DYNAMAX_Z.md.
