@@ -1,5 +1,47 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Biblioteca de kits y descarga completa del historial — 23-10-2026, #1298/#1303
+
+**HomeHoard:** Kits y equipo incorpora búsqueda por todas las palabras del nombre
+o las notas, sin distinguir acentos. Recorre todos los kits guardados mediante
+páginas de diez; `home_kits(action="list")` admite `q`, `offset` y `limit` hasta50,
+con total filtrado, total general y `has_more`. El orden por nombre normalizado e
+ID es estable. Los kits seleccionados mantienen nombre y acción de quitar aunque
+queden fuera del filtro o página; el borrador del editor permanece independiente.
+Una respuesta parcial no acredita que un kit haya desaparecido. Se mantienen las
+19 herramientas MCP y la comprobación conjunta de existencias sin reservas.
+Integrado `df990f2`, funcional `ed9cc0d` aprobado CAS1.110 Python,51 Node,
+TypeScript y build correctos; revisión independiente15 Python+5 Node y banco75kits.
+MCP19/61IDs y navegador1280/390 sobre datos ficticios; principal compilada y
+comprobada por MCP. No certificación Android/iOS, teclado o contraste global.
+
+**People's Hoard:** Personas → Consultar historial → Descargar historial exporta
+todas las coincidencias actuales en JSON o CSV UTF-8, independientemente de las
+páginas. `POST /api/interactions/export` y `export_interactions` comparten filtros,
+filas y orden con la búsqueda nativa; catálogo32 MCP. Sólo el tool de exportación
+evita el límite ordinario de20KB. Rechaza `limit`/`offset`, conserva texto, fechas,
+comillas, saltos y acentos; JSON conserva nulos/booleanos y CSV usa BOM, campos
+citados y filas CRLF, con nulos vacíos. El CSV guarda texto literal: importar como
+texto evita interpretar fórmulas. La instantánea se obtiene al pulsar descargar,
+sin prometer congelar los resultados de una consulta anterior. Cambiar filtros,
+formato o cerrar invalida una descarga pendiente; un error conserva la consulta.
+No envía mensajes, lee servicios externos ni guarda archivos persistentes de
+exportación. No sustituye la copia de seguridad completa. Fuente funcional
+`44aa051`; corrección documental `3c79861` + `fb8b35c`, sin cambio de interfaz.
+176 pruebas Node pasan en secuencial; se conservan los dos resultados rojos previos
+por flags del arnés y temporización heredada de mailsync bajo concurrencia, sin
+afirmar suite paralela verde. MCP32 y descargas reales de137IDs/>250KB completos,
+con lector CSV independiente y datos conservados. Web1280/390 y recuperación503.
+
+Ambos incrementos tienen revisión cruzada y documentación del mundo construido.
+No se arrancaron las apps reales5196/5182 ni modelos. QA63431/63432 apagadas y
+worktrees/dependencias propios retirados tras integración, sin push. Sólo el
+pequeño reviewer-temp de Home queda retenido por rechazo automático de borrado;
+no se reintentó ni se borró el padre. Evidencia y recibos pequeños en
+`research-inbox/home-kit-search23` y `research-inbox/people-history-export23`.
+
+
+
 ## HoardDex: cálculo de daño por edición — 23-10-2026, #1216
 
 Herramientas → Daño y `fielddex_damage` comparten un modelo local de sólo lectura:
