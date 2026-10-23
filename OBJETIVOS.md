@@ -1,5 +1,9 @@
 # Objetivos acordados
 
+## Hub por proyectos e interiores legibles — 23-10-2026, #1261
+
+Integrado en HoardLink `56bfa28`: navegación por proyectos con ágora propia y herramientas compartidas a página completa. Correo usa bandeja activa y lector con vuelta al filtro; los registros, acciones y ajustes se reorganizan en pantallas estrechas. La corrección del rechazo visual se verificó con contenido largo en instancias aisladas y revisión independiente; no amplía las APIs ni modifica los modelos o datos reales. Límites de carga y evidencia en `HoardLink/docs/hub-navigation.md` y FAUSTUS.md.
+
 ## Ampliaciones de agentes, 3D y videojuegos — 23-10-2026, #1146
 
 Integrados en Faustus: operaciones nativas Unity (#1138), checkpoints completos
