@@ -14709,3 +14709,59 @@ lluvia dorada GoldRush y estrellas/luz espectral de Ultra Necrozma. Ultra tiene 
 normal y shiny publicados; no se añade UltraBurst. Las52Max/Gigamax y35Z comparten
 primitivas y texturas; no son87secuencias independientes ni una certificación de
 paridad con competidores o rendimiento.
+
+
+## Hoards: red por pares, variantes CAD y cálculo exacto — 23-10-2026
+
+Prometheus muestra en Equipo la dirección CX7 de destino según el origen de cada
+par de Sparks y permite copiarla. Consulta fabric_status existente y distingue
+lectura ausente, interfaz sin dirección, velocidad desconocida y cero; la lectura
+permanece sólo mientras el panel está abierto. Sin sondeos periódicos ni cambios
+de red. Conserva45 herramientas MCP.
+
+Vulcan permite crear una variante CAD con nombre y parámetros numéricos desde
+una receta existente, usando cad_from_text. Genera otro ID y sus archivos, deja
+intactos el original y el borrador de su ficha y ofrece Abrir explícito. Conserva
+las expresiones derivadas: cambiar ancho recalcula la altura que dependa de él.
+No clona notas ni ficha de catálogo, ni crea STEP o versiones recuperables. La
+regeneración del mismo ID sigue disponible por separado; MCP160 sin ampliación.
+
+Hypatia añade interpolación racional desde pares de puntos, conversión exacta de
+enteros con signo entre bases2–36 y determinantes, inversas o reducción por filas
+de matrices racionales. UI/API/MCP comparten motores locales: polinomio y residuos,
+equivalencias numéricas sin redondear y matrices/rango/pivotes desde uno. Distingue
+polinomio cero con grado no definido, abscisas equivalentes repetidas, matriz
+singular sin inversa y RREF rectangular. Ejemplos editables, errores recuperables,
+copia completa y borrador de Faustus. No regresión, complemento a dos, matrices
+simbólicas, autovalores ni demostración paso a paso. Catálogo actual62 herramientas
+MCP,44 de estudio y18 de profesor, sin leer ni modificar el banco con estos cálculos.
+
+Daguerre permite marcar una foto como rechazada y quitar el rechazo desde su
+ficha: usa valoración−1/0 existente y al quitarlo queda sin estrellas. No borra,
+mueve ni oculta archivos y respeta el ajuste XMP vigente. Conserva los campos
+pendientes durante la operación; las respuestas tardías de otra foto no sustituyen
+la ficha activa. El arreglo de ese caso se revisó como CAS2; MCP96 sin cambios.
+
+Nightingale descarga PNG de gráficas guardadas sin recrearlas ni perder el
+borrador del constructor. Identifica gráfica e idioma y usa la versión actual
+del conjunto, con progreso/error/reintento por tarjeta. data_chart action=get
+entrega también el PNG íntegro por MCP como imagen y metadatos; conserva42tools,
+el create anterior y el kit común. No promete una imagen histórica inmutable ni
+equivalencia visual universal con el render Vega del navegador.
+
+Las siete entregas1322/1325/1326/1331/1332/1334/1335 están DONE y se integraron con
+los hashes aprobados y revisión cruzada, incluida la corrección material de
+Daguerre. QA ficticia propia por navegador y SDK/API: copias reales, creación de
+variante que preserva el original, rechazo recuperable, resultados exactos y un
+PNG descargado de16893bytes/780×520 idéntico al mismo response del servidor.
+Pruebas focales y de área proporcionadas, con fallos iniciales y límites de los
+recibos preservados; no se afirma una suite global verde a partir de focales.
+Procesos propios detenidos y worktrees/rama propios retirados normalmente tras
+preflights físicos inspeccionados. No se iniciaron modelos ni servicios ajenos.
+
+El bucle alcanza61 mejoras integradas:58 funciones y3UI;59tareas DONE y dos
+históricas aprobadas integradas abiertas por conciliación de limpiezas rechazadas,
+sin reintentar su borrado. Manual y grafo propios actualizados; evidencias y
+limitaciones en research-inbox/hypatia1194/CONTINUIDAD.md y
+C:/Users/luism/.codex/scratch/hoard-loop23/docs-next57/. La función1340 de estadística
+descriptiva y los frentes1338Ledger/1339Talos aún están en curso y no se cuentan.
