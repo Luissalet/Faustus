@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional
@@ -141,11 +142,39 @@ def _run(root: str, args: List[str], *, timeout: float = _GIT_TIMEOUT, binary: b
     gd = shadow_dir(root)
     cmd = ["git", "--git-dir", gd, "--work-tree", root, *args]
     try:
-        if binary:
-            proc = subprocess.run(cmd, cwd=root, capture_output=True, timeout=timeout, env=_git_env())
-        else:
-            proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, encoding="utf-8",
-                                  errors="replace", timeout=timeout, env=_git_env())
+        from src import process_ownership
+        # Git for Windows can launch git.exe/filter descendants. With PIPE,
+        # subprocess.run's timeout cleanup waits for their inherited handles
+        # even after killing the launcher. Files need no EOF from descendants.
+        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+            child = subprocess.Popen(cmd, cwd=root, stdout=out, stderr=err, env=_git_env())
+            process_ownership.note_started(child, "checkpoint git")
+            try:
+                try:
+                    child.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    if process_ownership.check(child).owned:
+                        process_ownership.terminate_tree(
+                            child.pid,
+                            spawned_at=process_ownership.spawn_creation_time(child.pid),
+                            pgid=process_ownership.process_group_id(child.pid),
+                            unverified_tree_ok=True,
+                        )
+                        child.kill()
+                    try:
+                        child.wait(timeout=1.0)
+                    except subprocess.TimeoutExpired:
+                        logger.debug("[checkpoint] timed-out git did not exit after teardown")
+                    return None
+                out.seek(0)
+                err.seek(0)
+                stdout, stderr = out.read(), err.read()
+                if not binary:
+                    stdout = stdout.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+                    stderr = stderr.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+                proc = subprocess.CompletedProcess(cmd, child.returncode, stdout, stderr)
+            finally:
+                process_ownership.forget(child)
     except (OSError, subprocess.SubprocessError) as e:
         logger.debug("[checkpoint] git %s failed: %s", args[:2], e)
         return None
