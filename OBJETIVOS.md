@@ -1,5 +1,15 @@
 # Objetivos acordados
 
+## Silver: completar la biblioteca PMD — 23-10-2026, #1180
+
+Entrega parcial integrada: 1.468/1.469 especies y formas del motor normales y
+shiny, todas las especies base, y HTML independiente de las descargas de prueba.
+Falta únicamente Pikachu Gigamax en ambas variantes: conservar sus perfiles
+laterales ya revisados y resolver frontal/trasera con anatomía, dirección y
+pasos correctos antes de registrar la hoja completa. No sustituirlo por Pikachu
+normal ni aceptar fases repetidas para aparentar cobertura. Mantener gameplay,
+funciones y originales existentes; no necesita una nueva decisión de Luis.
+
 ## HoardDex: continuar la paridad útil — 23-10-2026, #1216/#1195
 
 Calculadora de daño integrada en interfaz y MCP32, con verificación propia de
