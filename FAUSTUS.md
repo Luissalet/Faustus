@@ -14677,5 +14677,9 @@ Pausa y seek conservan sus límites; movimiento reducido mantiene estado y seña
 estáticas, y el modo sobrio omite las capas de espectáculo. El party compartido en
 dobles se consulta desde la vista del bando; una regresión real cubre carga y salida
 Z. Evidencia: research-inbox/silver-special1327 y Silver/docs/VISUAL_PRESENTATION.md.
-La coreografía es por tipos, no una animación distinta para cada firma ni una
-certificación de paridad con competidores o rendimiento.
+La ampliación tras vídeos de Espada/Escudo y Z encadena recogida, lanzamiento
+de Poké Ball y aparición gigante, con recetas por movimiento: remolino HydroVortex,
+lluvia dorada GoldRush y estrellas/luz espectral de Ultra Necrozma. Ultra tiene PMD
+normal y shiny publicados; no se añade UltraBurst. Las52Max/Gigamax y35Z comparten
+primitivas y texturas; no son87secuencias independientes ni una certificación de
+paridad con competidores o rendimiento.
