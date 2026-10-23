@@ -63,9 +63,13 @@ ni se declara paridad completa a partir de una muestra. Las ABI y su ejecución
 se acreditan por separado; no hay teléfono físico ARM64. Sin nuevas decisiones
 de Luis pendientes por este bloque.
 
+## Hub: corrección de identidad y respuesta rápida — 23-10-2026, #1363
+
+La petición expresa de Luis fija el tema oscuro y el icono oficial de la familia: no volver a sustituirlos por una identidad clara. La estructura1301 se conserva. «Te esperan» permite responder la pregunta concreta y cerrar conversaciones no-task sin abrir hilos enormes; conserva borrador, ámbito y reintento. Se desacoplan preguntas/conversaciones del tablero y se evita preparar tareas finalizadas que se descartan. Pruebas y mediciones al integrar en FAUSTUS.md y guía del Hub; no hay nueva decisión de Luis pendiente.
+
 ## Hub: replanteamiento aplicado al trabajo cotidiano — 23-10-2026, #1301
 
-Aplicado el diagnóstico1296 en HoardLink dca9cbe+b1b2225, revisión2 aprobada y avance directo hasta fdb4f34 con documentación. Inicio reúne atención y continuidad; cada proyecto tiene resumen y ágora propia; Aplicaciones se encuentra por propósito; Automatización parte de la tarea y los controles habituales evitan IDs/JSON. Navegación contextual visible, ayuda, estados explicados y presentación blanca/neutra verde. Revisión independiente SHIP acotado y flujos1280/390 correctos; evidencia y límites en docs/hub-navigation.md y FAUSTUS.md. Quedan como límites de producto el directorio de espacios frente al catálogo completo nativo Faustus, el vocabulario conocido/manifiestos frente a búsqueda semántica y la configuración técnica de herramientas/eventos personalizados. No hay una nueva decisión de Luis pendiente.
+Aplicado el diagnóstico1296 en HoardLink dca9cbe+b1b2225, revisión2 aprobada y avance directo hasta fdb4f34 con documentación. Inicio reúne atención y continuidad; cada proyecto tiene resumen y ágora propia; Aplicaciones se encuentra por propósito; Automatización parte de la tarea y los controles habituales evitan IDs/JSON. Navegación contextual visible, ayuda, estados explicados; la presentación inicial blanca/neutra verde queda sustituida por la paleta oscura oficial en1363. Revisión independiente SHIP acotado y flujos1280/390 correctos; evidencia y límites en docs/hub-navigation.md y FAUSTUS.md. Quedan como límites de producto el directorio de espacios frente al catálogo completo nativo Faustus, el vocabulario conocido/manifiestos frente a búsqueda semántica y la configuración técnica de herramientas/eventos personalizados. No hay una nueva decisión de Luis pendiente.
 
 ## Hub: rediseño de todas las pantallas — 23-10-2026, #1269
 
