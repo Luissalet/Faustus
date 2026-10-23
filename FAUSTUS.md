@@ -15010,3 +15010,64 @@ No se borran ni se regeneran los sprites de Pokémon. App, vídeo nativo y HTML
 recién exportado comparten las capas; pausa, seek, sencillo y movimiento reducido
 conservan sus límites. Reglas14 y entradas intactas. Evidencias1362 en research-inbox
 y Silver/docs/VISUAL_PRESENTATION.md.
+
+
+## Hoards: grupos de modelos, borradores de medios y agregaciones — 23-10-2026
+
+Tanda de codex-hoard23: 74 mejoras integradas (70 funciones y 4 mejoras de UI),
+72 tareas DONE y dos históricas aprobadas e integradas pendientes de conciliación
+de sus limpiezas. Nuevas1357/1359/1360/1366 con revisión cruzada CAS1 exacta,
+prueba ROOT real y QA aislada; MAIN limpios y worktrees propios retirados normalmente.
+Sin push, modelos ni servicios ajenos iniciados. Los cambios anteriores se conservan.
+
+- **Vulcan1357**, `af9843a`: Galería → Revisar grupos consulta copias de igual
+  SHA256 registrado o parecidos por igual número de triángulos y medidas/volumen
+  cercanos (±1%). El alcance es todo el índice, independiente de filtros/borrador
+  de Galería; miembros con ID, referencia, ruta, medidas y enlace al modelo exacto.
+  Los parecidos forman grupos conectados, sin implicar coincidencia de cada par
+  ni equivalencia geométrica. Hasta50 grupos devueltos y límite nativo20.000 pares
+  candidatos, sin exhaustividad. No escanea, borra ni vuelve a comprobar archivos.
+  API/MCP160 existentes; área2PASS una vez, MAINbuild2.53s, SDK/API grupos exactos,
+  15tablas y12STL SHA/tamaño/mtime intactos. ROOT filtro4modelos/draft conservado,
+  grupos exactos9/12 y cercanos9/10/11; Abrir9 sin guardar metadatos. Capturas ROOT
+  con repetición del adaptador bajo720px excluidas como fotograma completo;
+  capturas móviles válidas del autor inspeccionadas por revisión independiente.
+- **Mercator1359**, `eaa7af4`: Publicación → Desde un medio crea un borrador o
+  localiza la publicación no archivada de menor ID con referencia exacta, incluso
+  publicada o de otra plataforma. Referencia/título requeridos, plataforma opcional;
+  título/plataforma sólo afectan a la creación. Resultado con ID/estado reales y
+  Abrir explícito, conservando editores y borradores. No comprueba el archivo/app
+  de origen ni publica en redes. POST fino delega post_draft_from_media cap=False,
+  catálogo25 intacto. Área39PASS una vez y UIerror/retry/lateedits; ROOT crea sólo
+  draft16/YouTubeShort y localiza9/X publicada intacta. MAINAPI/SDK25/static exactos,
+  13tablas naturales/16posts/3métricas preservados; doce publicaciones originales y
+  quince previas intactas. Detector degradado y oráculos HTML/CRLF documentados.
+- **Nightingale1360**, `46e5e98`: Datos y Laboratorio/Canalización comparten editor
+  visual group: columnas completas con comas/Unicode, vacío global[], filas de
+  métricas función/columna/alias y añadir/quitar. Ocho funciones nativas; COUNT(*)
+  incluye todas las filas, COUNT(columna)/distintos ignoran NULL y stddev es muestral.
+  JSON manual visible bidireccional; texto inválido u otras formas se conservan.
+  Editar invalida resultados pendientes; Vista previa no crea versiones, Aplicar sí.
+  En Canalización, Guardar actualiza el nodo cuyos parámetros usa la vista previa.
+  API/MCP42 sin cambio de motor. Área45PASS única/build4.53/detector[]; ROOTgroup
+  zona,ñ suma25/14 con recuentos4/2 y distintos2/2, únicoApplyv1 y v0conservada.
+  Lab global39/6 sinApply, nodo guardado conserva columnas anteriores y cuatro
+  métricas. ES/EN390 y capturas700válidas; MAINbuild9.57/SDK42API receta y13tablas/
+  tresCSV exactos. Orden de filas, elapsed/exporttimestamp y captura inicial1000px
+  son límites de oráculo/adaptador registrados, sin cambio de datos para ocultarlos.
+- **Nightingale1366**, `3661fc8`: Explorar conserva los demás paneles y muestra el
+  estado vacío de correlación si EDA omite correlation con menos de dos columnas
+  numéricas. La matriz y Pearson/Spearman continúan con dos. Cambio de una línea,
+  sin backend ni catálogo nuevo42. ÁreaEDA13PASS única/build10.43/detector[];
+  API/SDK reales cero/una/dos columnas y UIgenérica/390/consoleerrors[] verificados.
+  MAINbuild23.64/SDK42preview/13tablas naturales y tresCSV exactos; once tablas de
+  negocio con tres conjuntos/v0 y tres versiones intactas. Las EDA normales añaden
+  su log/secuencia: baseline final15, no se afirma inmutabilidad global duranteEDA.
+
+Manual nativo actualizado por CAS:198párrafos,3anexos Nightingale/Vulcan/Mercator,
+195otros nodos y estilos íntegros, sin cambio de catálogos. Evidencia durable:
+`C:/Users/luism/.codex/scratch/hoard-loop23/docs-next74/` y las carpetas de las cuatro
+entregas. Grafo y memorias se actualizan conservando todos los datos anteriores.
+Nuevas Ledger1369 etiquetas y Hermes1368 separación de viaje con nombre están en
+implementación aislada y no forman parte del total74. Limpiezas históricas
+Cook1205/Gamer1215/Hypatia1238 no se reintentan ni se evaden.
