@@ -15128,3 +15128,19 @@ Manual y grafo reflejan estas funciones nativas; las memorias conservan el texto
 anterior completo. Talos1374 lector de textos está en implementación aislada y
 queda fuera de77 hasta su revisión e integración. Las limpiezas históricas
 Cook1205/Gamer1215/Hypatia1238 siguen sin reintentos ni atajos.
+
+## HoardDex: equipos de gimnasio y Liga RF/VH —24-10-2026, #1361
+
+Main240 432ee5ef: Guía → Combates con22equipos/44contextos de edición,
+ocho líderes y Liga inicial/mejorada con las tres variantes de inicial rival.
+Niveles, cuatro movimientos, objetos equipados y enlaces a fichas conservan
+edición, consulta y vuelta; no confundir inventario del entrenador con equipo.
+Diecinueve fuentes primarias fijadas porSHA y scripts de acceso: la Liga mejorada
+requiere reparar la conexión de Celio, no sólo volver a visitar la Liga.
+MCP35/413llamadas,415TS+3CJS,tsc/buildweb limpios enMain. Web8899 yAndroid
+x86final240 probados; ambosAPK/JSON y17884medios preservados. ARM64 compilado,
+sin teléfono físico. Originales0/1025web y1/1025Android intactos, ES/System/Negro.
+CAS1exacta, ff-only, sinpush/8897; viejasAPK propias retiradas conSHA.
+Fuentes, pruebas y límites: research-inbox/hoarddex-battles1361/FINAL240.json.
+Sin banco para otras ediciones, guía completa, progresoROM ni paridad global.
+Petición nueva1380 prioriza filas de contrapartes yDLC anidados; Hoenn1375 espera.

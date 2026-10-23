@@ -1761,3 +1761,12 @@ al final del turno. Silver actualiza en su sitio y conserva los borradores de
 campos, diálogo y constructor de equipo. Pruebas con transporte SSE controlado,
 handlers nativos y navegador verifican cambios antes del fin del turno. La
 comprobación no evalúa al modelo ni afirma paridad en todos los Hoards.
+
+## HoardDex: continuar tras los equipos RF/VH —24-10-2026, #1361
+
+Entregados22equipos/44contextos RF/VH enGuía/MCP con fuentes fijadas y pruebas
+web/Android. Próximo1380 por petición deLuis: juegos únicos a toda la fila,
+contrapartes juntas yDLC como pestañas dentro del juego, conservando53IDs.
+Después1375: líderes/Liga Hoenn con variantes y acceso contrastados por edición.
+Siguen otras guías, formas/localizaciones, evoluciones históricas, SafariRBY/DS,
+motores especiales y reglas/presets Nuzlocke; sin minijuegos ni paridad declarada.
