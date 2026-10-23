@@ -1,5 +1,26 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex: Safari de Rubí/Zafiro —23-10-2026, #1336
+
+Herramientas → Captura y MCP amplían el contexto Safari a Rubí/Zafiro con sus
+fuentes primarias propias, incluida la tabla de factores4/3/2/1. Acercarse cuenta
+cada elección realizada; los Pokécubos afectan huida, sin alterar captura.
+Se conserva una bola condicionada al objetivo presente, acciones/Deshacer/reinicio,
+invalidación y ficha/vuelta. Sin predicción de huida, estrategia ni encuentro completo.
+
+Main233 `03ba7945` integra dos commits exactos aprobados CAS3; propio build web,
+400TS+3CJS, TypeScript0 y MCP33/394. QA232 web1280/390 ES/EN y Android visible
+Studio/ADB ES/fuente1 y EN oscuro/fuente1,3; diez vistas con acabado fresco ship,
+documenter posterior y oráculo independiente108estados, con límites separados.
+APK finales233x86/ARM conJSON, Hermes232 idéntico y17.884medios/fuentes porSHA;
+x86 instalado-r y cálculo real33,6947%,1/1025 intacto y preferencias restauradas.
+ARM sólo compilado/verificado sin teléfono físico. Tres APK anteriores retiradas
+porruta/huella y JSON históricos conservados. Recibos `research-inbox/hoarddex-rs1336`.
+
+El manual actualiza sólo HoardDex conCAS/readback y conserva197otros párrafos/estilos.
+Continúan SafariRBY/DS, incursiones, guías/jefes, seguimiento Nuzlocke y cobertura
+histórica/porforma. No paridad global ni minijuegos, sinpush y8897intacto.
+
 ## HoardDex: Safari con acciones observadas —23-10-2026, #1318
 
 Herramientas → Captura y `fielddex_capture` añaden un contexto Safari propio

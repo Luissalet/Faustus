@@ -1,5 +1,14 @@
 # Objetivos acordados
 
+## HoardDex: continuar después de Safari RSE —23-10-2026, #1336
+
+Main233 añade Rubí/Zafiro al Safari de Esmeralda/RF/VH, con fuentes propias y
+QA web/Android; conservar los límites de una bola y las acciones observadas.
+Continuar Nuzlocke con registro de encuentros/reglas por partida, guías y combates,
+SafariRBY/DS, incursiones y datos históricos/formas pendientes. Las reglas de
+desafíos son apuntes del usuario; no inferir capturas, bajas ni disponibilidad
+de una consulta o de un cálculo. Mantener partidas y copias antiguas compatibles.
+
 ## HoardDex: Safari con acciones observadas —23-10-2026, #1318/#1336
 
 Main231 añade Safari de Esmeralda y RF/VH; conservar una bola condicionada a
