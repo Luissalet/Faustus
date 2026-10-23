@@ -1,5 +1,15 @@
 # Objetivos acordados
 
+## HoardDex: continuar tras el cuaderno Nuzlocke —23-10-2026, #1345
+
+Main237 añade registro manual de encuentros/reglas por partida, asociado a
+ejemplares y al mismo modelo de copias/Deshacer/MCP. Mantener su carácter manual,
+la edición de la partida y el historial original tras evolución/borrado.
+Continuar1361: equipos de líderes yLigaRF/VH por fuente primaria, variantes de
+Campeón/revancha y enlaces a fichas. No extrapolar tablas heredadas sin scripts.
+Después ampliar guías, reglas/presets, otrosSafari/incursiones, evoluciones y
+cobertura porforma/edición; no inferir disponibilidad de una anotación o cálculo.
+
 ## HoardDex: continuar después de Safari RSE —23-10-2026, #1336
 
 Main233 añade Rubí/Zafiro al Safari de Esmeralda/RF/VH, con fuentes propias y

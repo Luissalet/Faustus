@@ -1,5 +1,34 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex: cuaderno Nuzlocke por partida —23-10-2026, #1345
+
+Colección → Mis ejemplares añade un cuaderno opcional con reglas y límite manual,
+encuentros por zona/fecha/resultado, capturas nuevas o enlazadas y estado compartido.
+Los resultados sin captura no crean ejemplares. Corregir conserva la identidad
+observada tras evolución/borrado; quitar un registro conserva el ejemplar.
+Copias antiguas compatibles y Deshacer. MCP34 comparte el modelo y devuelve
+propuestas applied:false. Reglas recordatorias, sin aplicación automática.
+
+Main237515a27b2 integra cuatro commits exactos aprobados CAS1. Comprobación propia:
+build web,408TS+3CJS, TypeScript0 y MCP34/404. QA web8899 ES/EN1280/390 y
+Android visibleStudio/ADB, normal/fuente1,3; F1 de historia MCP corregido235,
+F1 de cinco inputs48dp resuelto236 y puntuado por acabado fresco, documenter
+posterior preserva diseño/tokens/historias. No se amplía su veredicto a paridad global.
+
+AmbasABI237 conJSON, Hermes236 idéntico y17.884medios/fuentes SHA conservados.
+x86 final instalado-r y probado: registro/cap/baja/fichaRF/vuelta. Se retiran sólo
+partidasQA propias porUI, originales web0/1025 yAndroid1/1025 preservados;
+ES/System/font1/Negro restaurados. CincoAPK previas/candidatas retiradas porSHA,
+JSON históricos conservados. ARM sólo compilado/verificado sin teléfono físico.
+416foreign intactos/0indexados, sinpush ni cambios8897. Recibos
+`research-inbox/hoarddex-nuzlocke1345`. El Manual incorpora sólo el párrafo HoardDex
+conCAS/readback y preserva197otros nodos y estilos.
+
+Continúa1361 con equipos contrastados de líderes yLigaRF/VH enGuía/MCP; todavía
+sin cobertura implementada. Siguen guías completas, reglas estrictas/presets,
+SafariRBY/DS, motores especiales, evoluciones históricas yformas. Sin minijuegos
+ni declaración de paridad completa.
+
 ## HoardDex: Safari de Rubí/Zafiro —23-10-2026, #1336
 
 Herramientas → Captura y MCP amplían el contexto Safari a Rubí/Zafiro con sus
