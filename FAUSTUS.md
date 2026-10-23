@@ -15071,3 +15071,60 @@ entregas. Grafo y memorias se actualizan conservando todos los datos anteriores.
 Nuevas Ledger1369 etiquetas y Hermes1368 separación de viaje con nombre están en
 implementación aislada y no forman parte del total74. Limpiezas históricas
 Cook1205/Gamer1215/Hypatia1238 no se reintentan ni se evaden.
+
+
+## Hoards: separar viajes, editar etiquetas y resolver congruencias · 24-10-2026
+
+Tres capacidades comprobadas amplían el bucle a77mejoras integradas
+(73funciones+4UI),75DONE y dos históricas aprobadas/integradas abiertas por
+conciliación de limpieza. Sin push ni arranques de servicios/modelos ajenos.
+
+- **Hermes1368**, `664d8c8`: Viaje permite revisar reservas seleccionadas,
+  dar nombre opcional a su separación y consultar el resultado real del viaje
+  original y del creado. «Abrir viaje creado» navega expresamente al ID devuelto;
+  guardar no navega ni guarda notas pendientes. Las reservas conservan IDs y
+  contenido; personas y gastos permanecen en el viaje original. Nombre vacío
+  usa el título automático nativo. Error/reintento conservan el formulario;
+  ediciones posteriores se mantienen pendientes y otra selección abre un nuevo
+  formulario. API/MCP115 existentes, sin motor nuevo. Área38PASS/build1.81;
+  MAIN2.02/API-SDK115/todas15tablas naturales exactas tras ROOT,7viajes9reservas.
+  ROOT separó un hotel con nombreUnicode, conservó borrador de notas durante
+  recarga y abrió el nuevoID. No se promete conservar esas notas tras navegar
+  deliberadamente a otro viaje, ni idempotencia ante pérdida de respuesta
+  posterior al commit. Capturas desktop/móvil700 válidas y revisión independiente.
+- **Ledger1369**, `c32da84`: Movimientos muestra etiquetas guardadas aparte del
+  origen/documentos y permite añadir/quitar desde «Etiquetas». Cada cadena es
+  literal, incluidas comas, espacios y #; eliminar un duplicado quita sólo esa
+  posición. Guardar envía únicamente tags por el PATCH nativo y conserva importe,
+  fecha, notas, cuenta, documentos y repartos. Las búsquedas actuales anuncian
+  etiquetas; siguen siendo coincidencias textuales, sin igualdad exacta nueva.
+  Traspasos conservan su restricción actual de edición. Respuestas tardías no
+  sustituyen otra ficha ni limpian cambios posteriores; un guardado actualiza
+  el filtro vigente. API/MCP49 sin cambio de backend. Área26PASS/build1.96;
+  MAIN2.06/API-SDK49/15tablas naturales exactas. ROOT guardó una etiqueta literal,
+  buscó/reabrió y conservó borrador de alta, repetido restante e importe−45EUR.
+  Error503 y dos retrasos de autor comprobados sin rearmar marcadores.
+- **Hipatia1373**, `09476da`: «Congruencias lineales» resuelve a×x≡b(modm)
+  con cadenas enteras exactas, familia completa x=r+k×período, MCD, recuento de
+  residuos módulo|m| e identidad de Bézout reutilizada.35x≡14(mod28) da2+k×4
+  y siete residuos. Explica incompatibilidad, todos los enteros y normalización
+  del módulo negativo; cero es error matemático. Con b=1 obtiene un inverso
+  cuando existe. No enumera listas enormes ni resuelve sistemas CRT. API
+  POST/api/math/linear-congruence y nueva herramienta math_linear_congruence
+  comparten motor; catálogo65=47estudio+18profesor. Panel/copiar/borradorFaustus
+  conserva cifras mayores de2^53, entradas ante error y ediciones ante respuestas
+  pendientes. Área16PASS/build20.49/detector[]; API/SDK65 reales concordantes.
+  ROOT comprobó familia, incompatibilidad, ceros, negativos, gran inverso,
+  portapapeles restaurado y edición/cierre durante dos retrasos distintos.
+  Peer validó su móvil390 y otros tres casos por API/SDK; banco de estudio
+  conservado. La sincronización nativa registra el dispositivo nuevo y actualiza
+  lastPushAt; ambos metadatos se preservan. MAINbuild21.34/API-SDK65 coinciden,
+  todas15tablas naturales exactas y chunk matemático7650d255...bb053 servido.
+  Límites de oráculos SQL WITHOUTROWID/BLOB y capturas móviles IAB inválidas
+  registrados expresamente; el oráculo de bundle principal se corrigió para
+  comprobar el chunk matemático cargado bajo demanda, sin repetir SDK ni builds.
+
+Manual y grafo reflejan estas funciones nativas; las memorias conservan el texto
+anterior completo. Talos1374 lector de textos está en implementación aislada y
+queda fuera de77 hasta su revisión e integración. Las limpiezas históricas
+Cook1205/Gamer1215/Hypatia1238 siguen sin reintentos ni atajos.
