@@ -1,5 +1,16 @@
 # Objetivos acordados
 
+## HoardDex: continuar después de las calculadoras —23-10-2026, #1288/#1195
+
+Daño y captura ordinaria viven en Herramientas y MCP33. Captura añade42contextos
+ordinariosI–IX; Safari, incursiones, historia y motores especiales necesitan reglas
+propias. Continuar las guías de aventura y jefes, seguimientoNuzlocke y cobertura
+por edición, forma y lugar; resolver los parciales antes de declarar paridad.
+Probar web y Android con el emulador visible/ADB, preservar partidas y distinguir
+fuentes, datos ausentes e hipótesis. Las ABI y su ejecución se acreditan por
+separado; no hay teléfonoARM64. Sin minijuegos ni nuevas decisiones pendientes
+de Luis por esta entrega.
+
 ## Silver: biblioteca PMD completada — 23-10-2026, #1180
 
 Completadas las 1.469 especies y formas del motor actual normales y shiny,

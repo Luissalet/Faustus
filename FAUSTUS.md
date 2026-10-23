@@ -1,5 +1,29 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex: captura ordinaria por edición —23-10-2026, #1288
+
+Herramientas → Captura y `fielddex_capture` comparten un motor local de sólo
+lectura: edición, Pokémon/apariencia, PS exactos, Poké Ball, estados y condiciones.
+Distingue el total, éxito normal, probabilidad de lanzamiento crítico y éxito si
+es crítico. Master conserva los límites que impiden lanzar; el resultado se
+invalida al editar y el borrador vuelve desde la ficha sin cambiar la colección.
+Ratios históricos derivados de23familias fijadas, manual explícito y datos ausentes
+sin convertirlos en0%; las formas emparejadas sólo por estadísticas se rotulan
+como referencia hipotética. Cubre42contextos ordinariosI–IX. Safari, incursiones,
+garantías de historia y11contextos especiales/JP siguen sin fórmula prestada.
+
+Cuatro commits225–228 aprobados CAS1 e integrados por avance rápido en Main228
+`eda1a627`. La fuente funcional227 tiene recorridos propios web1280/390 ES/EN y
+Androidx86 visible porADB, fuente1,3 y campos48dp; conserva1/1025. Revisión de
+acabado fresca con F1documental resuelto, sin certificar universalmente el motor.
+Los recibos finales en releases y research-inbox/hoarddex-capture1288 acreditan
+por separado las comprobaciones de Main, ambasABI, bundle/medios y ejecución;
+no hay teléfonoARM64. Manual nativo actualizado con CAS/readback,197otros
+párrafos y estilos intactos; grafo sin modelos/embeddings. No push.
+
+Continúa la paridad útil con guías de aventura/combates, seguimientoNuzlocke,
+cobertura histórica/formas/encuentros y motores de cálculo pendientes. No minijuegos.
+
 ## Biblioteca de kits y descarga completa del historial — 23-10-2026, #1298/#1303
 
 **HomeHoard:** Kits y equipo incorpora búsqueda por todas las palabras del nombre
