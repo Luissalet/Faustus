@@ -14617,3 +14617,49 @@ Total54mejoras integradas:51funciones+3UI,52DONE+dos antiguas limpiezas abiertas
 Manual nativo, grafo sin embeddings, memoria y continuidad actualizados en1321.
 Evidencia C:/Users/luism/.codex/scratch/hoard-loop23/vulcanparams23/INTEGRATED.md
 y C:/Users/luism/.codex/scratch/hoard-loop23/docs-next54/. Sin push.
+
+
+## Silver: revisión artística y Dynamax/Z en tiempo real — 23-10-2026, #1317
+
+Las reglas 13 añaden Dynamax/Gigamax y movimientos Z al motor compartido de la
+app, HTML y repeticiones. Dynamax dura 18 s, multiplica los PS por 1,5–2 y dibuja
+el sprite a escala uniforme 2,2. Convierte los movimientos en Max y recupera
+tamaño, PS y movimientos al terminar, cambiar o caer. Un cristal compatible
+habilita el movimiento Z genérico, de especie o su bono de estado: un uso por
+entrenador al empezar la preparación, compartido entre ambos puestos de dobles.
+Los botones, teclado, mando, IA, entradas en línea y códigos portátiles comparten
+las reglas. Las versiones 1–12 conservan su comportamiento. Duraciones, estados
+y subidas se adaptan al tiempo real existente; no se afirma paridad completa
+con los turnos ni se añade teracristalización.
+
+La revisión independiente miró 69 identidades y 138 variantes de ascendencia
+generada: Idle, ciclo Walk A/B/A y Attack en cuatro direcciones, a tamaño nativo
+y ampliación 2x. Catorce variantes tuvieron capturas del Animator. El único fallo
+retenido fueron los puños naranja de Darmanitan de Galar Zen shiny, corregidos
+a fucsia/rojo en sus 16 poses. Los tres recursos compilados son idénticos en RGBA
+al candidato aprobado y las otras 2.937 variantes conservan sus metadatos.
+La biblioteca sigue completa: 1.469 pares y 2.938 variantes. Se conservan los
+originales publicados y suministrados; no se promete una garantía matemática
+de anatomía ni rendimiento a 60 FPS.
+
+La suite Python completó 661 casos, con 656 aprobados y cinco omisiones, antes
+de los últimos detalles del motor; después se comprobaron con 594 pruebas Node
+aprobadas, una omitida, y pruebas Python focales independientes. Los dos builds
+y el MCP nativo con 195 herramientas verificaron reglas, equipos, inicio, cierre,
+inspección y exportación. La QA humana en la app comprobó Gigamax con 220 frente
+a 110 PS, daño y parálisis de Gigatronada, regreso al cambiar, movimiento Z de
+potencia 175, daño y uso único, y resultado por rendición guardado a los 53,03 s
+mediante la repetición del motor. El HTML final incorpora entradas, metadatos y
+créditos exactos de la biblioteca. Con conexiones externas bloqueadas y una sola
+petición del HTML se comprobaron Gigamax propio, Dynamax de la IA, regreso de
+tamaño al cambiar, Darmanitan shiny corregido y Z desde el teclado con K.O. de
+Milotic a los 13,4 s; terminó por rendición a los 17,43 s. No se certifican mando
+físico, sesión en línea de dos navegadores, móvil ni FPS. La integración en Main
+conserva 3.039 archivos anteriores y los 21 recursos del build coinciden con el
+worktree revisado; se conservaron los archivos ajenos y recursos estáticos
+anteriores. Evidencias y límites en
+research-inbox/silver-quality1317 y Silver/docs/RT_DYNAMAX_Z.md.
+
+La app habitual 5230 sigue apagada. Sin modelos ni push. El antiguo build y
+worktree 1180 continúan retenidos por el rechazo automático de borrado anterior;
+no se reintenta ni se elude.
