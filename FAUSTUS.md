@@ -13906,12 +13906,12 @@ cancelación de una revisión restaura también el color Workbench capturado por
 valor, cámara, fotograma y contexto. QAoffline, sin llamadas a Sparks; la calidad
 de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.
 
-### Theseus: inspección dentro de Vitruvius (22-10-2026)
+### Theseus: inspección dentro de Vitruvius (23-10-2026)
 
 Theseus se desarrolla como módulo Inspección de Vitruvius. El servidor antiguo
 del puerto 5217 no se utiliza y la aplicación compartida del 5191 permanece
 apagada. Consultar el catálogo MCP no inicia el servidor ni reanuda trabajos.
-La fuente revisada `b5b5f0d` ofrece 40 herramientas MCP de Theseus, 72 operaciones
+La fuente empaquetada `a5e4c50b` ofrece 42 herramientas MCP de Theseus, 73 operaciones
 estáticas, 52 de sesión binaria y 40 de ejecución; estos recuentos no acreditan
 el alcance semántico completo. La instalación y publicación de este lote tienen
 sus propios recibos y no se deducen de una revisión de fuente.
@@ -13934,13 +13934,24 @@ hallazgos y recibos anteriores se mantienen. Las coincidencias finitas no
 demuestran equivalencia general ni independencia automática de la prosa.
 
 El ledger de 207 contratos en `docs/THESEUS-COVERAGE.json` de Vitruvius mantiene
-el desarrollo incompleto, sin porcentaje. Siguen abiertos Cutter, ejecución
-arbitraria de órdenes binarias, depuradores libres y los contratos semánticos
-individuales pendientes. La tarea Ágora 1040 permanece abierta; 1148 sincroniza
-esta documentación. La validación completa conservó un fallo de montaje de una
-prueba de navegador; la corrección exclusiva de pruebas y la repetición de sus
-31 casos tienen revisión independiente. Se conservan ambas corridas, sin
-presentarlas como una sola suite verde. El trabajo actual no usa Sparks,
+el desarrollo incompleto, sin porcentaje. Cutter y las vistas Android tienen
+aceptación independiente de fuente y de la wheel W2 instalada privadamente.
+El editor permite órdenes explícitas por sesión/generación y conserva respuestas
+transferibles después de cerrar. Android añade resúmenes enlazados, ventanas de
+manifiesto UTF-16 y tablas por idioma con texto léxico y saltos conservados.
+Siguen abiertas la ejecución arbitraria fuera del editor, los depuradores libres
+y las exigencias semánticas o de plataforma individuales; 1040 permanece abierta.
+La full conservada pasó 1910 casos, falló seis y omitió cinco. Los seis fallos y
+tres oráculos de documentos retenidos pasaron sin cambios en dos corridas de
+nueve casos, una independiente. No hubo una full verde única ni se ha demostrado
+la causa de todos los límites temporales. La revisión acepta esa composición
+para empaquetar, con sus límites explícitos. La comparación de cierre de Cutter mantuvo el puente y las peticiones mientras
+cambiar la forma del callback privado de QA produjo exit0. El fallo inicial
+exacto y la necesidad de la disposición explícita del puente no están aislados.
+La entrega HTTP de documentos es exacta; la descarga completada del navegador
+no está acreditada por esta QA instalada. W2 tiene SHA-256
+`e63a58672846add8c6d6c2871ffc3aa91b1ab4c6d9b86cf0fce0e07bcf44e375`.
+El trabajo actual no usa Sparks,
 modelos de texto alternativos, GPU, SABER ni ADB compartido. El manual nativo
 ya refleja el alcance revisado; instalación, grafo y publicación se registran
 separadamente.
