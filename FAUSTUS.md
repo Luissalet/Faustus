@@ -14567,3 +14567,29 @@ tests heredados del puente fuera de esta entrega: no se afirma suite global
 verde ni se reconstruye compatibilidad retirada para ocultarlos.
 Manual nativo, grafo sin embeddings, memoria y continuidad: lote1304.
 Evidencia C:/Users/luism/.codex/scratch/hoard-loop23/docs-next51/.
+
+
+### Unir registros de envío y preparar referencias de archivos (23-10-2026)
+
+Hermes permite unir manualmente dos registros del mismo envío desde la ficha:
+se busca el duplicado, se comparan siete campos y se confirma qué ficha conserva
+su identidad. Completa únicamente vacíos y reúne correos, eventos no duplicados
+y notificaciones; conserva los demás valores de la ficha principal y sus ediciones
+pendientes. La unión elimina el duplicado sin deshacer, no concatena notas ni
+modifica pedidos externos. Usa shipment_merge nativo, API/MCP115 existentes.
+
+Atlas permite seleccionar hasta20 referencias de todo el proyecto, internas,
+externas o ausentes, y preparar su objetivo, ámbito, participantes y metadatos.
+La vista distingue revisión registrada de un archivo ausente y entrada externa
+de sólo lectura. Copiar y descargar comparten el texto JSON nativo completo,
+conservando enteros de modificación sin redondeo del navegador. atlas_context
+lee originales y refresca registros elegidos; no escribe originales, ejecuta
+archivos ni incluye su contenido. API/MCP14 existentes, sin dependencia nueva.
+
+Ambas entregas DONE con revisión independiente CAS1 y ROOT UI/API/MCP; MAIN y
+retirada de QA/worktree/rama propios verificados. Total53mejoras del bucle:
+50funciones+3UI,51DONE+dos antiguas limpiezas aprobadas pendientes de conciliación.
+Manual nativo actualizado por inserción en dos párrafos; grafo sin embeddings,
+memoria y continuidad conservan datos ajenos. Sin push ni apps/modelos reales.
+Evidencia C:/Users/luism/.codex/scratch/hoard-loop23/docs-next53/ (tarea1312),
+hermesmerge23/INTEGRATED.md y evidence/atlascontext23/INTEGRATED.md.
