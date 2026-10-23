@@ -14909,3 +14909,49 @@ enlaces, procesos ni listeners. Fallos de harness/readiness conservados, sin
 restaurar fixtures, repetir marcadores ni tocar servicios/modelos/datos ajenos.
 Recibos y límites: research-inbox/hypatia1194/CONTINUIDAD.md y scratch hoard-loop23
 nightchartfilter23/hermesperson23/vulcancatalog1347. Sin push.
+
+
+## Hoards: receta de exposición, enteros exactos y fecha real de interacción (23-10-2026)
+
+Total del bucle codex-hoard23:70mejoras=67funciones+3UI,68DONE y dos históricas
+integradas aprobadas abiertas por conciliación de limpieza. Tres entregas CAS1
+revisadas y ROOT probadas, integradas exactas, con QA propias apagadas y
+worktrees/rama normales retirados tras inspección física sin enlaces ni procesos.
+
+- **Daguerre1353**,c5784e91a6492fae42977cf8f1e8c7e8af8200cf:
+  Exposición guardada de receta−5..+5EV/dosdecimales, guardar sólo esa clave o
+  quitarla con null.0EV no es ausencia. Conserva otros ajustes, metadata drafts,
+  estrellas y preferencia XMP. Guardar no renderiza ni modifica original; export
+  conserva su rango−3..+3 separado. API/MCP96 existentes. AutorNode16/área29,
+  build14.04/MAIN1.87;503retry/delaylateedit/A→B material/ESEN390. ROOT−4.5→0→null,
+  draftlabelretenido sinmetadataSave/ROOTB−1intacto;12JPEG/XMPexactos. MAINSDK96/API
+  y16tablas:14intactas, sóloagent_calls+1 ysu secuencianativa+1 esperados.
+- **Hypatia1354**,4bc576f99eaad0703514d0b96e2b68f18430e867:
+  MCD/MCM no negativos, identidad de Bézout y divisiones de Euclides sobre dos
+  enteros decimales con signo. Entradas/resultados enteros son strings exactos;
+  coeficientes no únicos, ceros explícitos y límites de conversión del runtime.
+  API/math/integer-pair ymath_integer_pair comparten cálculo local, sin modelo
+  ni banco. MCP64/student46/teacher18. UI ejemplo/copia/Faustus/errorretiene y390.
+  ROOT−99/78→gcd3lcm2574x11y14/copyREAL250; error1/2 corregido a números>2^53,
+  MCM81129638414606717724586024108035. Peer caso independiente18divisiones.
+  Área inicial24PASS3FAIL porcontadoresyexpectativaHTTP400/422, focal8PASS;
+  no claimfullsuite. Build30.85+SW433/MAIN10.79+SW206, SDK64/API/28tablasnaturales
+  exactas. PrimeraUI añadió3KVsync y2teachertablesvacías nativos, preservados.
+  Un oráculoMAIN asumió coeficientes de un ejemplo ajeno; se corrigió la prueba
+  de identidad no única, sin tocar producto. Logs/evidencia conservados.
+- **Mercator1355**,39b2274616665c6f94ec64fb3605019a0acc6136:
+  Interacción comercial con fechaISOzona opcional, vacío usaahoraservidor;
+  historialOcurrió/Registrado conISOguardado/ordenregistro/hasta200 yexportcompleta.
+  Retryidéntico conserva request_id nativo; guardarinteracción conserva borrador
+  de oportunidad y edición posterior. API/MCP25 existentes.18CRMtests una vez,
+  static app sinnpm build. ROOTúnicoactivity+05:30ytitlependingconservado;
+  sourceMAIN/API-SDK25/13tablas10activities3companies3deals exactpostROOT.
+  CapturasROOTmostraronotrasregiones poradaptador, EXCLUIDAS como prueba visual:
+  funciónROOTAX/DOM ydatosguardados sí comprobados; acabado en fotosválidasautor
+  desktop/mobileinspeccionadas porpeer, sin perseguircapturasni repetirwrites.
+
+Fallos propios de harness/readiness permanecen en INTEGRATED.md y logs, sin
+restaurar datos ni repetir semillas/marcadores/suites. Detalle y límites en
+research-inbox/hypatia1194/CONTINUIDAD.md y scratch hoard-loop23 dagrecipe1353,
+hypatiaeuclid23 ymercatoractivity23. Ningún modelo/servicio/dato ajeno tocado.
+Manual y grafo documentan capacidades nativas; sin push.
