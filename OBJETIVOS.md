@@ -22,9 +22,12 @@ principal está compilada. No se certifican calidad artística autónoma, vuelo
 completo a 5000 m/s, visual móvil ni paridad con todas las referencias.
 Las apps detenidas se conservan bajo demanda; no se arrancan al actualizar.
 
-La reconstrucción multivista genuina sigue pendiente en #1185, dependiente de
-la incidencia de rendimiento #1176 antes de nuevos ensayos GPU. No se presenta
-como fusión un lote de generaciones independientes. Los puestos visuales por
+La recuperación operativa #1176 se comprobó a 60 FPS; su causa histórica sigue
+abierta en #1186. La reconstrucción multivista #1185 tiene un candidato aislado,
+pesos locales verificados y 285 pruebas CPU; faltan ensayo GPU, calidad de malla
+y revisión antes de integrarlo. El transporte API/MCP/UI se probó con un fixture
+CPU, sin atribuirle generación real. No se presenta como fusión un lote de
+generaciones independientes. Los puestos visuales por
 agente, otro cuerpo planetario y multijugador siguen condicionados a un caso
 de uso concreto. Biblioteca musical excluida por Luis, sin servicios de pago o
 API de ejecución externa. Evidencia completa en
