@@ -1,5 +1,35 @@
 # Objetivos acordados
 
+## Ampliaciones de agentes, 3D y videojuegos — 23-10-2026, #1146
+
+Integrados en Faustus: operaciones nativas Unity (#1138), checkpoints completos
+y recuperación de Blender (#1139), operaciones sobre escenas Godot guardadas y
+depuración por proceso (#1178), objetivo persistente por conversación (#1089) y
+cuatro plantillas editables de encargos (#1181). API, MCP y flujo normal comparten
+las capacidades. El objetivo conserva el brief que recibió cada run y el recibo
+de la continuación incluso tras pausa, completado y expiración del outbox.
+Las plantillas no crean programaciones ni envían mensajes.
+
+En la familia: perfiles de referencia y comentarios por plano de Prospero
+(#1140, integrado por #1167), borrador 3D local de una GPU en Vulcan (#1141) y
+dos centinelas con percepción, aviso, pasada y retorno en Blood Arrows (#1161).
+La investigación offline de conformance DeepSeek/Maya (#1142) no justificó un
+cambio de motor; no se modificó el modelo global ni su receta.
+
+Pruebas de integración: 67 casos de objetivos/Godot/autoridad/skills, 24 del
+objetivo y plantillas, MCP nativo y navegador con datos propios. La interfaz
+principal está compilada. No se certifican calidad artística autónoma, vuelo
+completo a 5000 m/s, visual móvil ni paridad con todas las referencias.
+Las apps detenidas se conservan bajo demanda; no se arrancan al actualizar.
+
+La reconstrucción multivista genuina sigue pendiente en #1185, dependiente de
+la incidencia de rendimiento #1176 antes de nuevos ensayos GPU. No se presenta
+como fusión un lote de generaciones independientes. Los puestos visuales por
+agente, otro cuerpo planetario y multijugador siguen condicionados a un caso
+de uso concreto. Biblioteca musical excluida por Luis, sin servicios de pago o
+API de ejecución externa. Evidencia completa en
+`D:/LocalAI/research-inbox/refs-implementation-20261022/ESTADO-20261023.md`.
+
 ## Fiabilidad de Sparks y Faustus en trabajos grandes — #835
 
 **Decisión de Luis (22-10, 11:10):** el problema original (respuestas corruptas
