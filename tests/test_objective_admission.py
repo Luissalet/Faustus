@@ -82,3 +82,34 @@ async def test_brief_captured_before_admission_matches_run_despite_later_changes
         retry = await client.post("/api/session/session-1/objective/continue", json={"expected_revision": 1})
         assert retry.status_code == 200 and retry.json()["run_id"] == result.json()["run_id"]
         if change != "edit": assert store.get("alice", "session-1")["status"] == change
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["paused", "complete"])
+async def test_state_changed_before_context_keeps_accepted_receipt_after_outbox_expiry(admission, monkeypatch, status):
+    app, store = admission
+    original = chat_routes.build_chat_context
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def gated(*args, **kwargs):
+        entered.set(); await release.wait(); return await original(*args, **kwargs)
+    monkeypatch.setattr(chat_routes, "build_chat_context", gated)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        pending = asyncio.create_task(client.post("/api/session/session-1/objective/continue", json={"expected_revision": 1}))
+        await asyncio.wait_for(entered.wait(), 5)
+        changed = await client.post("/api/session/session-1/objective/state", json={"expected_revision": 2, "status": status, "result": "Explicit delivered result"})
+        assert changed.status_code == 200
+        release.set(); result = await pending
+        assert result.status_code == 200 and result.json()["run_id"]
+        for _ in range(100):
+            if not agent_runs.is_active("session-1"): break
+            await asyncio.sleep(.01)
+        binding = store.get("alice", "session-1")["runs"][0]
+        assert binding["brief"]["status"] == status and binding["revision"] == 3
+        import sqlite3
+        with sqlite3.connect(chat_outbox.default_path()) as db:
+            db.execute("UPDATE outbox SET updated_at='2000-01-01T00:00:00Z'")
+        chat_outbox.purge_stale()
+        assert chat_outbox.get(owner="alice",session_id="session-1",client_message_id=result.json()["client_message_id"]) is None
+        retry = await client.post("/api/session/session-1/objective/continue", json={"expected_revision": 1})
+        assert retry.status_code == 200 and retry.json()["run_id"] == result.json()["run_id"]
+        assert store.get("alice", "session-1")["status"] == status

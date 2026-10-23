@@ -158,7 +158,8 @@ class ObjectiveStore:
             if row is None:
                 return None
             captured = binding if binding is not None else row
-            if captured["id"] != row["id"] or captured["status"] != "active":
+            accepted_continuation = bool(client_message_id and row["continuation_id"] == client_message_id)
+            if captured["id"] != row["id"] or (captured["status"] != "active" and not accepted_continuation):
                 return None
             db.execute("INSERT OR IGNORE INTO objective_runs VALUES(?,?,?,?,?)", (row["id"], run_id, captured["revision"], self.clock(), client_message_id))
             return row["id"]
