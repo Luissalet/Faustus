@@ -14430,34 +14430,35 @@ C:/Users/luism/.codex/scratch/hoard-loop23/docs-next47/. Nightingale1289 sigue e
 implementación aislada de descarga que conserva el libro original; aún no se
 cuenta como entrega ni altera la exportación plana existente.
 
-## Silver: biblioteca PMD instalada y HTML portable — 23-10-2026, #1180
+## Silver: biblioteca PMD completa y HTML portable — 23-10-2026, #1180
 
-Entrega parcial integrada en main `9c5d6c7`: 1.468 de las 1.469 especies y formas
-del motor, normales y shiny, incluidas las 1.025 especies base. Los HTML nuevos
-incorporan la biblioteca independientemente de la caché de descargas; ambos
-equipos utilizan PMD y las batallas de más de 300 unidades conservan sprites
-compactos animados. Las páginas antiguas deben exportarse de nuevo. Se conservan
-los créditos y la procedencia de los recursos publicados, proporcionados y
-generados; no se cambia el gameplay ni se elimina ninguna función.
+La biblioteca instalada cubre las 1.469 especies y formas del motor actual,
+incluidas las 1.025 especies base, normales y shiny: 2.938 solicitudes resueltas,
+30.193 imágenes y 24 paquetes, sin identidades pendientes. Los HTML nuevos
+incluyen la colección y sus créditos con independencia de la caché de equipos
+probados. Las páginas antiguas deben exportarse de nuevo. Se conserva gameplay,
+funciones, prioridad de sprites importados y PMD compacto animado para más de
+300 unidades.
 
-Se recuperan los originales de Mega Swampert y Mega Delphox. Darmanitan de Galar
-Daruma no tiene pies; se corrigen anatomía y apoyos en los ciclos revisados.
-Falinks conserva su formación de seis miembros y las fases publicadas. El estado
-real de cobertura se consulta con `pmd_library_status`, dentro de las 195
-herramientas MCP del producto y el mismo handler de UI/API.
+Pikachu Gigamax normal y shiny tienen Idle, dos fases de pasos opuestos y Attack
+en cuatro direcciones: doce figuras dibujadas y cuatro espejos declarados. Los
+perfiles generados se conservan; frontal y trasera se corrigieron píxel a píxel
+con código por petición expresa de Luis. Su shiny mantiene cola y nubes. El
+shiny de Pecharunt corrige el interior dorado que faltaba en la fuente publicada,
+conservando sus ocho animaciones. Se preservan originales de Mega Swampert y
+Mega Delphox y las anteriores correcciones de anatomía, apoyos y Falinks.
 
-Python: 652 PASS y 5 omitidas; Node: 582 PASS y 1 omitida. Builds app/play y wheel
-verificados; revisión independiente CAS1 del commit funcional `e505839` más tres
-commits exclusivamente documentales. Combate humano HTML con conexiones
-bloqueadas: PMD en ambos equipos, movimiento, ataques, cambios, KO y pausa; no se
-afirma una victoria, rendimiento medido ni QA móvil de esta última versión.
+`pmd_library_status` comparte UI/API/MCP, dentro de las 195 herramientas.
+Compilación estricta completa; 5.692 hojas Idle/Walk únicas sin geometría inválida,
+frames vacíos ni pares normal/shiny idénticos. HTTP: 2.938 metadata y 5.594
+recursos exactos. Python 654 PASS/5 omitidas; Node 582 PASS/1 omitida. Después
+del ajuste de saltos de línea, cuatro pruebas focales PASS; builds app/play y
+wheel con 30.193 SHA verificados. No se afirma rendimiento medido, QA móvil ni
+instalación del wheel. Silver habitual 5230 sigue apagado y no se hace push.
 
-La tarea sigue abierta: sólo Pikachu Gigamax normal/shiny está pendiente. Sus
-perfiles laterales están aprobados parcialmente, pero faltan frontal/trasera y
-no se registra una hoja incompleta. El HTML Cynthia DP de prueba pesa
-160.412.453 bytes. Silver habitual 5230 sigue apagado, sin push ni modificaciones
-de datos reales. Evidencia: research-inbox/silver-pmd1180; detalles y límites en
-Silver/docs/PMD_LIBRARY.md. Manual nativo y grafo propio actualizados.
+Evidencias y límites: research-inbox/silver-pmd1180 y Silver/docs/PMD_LIBRARY.md.
+La limpieza del antiguo build del worktree fue rechazada automáticamente; se
+conserva sin reintentar ni retirar el worktree que lo contiene.
 
 
 ### Conservar libros Excel y evaluar funciones en varios puntos (23-10-2026)
