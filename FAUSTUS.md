@@ -13993,7 +13993,7 @@ de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.
 Theseus se desarrolla como módulo Inspección de Vitruvius. El servidor antiguo
 del puerto 5217 no se utiliza y la aplicación compartida del 5191 permanece
 apagada. Consultar el catálogo MCP no inicia el servidor ni reanuda trabajos.
-La fuente empaquetada `e36d23cb` ofrece 42 herramientas MCP de Theseus, 74 operaciones
+La fuente empaquetada `02c6a200` ofrece 42 herramientas MCP de Theseus, 75 operaciones
 estáticas, 52 de sesión binaria y 40 de ejecución; estos recuentos no acreditan
 el alcance semántico completo. La instalación y publicación de este lote tienen
 sus propios recibos y no se deducen de una revisión de fuente.
@@ -14052,6 +14052,28 @@ Dos eventos históricos muestran la misma firma de aborto Qt6Core/c0000409,
 pero falta el enlace exacto PID/creación/comando del primer lanzamiento. El
 control de plataforma offscreen y el posterior fallo c0000005 del callback QA
 son evidencias distintas; no demuestran la causa interna del aborto inicial.
+La aceptación instalada W4 añade composiciones sobre miembros retenidos e
+importados: comparación CIL, reconstrucción de texto como inferencia estática,
+grafos con facetas elegidas y verificación nativa con vínculos de registro y
+admisión conservados. Los estados verified, inferred, unresolved y contradicted
+mantienen su evidencia; no acreditan ejecución ni equivalencia general.
+La fuente del paquete es 02c6a200; la full única se ejecutó en su padre38984b3,
+con2028PASS/5SKIP/0FAIL/ERROR. El hijo cambia solo el ledgerMarkdown empaquetado;
+no se atribuye a ese hijo una nueva ejecución de pytest. La wheel W4 tiene SHA256
+`e9b00c059eba0aaa13137a7f513a65bb19b84a2faf01d1a61173cc443ab929ea`.
+El revisor instalado observó292llamadasMCP/34trabajos/32documentosHTTP exactos,
+54registros íntegros y dos traslados; no realizó UI. La UI raíz añade seis
+trabajos/seisdocumentos exactos/cincoregistros, rechazo de contexto incompatible
+sin trabajo nuevo y vista390. Ambos owners privados están cerrados y los seis
+originales raíz y cuatro del revisor están restaurados; perfiles conservados.
+Solo avanzan los contratos127–130; los otros203 objetos se mantienen exactos.
+Ledger:78instalados,21implementación,83semánticos,3plataforma,18publicados y4excluidos.
+El candidato documental be61ee3 sigue pendiente de su revisión y publicación
+con recibos separados. El programa207 y los depuradores libres siguen abiertos.
+La full23e con dos fallos se conserva separada. Una limpieza de otro chat retiró
+96temporales históricos antes del aviso; no se afirma que sigan en disco ni se
+recrean. Los informes/logs conservados y la evidencia activa no se sustituyen.
+
 El trabajo actual no usa Sparks,
 modelos de texto alternativos, GPU, SABER ni ADB compartido. El manual nativo
 ya refleja el alcance revisado; instalación, grafo y publicación se registran
