@@ -1,5 +1,27 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex: cálculo de daño por edición — 23-10-2026, #1216
+
+Herramientas → Daño y `fielddex_damage` comparten un modelo local de sólo lectura:
+atacante, defensor, movimiento, entrenamiento histórico y condiciones de combate.
+Muestra PS mínimos/máximos, porcentajes, tiradas e impactos elegidos; el KO de un
+uso se condiciona al acierto. Mantiene DV/experiencia de estadísticas, IV/EV y el
+sistema de puntos de Champions separados. El borrador se conserva al abrir una
+ficha y volver. Motores especiales, identidades o movimientos sin contexto tienen
+un aviso; no se prestan números de otra edición ni se interpreta ausencia como
+imposibilidad. El KO combinado de impactos aleatorios continúa pendiente.
+
+Integración ff-only de seis commits aprobados CAS1 hasta `f2c22708`, seguida del
+registro documental `51af1d93`, con código funcional idéntico a la candidata222.
+Main pasa build web,373TS+3CJS, TypeScript y MCP32herramientas/378consultas.
+Web1280/390 ES/EN y Android x86_64 en emulador visible por ADB comprobados;
+campo de nivel48dp y fuente1,3 verificados. La revisión de acabado sólo da ship
+al ajuste48dp puntuado, sin aprobación global de paridad. Los recibos de cada
+release acreditan ABI/Hermes/medios/ejecución por separado; no hay teléfono ARM64.
+Licencia MIT incorporada, sin aplicación ajena ni red para calcular. Datos reales
+de8897 intactos; no push. Sigue la paridad útil: captura, guías de aventura y
+combates, cobertura histórica por edición y formas; minijuegos excluidos.
+
 ## Historiales, kits conjuntos y calendario — 23-10-2026, #1264/#1267/#1271/#1273
 
 Capacidades nativas integradas en las ramas principales, con revisión independiente

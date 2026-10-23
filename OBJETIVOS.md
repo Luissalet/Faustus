@@ -1,5 +1,16 @@
 # Objetivos acordados
 
+## HoardDex: continuar la paridad útil — 23-10-2026, #1216/#1195
+
+Calculadora de daño integrada en interfaz y MCP32, con verificación propia de
+main y recorridos web/Android. La entrega no termina el encargo de Luis: continuar
+cálculo de captura, guías de aventura/combates y cobertura histórica por edición,
+forma y localización. Mantener explícitos los motores o datos pendientes, probar
+web y emulador visible con ADB y preservar las partidas. No se incluyen minijuegos
+ni se declara paridad completa a partir de una muestra. Las ABI y su ejecución
+se acreditan por separado; no hay teléfono físico ARM64. Sin nuevas decisiones
+de Luis pendientes por este bloque.
+
 ## Hub: rediseño de todas las pantallas — 23-10-2026, #1269
 
 Entrega HoardLink e3032f7: estructura de seis entradas con herramientas locales, aplicaciones y proyectos separados en Inicio, catálogo con una apertura principal, recursos en Sistema y formularios visuales de automatización. Las ágoras siguen siendo de proyecto; el Hub conserva las herramientas compartidas y sus APIs. El nuevo sistema azul marino/blanco/cobalto sustituye al anterior en todas las pantallas del Hub. Ver guía HoardLink/docs/hub-navigation.md y resultado final en la tarea1269. No hay una nueva decisión de Luis pendiente para esta entrega.
