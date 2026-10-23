@@ -1,5 +1,55 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Historiales, kits conjuntos y calendario — 23-10-2026, #1264/#1267/#1271/#1273
+
+Capacidades nativas integradas en las ramas principales, con revisión independiente
+y comprobación HTTP/MCP/navegador sobre datos ficticios:
+
+- **People's Hoard:** Personas → Consultar historial busca en todos los resúmenes
+  de contactos guardados, incluidos los antiguos que quedan fuera de las últimas
+  diez interacciones de una ficha. Texto AND sin acentos, persona, canal, días
+  completos de la zona local, archivadas y páginas de 25/50/100. La API y la nueva
+  `search_interactions` comparten consulta; **31 herramientas MCP**. No lee mensajes
+  externos ni incluye alias en la búsqueda textual. Consulta resúmenes, nombres y
+  apodos actuales; la paginación no congela nuevas escrituras concurrentes.
+  Integrado `c370b7f`, aprobación CAS1; 172 pruebas, build y sondas propias del revisor.
+- **HomeHoard:** Kits y equipo → Combinar kits reúne listas guardadas y suma los
+  objetos compartidos antes de comprobar las mismas existencias. Dos linternas
+  para acampada más una para emergencias requieren tres; un stock de dos deja una
+  falta, aunque cada kit separado parezca completo. `home_check_list(kits=[...])`
+  funciona en la UI, API y MCP (**19 herramientas**), con aportación por kit y ruta
+  completa de cada objeto. ID y nombre del mismo kit cuentan una vez. Conserva el
+  borrador al alternar editor/combinación; crear/borrar o retirar un kit de la lista
+  reconcilia la selección. No reserva ni consume stock, ni guarda combinaciones o
+  historial de recogida. Integrado `0679b1d` + `4aa8c965`, aprobación CAS3 tras
+  corregir IDs invisibles; 108 Python, 49 Node, TypeScript, build y sondas HTTP/MCP.
+- **Dorian's Hoard:** Laboratorio → Demostración manual → Tus pruebas permite
+  recorrer todo el historial, con filtros Todas/Pendientes/Respondidas y páginas,
+  conservando la prueba abierta y la exportación del registro completo. API
+  `/api/lab/trials/page` y nueva `list_trials` MCP (**11 herramientas**) descubren
+  IDs con el permiso `lab.run` existente y el archivo personal/demo fijado por la
+  conexión. Las pendientes conservan su predicción sellada; las respondidas
+  muestran el comprobante habitual. No modifica la bóveda del modelo aprendido,
+  permisos existentes ni biografía. Integrado `363469d` + `ae41b964`, aprobación
+  CAS2 tras corregir los selectores deshabilitados; 80 Python, 12 Node, build,
+  sondas propias HTTP/MCP y navegador bilingüe con 25 ensayos ficticios.
+- **Mercator's Hoard:** Publicación → Calendario → Descargar programadas (.ics)
+  exporta las publicaciones programadas del periodo visible y los filtros actuales.
+  API y `posts_calendar_export` MCP (**25 herramientas**) comparten motor nativo,
+  sin truncar a la primera página de 1000 registros. Fechas sin hora se mantienen
+  como días completos, offsets se convierten a UTC y horas sin zona quedan
+  flotantes para la agenda de destino. UID estable, texto/notas/enlaces, escapado
+  y plegado UTF-8. Es una copia sin sincronización ni publicación social, duración
+  o alarmas inventadas. Integrado `80d37f3` + `0f1129d6`, aprobación CAS1; 117 Python,
+  12 subtests, 3 Node, lector iCalendar independiente y navegador.
+
+Evidencia y límites: `research-inbox/people-history23`, `home-kits23`,
+`dorian-history23` y `mercator-ical1264` en D:\LocalAI. Los servicios reales
+se mantuvieron apagados; las comprobaciones de MAIN usaron perfiles ficticios.
+No push ni carga de modelos/GPU. Los README bilingües y el manual nativo incluyen
+estas funciones. Las cifras de pruebas corresponden a las ejecuciones documentadas,
+sin certificar todos los dispositivos, contraste global o fidelidad psicológica.
+
 ## Hub: estructura completa de trabajo — 23-10-2026, #1269
 
 HoardLink cambia el Hub completo por una mesa de trabajo con navegación azul marino, superficies claras y acciones cobalto. Inicio permite abrir aplicaciones y retomar proyectos; Aplicaciones da una apertura principal y agrupa los controles secundarios en Gestionar, con filtros y grupos de arranque. Proyectos conserva cada ágora con su space_id. Bandeja, Automatización y Sistema abren su vista de trabajo y un selector local da acceso al resto de herramientas, sin fila horizontal de pestañas. Sistema reúne GPU, conexiones, motores y carriles de navegador. Reglas y tareas programadas usan formularios visuales con JSON avanzado en un modo separado; conservan los campos avanzados y señalan el JSON inválido al volver. El tablero y los interiores usan el desplazamiento del documento y se ajustan al móvil.
