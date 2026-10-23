@@ -14663,3 +14663,19 @@ research-inbox/silver-quality1317 y Silver/docs/RT_DYNAMAX_Z.md.
 La app habitual 5230 sigue apagada. Sin modelos ni push. El antiguo build y
 worktree 1180 continúan retenidos por el rechazo automático de borrado anterior;
 no se reintenta ni se elude.
+
+
+## Silver: puesta en escena de Dynamax y Z — 23-10-2026, #1327
+
+La presentación RT compartida por app, HTML nuevo y grabador nativo encadena
+concentración de energía, crecimiento uniforme, onda de aterrizaje y nubes sobre
+Dynamax/Gigamax; al agotarse el tiempo contrae el sprite. Los Z cargan un cristal,
+conservan sus rótulos suministrados y refuerzan el proyectil real y el impacto
+confirmado con material según el tipo. No se inventan aciertos al fallar, bloquear
+o ser inmune, ni cambian motor, reglas 13, controles o píxeles Pokémon.
+Pausa y seek conservan sus límites; movimiento reducido mantiene estado y señales
+estáticas, y el modo sobrio omite las capas de espectáculo. El party compartido en
+dobles se consulta desde la vista del bando; una regresión real cubre carga y salida
+Z. Evidencia: research-inbox/silver-special1327 y Silver/docs/VISUAL_PRESENTATION.md.
+La coreografía es por tipos, no una animación distinta para cada firma ni una
+certificación de paridad con competidores o rendimiento.
