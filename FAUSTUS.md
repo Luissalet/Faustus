@@ -14436,3 +14436,20 @@ no se registra una hoja incompleta. El HTML Cynthia DP de prueba pesa
 160.412.453 bytes. Silver habitual 5230 sigue apagado, sin push ni modificaciones
 de datos reales. Evidencia: research-inbox/silver-pmd1180; detalles y límites en
 Silver/docs/PMD_LIBRARY.md. Manual nativo y grafo propio actualizados.
+
+
+### Conservar libros Excel y evaluar funciones en varios puntos (23-10-2026)
+
+Dos capacidades nativas revisadas e integradas localmente, sin push:
+
+- **Nightingale: descargar conservando el libro Excel #1289, b87f14c2, CAS1.** UI muestra conjunto/versión, origen, hoja/rango registrado, inventario y coincidencia SHA antes de descargar una copia .xlsx mediante preserve_workbook nativo (API/MCP42). Conserva exportación plana; UI de una hoja mantiene API de varias. Exige estructura compatible, sin sobrescribir original, editar/recalcular fórmulas o ejecutar validaciones, sin garantía universal/backup. Autor14pruebas del área/build; peer focal/SDK42/API/ZIP y ROOTUI desktop/móvil390, erroresv2/retry/CSV sin inventario antiguo. ROOT descargó realmente7685B/SHA59347e0b...801da2, peer leyó el mismo archivo: sólo celdaB2 y partes sheet1.xml/workbook.xml cambian; fórmulas/formato/validación/comentario/IDs/Unicode/restoZIP preservados. MAIN build6.36s y SDK42/API, fuente/negocio hash405f15...2fead1 y cuatro versiones exactos. QA63364/WT/rama propios retirados tras preflight inspeccionado limpio/0reparse/0runtime. Fallos previos del harness dinámico y timeoutBrave conservados, sin atribuirles descarga real. Sin suite repetida, modelos/apps reales o push.
+
+- **Hypatia: tabla exacta de valores de una expresión #1292, 8e091de6, CAS3.** Tabla de valores integrada con expresión/variablex,y,t/puntos reales finitos, orden y repetidos, exacto/aproximación/estado por fila y copia de consulta completa. Nuevo math_values y POST/api/math/values comparten AST original/SymPy1.14, MCP59 sin dependencias/modelos. Enlaza punto antes de simplificar: x/x,0*(1/x),(1/x)**0 en0 indefinidos; puntos con variables se rechazan aunque cancelen. Resultados complejos explícitos con ramas principales/I. Evaluación puntual, sin inferir dominio completo/límites ni modificar estudio. Edición retira resultado incompatible y error conserva borradores. Área61PASS/build; full3.11 sólo error colección f-string heredado, full3.13 una vez391PASS2SKIP1FAIL por catálogo antiguo; CAS2 ajusta conteo41, revela descripción heredada130; CAS3 sólo test/comentario y primera línea catálogo95, focal final1PASS, sin otra fullsuite/build. SDK59/API/4tablas banco exactas; peer casos dominio independientes y ROOTUI exactos/repetidos/trig/complejos/indefinidos/copia real/503retry/móvil390. Delay4s mostró pending/edición sin resultado viejo, sin cronometraje ni afirmación de oráculo<4s. Marcadores consumidos una vez sin rearmar. UI/assets/motor CAS1 idénticos CAS3.
+
+Las dos entregas tienen recibos de integración exacta bajo merge lock y HEAD
+fresco, QA propia parada y worktrees/ramas propios retirados tras inspección.
+No se atribuye una fullsuite verde a Hypatia CAS3: se conserva el fallo previo
+y el focal final que verifica su corrección. Las pruebas de autor, peer y ROOT
+permanecen atribuidas en sus recibos. Manual nativo, grafo sin embeddings,
+memoria y continuidad se actualizan por la tarea documental1295.
+Evidencia C:/Users/luism/.codex/scratch/hoard-loop23/docs-next49/.
