@@ -14806,3 +14806,47 @@ herramientas nativas rt_rules/rt_cooldowns/battle_rt_inspect comparten la mecán
 Se han consultado los clips oficiales de ambas fusiones; la presentación concentra
 luz, abre un prisma y revela el PMD sin generar sprites nuevos. Evidencias en
 research-inbox/silver-ultra1337 y Silver/docs/RT_DYNAMAX_Z.md.
+
+
+## Hoards: búsqueda de pagos, contexto de proyectos y estadística — 23-10-2026
+
+Ledger ofrece Buscar pago en Movimientos: importe y fecha, comercio y moneda
+opcionales, candidatos de gastos de igual importe entre cinco días antes y cinco
+después. Muestra cuenta, comercio, importe/divisa y puntuación nativa y abre el
+movimiento exacto conservando el borrador de alta. Comercio influye en la puntuación,
+no filtra estrictamente; omitir moneda conserva divisas separadas sin conversión.
+Coincidencia no confirma factura pagada y puntuación sobre uno no es probabilidad.
+Usa tx_find por API/MCP49, sin conciliación, importación ni escrituras nuevas.
+
+Talos permite Retomar desde las filas de Actividad → Proyectos: consulta ventanas,
+aperturas de archivos y commits ya registrados del proyecto elegido, con horizonte
+de1–180días y límite1–10por tipo, independiente del filtro de la tabla. Conserva el
+detalle, campos y resultado aunque la tabla quede vacía o falle; la corrección se
+revisó como CAS2 tras detectar la pérdida real del límite elegido. Las ventanas
+visibles duran al menos diez segundos y no suman necesariamente todo el tiempo
+activo del intervalo. Última actividad en primer plano desconocida puede coexistir
+con archivos; ausencia de evidencia no demuestra ausencia de trabajo. No comprueba
+existencia actual de rutas, lee originales, abre programas ni infiere pendientes.
+Wrapper UI y activity_project_resume usan la misma consulta nativa; MCP97.
+
+Hypatia añade Estadística exacta de observaciones racionales escritas: recuento,
+suma, media, mediana, mínimo, máximo, rango, suma de desviaciones al cuadrado y
+varianza/desviación típica poblacionales o muestrales. Divisores N/N−1 explícitos;
+una observación tiene dispersión poblacional cero y resultado muestral no definido.
+Conserva orden, repetidos y precisión decimal original, con resultados exactos y
+aproximaciones separadas, ejemplos editables, errores recuperables, copia completa
+y borrador de Faustus. UI, POST/api/math/statistics y math_statistics comparten el
+motor racional local sin leer o modificar el banco. MCP63 (45estudio/18profesor).
+No incluye pesos, moda, cuántiles, imputación de ausentes, inferencias o predicciones.
+
+Las entregas1338CAS1/1339CAS2/1340CAS1 se integraron con los hashes aprobados y
+revisión independiente, UI real en escritorio/móvil y SDK/API nativos. Se preservó
+el estado natural de los bancos ficticios, sin repetir errores o marcadores ya
+consumidos, sin servicios/modelos ajenos y sin push. Las pruebas iniciales fallidas
+y límites del harness se conservan en sus recibos, sin afirmar suites globales
+verdes a partir de focales. QA y worktrees propios cerrados normalmente tras
+preflights físicos inspeccionados. El bucle alcanza64 mejoras integradas:
+61funciones y3UI;62tareas DONE y dos históricas aprobadas integradas abiertas por
+conciliación de limpiezas rechazadas, sin reintentar su borrado. Evidencias y límites
+en research-inbox/hypatia1194/CONTINUIDAD.md y
+C:/Users/luism/.codex/scratch/hoard-loop23/docs-next64/.
