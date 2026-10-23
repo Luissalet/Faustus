@@ -14297,3 +14297,43 @@ Un cuarto trabajo nuevo con interfaz (biblioteca de préstamos, 77 casos, 22 mut
 **Resultados del banco:** #1 (antes de los cambios) buena respuesta pero sin navegador y arranque lento; #2-#3 bloqueadas por los fallos de arriba; #4 y #5 a la altura o por encima de la referencia: pico 32.556 (con la discrepancia de SteamCharts 25.156), media de octubre 1.668 y pico de 24 h 1.304, Twitch, OpenCritic 74 (60 análisis, 72 %), Metacritic 75, IGN 6, GameSpot 7, Steam 67 % de 5.823 (63 % en todos los idiomas), el primero con 25 millones de jugadores y Metacritic 70, la comparación en Steam con el primero (que llegó año y medio tarde), estimaciones de terceros marcadas como tales, gráfico y conclusión «lanzamiento frío y recepción tibia; "fracaso" exige cifras que nadie ha publicado». 5 rondas, 9 herramientas, 315 s.
 
 Commits: e83850ca, 2c3a55de, 7156d4de, d824b7e3, 7b53b70e, cb5f1c20, 00f26362 y el de las herramientas de escritorio. Pruebas: `test_browser_request_floor`, `test_tools_route_browser_switch`, `test_freshness_public_reception`, `test_web_fetch_blocked_uses_browser` (13), `test_browser_snapshot_file` (6), `test_host_tools_desktop_app` (7) y `desktop/desktop-control.test.cjs`.
+
+
+### Datos derivados, consulta de envíos y navegación de Fotos (23-10-2026)
+
+Tres entregas revisadas CAS1 e integradas exactamente en sus repositorios:
+
+- **Cicero #1274, 7ba7a61e.** El panel de datos del encargo y del editor permite
+  crear una fuente derivada con una condición (ocho operadores), orden y nombre.
+  Guarda origen y transformación; muestra hasta ocho filas e inserta el resultado
+  en gráfico o tabla. Conserva la fuente original y los cambios sin guardar del
+  borrador. Usa dataset_transform de API/MCP69 existente; es una instantánea, no
+  un filtro dinámico. ROOTUI verificó dos fuentes nuevas y una inserción sólo en
+  borrador, seguida de descarte normal. MAIN SDK/API conserva las17fuentes,
+  diapositiva, revisiones y CSV. Suite501PASS/8SKIP/1fallo por build concurrente;
+  sólo ese caso repetido después del build1PASS, sin afirmar una suite verde.
+- **Hermes #1275, 56729a16.** Envíos→Consultar número expone track_number nativo
+  por UI/API/MCP115 sin añadir ni programar un envío guardado. Presenta identidad,
+  transportista, ETA/fuente/intentos y hasta40eventos; distingue no encontrado,
+  fuente no disponible y fallo. Cambiar el formulario invalida resultados tardíos;
+  error, reintento y cerrar/reabrir conservan sus campos. Los proveedores pueden
+  usar servicios externos, registro, cuota o caché configurados. QA controlada,
+  SDK115/API/MAIN y ROOTUI ES/EN/móvil390 PASS; Node15PASS. Suite348PASS/5fallos
+  heredados reproducidos en MAINoriginal, no ocultados ni repetidos. Se preservó
+  baseline natural posterior a UI:1envío/0eventos/0correos y preferencias normales.
+  El cierre corrigió bajo nuevo merge lock tres artefactos generados con EOL
+  distinto y contenidos normalizados exactos; MAIN limpio, sin otro SHA.
+- **Daguerre #1276, a41122d3.** Fotos ofrece nueve destinos con nombres accesibles
+  ES/EN, sección actual y acceso a Ajustes desde el estado. Barra móvil72px en
+  claro/oscuro y pie visible bajo cabecera Studio42px; escritorio mantiene nombres
+  y estado completo. Sin cambios de backend/API/MCP96. Node13PASS y Python317PASS
+  del delta inicial; correcciones CSS posteriores verificadas con build y UI,
+  sin atribuirles otra suite. MAIN build/SDK/API y revisión final PASS. Se usó
+  biblioteca ficticia vacía; sin originales, modelos ni servicios reales.
+
+Los tres MAIN quedaron limpios, con QA/worktrees/ramas propios retirados y sin
+push. El manual nativo conserva179párrafos ajenos de182 al modificar tres cuerpos;
+grafo Store sin embeddings y memoria/continuidad conservan sus registros anteriores.
+Recibos y límites: C:/Users/luism/.codex/scratch/hoard-loop23/docs-next44/ y carpetas
+de tarea enlazadas en sus integrations.json/RESULT.md. Ledger1279 y Jobhunter1282
+siguen en implementación aislada; todavía no se cuentan como funciones terminadas.
