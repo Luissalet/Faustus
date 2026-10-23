@@ -14984,3 +14984,21 @@ restaurar datos ni repetir semillas/marcadores/suites. Detalle y límites en
 research-inbox/hypatia1194/CONTINUIDAD.md y scratch hoard-loop23 dagrecipe1353,
 hypatiaeuclid23 ymercatoractivity23. Ningún modelo/servicio/dato ajeno tocado.
 Manual y grafo documentan capacidades nativas; sin push.
+
+
+## Silver: ataques normales y reacciones — 23-10-2026, #1362
+
+La presentación RT añade anticipación, descarga direccional y estelas desde las
+coordenadas reales del proyectil. Los golpes confirmados añaden cortes, ramificaciones
+y fragmentos por material, un contraste localizado de unos65ms bajo el cuerpo y
+recuperación proporcionada al daño. Protección dibuja su señal propia; un fallo de
+alcance o puntería no inventa una esquiva, mientras la voltereta real sí activa su
+reacción. Los movimientos del cuerpo conservan la proporción del sprite PMD.
+
+El Z de Ultra Necrozma concentra un prisma y suelta fragmentos espectrales. El atlas
+llamado Light contenía un huevo de Manaphy: deja de seleccionarse en los938perfiles
+de efectos y se sustituye por luz revisada en los haces normales que lo usaban.
+No se borran ni se regeneran los sprites de Pokémon. App, vídeo nativo y HTML
+recién exportado comparten las capas; pausa, seek, sencillo y movimiento reducido
+conservan sus límites. Reglas14 y entradas intactas. Evidencias1362 en research-inbox
+y Silver/docs/VISUAL_PRESENTATION.md.
