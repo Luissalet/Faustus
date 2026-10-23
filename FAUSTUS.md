@@ -13911,7 +13911,7 @@ de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.
 Theseus se desarrolla como módulo Inspección de Vitruvius. El servidor antiguo
 del puerto 5217 no se utiliza y la aplicación compartida del 5191 permanece
 apagada. Consultar el catálogo MCP no inicia el servidor ni reanuda trabajos.
-La fuente empaquetada `a5e4c50b` ofrece 42 herramientas MCP de Theseus, 73 operaciones
+La fuente empaquetada `e36d23cb` ofrece 42 herramientas MCP de Theseus, 74 operaciones
 estáticas, 52 de sesión binaria y 40 de ejecución; estos recuentos no acreditan
 el alcance semántico completo. La instalación y publicación de este lote tienen
 sus propios recibos y no se deducen de una revisión de fuente.
@@ -13939,11 +13939,26 @@ aceptación independiente de fuente y de la wheel W2 instalada privadamente.
 El editor permite órdenes explícitas por sesión/generación y conserva respuestas
 transferibles después de cerrar. Android añade resúmenes enlazados, ventanas de
 manifiesto UTF-16 y tablas por idioma con texto léxico y saltos conservados.
-Siguen abiertas la ejecución arbitraria fuera del editor, los depuradores libres
-y las exigencias semánticas o de plataforma individuales; 1040 permanece abierta.
+Las órdenes explícitas fuera del editor tienen aceptación instalada finita en
+W3: línea literal con plugins sobre el original, bytes de salida/error, hashes,
+efectos e incertidumbre conservados sin repetir la orden ni cerrar Ghidra.
+La corrección del arranque limpia el hijo suspendido real si falla la asignación
+al Job. Fuente1154/CAS2 aprobada,117 pruebas de área y35 del revisor; la revisión
+instalada añade13 pruebas en dos ejecuciones, cinco observaciones MCP propias
+y documentos/registros transferidos exactos. La UI raíz observa3127 y el prefijo
+histórico cancelado; móvil390 legible, sin desbordamiento. Owners64344/64345
+cerrados, perfiles/fallos conservados. W3SHA256
+`0296db6f984c5c187a36335c3b267f8a9c093f1cf26ce06ae07771e8347a8606`.
+Siguen abiertos los depuradores libres y los requisitos semánticos o de
+plataforma individuales;1040 permanece abierta. Solo el contrato189 avanza;
+los otros206 conservan sus estados. Una nueva full23c pasó1940 pruebas y omitió
+cinco; un revisor cotejó los1945 casos de XML/journal y la entrega exacta.
+Las dos omisiones de emulador, el decodificador GNUAArch64 ausente y dos variantes
+sin recursos/literales Latin1 no se convierten en capacidades verificadas.
+Esto no reescribe la full anterior ni demuestra su causa:
 La full conservada pasó 1910 casos, falló seis y omitió cinco. Los seis fallos y
 tres oráculos de documentos retenidos pasaron sin cambios en dos corridas de
-nueve casos, una independiente. No hubo una full verde única ni se ha demostrado
+nueve casos, una independiente. En aquella W2 no hubo una full verde única ni se ha demostrado
 la causa de todos los límites temporales. La revisión acepta esa composición
 para empaquetar, con sus límites explícitos. La comparación de cierre de Cutter mantuvo el puente y las peticiones mientras
 cambiar la forma del callback privado de QA produjo exit0. El fallo inicial
@@ -13951,6 +13966,10 @@ exacto y la necesidad de la disposición explícita del puente no están aislado
 La entrega HTTP de documentos es exacta; la descarga completada del navegador
 no está acreditada por esta QA instalada. W2 tiene SHA-256
 `e63a58672846add8c6d6c2871ffc3aa91b1ab4c6d9b86cf0fce0e07bcf44e375`.
+Dos eventos históricos muestran la misma firma de aborto Qt6Core/c0000409,
+pero falta el enlace exacto PID/creación/comando del primer lanzamiento. El
+control de plataforma offscreen y el posterior fallo c0000005 del callback QA
+son evidencias distintas; no demuestran la causa interna del aborto inicial.
 El trabajo actual no usa Sparks,
 modelos de texto alternativos, GPU, SABER ni ADB compartido. El manual nativo
 ya refleja el alcance revisado; instalación, grafo y publicación se registran
