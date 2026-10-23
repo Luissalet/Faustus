@@ -1,5 +1,17 @@
 # Objetivos acordados
 
+## HoardDex: Safari con acciones observadas —23-10-2026, #1318/#1336
+
+Main231 añade Safari de Esmeralda y RF/VH; conservar una bola condicionada a
+acciones realizadas y observaciones, fuentes por juego, invalidación y retorno.
+Rubí/Zafiro1336 tiene candidato232 y fuente primaria propia, pruebas y QA en curso;
+terminar su revisión, integración y distribución antes de atribuirlo a Main.
+RBY/DS, incursiones y demás motores requieren contraste propio. Continúan guías
+de aventura/jefes, seguimiento Nuzlocke y cobertura de formas/encuentros/evoluciones
+por edición. Verificar web y Android con el emulador visible/ADB, preservar partidas
+y no convertir ausencia en imposibilidad. No hay teléfono ARM64. Sin minijuegos
+ni nuevas decisiones pendientes de Luis por la entrega1318.
+
 ## HoardDex: continuar después de las calculadoras —23-10-2026, #1288/#1195
 
 Daño y captura ordinaria viven en Herramientas y MCP33. Captura añade42contextos

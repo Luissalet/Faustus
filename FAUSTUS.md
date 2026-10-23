@@ -1,5 +1,31 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex: Safari con acciones observadas —23-10-2026, #1318
+
+Herramientas → Captura y `fielddex_capture` añaden un contexto Safari propio
+para Esmeralda y Rojo Fuego/Verde Hoja. Registra acciones realizadas y finales
+de estado observados antes de una Safari Ball, con Deshacer y reinicio. Los
+cambios invalidan el resultado; abrir una ficha y volver conserva el borrador.
+Es una bola condicionada a que el Pokémon siga presente: no predice contadores
+ocultos, huida, éxito de todo el encuentro, estrategia ni disponibilidad.
+El modo ordinario y las advertencias de ratios ausentes/formas hipotéticas siguen.
+
+Tres commits229–231 aprobados CAS1 e integrados ff-only en Main231 `eba75094`.
+Main pasa su propia build web,397TS+3CJS, TypeScript y MCP33/390. La fuente230
+tiene QA propia web1280/390 ES/EN y Android x86 visible medianteADB, incluida
+letra1,3; el acabado fresco ship se limita a diez capturas, sin certificar todos
+los motores. Las dos APK231 conservan el bundle probado y17.884medios/fuentes
+porSHA; x86 final instalado y probado, con1/1025 intacto y preferencias restauradas.
+ARM64 está compilado/verificado como archivo, sin prueba en teléfono físico.
+Recibos en `research-inbox/hoarddex-safari1318`; cuatro APK anteriores retiradas
+porruta/huella, JSON históricos conservados, sin push ni cambios en8897.
+
+El manual nativo cambia sólo HoardDex con revisión/CAS y readback:197otros
+párrafos y estilos idénticos. Grafo propio actualizado sin modelos/embeddings.
+El trabajo de paridad útil continúa: otros Safari, incursiones, motores especiales,
+guías, seguimiento Nuzlocke y cobertura histórica/formas. Sin minijuegos ni
+declaración de paridad global. Rubí/Zafiro1336 está aún en candidato232, no en Main.
+
 ## HoardDex: captura ordinaria por edición —23-10-2026, #1288
 
 Herramientas → Captura y `fielddex_capture` comparten un motor local de sólo
