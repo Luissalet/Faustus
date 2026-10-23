@@ -149,15 +149,18 @@ class ObjectiveStore:
             value = self._public(db, updated)
         return value
 
-    def link_run(self, owner, session_id, run_id, client_message_id=""):
+    def link_run(self, owner, session_id, run_id, client_message_id="", binding=None):
         if not run_id:
             raise ValueError("run_id is required")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT * FROM objectives WHERE owner=? AND session_id=?", (owner, session_id)).fetchone()
-            if row is None or row["status"] != "active":
+            if row is None:
                 return None
-            db.execute("INSERT OR IGNORE INTO objective_runs VALUES(?,?,?,?,?)", (row["id"], run_id, row["revision"], self.clock(), client_message_id))
+            captured = binding if binding is not None else row
+            if captured["id"] != row["id"] or captured["status"] != "active":
+                return None
+            db.execute("INSERT OR IGNORE INTO objective_runs VALUES(?,?,?,?,?)", (row["id"], run_id, captured["revision"], self.clock(), client_message_id))
             return row["id"]
 
     def continuation_run(self, owner, session_id, client_message_id):
@@ -185,7 +188,7 @@ class ObjectiveStore:
                 raise KeyError(session_id)
             if type(expected_revision) is not int:
                 raise ValueError("Integer revision required")
-            if row["continuation_revision"] == expected_revision and row["revision"] == expected_revision + 1:
+            if row["continuation_revision"] == expected_revision:
                 return {**self._public(db, row), "_continuation_fresh": False}
             if row["revision"] != expected_revision:
                 raise RevisionConflict(row["revision"])
@@ -202,7 +205,10 @@ def get_store():
 
 
 def context_message(owner, session_id):
-    value = get_store().get(owner, session_id)
+    return _context_message(get_store().get(owner, session_id))
+
+
+def _context_message(value):
     if value is None:
         return None
     # A saved user brief is user context, never a system instruction. Its state
@@ -212,7 +218,9 @@ def context_message(owner, session_id):
 
 
 def inject_context(context, owner, session_id):
-    message = context_message(owner, session_id)
+    value = get_store().get(owner, session_id)
+    context.objective_binding = {key: value[key] for key in ("id", "revision", "status")} if value else None
+    message = _context_message(value)
     if message is None:
         return
     messages = context.messages

@@ -7176,6 +7176,7 @@ export const es: Record<string, string> = {
   "The connection ended before the turn completed. What arrived is kept; reconnect to the running turn.": "La conexión terminó antes de que acabara el turno. Lo que llegó se conserva; vuelve a conectarte al turno en curso.",
   "The connection to the server dropped mid-turn. What arrived is kept; if the server restarted, send the message again.": "Se perdió la conexión con el servidor a mitad del turno. Lo que llegó se conserva; si el servidor se reinició, envía el mensaje otra vez.",
   "The connection was not confirmed. Refresh the model list before retrying.": "No se ha confirmado la conexión. Actualiza la lista de modelos antes de volver a intentarlo.",
+  "The continuation is being prepared. Its run is not available yet; use Continue again to rejoin it.": "Se está preparando la continuación. Su ejecución aún no está disponible; pulsa Continuar de nuevo para unirte a ella.",
   "The control could not be saved": "No se pudo guardar el control",
   "The conversations, with their folders, and the export that takes a whole folder as a zip.": "Las conversaciones, con sus carpetas, y la exportación que se lleva una carpeta entera en zip.",
   "The coordination settings changed. Reload them before saving again.": "La configuración de coordinación ha cambiado. Recárgala antes de volver a guardar.",

@@ -15,7 +15,9 @@ References are bookmarks, not claims that an artifact or its quality has been
 verified. Existing artifact and harness verification remains authoritative.
 
 Each detached chat run started while the objective is active is associated with its
-exact run ID and the brief revision at its start. Earlier brief versions stay
+exact run ID and the brief revision captured for its context. An edit during
+admission belongs to a later turn; it cannot relabel the context already built.
+Earlier brief versions stay
 available with their run associations. A paused or completed objective does not
 claim later unrelated turns. Linked activity uses the existing turn-activity
 view for that exact run; missing detailed history is reported without silently
@@ -37,6 +39,13 @@ expected revision returns its receipt. If dispatch outcome cannot be established
 the response says so and does not resend it. The person can inspect history and
 issue a new continuation. SSE reconnection can name `run_id` explicitly and will
 not subscribe to a replacement run.
+
+While admission is preparing the accepted continuation, a repeat returns202
+with pending=true and run_id=null. It does not substitute the previous session
+run or dispatch another continuation. Studio reports preparation; use Continue
+again to rejoin the accepted run once available. Pausing during admission also
+requests that exact run's safe point when it is created. Its original brief
+association remains available after a later edit, pause or completion.
 
 **Complete objective** records an explicit delivered-result statement. Finishing
 a stream, percentage of changed files or an empty result cannot complete it.

@@ -67,7 +67,10 @@ export function ConversationObjective({sessionId, projectId, workspace, turns, r
       const response = await writeObjective(sessionId, action, body);
       setObjective(response.objective);
       if (response.generation !== undefined) setGeneration(response.generation);
-      if (action === 'continue') onContinue(response.run_id);
+      if (action === 'continue') {
+        if (response.run_id) onContinue(response.run_id);
+        else setError(t('The continuation is being prepared. Its run is not available yet; use Continue again to rejoin it.'));
+      }
       setEditing(false); setCompleting(false);
     } catch (exc) {
       if (exc instanceof ApiError && exc.status === 409 && action === 'save') {

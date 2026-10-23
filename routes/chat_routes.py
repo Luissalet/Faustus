@@ -5095,7 +5095,14 @@ def setup_chat_routes(
                                                              if _context_wait is not None else None))
             try:
                 from src.conversation_objective import get_store as _objective_store
-                _objective_store().link_run(owner, session, _detached_run.run_id, client_message_id)
+                _objective_binding = getattr(ctx, "objective_binding", None)
+                if _objective_binding is not None:
+                    _objective_store().link_run(owner, session, _detached_run.run_id, client_message_id,
+                                                binding=_objective_binding)
+                    _current_objective = _objective_store().get(owner, session)
+                    if (_current_objective and _current_objective["id"] == _objective_binding["id"]
+                            and _current_objective["status"] == "paused"):
+                        agent_runs.request_pause(session, _detached_run.run_id)
             except Exception:
                 logger.warning("Could not link the conversation objective to its run", exc_info=True)
             if client_message_id and not tool_approval_id:
@@ -5485,12 +5492,18 @@ def setup_chat_routes(
                     raise HTTPException(400, key + " must be a string")
                 selected_fields[key] = body[key]
         generation = agent_runs.run_status_snapshot(session_id)
+        current = objective_store().get(owner, session_id)
+        if current and current.get("continuation_id"):
+            receipt = chat_outbox.get(owner=owner, session_id=session_id, client_message_id=current["continuation_id"])
+            if receipt and receipt["status"] == "accepted" and not receipt.get("run_id"):
+                return JSONResponse(status_code=202, content={"objective": current, "run_id": None,
+                    "pending": True, "rejoined": True, "client_message_id": current["continuation_id"]})
         if generation and generation.get("active"):
             current = objective_store().get(owner, session_id)
             if current is None:
                 raise HTTPException(404, "Objective not found")
             expected = body.get("expected_revision")
-            previous = (current["continuation_revision"] == expected and current["revision"] == expected + 1) if type(expected) is int else False
+            previous = current["continuation_revision"] == expected if type(expected) is int else False
             recorded = objective_store().continuation_run(owner, session_id, current["continuation_id"]) if previous else None
             if current["revision"] != expected and not recorded:
                 from src.conversation_objective import RevisionConflict
@@ -5507,7 +5520,14 @@ def setup_chat_routes(
         if recorded_run:
             return {"objective": objective, "run_id": recorded_run, "rejoined": True,
                     "client_message_id": objective["continuation_id"]}
-        if not fresh and chat_outbox.get(owner=owner, session_id=session_id, client_message_id=objective["continuation_id"]) is None:
+        if not fresh:
+            receipt = chat_outbox.get(owner=owner, session_id=session_id, client_message_id=objective["continuation_id"])
+            if receipt and receipt.get("run_id"):
+                return {"objective": objective, "run_id": receipt["run_id"], "rejoined": True,
+                        "client_message_id": objective["continuation_id"]}
+            if receipt and receipt["status"] == "accepted":
+                return JSONResponse(status_code=202, content={"objective": objective, "run_id": None,
+                    "pending": True, "rejoined": True, "client_message_id": objective["continuation_id"]})
             raise HTTPException(409, {"reason": "continuation_outcome_unknown",
                                       "message": "The previous continuation has no retained dispatch receipt. Read the history before issuing a new continuation; it was not resent.",
                                       "client_message_id": objective["continuation_id"]})
@@ -5539,7 +5559,7 @@ def setup_chat_routes(
             delivered = True
             return {"type": "http.request", "body": payload, "more_body": False}
         response = await chat_stream(Request(scope, receive), initial_response_timeout_s=None)
-        run_id = response.headers.get("X-Odysseus-Run-Id")
+        run_id = objective_store().continuation_run(owner, session_id, objective["continuation_id"])
         if not run_id:
             receipt = chat_outbox.get(owner=owner, session_id=session_id, client_message_id=objective["continuation_id"])
             run_id = (receipt or {}).get("run_id")
