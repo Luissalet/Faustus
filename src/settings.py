@@ -570,6 +570,7 @@ DEFAULT_SETTINGS = {
     # search BLENDER_PATH, PATH and the usual install folders.
     # `blender_timeout_seconds` is how long one scene run may take.
     "blender_path": "",
+    "godot_executable": "",
     "blender_timeout_seconds": 300,
     # Telegram chat bridge (src/chat_bridges/telegram_bridge.py): opt-in. A bot
     # created with the platform's bot-creation chat is polled with long

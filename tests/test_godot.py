@@ -16,6 +16,18 @@ def test_discovery_does_not_require_engine_or_start_project(monkeypatch):
     assert tool.execute({"action":"schema"})["ok"]
 
 
+def test_configure_uses_native_settings_and_preserves_other_values(tmp_path,monkeypatch):
+    from src import settings
+    monkeypatch.setattr(settings,"SETTINGS_FILE",str(tmp_path/"settings.json"))
+    settings.update_settings({"blender_path":"keep-existing-engine"})
+    before=settings.load_settings()
+    executable=tmp_path/"engine.exe";executable.write_bytes(b"not executed by configuration")
+    result=tool.execute({"action":"configure","executable":str(executable)})
+    after=settings.load_settings()
+    assert result["started"] is False and after["godot_executable"]==str(executable.resolve())
+    assert {k:v for k,v in before.items() if k!="godot_executable"}=={k:v for k,v in after.items() if k!="godot_executable"}
+
+
 @pytest.mark.parametrize("value", ["../outside.tscn", "res://../../outside.tscn", "C:/outside.tscn"])
 def test_scene_resource_stays_inside_project(tmp_path, value):
     with pytest.raises(ValueError): tool._resource(tmp_path, value)
