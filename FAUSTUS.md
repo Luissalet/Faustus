@@ -1,6 +1,10 @@
 # Faustus — qué añade este fork sobre Odysseus
 
-**Unity local (#1138, candidato en pruebas).** Herramienta nativa común de chat/API/MCP sobre el puente de Blood Arrows: escenas, identidad de objetos, propiedades serializadas, materiales HDRP, prefabs, Undo/Redo y Test Runner. Descubrimiento sin arrancar el editor. Perfil por metadatos para Unity, Godot, Unreal y Three.js y habilidad gamedev con referencias por motor. No hay control nativo de los otros editores por leer su perfil. Validación e integración pendientes; [contrato](docs/api/unity.md).
+**Unity local (#1138, integrado).** Herramienta nativa común de chat/API/MCP sobre el puente de Blood Arrows: escenas, identidad de objetos, propiedades serializadas, materiales HDRP, prefabs, Undo/Redo y Test Runner. Descubrimiento sin arrancar el editor. Perfil por metadatos para Unity, Godot, Unreal y Three.js y habilidad gamedev con referencias por motor. La entrega se integró tras dos horas sin voto según AGENTS; no se atribuye aprobación. [Contrato](docs/api/unity.md).
+
+**Godot local (#1178, aprobado e integrado).** Escenas .tscn guardadas, nodos/propiedades tipadas, scripts existentes, UID y ejecución/depuración con handles nativos; chat/API/MCP. Se comprueba la reapertura antes de sustituir el archivo y se conserva el recibo de cada escritura. Godot oficial4.7.2 probado headless, configurable sin arrancar proyecto. No edita el buffer/Undo de un editor abierto ni certifica apariencia/input, migraciónGodot3 o C#/.NET. Unreal/Three.js siguen siendo guías por proyecto. [Contrato](docs/api/godot.md).
+
+**Plantillas de encargos (#1181).** El editor del objetivo ofrece cuatro briefs locales editables en inglés/castellano: oportunidades con evidencia, oferta de una página, plan editorial y resumen semanal. Previsualizar/aplicar modifica el borrador y conserva referencias; guardar usa el CAS normal. Catálogo por API/MCP sin generar, enviar ni programar. [Contrato](docs/api/objective-templates.md).
 
 **Objetivo de conversación,23-10-2026 (#1089).** Encargo persistente y editable
 con CAS, contexto/fuentes/entregable y referencias a tareas, hijos, archivos,

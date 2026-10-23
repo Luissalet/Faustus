@@ -1351,3 +1351,15 @@ Un cuarto trabajo nuevo con interfaz (biblioteca de préstamos, 77 casos, 22 mut
 
 
 The native Unity tool reads and edits an open local editor through the project bridge: serialized fields, materials, prefabs, scenes, Undo/Redo, Play mode and retained Test Runner results. Agent, HTTP and MCP share the operation. Discovery starts no editor. The gamedev skill and project profile reader route Unity, Godot, Unreal and Three.js by local metadata; live editor control currently covers Unity. [Unity editor](docs/api/unity.md).
+
+The native Godot tool creates and edits saved .tscn scenes with the installed
+engine, preserves UIDs, verifies saved properties and reads/stops exact debug
+processes. It edits disk resources independently of an open editor's buffer or
+undo stack; headless checks do not verify appearance or input. Godot4.7.2 was
+tested locally. [Local scenes and debugging](docs/api/godot.md).
+
+Conversation objectives include four editable starting briefs in English and
+Spanish: opportunities with evidence, a one-page offer, an editorial plan and
+a weekly summary. Preview/apply affects the draft, preserving existing links;
+only Save commits it. API/MCP return the same catalog without starting a run,
+schedule or message. [Editable task briefs](docs/api/objective-templates.md).

@@ -758,3 +758,15 @@ Silver; los demás hosts requieren su sincronización habitual y sus callbacks.
 
 
 La herramienta nativa Unity consulta y edita el editor local abierto mediante el puente del proyecto: campos serializados, materiales, prefabs, escenas, Undo/Redo, modo Play y resultados conservados del Test Runner. Chat, HTTP y MCP comparten la operación. La consulta del catálogo no arranca el editor. La habilidad gamedev y el lector de perfiles seleccionan Unity, Godot, Unreal y Three.js por sus metadatos locales; el control directo del editor cubre Unity. [Editor Unity](docs/api/unity.md).
+
+La herramienta nativa Godot crea y edita escenas .tscn guardadas con el motor
+instalado, conserva UID, comprueba propiedades al reabrir y consulta/para los
+procesos exactos de depuración. Actúa sobre disco, independientemente del buffer
+o Undo del editor abierto; headless no verifica apariencia ni controles. Probada
+localmente con Godot4.7.2. [Escenas y depuración](docs/api/godot.md).
+
+El objetivo de conversación ofrece cuatro briefs editables en inglés/castellano:
+oportunidades con evidencia, oferta de una página, plan editorial y resumen
+semanal. Previsualizar/aplicar cambia el borrador y conserva sus enlaces; solo
+Guardar lo confirma. API/MCP devuelven el mismo catálogo sin arrancar ejecución,
+programación o envío. [Plantillas de encargos](docs/api/objective-templates.md).

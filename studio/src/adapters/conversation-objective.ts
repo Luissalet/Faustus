@@ -12,6 +12,13 @@ export interface ConversationObjective {
 export interface ObjectiveResponse { objective: ConversationObjective | null; generation?: {run_id: string; state: string; active: boolean} | null; pause_requested?: boolean; run_id?: string | null; pending?: boolean }
 const path = (sid: string) => `/api/session/${encodeURIComponent(sid)}/objective`;
 export function getObjective(sid: string, signal?: AbortSignal) { return getJson<ObjectiveResponse>(path(sid), signal); }
+export interface ObjectiveTemplate {
+  id: string; title: string;
+  brief: Pick<ConversationObjective, 'statement' | 'context' | 'deliverable' | 'refs'>;
+}
+export function getObjectiveTemplates(sid: string, locale: 'en' | 'es', signal?: AbortSignal) {
+  return getJson<{templates: ObjectiveTemplate[]}>(path(sid) + `/templates?locale=${locale}`, signal);
+}
 export async function writeObjective(sid: string, action: 'save' | 'state' | 'continue', body: unknown): Promise<ObjectiveResponse> {
   const url = path(sid) + (action === 'save' ? '' : `/${action}`);
   const response = await fetch(url, {method: action === 'save' ? 'PUT' : 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});

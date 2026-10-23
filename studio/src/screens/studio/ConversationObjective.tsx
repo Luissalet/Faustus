@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, Dialog } from '../../components';
 import { ApiError } from '../../adapters/api';
-import { getObjective, writeObjective, type ConversationObjective as Objective, type ObjectiveRef } from '../../adapters/conversation-objective';
+import { getObjective, getObjectiveTemplates, writeObjective, type ConversationObjective as Objective, type ObjectiveRef, type ObjectiveTemplate } from '../../adapters/conversation-objective';
 import { getRepo, getWorkingDiff, type GitDiff } from '../../adapters/git';
 import { DiffPane } from '../source-control/DiffPane';
 import { TurnActivity } from './TurnActivity';
 import type { Turn } from './model';
 import type { ModelRoute } from '../../adapters/chat';
-import { t } from '../../i18n';
+import { t, useLang } from '../../i18n';
 import './conversation-objective.css';
 
 type Props = {
@@ -35,6 +35,20 @@ export function ConversationObjective({sessionId, projectId, workspace, turns, r
   const [diff, setDiff] = useState<GitDiff | null>(null);
   const [diffError, setDiffError] = useState('');
   const [ref, setRef] = useState<ObjectiveRef>({kind: 'resource', workspace, path: ''});
+  const language = useLang();
+  const [templates, setTemplates] = useState<ObjectiveTemplate[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [templateError, setTemplateError] = useState('');
+
+  useEffect(() => {
+    if (!editing) return;
+    const controller = new AbortController();
+    setTemplates([]); setTemplateId(''); setTemplateError('');
+    void getObjectiveTemplates(sessionId, language, controller.signal).then(data => setTemplates(data.templates)).catch(exc => {
+      if (!controller.signal.aborted) setTemplateError((exc as Error).message);
+    });
+    return () => controller.abort();
+  }, [editing, sessionId, language]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -90,6 +104,7 @@ export function ConversationObjective({sessionId, projectId, workspace, turns, r
   }
   const runTurn = turns.find(turn => turn.metrics?.runId === selectedRun || turn.traceId === selectedRun || turn.terminalRun?.runId === selectedRun);
   const binding = objective?.runs.find(run => run.run_id === selectedRun);
+  const template = templates.find(item => item.id === templateId);
 
   return <section className="fs-conversation-objective" aria-label={t('Conversation objective')} data-testid="conversation-objective">
     <div className="fs-conversation-objective__bar">
@@ -118,6 +133,16 @@ export function ConversationObjective({sessionId, projectId, workspace, turns, r
     </details>}
     <Dialog open={editing} onOpenChange={setEditing} title={t('Conversation objective')} testId="objective-dialog" footer={<Button label={t('Save')} disabled={busy || !brief.statement.trim()} onClick={() => void mutate('save', {expected_revision: revision, brief})} />}>
       <div className="fs-conversation-objective__form">
+        <details><summary>{t('Start from a brief template')}</summary>
+          <label>{t('Brief template')}<select value={templateId} onChange={e => setTemplateId(e.target.value)} data-testid="objective-template">
+            <option value="">{t('Choose a template')}</option>
+            {templates.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+          </select></label>
+          {template && <><p>{template.brief.statement}</p><p>{template.brief.context}</p><p>{template.brief.deliverable}</p>
+            <p className="fs-muted">{t('Apply replaces the draft text and keeps linked work. Save to keep your edits.')}</p>
+            <Button size="sm" label={t('Apply template to draft')} onClick={() => { setBrief({...template.brief, refs: brief.refs}); setTemplateId(''); }} /></>}
+          {templateError && <p role="alert">{templateError}</p>}
+        </details>
         {conflict && objective && <section className="fs-notice" data-tone="warning"><strong>{t('Saved version')} · {t('Revision')} {objective.revision}</strong>
           <p>{objective.statement}</p><p>{objective.context}</p><p>{objective.deliverable}</p>
           <ul>{objective.refs.map((value, index) => <li key={index}>{value.label || value.path || value.id} · {value.kind} {value.scope || ''}</li>)}</ul>

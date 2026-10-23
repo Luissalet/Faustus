@@ -33,6 +33,15 @@ async def objective_body(request):
 def setup_conversation_objective_routes():
     router = APIRouter(prefix="/api/session", tags=["conversation objective"])
 
+    @router.get("/{session_id}/objective/templates")
+    def objective_templates(request: Request, session_id: str, locale: str = "en"):
+        objective_owner(request, session_id)
+        from src.objective_templates import catalog
+        try:
+            return catalog(locale)
+        except ValueError as exc:
+            objective_error(exc)
+
     @router.get("/{session_id}/objective")
     def get_objective(request: Request, session_id: str):
         owner = objective_owner(request, session_id)

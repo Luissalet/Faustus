@@ -17,7 +17,8 @@ from src.stdio_guard import guard
 
 server = Server("conversation_objective")
 SCHEMA = {"type": "object", "properties": {
-    "action": {"type": "string", "enum": ["get", "save", "state", "continue"]},
+    "action": {"type": "string", "enum": ["get", "templates", "save", "state", "continue"]},
+    "locale": {"type": "string", "enum": ["en", "es"]},
     "session_id": {"type": "string"}, "expected_revision": {"type": "integer"},
     "selected_model": {"type": "string"}, "selected_endpoint_id": {"type": "string"}, "selected_endpoint_url": {"type": "string"}, "workspace": {"type": "string"},
     "brief": {"type": "object"}, "status": {"type": "string", "enum": ["active", "paused", "complete"]},
@@ -26,7 +27,7 @@ SCHEMA = {"type": "object", "properties": {
 
 @server.list_tools()
 async def list_tools():
-    return [Tool(name="conversation_objective", description="Read/edit the saved conversation objective, context, deliverable and native references. Use expected_revision from get for writes. Pausing requests a safe-point pause of the current generation; schedules keep their own state. Continue rejoins an active run or starts one idempotent continuation from saved history, without replaying tool effects. Transport completion never completes the objective. References: task(project_id,id), agent(child session id), schedule(task id), resource(workspace,path), change(repo id,workspace,path,scope staged|unstaged).", inputSchema=SCHEMA)]
+    return [Tool(name="conversation_objective", description="Read/edit the saved conversation objective, context, deliverable and native references. Templates returns editable starting briefs in locale en/es without saving or starting work. Use expected_revision from get for writes. Pausing requests a safe-point pause of the current generation; schedules keep their own state. Continue rejoins an active run or starts one idempotent continuation from saved history, without replaying tool effects. Transport completion never completes the objective. References: task(project_id,id), agent(child session id), schedule(task id), resource(workspace,path), change(repo id,workspace,path,scope staged|unstaged).", inputSchema=SCHEMA)]
 
 
 @server.call_tool()
@@ -34,7 +35,7 @@ async def call_tool(name, arguments):
     args = dict(arguments or {})
     action = args.pop("action", "")
     sid = args.pop("session_id", "")
-    routes = {"get": ("GET", ""), "save": ("PUT", ""), "state": ("POST", "/state"), "continue": ("POST", "/continue")}
+    routes = {"get": ("GET", ""), "templates": ("GET", "/templates"), "save": ("PUT", ""), "state": ("POST", "/state"), "continue": ("POST", "/continue")}
     if name != "conversation_objective" or action not in routes or not isinstance(sid, str) or not sid:
         return CallToolResult(isError=True, content=[TextContent(type="text", text="Invalid conversation objective request")])
     method, suffix = routes[action]
@@ -50,7 +51,7 @@ async def call_tool(name, arguments):
     try:
         async with httpx.AsyncClient(timeout=120, trust_env=False) as client:
             response = await client.request(method, base.rstrip("/") + "/api/session/" + quote(sid, safe="") + "/objective" + suffix,
-                                            headers=headers, **({} if method == "GET" else {"json": args}))
+                                            headers=headers, **({"params": {"locale": args.get("locale", "en")}} if action == "templates" else {} if method == "GET" else {"json": args}))
         payload = response.json()
         error = not response.is_success
         if error:
