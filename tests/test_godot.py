@@ -78,6 +78,10 @@ def test_native_nodes_properties_ownership_uid_and_invalid_batch(engine):
     runtime=call(operation="set_properties",arguments={"scene":scene,"node":"Body","properties":{"runtime_value":7}})
     assert not runtime["ok"] and "not retained" in runtime["error"]
     assert (project/"Main.tscn").read_bytes()==before
+    (project/"Incompatible.gd").write_text('extends Node3D\n',encoding="utf-8")
+    incompatible=call(operation="attach_script",arguments={"scene":scene,"node":"Player","script":"res://Incompatible.gd"})
+    assert not incompatible["ok"] and "incompatible" in incompatible["error"]
+    assert (project/"Main.tscn").read_bytes()==before
 
 
 def test_native_job_receipt_never_replays_and_scope_is_preserved(engine):
@@ -124,6 +128,28 @@ def test_native_mcp_retains_request_id_when_http_outcome_is_unknown(monkeypatch)
     result=asyncio.run(godot_server.call_tool("godot",{"action":"operation","project":"local-project","operation":"create_scene"}))
     assert result.isError and result.structuredContent["outcome_unknown"]
     assert len(result.structuredContent["job_id"])==32
+
+
+def test_dispatch_preserves_receipt_finalized_by_poll_while_start_yields(tmp_path,monkeypatch):
+    store=tmp_path/"operations";store.mkdir();monkeypatch.setattr(tool,"_store",lambda:store)
+    from src import process_manager
+    from src.process_manager import Caller
+    caller=Caller(owner="qa",session_id="qa")
+    identity=uuid.uuid4().hex
+    target=tmp_path/"New.tscn"
+    polls=[]
+    class Delayed:
+        def start(self,**kwargs):
+            folder=store/identity
+            Path(json.loads((folder/"job.json").read_text())["staged"]).write_bytes(b"saved scene")
+            (folder/"result.json").write_text('{"ok":true}')
+            polls.append(tool.job(identity,caller))
+            return {"ok":True,"handle":"native-handle"}
+        def read(self,*args,**kwargs): return {"state":"exited","completed":True}
+    monkeypatch.setattr(process_manager,"manager",lambda:Delayed())
+    result=tool._scene_operation({"operation":"create_scene","job_id":identity,"arguments":{"scene":"res://New.tscn"}},tmp_path,caller,"unused")
+    assert polls[0]["ok"] and result==polls[0]==tool.job(identity,caller)
+    assert target.read_bytes()==b"saved scene" and result["sha256"]==hashlib.sha256(b"saved scene").hexdigest()
 
 
 def test_native_debug_reports_real_ready_parse_error_and_explicit_stop(engine):

@@ -185,8 +185,12 @@ func perform() -> void:
 		var script: Script = load(script_path) if script_path.begins_with("res://") else null
 		if script == null or not script.can_instantiate():
 			failure = "Script is missing or has parse errors"
+		elif not target.is_class(script.get_instance_base_type()):
+			failure = "Script base is incompatible with the selected node"
 		else:
 			target.set_script(script)
+			if target.get_script() != script:
+				failure = "Node did not retain the requested script"
 	if not failure.is_empty():
 		root.free()
 		finish({"ok":false, "error":failure})

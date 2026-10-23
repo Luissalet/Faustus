@@ -262,12 +262,19 @@ def _dispatch(args, root, caller, executable, identity):
     started = manager().start(argv=[executable,"--headless","--audio-driver","Dummy","--path",str(root),
         "--script",str(Path(__file__).with_name("scene.gd")),"--",str(folder / "request.json")],
         caller=caller, cwd=str(root), yield_ms=1000)
-    if not started.get("ok"):
-        meta["result"] = {**started, "job_id":identity, "state":"failed"}
+    # A concurrent poll can already have committed the staged scene while
+    # start yields. Preserve that receipt under the same lock as finalization.
+    with FileLock(str(folder) + ".lock"):
+        meta = json.loads((folder / "job.json").read_text(encoding="utf-8"))
+        if "result" in meta:
+            return meta["result"]
+        if not started.get("ok"):
+            meta["result"] = {**started, "job_id":identity, "state":"failed"}
+        else:
+            meta["handle"] = started["handle"]
         atomic_write_json(str(folder / "job.json"), meta)
-        return meta["result"]
-    meta["handle"] = started["handle"]
-    atomic_write_json(str(folder / "job.json"), meta)
+        if "result" in meta:
+            return meta["result"]
     result = job(identity, caller)
     if result.get("state") == "pending":
         threading.Thread(target=_watch, args=(identity, caller), daemon=True, name="godot-scene-commit").start()
