@@ -1,5 +1,9 @@
 # Objetivos acordados
 
+## Hub: rediseño de todas las pantallas — 23-10-2026, #1269
+
+Entrega HoardLink e3032f7: estructura de seis entradas con herramientas locales, aplicaciones y proyectos separados en Inicio, catálogo con una apertura principal, recursos en Sistema y formularios visuales de automatización. Las ágoras siguen siendo de proyecto; el Hub conserva las herramientas compartidas y sus APIs. El nuevo sistema azul marino/blanco/cobalto sustituye al anterior en todas las pantallas del Hub. Ver guía HoardLink/docs/hub-navigation.md y resultado final en la tarea1269. No hay una nueva decisión de Luis pendiente para esta entrega.
+
 ## Hub por proyectos e interiores legibles — 23-10-2026, #1261
 
 Integrado en HoardLink `56bfa28`: navegación por proyectos con ágora propia y herramientas compartidas a página completa. Correo usa bandeja activa y lector con vuelta al filtro; los registros, acciones y ajustes se reorganizan en pantallas estrechas. La corrección del rechazo visual se verificó con contenido largo en instancias aisladas y revisión independiente; no amplía las APIs ni modifica los modelos o datos reales. Límites de carga y evidencia en `HoardLink/docs/hub-navigation.md` y FAUSTUS.md.
