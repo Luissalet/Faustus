@@ -14850,3 +14850,21 @@ preflights físicos inspeccionados. El bucle alcanza64 mejoras integradas:
 conciliación de limpiezas rechazadas, sin reintentar su borrado. Evidencias y límites
 en research-inbox/hypatia1194/CONTINUIDAD.md y
 C:/Users/luism/.codex/scratch/hoard-loop23/docs-next64/.
+
+
+## Silver: transformaciones por fases y remates visuales — 23-10-2026, #1349
+
+Ultraexplosión, megaevolución y Dynamax conservan la forma PMD previa durante la
+carga, ocultan el cambio dentro de una envoltura opaca y revelan la forma nueva
+mediante una ruptura y fragmentos. Ultra concentra luz espectral; Mega forma una
+doble hélice; Dynamax añade tormenta y un impacto al aterrizar. Un impact frame
+oscuro de unos 105 ms puntúa la revelación. Los primeros impactos confirmados de
+Z/Max reciben una fractura angular incluso con daño pequeño, sin inventar golpes
+en fallos, inmunidad o bloqueos. Las siluetas eligen la forma Ultra/Gigamax real.
+
+La aplicación, el MP4 nativo y el HTML recién exportado comparten estos efectos.
+Pausa inmoviliza la secuencia; buscar muestra la forma resuelta; movimiento
+reducido evita ocultación, destellos y movimientos de cámara y conserva una
+señal fija. El modo sencillo omite las capas añadidas y el ajuste de impactos
+controla los paneles. No se alteran reglas14, acciones ni píxeles de los Pokémon.
+Evidencias: research-inbox/silver-spectacle1349 y Silver/docs/VISUAL_PRESENTATION.md.
