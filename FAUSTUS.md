@@ -14868,3 +14868,44 @@ reducido evita ocultación, destellos y movimientos de cámara y conserva una
 señal fija. El modo sencillo omite las capas añadidas y el ajuste de impactos
 controla los paneles. No se alteran reglas14, acciones ni píxeles de los Pokémon.
 Evidencias: research-inbox/silver-spectacle1349 y Silver/docs/VISUAL_PRESENTATION.md.
+
+
+## Hoards: filtros de gráficas, nombres de participantes y catálogo combinado (23-10-2026)
+
+Tres entregas nativas y locales, CAS1 revisadas e integradas exactas, con UI real,
+API y SDK MCP. Total del bucle codex-hoard23:67mejoras=64funciones+3UI,
+65DONE y dos históricas integradas aprobadas abiertas por conciliación de limpieza.
+
+- **Nightingale1348**, d4cf535166683dc3197133e2a2e527d14a302a1c:
+  constructor de gráficas con condición SQL opcional sin WHERE, previa a agrupar,
+  y filtro persistido visible por tarjeta. Vacío incluye todas; error retiene el
+  borrador y permite corregirlo. Faustus recibe el filtro completo. API y MCP42
+  ya usaban ese campo, sin motor ni herramienta nuevos. ROOT importe>0 cambia
+  Norte80→160/Sur20 y conserva cinco filas originales. Área15PASS una vez,
+  build final6.18/MAIN12.27, peer get4/get5 API-SDK42 exactos. No nueva descarga
+  PNG demostrada en esta tarea; la descarga real1334 sigue como prueba aparte.
+- **Hermes1346**,18116842cc1be1bb0a4d4b5105c3e0332755f52f:
+  Viaje/Gastos/Participantes permite cambiar nombre por ID con trip_people(rename)
+  existente/MCP115. Distingue homónimos y conserva IDs, pagadores, repartos,
+  importes/monedas/flags/posición. Cancelar/error conserva borrador; edición
+  posterior al envío queda pendiente, cancelar no cancela una petición enviada.
+  ROOT cambió sólo su persona elegida y refrescó nombres de saldos/liquidación,
+  total21,36EUR y transferencias1/5,18 intactas.14Node+1área, MAINbuild1.54,
+  peer API-SDK115,15tablas9personas6gastos sólo tres nombres autorizados.
+- **Vulcan1347**,4b91dd2e90783bd7ccb4e7499a8c4f1b4fc6778e:
+  Fichas prepara catálogo combinado de carpetas/modelos, con ámbito independiente
+  de los filtros de tabla. Cuenta entradas, distingue estado/origen y precio
+  orientativo literal. Copia y descarga conservan todo el JSON de la misma
+  respuesta nativa sin reserializar números. GET fino/export_catalog/MCP160
+  existente. No mallas/miniaturas/publicación/importación; HTTP completo no
+  amplía el límite previo de metadatos MCP. ROOT archivo real26834bytes en
+  Downloads y clipboard exactos al mismo oracle HTTP; autor Brave tuvo timeout,
+  sin atribuirle archivo. Área4PASS, peer clientecontrolado50084B/int64exact,
+  API-SDK160; MAINbuild2.41 y15tablas/seisSTL bytes-tamaño-mtime exactos.
+
+Los tres MAIN están limpios en sus SHA aprobadas. QA propias63341/43/44 paradas,
+worktrees/rama normales retirados tras inspeccionar ancestros/descendientes sin
+enlaces, procesos ni listeners. Fallos de harness/readiness conservados, sin
+restaurar fixtures, repetir marcadores ni tocar servicios/modelos/datos ajenos.
+Recibos y límites: research-inbox/hypatia1194/CONTINUIDAD.md y scratch hoard-loop23
+nightchartfilter23/hermesperson23/vulcancatalog1347. Sin push.
