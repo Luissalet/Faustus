@@ -14359,3 +14359,51 @@ grafo Store sin embeddings y memoria/continuidad conservan sus registros anterio
 Recibos y límites: C:/Users/luism/.codex/scratch/hoard-loop23/docs-next44/ y carpetas
 de tarea enlazadas en sus integrations.json/RESULT.md. Ledger1279 y Jobhunter1282
 siguen en implementación aislada; todavía no se cuentan como funciones terminadas.
+
+
+### Recorrer movimientos, exportar fechas y encontrar proyectos (23-10-2026)
+
+Tres funciones nativas revisadas e integradas exactamente, sin push:
+
+- **Ledger #1279, 538bafc4, CAS1.** Movimientos carga100 y continúa con nextOffset,
+  conserva borradores y ediciones al añadir páginas, muestra cargados/total y suma
+  sólo filas cargadas por moneda guardada. Incluye mitades de traspasos, sin FX ni
+  prometer saldo total o snapshot frente a altas/bajas simultáneas. Filtros/hash y
+  refresco descartan respuestas antiguas; enlaces tx leen el movimiento individual.
+  UI/API/MCP49 existentes:339IDs únicos/orden/campos exactos, API100 y MCP25 por
+  el cap nativo20KB. Suite224PASS/1SKIP una vez y build; peer y ROOTUI escritorio/
+  móvil390, drafts/100→339/refresco/tx PASS. MAIN build1.69s/SDK49/API y baseline
+  natural de negocio/fixture/token/copilot/marcadores exactos; QA/WT/rama retirados.
+- **Jobhunter #1282, 8cd33bec, CAS2.** Seguimiento prepara un snapshot de las fechas
+  guardadas de la lista visible, muestra eventos y omisiones y descarga ese mismo
+  ICS por API/MCP17. Offset/Z→UTC, sin zona→hora flotante explícita y fecha sola→
+  día completo; fechas ausentes o inválidas se omiten. No inventa duración, alarmas,
+  asistentes o invitaciones; no sincroniza calendarios. Cambiar vista/contexto/
+  IDs/fechas retira preview y respuestas pendientes. El nuevo wrapper de exportación
+  usa la exención de tamaño ya documentada, implementada sólo en su copia vendorizada;
+  los otros resultados mantienen sus límites y el marcador no sale en JSON.
+  Suite85PASS/1SKIP antes del delta cap; core/bridge y gran API/SDK1100eventos>500KB
+  con lectoricalendar7.3 posteriores completos, sin otra fullsuite. ROOTUI CAS1
+  verificó503/reintento, retraso4s/cambio<1s, ámbitos y offsets UTC00:30/01:30;
+  descargó realmente783B/2eventos coincidentes con el preview. CAS2 sólo corrige
+  tres flexiones de singular/plural y recompila, con UI/peer finales escritorio/
+  móvil390. No se atribuyen a CAS2 otra suite completa ni exportar1100eventos de nuevo.
+- **Atlas #1285, cfd724f2, CAS2.** La barra Proyectos busca todas las palabras en
+  nombre/objetivo sin mayúsculas ni acentos, con estado y ámbito. Conserva el
+  proyecto abierto y sus borradores aunque quede fuera del filtro, con aviso.
+  Recuento, limpiar, carga/vacío/error y reintento; filtros conservados al refrescar
+  y respuestas viejas descartadas. atlas_projects extiende query/state/sphere con
+  la respuesta projects y MCP14 compatibles. Retira el corte global1000 anterior
+  al acceso; lee metadatos, sin escanear archivos ni calcular hashes o ampliar
+  permisos. Suite32PASS una vez, nuevo caso cutoff1PASS y final9Nodecontext;
+  SDK14/API8casos y5tablas exactas, peer y ROOTUI PASS. MAIN/servido estático exacto,
+  snapshot natural de5tablas preservado, QA/WT/rama retirados. No pipeline de build
+  por diseño: HTML/CSS/JS se sirven directamente. Fallos iniciales del harnessSDK2
+  y CLI literalHEAD están corregidos y documentados, no eran fallos del producto.
+
+Los tres MAIN quedan limpios, con QA y worktrees propios retirados; se conservan
+los límites y pruebas reales en sus recibos. Manual nativo, memoria/continuidad y
+grafo Store sin embeddings se actualizan en el lote documental1291. Evidencia:
+C:/Users/luism/.codex/scratch/hoard-loop23/docs-next47/. Nightingale1289 sigue en
+implementación aislada de descarga que conserva el libro original; aún no se
+cuenta como entrega ni altera la exportación plana existente.
