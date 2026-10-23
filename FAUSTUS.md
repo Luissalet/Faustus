@@ -14593,3 +14593,27 @@ Manual nativo actualizado por inserción en dos párrafos; grafo sin embeddings,
 memoria y continuidad conservan datos ajenos. Sin push ni apps/modelos reales.
 Evidencia C:/Users/luism/.codex/scratch/hoard-loop23/docs-next53/ (tarea1312),
 hermesmerge23/INTEGRATED.md y evidence/atlascontext23/INTEGRATED.md.
+
+
+### Parámetros CAD en la ficha de una pieza (23-10-2026)
+
+La biblioteca de Vulcan permite consultar la receta CAD de una pieza generada,
+editar sus parámetros y regenerar el mismo ID. Envía sólo cambios numéricos;
+las expresiones no modificadas se conservan aunque cambie su formato escrito.
+Refresca medidas, visor e imagen y muestra antes/después, objetivos y hasta20
+registros de historial, manteniendo los borradores de ficha y notas pendientes.
+Reemplaza STL, imagen y receta propios; el historial no recupera archivos.
+El panel utiliza API/MCP160 existentes y recetas STL de la biblioteca: no añade
+edición de spec/objetivos, STEP, transacciones de archivos o consultas a modelos.
+
+Vulcan1316 DONE exactbce89448575574be19b961819a3132a7d028aad7 aprobadoCAS2.
+La revisiónCAS1 encontró el caso20→20.0+parámetro derivado; la corrección local
+reconoce formato numérico equivalente y conserva ediciones posteriores reales.
+Focal4escenarios y ROOT UI verificaron el arreglo sin repetir regeneraciones:
+ancho80→altura40 con fórmula intacta, mismoID3, sin segundo cambio pendiente.
+MAINbuild/SDK160/API y preservación natural15tablas/13archivos comprobados;
+QA63358/WT/rama propios retirados después de preflight físico inspeccionado.
+Total54mejoras integradas:51funciones+3UI,52DONE+dos antiguas limpiezas abiertas.
+Manual nativo, grafo sin embeddings, memoria y continuidad actualizados en1321.
+Evidencia C:/Users/luism/.codex/scratch/hoard-loop23/vulcanparams23/INTEGRATED.md
+y C:/Users/luism/.codex/scratch/hoard-loop23/docs-next54/. Sin push.
