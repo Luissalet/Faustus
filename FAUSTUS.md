@@ -16114,3 +16114,28 @@ Colección1/1025/Arceus nativa y0/1025/Negro web,preferencias y416ajenos intacto
 8897/8898 no alterados. Studio/AVD visibles sin reiniciar. Japón, resto de
 entrenadores, guías completas yparidadglobal pendientes. Recibos en
 research-inbox/hoarddex-battles-gsc-product/FINAL.json.
+
+
+## HoardDex: equipos iniciales de Sinnoh US — 24-10-2026, #1475
+
+Guía → Combates y fielddex_battles añaden26equipos/39contextos: ocho líderes y
+cinco equipos iniciales de Liga por edición. Diamante/Perla estadounidenses
+comparten su JSON/compilador original y Platino estadounidense (revisiones0/1)
+conserva trece equipos propios.74primarias fijadas,52miembros/208huecos por edición;
+ID/clase, ceros y objetos de cada miembro separados de la mochila. Roco14 conserva
+2/3/3 movimientos. Fantina36DP/26PT y Cintia66DP/Gastrodon frente62PT/Togekiss.
+Las fuentes identifican DP/PT y los enlaces mantienen edición y vuelta a la Guía.
+No se infiere igualdad con Europa/Japón ni flujo completo/alcanzabilidad de guiones.
+Total159equipos/266contextos/416fuentes en14ediciones;133/227previos exactos.
+
+Main277/453cd26d, tres commits CAS1 exactos yff-only, sinpush.
+Mainbuildweb/489TS+3CJS/TSC0/MCP37-607. Precheck independiente74SHA/26equipos,
+acabado ship11vistas ydocumenter separados. QAreal275ESENweb1280/390 yAndroid5554
+visiblefont1/1.3, corrección de etiqueta276 confirmada enambas; final277web yAPKx86
+publicado instalado/probado. AmbosABI Hermes120426668B y17884medios cadaSHA
+exacto276; ARM64 compilado sin teléfono físico. CuatroAPKanteriores retirados,
+80JSON conservados. Colección1/1025/Arceus nativa y0/1025/Negroweb restauradas,
+416ajenos intactos/noindexados,8897/8898 sin alterar; Studio/AVD visibles sinreiniciar.
+Elecciones compartibles1466 yselectorfilas/DLC1380 conservados. Otrosentrenadores,
+revanchas, guías completas yparidadglobal siguenpendientes. Recibos en
+research-inbox/hoarddex-battles-sinnoh-product/FINAL.json.

@@ -1910,3 +1910,14 @@ Continúan otros bancos de edición, entrenadores de aventura, objetivos de hist
 presets/reglas estrictas yresto de cobertura. Mantener las elecciones compartibles
 1466 ylas funciones entregadas, sin inferir progreso o declarar paridadcompleta.
 No aparece una nueva decisión de Luis que añadir a PENDIENTES.
+
+
+## HoardDex: continuar tras Sinnoh US — 24-10-2026, #1475
+
+Los26equipos/39contextos iniciales DPUS/PTUSrev0/1 están entregados enMain277.
+La investigación1474 está incorporada; ocho líderes ycinco deLiga por edición,
+con fuentespropias ysin inferirEU/JP. Total159/266/416fuentes en14ediciones,
+conservando133equipos anteriores. Continúan otrosbancos, entrenadoresdeaventura,
+revanchas, objetivosdehistoria, presets/reglas yrestodecobertura. Mantener las
+funcionesentregadas yeleccionescompartibles; no inferirprogreso ni declarar
+paridadcompleta. No nueva decisión deLuis que añadir aPENDIENTES.
