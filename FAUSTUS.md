@@ -15527,3 +15527,63 @@ retenidos.416ajenos WT SHAexactos/0indexados,8897/8898sinmutar.
 Selector1380, Hoenn1375 ySafariRBY1388 conservados. Paridad global aún
 parcial; evidencia research-inbox/hoarddex-bw-evolution/FINAL.json.
 Parent864OPEN conserva WT864 para continuar el encargo de Luis.
+
+
+### 24-10-2026 · fechas de analítica, fotos parecidas y frecuencias por columna
+
+- **Mercator1403** (`4fbb7b0a7a7ae0043e30825670bd36fcf4facdef`): Analítica web
+  permite elegir Personalizado/Desde/Hasta, conservando presets, agrupaciones,
+  métricas e histórico/JSON. Envía dos fechas ISO tal como se eligen, sin UTC o
+  extremos horarios inventados. Tabla e identidad muestran el intervalo, ID,
+  procedencia y fecha de la consulta guardada, con cero y ausentes separados.
+  Editar retira resultados incompatibles; una consulta ya enviada puede guardar
+  su snapshot aunque deje de mostrarse al cambiar el formulario. API/MCP25
+  existentes, sin motor o dependencia nuevos. Autor4pruebas de área una vez,
+  focal consumidor final, navegador390/error/retry/late43ms y peer independiente.
+  ROOT consultó una vez01–21oct/Página y verificó el nuevo ID y valores0/null.
+  MAIN estático sin npm ficticio: syntax/assetsbytes exactos, API/stdio25history
+  readonly y14tablas enteras exactas postROOT. Dos markers consumidos intactos.
+  QA63304OFF/8anc5441desc0enlaces/cleanupnormal/DONEexactCAS1.
+- **Daguerre1405** (`f2c01b5a43093ca4812128c00fb3a842ca50877f`): el visor recorre
+  todas las fotos ya indexadas ordenadas por parecido, en tandas de doce. Muestra
+  nombre/carpeta, origen, cantidad cargada frente al total nativo y nota del
+  indexador. Son candidatos ordenados, no coincidencias garantizadas, duplicados
+  o porcentajes de calidad. Reintentar una página conserva las anteriores;
+  cambiar de foto impide incorporar respuestas del origen previo. API/MCP96 y
+  algoritmo existentes; no inicia modelos, indexación ni escrituras de originales.
+  Autor317PASS15SKIP1deselected una vez144.75s (supera guía90s), Reactfocal y
+  navegadorESEN390/error/retry/late93ms con borradores intactos. Peerreal yROOT
+  verificaron12→24→25; ROOT abrió la última candidata por suID original.
+  MAINbuild7.17s, API/stdio96assertions pasaron antes de fallo observadorassets;
+  rawrespuestas no persistidas, no se repitió la prueba para rellenar evidencia.
+  Corrección sólolectura confirma bundleJS/CSSbytes exactos/14tablas intactas+
+  una agent_call esperada y52JPEG/XMPsha-size-mtimeexactos. QA63303OFF/8anc
+  20793desc0enlaces/normalcleanup/DONEexactCAS1, sin force ni limpieza histórica.
+- **Nightingale1406** (`a7282aa743ebdb483dad5644f85cf6c3d6442be8`): Conjuntos de
+  datos ofrece Frecuencias por columna sobre la versión guardada mostrada, con
+  recuentos exactos, NULL/cadena vacía/textoNULL separados, texto VARCHAR completo
+  y porcentajes sobre todas las filas, no sólo la página. Páginas de50 con
+  Cargar más, error/retry que conserva lo recibido e invalidación al editar,
+  cambiar conjunto/versión o cerrar. El contexto Faustus combina consulta y
+  metadatos aplicados; plegado no sustituye otros editores. Engine/Services,
+  GET/api/datasets/{name}/frequencies ydata_profile(mode=frequencies) comparten
+  GROUP BY/COUNT, catálogo43 intacto. Sólo el modo nuevo devuelve páginas
+  completas para no saltar grupos por recortes; los demás modos conservan su
+  salida. No crea versiones, logs de análisis, archivos o modelos. Valores
+  son textoDuckDB, no bytesoriginales; porcentajes redondeados para mostrar.
+  Autor11áreaPASS y3duplicadas reconocidas, focalcontextfinal ybuild3.99s;
+  API/stdio43/13tablas3JSONexactos, navegador390/paging59/errorretry/late591ms.
+  PeerAPP1 con orden numérico/APIstdio43/móvil390/cierre-reapertura final.
+  MAINbuild8.04s/APIstdio43ROOTv0offset55→5de60grupos/64filas,13tablas postpeer
+  enteras exactas,3JSON y3markers sha-size-mtimeexactos, assetsHTTPbytes exactos.
+  QA propiaDuckDB2.0.0: no compatibilidad con todas>=1.1 probada. QA63302OFF,
+  preflight8anc33217desc0enlaces/runtime/listener leído antesnormalcleanup/DONE.
+
+Las tres tareas están DONE sobre SHAexactas aprobadas CAS1 con revisión cruzada,
+QA ficticia propia y límites reales conservados. Lote1410 actualiza97mejoras:
+92funciones+5UI,95DONE+2históricas abiertas por conciliación de limpieza, sin
+reintentar retiradas rechazadas. Se preserva íntegro el contexto común ajeno
+46d5256 deHoardDex y todos los bytes previos; no se toca su producto excluido.
+README propios/manual/grafo/memoria/continuidad al día, sin nueva decisión para
+OBJETIVOS/PENDIENTES. Sinpush/modelos/servicios/datos ajenos. Evidencia completa
+en mercrange23,dagsimilar1405,nightfreq23 y sus review1403/1405/1406 del scratch.
