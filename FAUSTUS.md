@@ -15893,3 +15893,35 @@ Los dos APK conservan el runtime probado y los 17.884 recursos exactos;
 ARM64 se compila sin teléfono físico. Se retiran sólo tres APK anteriores
 por rutas y SHA concretos, conservando los JSON. Colección y archivos ajenos
 intactos; 8897/8898 sin cambios. Recibos: research-inbox/hoarddex-safari-dp/FINAL.json.
+
+## 24-10-2026 · Núcleo exacto de matrices y consulta de actividad anterior
+
+Hypatia1436 añade una base racional del núcleo A·x=0 para matrices
+rectangulares, con rango, dimensión del núcleo y residuos exactos A·vector.
+Cada vector se muestra como columna; base vacía significa sólo vector cero.
+La base no es única ni necesariamente ortonormal. Selector, ejemplo, copia y
+búsqueda comparten math_matrix operation=nullspace y POST/api/math/matrix.
+No demuestra los pasos, modifica el banco ni añade herramientas o motores;
+catálogo71, operaciones anteriores y sistemas paramétricos conservados.
+
+Funes/Talos1434 permite elegir fecha/hora local, de1 a20 contextos y todas
+las categorías en Actividad→Hoy. Leer aplica el borrador; Volver a este día
+quita el corte. Muestra instante/zona y filtros realmente consultados,
+conserva campos tras error/refresco y retira resultados al editar. Cambiar
+día reinicia filtros; navegar dentro del mismo día los conserva. Consulta
+nativa de tres días con proyectos primero, sin cronología global ni prueba
+de edición o existencia actual de rutas. Excluye ausencia/bloqueo/tramos<10s;
+por defecto omite ocio/comunicación. No activa observadores ni modelos;
+backend y MCP97 intactos.
+
+Ambas entregas DONE con revisión cruzada y ROOT, FF exacto bajo merge lock,
+HEAD fresco, build MAIN exit0 antes de sondeo nuevo API/stdio, preservación
+de bancos y QA propia apagada. WT/rama propios retirados normalmente tras
+ROOT leer todo el preflight; sin push. Hypatia7036990 CAS2 (ajuste de una
+línea tras descripción124>110), área23PASS/build8.65, MAIN8.90, 15tablas
+enteras exactas y catálogo71; GUIdesktop390/console[]. Funesac48a55 CAS1,
+área47PASS/1fallo heredado de ruta, no global verde; MAINbuild6.18/SDK97,
+15tablas ajenas enteras+una llamada nativa esperada, fuentes intactas.
+Capturas parciales o erróneas excluidas y fallos de observadores conservados;
+no prueba real de portapapeles/modelos ni carreras visuales no ejecutadas.
+Recibos: scratch/hoard-loop23/hnullspace1436 e funesbefore23/INTEGRATED.md.
