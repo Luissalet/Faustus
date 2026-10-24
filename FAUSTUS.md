@@ -15448,3 +15448,58 @@ de C:/Users/luism/.codex/scratch/hoard-loop23/dagalbum23, vulcanbbox1396 e
 hypcontinued23. Documentación común1400; no push ni cambios en los productos
 excluidos por Luis. Nuevos frentes de investigación Hermes1399/JobHunter1401
 requieren propuesta contrastada y aceptación concreta antes de implementación.
+
+
+### 24-10-2026 · datos de embarque, rangos salariales y división de polinomios
+
+- **Hermes1399** (`7f879c7fc11c4d7281dcb45575934e9c78917f44`): el editor de
+  reservas ofrece Puerta en vuelos, Coche separado de Asiento en trenes y Clase
+  en medios de transporte. Campos y anotaciones visibles en español e inglés.
+  Vaciar retira la anotación; guardar usa segment_update nativo115 y modifica
+  sólo lo editado. Conserva notas pendientes del viaje y ediciones posteriores
+  al envío. Son datos locales: no comprueba cambios en el proveedor. API/MCP,
+  navegador390/desktop, revisión independiente y ROOT verificaron identidades,
+  precio cero, campos vacíos y borradores. El reagrupado actualiza timestamps
+  nativos de viajes y la apertura añade caché documental; se cuentan esos
+  cambios, sin restaurar el banco ficticio. MAIN build1.37s/stdio115/15tablas
+  exactas contra postROOT y assets HTTP exactos. QA63307OFF, retirada normal
+  del WT tras lectura ROOT del preflight8anc/10342desc0enlaces y MAIN limpio.
+- **JobHunter1401** (`bc3b064021f8349eaf46dc66fab6bfee91e284d3`): Oferta permite
+  editar el rango salarial guardado: mínimo, máximo, moneda y periodo,
+  separado del texto publicado. Vacío representa desconocido, cero es real
+  y sin extremos se muestra Por confirmar. Guardado parcial nativo por
+  update_job_facts17; conserva notas y otros borradores, y ediciones posteriores
+  al envío. Contexto final distingue rango persistido y borrador. Conserva el
+  rechazo nativo durante preparación y la invalidación de aprobación previa;
+  no estima, convierte, compara por score ni añade reglas de elegibilidad.
+  Autor17área y focal material, API/stdio17 y peer independiente. ROOT guardó
+  una vez max3401 y comprobó móvil390/escritorio y apertura limpia de B con
+  sus40000–50000EUR/año intactos. La carrera A→B DURANTE demora quedó sin
+  verificar por diálogo nativo de cambios sin guardar bloqueando automatización;
+  no se declara PASS ni se repite la escritura. MAIN build1.21s, API/stdio17
+  readonly, seis candidaturas/settings/contextos byte exactos postROOT y cinco
+  markers consumidos intactos. QA63306OFF/8anc12496desc0enlaces/cleanupnormal.
+- **Hypatia1402** (`4afcdce699afcf2545111802dd99695213a8f9b3`): División de
+  polinomios en la calculadora exacta obtiene cociente y resto racionales en
+  x/y/t, con originales, normalización, grados y comprobación A=B×Q+R. El
+  resto es cero o tiene grado menor que el divisor; cero tiene grado no
+  definido. Ejemplo, copia y borrador Faustus, errores corregibles e
+  invalidación de respuestas al editar/cerrar. POST/api/math/polynomial-division
+  y math_polynomial_division comparten parser y SymPy existentes: catálogo68,
+  50Study+18Teacher. No división larga explicada, multivariante ni funciones
+  racionales generales, sin nueva dependencia ni cambios al banco de estudio.
+  Autor82mathPASS una vez, API/stdio68 tres casos y cero400; peer caso distinto
+  con identidad Fraction independiente y Brave390/divisorconstante/resto0.
+  MAINbuild25.89s+PWA468ms, API/stdio68 nuevo x⁴+1/(x²+1)→Qx²−1,R2,
+  15tablas exactas postpeer y tres markers sha-size-mtime exactos. El primer
+  observador HTML recibió503 mientras el build aún seguía; corrección sólo de
+  lectura de assets tras terminar, sin repetir pruebas nativas. QA63305OFF,
+  preflightROOT8anc35709desc0enlaces/runtime/listener, retirada normal/MAINclean.
+
+Las tres tareas DONE conservan SHA exacta aprobada CAS1 y evidencias propias
+fuera del WT. Documentación1404 consolida94mejoras=89funciones+5UI,92DONE y
+dos históricas aprobadas/integradas abiertas por conciliación de limpieza;
+no reintentar sus retiradas rechazadas. README propios, manual, grafo y memoria
+recogen las funciones y sus límites. Corrección de referencia anterior: aceptación
+ROOT de Hermes1399 fue mensaje16144, no16149. Sin push, modelos o servicios
+ajenos, cambios de datos reales ni implementación en productos excluidos.
