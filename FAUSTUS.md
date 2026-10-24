@@ -15925,3 +15925,52 @@ enteras exactas y catálogo71; GUIdesktop390/console[]. Funesac48a55 CAS1,
 Capturas parciales o erróneas excluidas y fallos de observadores conservados;
 no prueba real de portapapeles/modelos ni carreras visuales no ejecutadas.
 Recibos: scratch/hoard-loop23/hnullspace1436 e funesbefore23/INTEGRATED.md.
+## 24-10-2026 · Potencias, avisos individuales, clips y gráficos reutilizables
+
+Hypatia1442 calcula A^n para matrices racionales cuadradas y exponentes
+enteros escritos: positivos por producto matricial, cero identidad y
+negativos con inversa. Singular negativa muestra que la potencia no existe.
+El formulario conserva entrada y exponente, distingue escrito/normalizado,
+incluye ejemplo y copia. API/math_matrix operationpower comparten el cálculo;
+catálogo71, cinco operaciones anteriores y banco intactos. No admite
+exponentes fraccionarios/simbólicos ni demuestra los pasos.
+
+Hermes1443 añade Marcar visto individual en Novedades, ficha e Historial.
+Sólo cambia seen del ID explícito: otros avisos, estado confirmado y última
+visita global permanecen. Historial puede mostrar vistos o sólo pendientes;
+conserva filtros, borradores, reintento y acciones global/Descartar/Reenviar.
+Backend/API/MCP115 intactos. Visto no añade fecha ni acredita acción externa;
+marked_seen cuenta filas afectadas, incluso si ya estaban vistas.
+
+Daguerre1440 exporta un intervalo de vídeo a MP4 y recibo derivados en
+su propio data/exports/id, sin tocar originales. Campos de segundos o
+posición del reproductor listo, recibo pedido/medido, reproducción y descarga.
+Library/API/videos_export_clip nativos;97tools y96previas enteras exactas.
+FFmpeg opcional existente recodifica CPUH264/primer audioAAC si existe.
+No lossless/HDR/otras pistas/subtítulos/precisión ilimitada; cerrar no cancela
+la exportación iniciada. Borradores posteriores y respuestas de otra ficha
+se conservan separados del recibo realmente aceptado.
+
+Nightingale1446 añade Usar como base a los gráficos guardados. Carga ocho
+campos del spec en el constructor, origen nombre/ID y foco en título, sin
+escribir. Guardar crea otro ID y conserva original y campos posteriores a
+la petición. Error permite corregir/reintentar; refrescar no reaplica origen.
+API/data_chart get/create y43tools intactos; usa filas actuales, sin copiar
+dataset, imágenes históricas, dashboards o historial. Cambiar de ruta sigue
+desmontando el formulario. El orden de series con X empatada no está definido
+por la consulta existente, que sólo ordena X; comparar valores por grupo.
+
+Las cuatro entregas DONE tienen peerCAS y ROOT, FF exacto con merge lock y
+HEAD fresco, buildMAIN exit0 leído antes de sondeo nuevo, preservación de
+fuentes/bancos y QA propiaOFF. WT/rama propios retirados normalmente tras
+ROOT leer preflight completo y remove0/targetfalse antes branch-d0. Commits:
+Hypatiaabc2f237, Hermes805b79b7, Daguerre9c59ae34, Nightingale0ba2b632.
+Pruebas proporcionadas: Hypatia25PASS; Hermes20PASS; Daguerre suite315P4F15S1D
+con focales correctivosPASS, sin globalverde; Nightingale16PASS tras corregir
+sólo setupQA pinned. MAINbuilds9.09/1.02/6.68/4.94s respectivamente, API/MCP
+71/115/97/43 y datos originales preservados. GUI ESEN390 y límites de capturas
+parciales/excluidas documentados. Descarga realROOT Daguerre en IAB guardó
+221106B/SHAa41de0088a690af3551614620f405231330923e1459f178ae91b32f004e1d336
+idénticos al mismo derivado; no se acredita clickdownloadBrave. Sin push.
+Recibos: scratch/hoard-loop23/{hpower1442,hermeseventseen23,dagvideoclip1440,
+nightchart1446}/INTEGRATED.md. No repetir siembra, marcas, exports o limpieza.
