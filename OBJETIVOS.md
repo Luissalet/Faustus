@@ -1932,3 +1932,13 @@ Continuar datos propios de otras ediciones,revanchas,rivales/restoaventura yguí
 No sustituir ausencias porimposibilidad niprestar equipos/condiciones deGSC/Sinnoh.
 Conservar eleccionespersonalizadas compartibles1466 yselectorfilas/DLC1380 yaentregados.
 No hay una nueva decisión deLuis niun pendiente bloqueado que añadir.
+
+## HoardDex tras la Liga mejorada HGSS — 24-10-2026
+
+Entrega1481 añade cinco equipos mejorados propiosUS,tras8medallasKanto.
+HGSS27/54;global186equipos320contextos471fuentes16ediciones,Main282/web/MCP/
+APKx86 probado yARM64compilado. No cierra la paridadglobal.
+Continuar fuentes propias por edición:revanchas de gimnasio,rivales/restoaventura,
+guías útiles yEUJP;acceso completoMontePlateado aúnsincontrastar. Conservar el
+avisoCelio sóloRFVH,eleccionescompartibles1466 yselectorfilas/DLC1380.
+No hay nueva decisión deLuis niun pendiente suyo que añadir.

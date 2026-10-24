@@ -16159,3 +16159,23 @@ ES/sistema/fuente1 restaurados,8897real/8898intactos y416ajenos noindexados exac
 Fuentes ylímites: FieldDex/docs/BATTLES.md; recibos research-inbox/hoarddex-battles-hgss-product/FINAL.json.
 EU/JP deHGSS/Sinnoh,revanchas/restoaventura/guías completas yparidadglobal continúan pendientes.
 Plantillas deelecciones compartibles1466 yfilas/DLC1380 permanecen entregadas.
+
+## HoardDex: Liga mejorada de HeartGold/SoulSilver US — 24-10-2026
+
+Entrega1481, Main282 `8b99bf01168503a661fd5f5cb907f5c91d50c46a`, dos commits CAS1exactos,ff-only/sinpush.
+Guía/MCP suma cinco equipos propios deLiga mejorada: Mento62,Koga64,Bruno64,
+Karen64,Lance75;30miembros120huecos7objetos por edición. HGSS27/54 y120miembros/
+480huecos31objetos;global186equipos320contextos471fuentes16ediciones.43primarias
+contrastadas independientemente dentro delarray55fuentes previo intacto.
+Ramas originales antes/después8medallasKanto;Celio exclusivoRFVH. Lance lleva
+Salamence72/BayaZiuela yDragonite75/BayaZidra;KogaMukLodoNegro/SwalotRestos.
+Cinco bancos anteriores byteexactos;22HGSS sóloquitan avisoobsoleto en cinco condiciones.
+Mainbuildweb495TS+3CJS/TSC0/MCP37-619. QA281realwebESEN1280/390 yAndroid5554
+visiblefont1/1.3;finishship14vistas/documenter/CAS independientes. Final282web
+yAPKpublicadox86 probado;ARM64compilado sinphone. Hermes281 y17884medios porSHA
+exactos enambasABI.3APKanteriorretirados trasQA,84JSON conservados. Colecciones
+intactas trasapp-onlyreopen,ES/sistema/font1,8897real/8898intactos/416ajenosnoindexados.
+Recibos research-inbox/hoarddex-hgss-upgraded-product/FINAL.json; FieldDex/docs/BATTLES.md.
+EUJP,gymrematches,rivales,restoaventura,guías completas,fullMtSilveraccess,
+ROM/fullreachability/TalkBack/tablet/ARMphone/paridadglobal siguenpendientes.
+Eleccionespersonalizadas compartibles1466 yfilas/DLC1380 siguenentregadas.
