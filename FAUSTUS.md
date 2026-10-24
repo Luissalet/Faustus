@@ -15974,3 +15974,24 @@ parciales/excluidas documentados. Descarga realROOT Daguerre en IAB guardó
 idénticos al mismo derivado; no se acredita clickdownloadBrave. Sin push.
 Recibos: scratch/hoard-loop23/{hpower1442,hermeseventseen23,dagvideoclip1440,
 nightchart1446}/INTEGRATED.md. No repetir siembra, marcas, exports o limpieza.
+
+## HoardDex: Safari de HeartGold y SoulSilver — 24-10-2026, #1445
+
+Main 258, 2fab5703, incorpora el motor Safari propio de HeartGold/SoulSilver,
+con 33 fuentes fijadas y sus mensajes originales. El cebo reduce el factor
+o lo conserva; el barro lo aumenta. Las observaciones inmediatas distinguen
+los efectos posibles. Inventario manual, intervalos sin medias inventadas,
+Deshacer y reinicio funcionan en Herramientas y MCP. Los casos cero todavía
+sin contrastar se explican sin afirmar una captura imposible. No calcula
+huida, estrategia, una probabilidad condicionada por todo el historial ni
+el éxito de todo el encuentro. Conserva los motores anteriores.
+
+CAS1 aprueba dos commits exactos y se integra por ff-only, sin push.
+Main pasa build web, 467 TS + 3 CJS, TypeScript y MCP 36/542. La fuente257
+se prueba en web y Android visible, ES/EN y texto normal/ampliado; final258
+confirma la web de Main y el APK x86 instalado con SHA exacto, ambas
+ediciones, regreso desde ficha, inventario y filas de juegos. Ambos APK
+conservan el runtime probado y los 17.884 recursos exactos. ARM64 compilado,
+sin teléfono físico. Se retiran sólo tres APK anteriores por rutas/SHA
+concretos, conservando 68 JSON. Colección y 416 archivos ajenos intactos;
+8897/8898 sin cambios. Recibos: research-inbox/hoarddex-safari-hgss/FINAL.json.

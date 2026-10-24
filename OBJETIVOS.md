@@ -1843,3 +1843,15 @@ No hay todavía implementación ni admisión de ese motor. Continúan huida,
 estrategia, motores especiales, evoluciones posteriores, formas y lugares,
 apariencias, revanchas y aventura, presets y tamaño del APK. La entrega
 conserva las funciones previas y no acredita paridad global ni teléfono ARM64.
+
+
+## HoardDex: continuar tras Safari de HeartGold/SoulSilver — 24-10-2026, #1445
+
+La entrega258 resuelve Safari para HeartGold/SoulSilver y sustituye su
+mención anterior como pendiente. Continúan huida, estrategia, incursiones,
+garantías de historia y otros motores especiales; evoluciones posteriores,
+formas y lugares, apariencias, revanchas y aventura, presets y tamaño del APK.
+La investigación1450 contrasta el combate opcional de Máximo en Esmeralda:
+no incorpora todavía ese equipo ni acredita sus condiciones en el producto.
+Se conservan las funciones previas. No se declara paridad global ni
+ejecución en un teléfono ARM64.
