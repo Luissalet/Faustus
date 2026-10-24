@@ -16015,3 +16015,30 @@ All four deliveries used fictitious own Autor/SDK/ROOT banks, exact approved CAS
 Both deliveries used fictional own banks and exact approved CAS1 fast-forwards under fresh merge locks. Native operations were not replayed for documentation. Logs retain test/harness corrections, native transport differences and screenshot limits. No push, linked dependencies, model/family services or real user data copies. These two deliveries bring the documented total from120 to122 improvements (115features+7UI),120DONE plus two historical cleanup tasks OPEN.
 
 STOP requested by Luis: no new improvement loop. Pygmalion1257 is GUI_PENDING / CAS1 retained in review without approval or integration and is NOT counted or integrated: ROOT native/browser701-row/mobile checks passed, but a real downloaded file was not accredited; rejected internal-downloads access was not bypassed. Its own candidate/worktree/bank/evidence remain with QAOFF, subject to its final receipt. Atlas1426 remains GUI_PENDING/OFF and uncounted. Historical Gamer1215/Hypatia1238 cleanup limits and Cook1205 remain untouched. Existing automation status: PAUSED (verified by ROOT tool and local automation.toml); Google manual receipt: docs-final123/manual-final-receipt.json: initial append plus one scoped label correction via fresh CAS,198paragraphs/196othernodes+styles exact,+1044UTF16 final in132/182. Documentation task1462 owns the final reconciliation.
+
+
+## HoardDex: combate opcional y revanchas de Esmeralda — 24-10-2026, #1456/#1464
+
+La guía de Combates añade el equipo opcional de Máximo propio de Esmeralda,
+disponible tras el Hall de la Fama y sin repetición después de vencer.
+Incluye además cuatro fases de revancha por cada uno de sus ocho líderes:
+32 equipos dobles, con niveles, movimientos y objetos equipados originales.
+El PokéNav debe indicar disponibilidad y hacen falta dos Pokémon utilizables.
+Erico y las fases posteriores requieren completar Nueva Malvalona, recoger
+la MT24 y volver a Ciudad Malvalona. La última plantilla se repite cuando
+el líder vuelve a estar preparado; no promete una revancha inmediata.
+Los enlaces a fichas conservan búsqueda y fase al volver. Guía y MCP usan
+el mismo banco: 81 equipos, 116 contextos y 76 fuentes. Los 49 equipos y
+84 contextos anteriores se conservan exactamente; Rubí/Zafiro no heredan
+las revanchas de Esmeralda. Continúan otros entrenadores, ediciones y guías.
+
+Entrega1456 Main262 y entrega1464 Main265 4ada2a1b integradas por ff-only,
+con revisión independiente CAS1 y CAS2 respectivamente, sin push. Main265
+pasa build web, 470 TS + 3 CJS, TypeScript y MCP 36/550. Fuente263 y versión
+final265 probadas en web y Android visible, español/inglés, texto normal
+y ampliado; APK publicado realmente instalado con SHA exacto. Ambos APK
+conservan el runtime probado y los 17.884 recursos exactos. ARM64 compilado,
+sin teléfono físico. Sólo tres APK anteriores retirados después de la QA;
+72 JSON de releases conservados. Colección y 416 archivos ajenos intactos,
+8897/8898 sin cambios. Recibos: research-inbox/hoarddex-emerald-steven/FINAL.json
+y research-inbox/hoarddex-emerald-gym-rematches/FINAL.json.

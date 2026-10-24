@@ -1855,3 +1855,18 @@ La investigación1450 contrasta el combate opcional de Máximo en Esmeralda:
 no incorpora todavía ese equipo ni acredita sus condiciones en el producto.
 Se conservan las funciones previas. No se declara paridad global ni
 ejecución en un teléfono ARM64.
+
+
+## HoardDex: continuar tras las revanchas de Esmeralda — 24-10-2026, #1464
+
+Las entregas1456/1464 sustituyen las menciones anteriores de Máximo y de
+todas las revanchas de Hoenn como pendientes: Esmeralda ya tiene su combate
+opcional y cuatro fases propias por líder. No se atribuyen estas plantillas
+a Rubí/Zafiro ni a otras ediciones. Continúan entrenadores de aventura,
+otros juegos, combates opcionales y guías completas; ampliar por fuente
+propia y comprobar siempre los enlaces de ida y vuelta en web y Android.
+Siguen abiertos formas y lugares por edición, evoluciones posteriores,
+apariencias, recursos todavía ausentes, presets y modo estricto Nuzlocke,
+tamaño del APK, motores especiales y huida/estrategia de captura. No hay
+teléfono físico ARM64 ni paridad global acreditada. PENDIENTES no añade
+decisiones nuevas de Luis; se conservan los frentes y documentos ajenos.
