@@ -16090,3 +16090,27 @@ Colección original1/1025 yreferenciaArceus nativas,0/1025/Negroweb,preferencias
 416ajenos y8897/8898 intactos. No paridadglobal; reciboFINAL en
 research-inbox/hoarddex-battles-rby-product. Las elecciones compartibles1466
 siguen disponibles junto a las cuadrículas de favoritos anteriores.
+
+
+## HoardDex: equipos originales de Oro, Plata y Cristal — 24-10-2026, #1472
+
+Guía → Combates y MCP añaden 22 equipos/66 contextos internacionales UE:
+16 líderes de Johto/Kanto, cinco de Liga y Rojo por edición. Los dos bancos
+se contrastaron por separado desde 94 fuentes fijadas. Conservan clase/número,
+niveles, cuatro huecos originales y ceros; estos 90 miembros no llevan objeto
+equipado, aunque Gen2 sí admite la función. Monte Plateado requiere Oak y las
+16 medallas; tras vencer a Rojo vuelve después de entrar en el Hall de la Fama.
+Las fuentes identifican Oro/Plata o Cristal y los enlaces mantienen la edición.
+Total133 equipos/227 contextos/342 fuentes en once ediciones; 111/161 previos
+exactos. Se conservan elecciones compartibles1466, RBY1468 y selector/DLC1380.
+
+Entrega1472 Main274/802f253b, CAS1 de dos commits exactos yff-only,
+sinpush. Main buildweb,486TS+3CJS,TypeScript limpio,MCP37/595. Precheck propio
+del peer94primarias, acabado ship10vistas ydocumenter separados. QAreal web
+ES1280/EN390 yAndroid5554visible font1/1.3; final APKx86 instalado yprobado,
+ARM64 compilado sin teléfono físico. Ambos runtime120251980B y17884medios
+exactos al probado273. TresAPKanteriores retirados,78JSON conservados.
+Colección1/1025/Arceus nativa y0/1025/Negro web,preferencias y416ajenos intactos;
+8897/8898 no alterados. Studio/AVD visibles sin reiniciar. Japón, resto de
+entrenadores, guías completas yparidadglobal pendientes. Recibos en
+research-inbox/hoarddex-battles-gsc-product/FINAL.json.

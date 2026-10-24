@@ -1898,3 +1898,15 @@ entrenadores de aventura, objetivos de historia y pendientes de cobertura,
 además de presets/reglas estrictas yresto deparidad. Conservar las elecciones
 personalizadas compartibles1466. No inferir progreso ni declarar completo lo
 no contrastado; no se añade una nueva decisión deLuis aPENDIENTES.
+
+
+## HoardDex: continuar después de GSC original — 24-10-2026, #1472
+
+Los22equipos/66contextos de Oro,Plata,Cristal internacionales UE están entregados
+enMain274:16gimnasios,5Liga yRojo por edición, con sus condiciones originales.
+La investigación1471 está incorporada. El banco suma133/227/342fuentes en once
+ediciones yconserva los111equipos anteriores; las fuentes identifican su banco.
+Continúan otros bancos de edición, entrenadores de aventura, objetivos de historia,
+presets/reglas estrictas yresto de cobertura. Mantener las elecciones compartibles
+1466 ylas funciones entregadas, sin inferir progreso o declarar paridadcompleta.
+No aparece una nueva decisión de Luis que añadir a PENDIENTES.
