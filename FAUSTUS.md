@@ -15214,3 +15214,31 @@ README propios y guía/catálogo MCP de Nightingale actualizados. Manual nativo
 verificado por CAS:198párrafos, cuatro ampliados,194otros nodos/estilos intactos;
 Nightingale Datos20→21 y catálogo42→43, sin alterar Cálculo20. Docs1382 consolida
 grafo sin embeddings, memoria y continuidad preservando todo el contenido previo.
+
+
+## HoardDex: selector por familias y equipos de Hoenn —24-10-2026, #1380/#1375
+
+Main local34792518 (245), ff-only de los dos commits exactos aprobados CAS1
+de1375, sobre la entrega243/1de5213f de1380. Sin push. El selector conserva
+53ediciones en27filas: títulos únicos completos, contrapartes juntas yDLC
+como pestañas dentro del juego. También Nueva partida mantiene el borrador
+hasta Crear. fielddex_games comparte familias, catálogo actual36herramientas.
+
+Guía → Combates añade26equipos iniciales deHoenn/39contextos:13compartidos
+porRubí/Zafiro y13propios deEsmeralda, desde37fuentes primarias fijadas.
+Mantiene22equiposRF/VH; total48equipos/83contextos, con niveles/movimientos/
+objetos equipados y fuentes. Vito/Leti2RS frente4E, formato individual/doble
+y último líder/campeón propios. Fichas enlazadas y vuelta conservan consulta;
+cobertura antes de búsqueda. Sin préstamo entre ediciones ni progreso deducido.
+
+Web1280/390 yAndroidx86 visible enStudio, ES/EN con fuente1/1,3 ytemas,
+recorridos de enlaces, diferencias yrestauración. Main pasa423TS+3CJS/TSC0/
+buildweb/MCP36-420. AmbosAPK245 yJSON verificados, mismoHermes244 probado y
+17.884medios/fuentes SHAidénticos a243; x86final instalado-r yrecorrido.
+ARM64 compilado, no probado en teléfono físico. APKanteriores propios retirados
+con comprobación de ruta/huella, JSON preservados. Evidencia: research-inbox/
+hoarddex-selector1380 yhoarddex-hoenn1375, FINAL243/FINAL245.
+
+Acabados estáticos ship acotados10/11vistas y revisionesCAS separadas;
+no certifican ROM, TalkBack, tabletas/iOS, revanchas deHoenn, Máximo opcionalE,
+todos los entrenadores ni paridad global. Datos reales8897 yajenos416 intactos.

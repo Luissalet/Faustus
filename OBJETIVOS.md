@@ -1770,3 +1770,14 @@ contrapartes juntas yDLC como pestañas dentro del juego, conservando53IDs.
 Después1375: líderes/Liga Hoenn con variantes y acceso contrastados por edición.
 Siguen otras guías, formas/localizaciones, evoluciones históricas, SafariRBY/DS,
 motores especiales y reglas/presets Nuzlocke; sin minijuegos ni paridad declarada.
+
+
+## HoardDex: continuar tras el selector y Hoenn —24-10-2026, #1380/#1375
+
+Prevalece sobre el próximo1380/1375 del registro1361: ambos están entregados.
+Selector53IDs con títulos únicos, parejas yDLC anidados; equipos iniciales
+Hoenn26/39 yRF/VH22/44 compartidos porGuía/MCP. Mantener sus fuentes y límites
+y continuar bancos por edición, revanchas/otros entrenadores y guías útiles.
+Siguen cobertura deformas/localizaciones, evoluciones históricas, SafariRBY/DS,
+motores especiales de captura, presets/reglas Nuzlocke y tamaño delAPK.
+Sin minijuegos, banco heredado sin aviso ni declaración de paridad total.
