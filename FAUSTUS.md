@@ -15242,3 +15242,62 @@ hoarddex-selector1380 yhoarddex-hoenn1375, FINAL243/FINAL245.
 Acabados estáticos ship acotados10/11vistas y revisionesCAS separadas;
 no certifican ROM, TalkBack, tabletas/iOS, revanchas deHoenn, Máximo opcionalE,
 todos los entrenadores ni paridad global. Datos reales8897 yajenos416 intactos.
+
+
+## Hoards: títulos de archivos, descargas por patrones y sistemas de congruencias
+
+24oct2026 · codex-hoard23 · tareas1383/1384/1385, documentación1389.
+El bucle suma84 mejoras integradas:80funciones y4UI;82DONE y2históricas
+aprobadas/integradas OPEN por conciliación de Gamer1215/Hypatia1238.
+
+**Atlas — registrar un título descriptivo.** El formulario de archivo interno
+permite añadir un título sin cambiar el nombre ni la ruta física. Vacío usa el
+nombre del archivo. El registro confirmado muestra el título, ruta, aplicación e
+ID devueltos por Atlas, separado de los campos pendientes. Si la ruta ya estaba
+registrada, conserva título/aplicación/ID anteriores y actualiza su revisión.
+Los borradores sobreviven al cambio de carpeta/proyecto y a Cancelar. Un error
+permite reintentar; una acción terminada deja libre un nuevo ID de petición para
+leer de nuevo un original modificado. Si el envío termina en otra carpeta del
+mismo proyecto, se refresca la lista nativa manteniendo esa carpeta y sus campos.
+Usa atlas_file_register existente y catálogo14, sin nuevo backend ni almacenamiento.
+SHA0ef56d6716979651c2d4243230e0f531c6cd3647, CAS3 aprobada; los dos cambios
+pedidos en revisión y sus reproducciones permanecen en la evidencia.
+
+**Prometheus — elegir archivos al descargar un modelo.** Descargar de Hugging
+Face añade «Sólo estos archivos»: un patrón de nombre por línea; vacío descarga
+todo el repositorio. Recorta sólo espacios de los extremos y conserva comas,
+espacios internos, apóstrofos y Unicode. El formulario usa include de
+model_download existente; mismo destino, revisión, trabajo y cancelación,45tools.
+Una respuesta aceptada conserva ediciones posteriores como borrador sin enviar
+y muestra el trabajo/destino reales. Los refrescos de trabajos mantienen el
+foco de escritura. Ayuda ES/EN: el tamaño esperado y el porcentaje se calculan
+con la estimación del repositorio entero; los patrones no verifican que el
+modelo elegido pueda cargarse. No se añade historial estructurado de patrones.
+SHA3b9919fd16e9c8022d9231b8d4520005da395914, CAS1 aprobada. QA transmite
+los argumentos hasta el comando nativo; FakeWorld no filtra archivos y no
+demuestra selección materializada, descarga real ni usabilidad del modelo.
+
+**Hypatia — resolver un sistema de congruencias.** El panel exacto combina
+condiciones x≡r(mod m), incluidas las de módulos no coprimos, negativos o
+repetidos. Se añaden/quitan filas, se carga un ejemplo y se consulta o copia la
+comprobación. Enteros escritos como cadenas conservan sus cifras, también por
+encima de2^53. El resultado da la familia completa x=residuo+k×período, k∈ℤ,
+con residuo canónico y período MCM; período1 significa todos los enteros. Una
+incompatibilidad identifica condición, clase anterior, MCD y resto. Módulo0 y
+formatos no enteros se rechazan. Editar o cerrar conserva entradas y retira el
+resultado anterior. API/math/congruence-system y math_congruence_system comparten
+el cálculo propio basado en congruencia lineal, sin enumeración, modelo,
+factorización, dependencia nueva ni acceso al banco. Catálogo66=48Study+18Teacher.
+SHA588680dafb4304726b60f4370bc977a81e93ae1a, CAS1 aprobada. Referencia
+conceptual primaria: SymPy modular.solve_congruence; no se copió su código.
+
+Las tres entregas pasaron API/MCP reales, revisión cruzada y navegador con datos
+ficticios propios. Pruebas proporcionadas del área y builds normales; no suites
+globales repetidas. Móvil390 comprobado por autor/peer en Prometheus e Hypatia;
+Atlas conserva un límite explícito: escritorio final y CSS responsive inspeccionado,
+sin captura móvil final válida. Los fallos de fixtures/observadores y sus
+correcciones no se presentan como éxitos iniciales. INTEGRATED.md en
+atlasregister1383, prometheusinclude1384 e hypcrt23 conserva pruebas y límites.
+QA63318/17/16 apagadas; WT y ramas propios retirados normalmente tras leer
+preflight completo:8anc y3424/8935/34238desc,0reparse/runtime/listener y
+MAIN/WT limpios en SHA aprobada. Datos y servicios ajenos intactos; sin push.
