@@ -15788,3 +15788,25 @@ hypmatrixproduct23}/INTEGRATED.md y review1423/1422/1425. Manual nativo, grafo s
 embeddings, MEMORY y continuidad se actualizan en1429, preservando contenido ajeno.
 Siguen Atlas1426 y Nightingale1427 en frentes separados, aceptados y sin contar
 como terminados. No hay una nueva decisión pendiente de Luis.
+
+
+## HoardDex: descripciones originales recuperadas —24-10-2026, #1418
+
+Main254 c6ff30d9 incorpora62registros originales bilingües más:30por
+nombres históricos contrastados,24por ordinales GBA y8de MT/MO. El banco
+reúne27.124entradas y conserva byte a byte las27.062anteriores y sus
+metadatos. Las identidades, edición e inglés deben coincidir; no se usan
+coincidencias aproximadas, otras ediciones ni controles desconocidos.
+El texto de Estímulo en RS/Esmeralda recompone una palabra partida en
+el original con procedencia explícita; las otras descripciones no cambian.
+
+CAS1 aprueba tres commits exactos, integrados ff-only y sin push. Main
+buildweb/450TS+3CJS/TypeScript0/MCP36-494 pasan; revisión independiente
+contrasta fuentes, generador, datos previos, adversarios y consultas propias.
+QAfuente252/253 ESEN web/Android texto1/1,3; final254 web Main y APKx86
+instalado con SHA exacto, fichas, retorno, filas de juegos y pestañas DLC
+comprobados. Ambos APK y JSON, Hermes funcional253 exacto y17.884medios
+SHA exactos; ARM64 compilado sin ejecución física. Se retiraron normalmente
+sólo el par251 y las candidatas252/253, conservando todos los JSON.
+416ajenosWT intactos/noindexados,8897/8898 intactos. Recibos:
+research-inbox/hoarddex-original-texts/FINAL.json.

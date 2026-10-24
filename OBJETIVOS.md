@@ -1820,3 +1820,14 @@ formas/lugares/apariencias por edición, entrenadores/revanchas/aventura,
 presets Nuzlocke y tamaño del APK. Conservar selector1380, intercambios/
 áreas1191 y demás entregas; no declarar imposible lo desconocido ni
 paridad global o prueba física ARM64, sin minijuegos.
+
+
+## HoardDex: continuar tras las descripciones254 —24-10-2026, #1418
+
+La tarea1418 ya entrega el banco ampliado27.124 y sustituye su mención
+anterior como pendiente; no cierra todos los textos sin fuente ni paridad
+global. Investigación1424 y feature1431 preparan Safari propio de
+Diamante/Perla sin tomar las reglas de Platino por generación. HG/SS,
+huida/estrategia, evoluciones posteriores, formas/lugares/apariencias,
+revanchas/aventura, presets y tamaño APK siguen abiertos. Se mantienen
+las entregas previas y el selector/DLC; no hay teléfono físico ARM64.
