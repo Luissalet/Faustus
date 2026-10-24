@@ -15301,3 +15301,29 @@ atlasregister1383, prometheusinclude1384 e hypcrt23 conserva pruebas y límites.
 QA63318/17/16 apagadas; WT y ramas propios retirados normalmente tras leer
 preflight completo:8anc y3424/8935/34238desc,0reparse/runtime/listener y
 MAIN/WT limpios en SHA aprobada. Datos y servicios ajenos intactos; sin push.
+
+
+## HoardDex: Safari RBY propio —24-10-2026, #1388
+
+Main local247 d12602cb, ff-only CAS1 de dos commits exactos, sin push.
+Herramientas/Captura y fielddex_capture añaden Safari internacional de
+Rojo/Azul/Amarillo separado de GBA: PS completos exactos e inventario inicial
+manual (30 supuesto editable), actos y mensajes observados sin turno extra,
+Deshacer/Reiniciar, intervalo de ratios compatibles y terminal última bola.
+No calcula huida/éxito del encuentro/estrategia ni posterior exacta de todo
+el historial del cartucho. Fuentes primarias fijadas propias de cada edición.
+
+Main429TS+3CJS/TSC0/buildweb/MCP36-428. Web8899 Mainindex9dd75746 HTTP=dist,
+rango Red/Bulbasaur45/90 y restauración ES/Sistema/Negro/Pokédex0de1025.
+Android246 plenamente probado ES1claro/EN1,3oscuro y247final instalado-r,
+mismo Hermes y caso correcto, Bulbasaur1de1025/prefs restaurados ylogcat0.
+AmbasABI247+JSON en releases;17.884recursos por SHA idénticos a245. ARM64
+compilado/verificado, sin teléfono físico para ejecución. TresAPKanteriores
+propios retirados de forma no recursiva por ruta/huella, JSON preservados.
+
+Finish fresco genérico ship11vistas y documenter genérico con histórico exacto;
+CAS funcional/documental separada. Límite de proceso conservado: incumbente245
+abierto tras editar246, antes de QA; no inspección visual previa retroactiva.
+416ajenos intactos,8897/8898fuera de mutaciones, sin ROM/TalkBack/tableta/iOS
+ni paridad global. Selector1380 yHoenn1375 conservados. Evidencia FINAL247.json
+en research-inbox/hoarddex-safari-rby. Parent864OPEN conservaWT de trabajo.

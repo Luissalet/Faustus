@@ -1781,3 +1781,15 @@ y continuar bancos por edición, revanchas/otros entrenadores y guías útiles.
 Siguen cobertura deformas/localizaciones, evoluciones históricas, SafariRBY/DS,
 motores especiales de captura, presets/reglas Nuzlocke y tamaño delAPK.
 Sin minijuegos, banco heredado sin aviso ni declaración de paridad total.
+
+
+## HoardDex: continuar tras Safari RBY —24-10-2026, #1388
+
+SafariRBY deja de estar pendiente de motor propio: entrega247 d12602cb,
+con acciones/observaciones e intervalos, web yAndroid verificados; límites
+expresos en CAPTURE/VALIDATION. Prevalece sobre esa mención del registro1375.
+Siguen SafariDS yotros motores especiales, evoluciones deNegro/Blanco y
+ediciones posteriores, formas/localizaciones, guías/entrenadores/revanchas,
+presets Nuzlocke y tamañoAPK. Conservar selector porfamilias/DLC1380,
+intercambios/áreas1191, textos originales1189 y bancos inicialesHoenn1375.
+Sin minijuegos ni sustituciones de edición sin aviso. No declarar paridad total.
