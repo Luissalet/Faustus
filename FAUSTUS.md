@@ -15144,3 +15144,73 @@ CAS1exacta, ff-only, sinpush/8897; viejasAPK propias retiradas conSHA.
 Fuentes, pruebas y límites: research-inbox/hoarddex-battles1361/FINAL240.json.
 Sin banco para otras ediciones, guía completa, progresoROM ni paridad global.
 Petición nueva1380 prioriza filas de contrapartes yDLC anidados; Hoenn1375 espera.
+
+
+## Hoards: leer textos, retirar anuncios, filtrar fotos y unir tablas · 24-10-2026
+
+Cuatro entregas terminadas amplían el bucle a 81 mejoras integradas: 77 funciones
+y 4 mejoras de UI. Hay 79 DONE y dos históricas aprobadas e integradas abiertas
+por conciliación de limpieza; no se han reintentado sus retiradas. Sin push.
+
+- **Talos1374**, `24a03d3`: Historial → Leer texto abre una copia no sensible
+  que no sea imagen, con identidad, origen, fecha y rango. Anterior/Siguiente
+  recorren hasta 4.000 caracteres por página y señalan el final, también después
+  de 20.000 caracteres. Conserva Unicode y saltos de línea. Un fallo permite
+  reintentar; cambiar de copia o cerrar descarta páginas tardías. Una lista
+  filtrada vacía mantiene lector, selección y nombre pendiente. No copia al
+  portapapeles, descarga contenido ni inicia OCR. La ruta HTTP delega en clip_get
+  existente; MCP97 y sus límites de respuesta independientes se conservan.
+- **Hermes1379**, `95bff9f6`: las tarjetas de Segunda mano ofrecen Marcar como
+  retirado y explican cómo encontrar el anuncio en Retirados. Guardar lo recupera
+  como saved, sin prometer otro estado anterior. La marca es local: no comprueba
+  una retirada o venta externa, añade fechas ni detiene al vigilante. Sólo cambia
+  status; identidad, título, precio cero o desconocido, fechas e historial se
+  conservan. API y listing_set MCP115 existentes completan el mismo flujo.
+- **Daguerre1378**, `9e685b22`: Búsqueda acepta descripción vacía con cualquiera
+  de los seis filtros ya disponibles. El listado nativo es cronológico, sin
+  similitud ni modelo. Muestra N de M fotos y advierte del límite de 50 cuando
+  quedan más. Conserva reglas de subcadena, fechas inclusivas, filtros combinados
+  y horizontal con cuadrados. Editar retira resultados incompatibles sin perder
+  campos ni comparación A/B; el contexto de Faustus distingue envío y borrador.
+  Ficha y exportación mantienen los IDs reales. API/photos_search MCP96 intactos.
+- **Nightingale1381**, `f6c8774`: Datos y Canalización permiten elegir el otro
+  conjunto y editar pares de columnas de una unión, añadir/quitar y conservar
+  nombres exactos con comas, comillas o Unicode. El JSON manual sigue visible;
+  formas desconocidas o incompletas permanecen editables. Se mantienen left,
+  inner, right y full. Las opciones son del esquema actual y conservan nombres
+  manuales de pasos anteriores. En Datos, Comprobar coincidencias cuenta filas
+  de la versión izquierda actual con al menos una coincidencia en la derecha:
+  cada fila cuenta una vez aunque haya claves derechas repetidas; todos los pares
+  deben coincidir y NULL no coincide con NULL. No es el total de filas de salida
+  ni evalúa nodos pendientes del Lab. Vista previa conserva su resultado nativo
+  y Aplicar crea una versión. Coverage no es requisito para aplicar ni crea una
+  versión o entrada de análisis. La nueva data_join_preview expone el helper
+  nativo existente por MCP: catálogo combinado43 =21Datos+20Cálculo+2controles.
+
+Verificación proporcionada: Talos20HTTP y regresión focal de búsqueda; Hermes8
+del área, incluida una material; Daguerre18Node y43Python/1SKIP más dos aserciones
+focales de contexto; Nightingale51 del área y una prueba corregida del helper,
+ejecutada por separado. No se presenta como una nueva vuelta global52verde.
+Builds de MAIN respectivamente1.26/1.81/8.29/13.10s; API/stdio reales97/115/96/43.
+Lecturas de MAIN conservan los estados naturales posteriores al navegador:
+Talos10tablas6clips; Hermes19tablas6anuncios3vigilantes; Daguerre14tablas exactas
+y sólo agent_calls/secuencia+1 esperados,18fotos y36JPEG/XMP originales exactos;
+Nightingale13tablas y6CSV exactos. No se restauraron semillas o metadatos.
+
+Revisión independiente CAS1 leída antes de probar y recorridos ROOT comprobados
+en las cuatro entregas. Capturas válidas de escritorio y móvil390 por autor o
+peer, atribuidas en cada informe. Nightingale demuestra cobertura2/4 y LEFT6,
+INNER4; sólo una ApplyAutor producev1 y mantienev0/derecha. Su peer comprueba
+ES/EN390 sin Apply. Los fallos de helpers, normalización de nombres, capturas y
+arranque de QA se conservan con sus límites; no se cuentan como pruebas verdes.
+Datos, copias, servicios, modelos y procesos ajenos intactos; sólo QA ficticias.
+
+Las cuatro QA están apagadas. Los WT y ramas propios se retiraron normalmente
+tras leer preflight físico completo, sin enlaces, procesos ni listeners y con
+MAIN/WT limpios en los hashes aprobados: Talos14877, Hermes10360, Daguerre20285
+y Nightingale35761 descendientes, todos con8ancestros/0reparse. Los recibos de
+ausencia y MAIN limpia están en sus carpetas de evidencia, fuera de los WT.
+README propios y guía/catálogo MCP de Nightingale actualizados. Manual nativo
+verificado por CAS:198párrafos, cuatro ampliados,194otros nodos/estilos intactos;
+Nightingale Datos20→21 y catálogo42→43, sin alterar Cálculo20. Docs1382 consolida
+grafo sin embeddings, memoria y continuidad preservando todo el contenido previo.
