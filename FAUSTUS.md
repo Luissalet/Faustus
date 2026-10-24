@@ -16139,3 +16139,23 @@ exacto276; ARM64 compilado sin teléfono físico. CuatroAPKanteriores retirados,
 Elecciones compartibles1466 yselectorfilas/DLC1380 conservados. Otrosentrenadores,
 revanchas, guías completas yparidadglobal siguenpendientes. Recibos en
 research-inbox/hoarddex-battles-sinnoh-product/FINAL.json.
+
+## HoardDex: equipos iniciales de HeartGold/SoulSilver US — 24-10-2026
+
+Entrega1478, Main280 `ad33c7c165a4bb5fd628478fa7857ddf90b38dd1`, tres commits CAS1 exactos e integración ff-only, sin push.
+Guía y MCP incorporan22equipos/44contextos originales:16líderes deJohto/Kanto,
+cinco deLiga inicial yRojo en la cima deMontePlateado.90miembros/360huecos/
+24objetos por edición;55primariasSHA contrastadas independientemente. El banco
+completo suma181equipos/310contextos/471fuentes en16ediciones y conserva159/266previos.
+Pegaso9/13,2/3movimientos;Lance50/Zidra;Rojo88/BolaLuminosa/Lapras80.
+Liga inicial antes de las ocho medallasKanto;Rojo regresa tras otroHall de laFama.
+El acceso completo a la cima permanece sin verificar;no se presta la condición deGSC.
+Main: buildweb,492TS+3CJS,TypeScript limpio,MCP37herramientas/615llamadas.
+QAreal webESEN1280/390 yAndroid5554visible font1/1.3;F1lugar corregido279,
+finishship11vistas/documenter/CAS separados. AmbosAPK280 comparten Hermes279
+y17884medios porSHA. X86 publicado instalado yprobado;ARM64 compilado sin teléfono.
+CuatroAPKanteriores retirados despuésQA;82JSON conservados. Colecciones intactas,
+ES/sistema/fuente1 restaurados,8897real/8898intactos y416ajenos noindexados exactos.
+Fuentes ylímites: FieldDex/docs/BATTLES.md; recibos research-inbox/hoarddex-battles-hgss-product/FINAL.json.
+EU/JP deHGSS/Sinnoh,revanchas/restoaventura/guías completas yparidadglobal continúan pendientes.
+Plantillas deelecciones compartibles1466 yfilas/DLC1380 permanecen entregadas.

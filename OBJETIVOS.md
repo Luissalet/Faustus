@@ -1921,3 +1921,14 @@ conservando133equipos anteriores. Continúan otrosbancos, entrenadoresdeaventura
 revanchas, objetivosdehistoria, presets/reglas yrestodecobertura. Mantener las
 funcionesentregadas yeleccionescompartibles; no inferirprogreso ni declarar
 paridadcompleta. No nueva decisión deLuis que añadir aPENDIENTES.
+
+## HoardDex tras la entrega1478 — 24-10-2026
+
+HGSSUS incorpora16líderesJohto/Kanto,5Liga inicial yRojo:22equipos/44contextos
+propios,55primarias contrastadas,total181/310/471fuentes en16ediciones. Main280
+incluye web/MCP yAPKx86 probado;ARM64 sólo compilado. No cierra paridadglobal.
+Continuar datos propios de otras ediciones,revanchas,rivales/restoaventura yguías
+útiles;contrastar EU/JP yrequisitos completos deMontePlateado antes de afirmarlos.
+No sustituir ausencias porimposibilidad niprestar equipos/condiciones deGSC/Sinnoh.
+Conservar eleccionespersonalizadas compartibles1466 yselectorfilas/DLC1380 yaentregados.
+No hay una nueva decisión deLuis niun pendiente bloqueado que añadir.
