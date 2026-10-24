@@ -15587,3 +15587,65 @@ reintentar retiradas rechazadas. Se preserva íntegro el contexto común ajeno
 README propios/manual/grafo/memoria/continuidad al día, sin nueva decisión para
 OBJETIVOS/PENDIENTES. Sinpush/modelos/servicios/datos ajenos. Evidencia completa
 en mercrange23,dagsimilar1405,nightfreq23 y sus review1403/1405/1406 del scratch.
+
+
+### 24-10-2026 · filtros de aplicaciones y etiquetas, MCD polinómico
+
+- **Talos1409** (`1848b7bdc1407d4477b91cd7ee7326ea853d784f`, CAS2): Historial
+  añade Aplicación registrada, literal y sensible a mayúsculas, combinada con
+  texto y tipo. Todas las aplicaciones borra sólo ese filtro y conserva lector,
+  selección y nombre pendiente. Consulta el último origen guardado tras dedup,
+  no todas las aplicaciones históricas. Indica hasta200recientes/100FTS sin
+  afirmar total global. HTTP list/search existentes y clip_recent(app opcional)
+  comparten ClipStore; catálogo97=95nativas+2controles y otros96schemas intactos.
+  Autor43pruebas una vez/Reactmaterial/APIstdio97/Brave390; ROOT comprobó banco
+  reservado, mayúsculas, cero resultados y clear-only con10tablas14clips exactos.
+  PeerCAS1 pidió cambios por inanición del polling4s con latencia mayor; CAS2
+  omite solapes de fondo del mismo filtro, mantiene refresh explícito y cambio
+  inmediato. Focal independiente shippingReact verifica dos éxitos, late/finally
+  antiguo y reanudación. Build final propio689ms tras npmci; build729ms con
+  dependencias físicas flotadas descartado, sin cambiar manifests. MAINbuild1.62s,
+  APIstdio97readonly/10tablas exactas/markers intactos y JS/CSS HTTPdiscoHEAD.
+  HTML sóloCR normalizado acreditado; errorcallerLASTEXITCODE tras stopPASS no
+  causó otro kill. QA63301OFF, preflight8anc15113ALLdesc0links leído ROOT antes
+  retirada normal; exit0targetfalse leído antesbranch-d0. DONE exactCAS2.
+- **Ledger1411** (`bdb5701a28439443ab5374dabfbe9139116d0e0a`, CAS1): Movimientos
+  añade Etiquetas(coincidencia parcial) y quitar sólo ese filtro, combinado por
+  AND con fechas/cuenta/categoría/texto. Usa tag nativo, LIKE sobre JSON con
+  comodines%/_; no pertenencia exacta, % puede incluir tags vacías. Conserva
+  paginación100/total/nextOffset/sumas cargadas por moneda, editor de etiquetas,
+  documentos, Repartir y alta pendiente. Hash admite tag y criterios nuevos
+  limpian tag ausente; tx sigue leyendo el ID exacto. Contexto final separa
+  filtros actuales de listing/applied_filters/IDs/total aceptados y draft.
+  Sin backend/schema/deps/tool nuevo:49nativas existentes. Área28PASS1FAIL por
+  envelope mal supuesto del nuevo test; corregido sólo test, focal2PASS. Build
+  propio802ms/MAIN969ms. APIstdio49/peerconsumerfinal y ROOTbancoenero2027 verifican
+  generalA/B/C frente tagsA/C, literal conespacios/coma/#, EUR/USD y draft.
+  Autor390/503retry/late25ms-read30278ms/hash/tx;15tablas12entries6accounts enteras
+  exactas hastaMAIN,2markers consumidos. QA63300OFF/preflight8anc10110ALLdesc0links
+  leídoROOT/retirada normal/DONE. FalloobserverROOT arrays vsobjects antesUI
+  corregido sólo comparación, sin reset ni consulta de negocio repetida.
+- **Hypatia1412** (`8f841f58d6120f20ac48d56d12ff34c484af7929`, CAS1): Inicio
+  añade MCD y Bézout de polinomios con MCD/MCM mónicos no nulos, coeficientesU/V,
+  identidadA×U+B×V=MCD y residuo exacto, texto/LaTeX/grados. QQ univariante x/y/t,
+  constantes unidades; U/V no únicos, cero tiene grado null. MCM0 si alguna
+  entrada0; ambas0 dan todos0 por convenio. UI/API/math_polynomial_gcd comparten
+  motor parser existente/SymPy, sin banco/modelos/dependencias. Catálogo69=
+  51Study+18Teacher. Área84PASS1FAIL expuso gcdex con segundo0; rama explícita
+  corregida y sólo fallo1PASS0.08s,85distintas no primera85verde. Primer wildcard
+  Windows no recogió pruebas. APIstdio69/3casos y13tablas exactas; peerfinal
+  verifica ambas ramas0 con AST/Fraction independiente y15tablas exactas.
+  AutorBrave390/desktop/503retry/lateedit32ms-read23038ms/close-reopen; contexto
+  useCopilotDraft→editorDrafts real, observereffect-only noReactlifecycle. Sync
+  normal añade3KV y2tablas teacher vacías, preserva12otras tablas yKV previos.
+  Build10.31s+PWA153ms/MAIN21.63s+265ms. ROOTMAINcaso(t⁴−1,t³−t) da MCDt²−1,
+  MCMt⁵−t; APIstdio69/15tablas/3markers exactos. Dos entryassetsHTTP/disco exactos;
+  chunklazyExactMathPanel contiene nueva función por lectura en disco, sin
+  afirmar fetch individual de todoschunks. QA63299OFF/8anc35041ALLdesc0links
+  leídoROOT/normalremove0targetfalse antesbranch-d0/DONE. Límites enREVIEW completo.
+
+Lote100=95funciones+5UI integradas,98DONE+2históricas aprobadas/integradasOPEN
+Gamer1215/Hypatia1238 por conciliación de limpieza. No reintentar sus retiradas
+rechazadas ni Cook1205. ManualCAS198párrafos/4targets/194otros enteros y estilos
+exactos; corrige69Hypatia y97=95+2Talos. GrafoStore/MEMORY/continuidad conservan
+aportaciones anteriores. Excluidos intactos, sinpush ni modelos/servicios ajenos.
