@@ -15871,3 +15871,25 @@ IABnoejecutacontroles; no nuevos intentos equivalentes/cambiarheadersguardas.
 Funes/Talos1434implementaciónautorizada para retomarcontextos antesunmomento,
 sin contarse hasta cierre. Dosfeatureagents yrevisor existentes, sin duplicar.
 OBJETIVOS/PENDIENTES leídos y preservados; ninguna decisión nueva para Luis.
+
+
+## HoardDex: Safari de Diamante y Perla — 24-10-2026, #1431
+
+Main 256, 75486f2b, añade Safari propio para Diamante y Perla. Cebo,
+barro, mensajes observados inmediatamente e inventario manual de bolas
+comparten Herramientas y MCP. Un resultado incierto conserva sus extremos;
+los casos cero sin contrastar se explican sin afirmar una captura imposible.
+Deshacer y reiniciar corrigen el registro. La última bola sin captura
+impide otro lanzamiento; no se calcula huida, estrategia ni todo el encuentro.
+Las fuentes y textos originales de estas ediciones se contrastan por separado
+de Platino, cuya API y resultados se conservan. No se ejecutan ROM.
+
+CAS1 aprueba dos commits exactos, integrados por ff-only y sin push.
+Main pasa build web, 458 TS + 3 CJS, TypeScript y MCP 36/516. La fuente
+255 se prueba en web y Android visible, ES/EN y texto normal/ampliado.
+La entrega 256 confirma la web de Main y el APK x86 instalado con SHA
+exacto, ambas ediciones, regreso desde ficha, inventario y filas de juegos.
+Los dos APK conservan el runtime probado y los 17.884 recursos exactos;
+ARM64 se compila sin teléfono físico. Se retiran sólo tres APK anteriores
+por rutas y SHA concretos, conservando los JSON. Colección y archivos ajenos
+intactos; 8897/8898 sin cambios. Recibos: research-inbox/hoarddex-safari-dp/FINAL.json.

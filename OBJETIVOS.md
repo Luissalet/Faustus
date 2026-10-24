@@ -1831,3 +1831,15 @@ Diamante/Perla sin tomar las reglas de Platino por generación. HG/SS,
 huida/estrategia, evoluciones posteriores, formas/lugares/apariencias,
 revanchas/aventura, presets y tamaño APK siguen abiertos. Se mantienen
 las entregas previas y el selector/DLC; no hay teléfono físico ARM64.
+
+
+## HoardDex: continuar tras Safari de Diamante/Perla — 24-10-2026, #1431
+
+La entrega 256 resuelve la admisión de Safari para Diamante y Perla;
+sustituye su mención anterior como pendiente. HeartGold/SoulSilver se
+investiga por separado en #1438: sus handlers y mensajes muestran otras
+transiciones de captura, que no se deben rellenar con las de Sinnoh.
+No hay todavía implementación ni admisión de ese motor. Continúan huida,
+estrategia, motores especiales, evoluciones posteriores, formas y lugares,
+apariencias, revanchas y aventura, presets y tamaño del APK. La entrega
+conserva las funciones previas y no acredita paridad global ni teléfono ARM64.
