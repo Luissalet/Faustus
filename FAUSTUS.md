@@ -15738,3 +15738,53 @@ Manual nativo, grafo sin embeddings, MEMORY y continuidad se actualizan en1420,
 conservando contenido ajeno. Continúan Ledger1422 (vincular justificantes existentes)
 y Mercator1423 (filtros locales y paginación del catálogo), ambos aceptados y en
 worktrees separados; no se cuentan como terminados. Sin decisión nueva de Luis.
+
+### 24-10-2026 · Catálogo de Mercator, justificantes de Ledger y producto de matrices
+
+El bucle codex-hoard23 alcanza **107 mejoras integradas: 102 funciones y 5 de UI**.
+Son 105 tareas DONE y dos históricas aprobadas e integradas, Gamer1215 e
+Hypatia1238, pendientes de conciliación de limpieza. Se conservan sus límites y
+no se reintentan sus retiradas rechazadas ni Cook1205. Sin push ni cambios en
+productos excluidos.
+
+- **Mercator1423:** Catálogo permite buscar por título o ID local, revisar fichas
+  sin etiquetas o ausentes/dañadas y recorrer todas las coincidencias con páginas
+  de 50 y su rango/total. Muestra identidad, estado, número de etiquetas y fecha
+  local. Filtrar aplica los criterios explícitamente; el refresco conserva los
+  pendientes y el reintento mantiene la página. GET /api/catalog delega en
+  mercator_catalog existente por API/MCP25. La lectura no modifica archivos ni
+  confirma publicación o validez de una ficha remota; cada página vuelve a leer
+  el catálogo actual. Integrada CAS1 `781beafdc89c8cf08e7d1f6e0cbc4a5890476559`.
+- **Ledger1422:** en Movimientos, Vincular documento guarda una referencia
+  hoard://app/tipo/id y su etiqueta, muestra las referencias existentes y permite
+  renombrarlas. Usa addDoc y tx_attach_doc de API/MCP49: la misma referencia sigue
+  siendo única y conserva added_at. No copia archivos ni comprueba su existencia;
+  guardar no abre la app. Mantiene el alta pendiente, la identidad del movimiento
+  y las ediciones hechas durante el guardado, incluida una reversión a la etiqueta
+  anterior. Las acciones móviles quedan sobre el botón de Faustus. Integrada CAS2
+  `7a591184708f21d596330bf306f21320e35fd450`; la carrera de CAS1 y su corrección
+  React roja→verde permanecen documentadas.
+- **Hypatia1425:** Matrices exactas incorpora Producto A · B, con ambas matrices,
+  dimensiones y resultado racional exacto, además de su ejemplo rectangular y
+  copia conjunta. La operación multiply de math_matrix y POST /api/math/matrix
+  aceptan right_matrix; las columnas de A deben coincidir con las filas de B.
+  Conserva fracciones y decimales, el orden de los operandos y los borradores.
+  No es multiplicación elemento a elemento ni una derivación por pasos. Mantiene
+  determinantes, inversas y RREF, sin dependencias o modelos nuevos. El catálogo
+  sigue en 71 herramientas, con las otras 70 definiciones exactas. Integrada CAS1
+  `f4dae1a5420afdb28f42aa4784d21adadc6b7e8a`.
+
+Revisión independiente con CAS leída antes de probar, navegador real y API/MCP
+en bancos ficticios propios. MAIN se validó sobre los commits aprobados bajo
+bloqueo de integración y HEAD fresco. Las pruebas fueron del área afectada; no
+se repitieron suites, mutaciones ni errores de QA ya consumidos. Los fallos de
+observadores y las advertencias heredadas constan en los recibos, sin presentar
+una ejecución fallida como verde ni prometer servicios reales comprobados.
+
+QA propias apagadas y worktrees/ramas propios retirados normalmente tras lectura
+ROOT del preflight físico entero y del recibo de retirada antes del branch-d.
+Evidencia completa: scratch/hoard-loop23/{mercatorcatalog23,ledgerdocrefs1422,
+hypmatrixproduct23}/INTEGRATED.md y review1423/1422/1425. Manual nativo, grafo sin
+embeddings, MEMORY y continuidad se actualizan en1429, preservando contenido ajeno.
+Siguen Atlas1426 y Nightingale1427 en frentes separados, aceptados y sin contar
+como terminados. No hay una nueva decisión pendiente de Luis.
