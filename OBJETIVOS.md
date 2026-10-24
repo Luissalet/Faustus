@@ -1885,3 +1885,16 @@ variantes del rival y fuentes propias, sin objetos equipados de generaciones
 posteriores, y comprobar enlaces/regreso en web y Android visible.
 Permanecen las demás coberturas, guías y pendientes de producto. No se añade
 una decisión de Luis a PENDIENTES ni se atribuye paridad global o prueba ARM64.
+
+
+## HoardDex: continuar tras los equipos RBY — 24-10-2026, #1468
+
+Los30equipos/45contextos RBY internacionales ya están entregados enMain272:
+el banco suma111/161 en ocho ediciones, con condiciones propias del rival de
+Amarillo y sin objetos equipadosGen1. Se mantiene la consulta offline y sus
+enlaces/regreso en web/Android. La investigación1465 está incorporada; ya no
+figura como una capacidad pendiente. Continúan los bancos de otras ediciones,
+entrenadores de aventura, objetivos de historia y pendientes de cobertura,
+además de presets/reglas estrictas yresto deparidad. Conservar las elecciones
+personalizadas compartibles1466. No inferir progreso ni declarar completo lo
+no contrastado; no se añade una nueva decisión deLuis aPENDIENTES.

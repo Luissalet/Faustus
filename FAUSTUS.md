@@ -16068,3 +16068,25 @@ x86 publicado e instalado con SHA comprobado; ARM64 compilado sin teléfono
 físico. Se retiran sólo seis APK anteriores y se conservan los 74 JSON.
 Colección original, 416 archivos ajenos y8897/8898 intactos. Recibos:
 research-inbox/hoarddex-choice-boards/FINAL.json; no paridad global afirmada.
+
+
+## HoardDex: equipos originales de Rojo, Azul y Amarillo — 24-10-2026, #1468
+
+Guía → Combates y MCP añaden 30 equipos de líderes y Liga, con 45 contextos
+de edición. Rojo/Azul internacionales comparten15 yAmarillo aporta15 propios.
+Conservan clase/número de entrenador, niveles, movimientos especiales y huecos
+vacíos; Gen1 no tiene objetos equipados. Las variantes del Campeón deAmarillo
+dependen de los primeros combates del laboratorio yRuta22, no de tu inicial.
+El banco suma111equipos/161contextos en ocho ediciones y248fuentes, preservando
+los81equiposGBA anteriores. Japón ylosdemás entrenadores siguen pendientes.
+
+Entrega1468 Main272/18f421ce, dos commits exactos CAS1 yff-only, sinpush.
+Main pasa buildweb,483TS+3CJS,TypeScript yMCP37/583; precheck independiente de
+172primarias, acabado ship de nueve vistas yregistro de diseño separados.
+QArealweb1280/390 ES/EN yAndroidvisible normal/ampliado; APKx86 publicado e
+instalado, ARM64 compilado sin teléfono físico. Ambos conservan elruntime
+probado y17884medios exactos. TresAPKanteriores retirados,76JSONconservados.
+Colección original1/1025 yreferenciaArceus nativas,0/1025/Negroweb,preferencias,
+416ajenos y8897/8898 intactos. No paridadglobal; reciboFINAL en
+research-inbox/hoarddex-battles-rby-product. Las elecciones compartibles1466
+siguen disponibles junto a las cuadrículas de favoritos anteriores.
