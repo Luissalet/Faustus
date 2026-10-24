@@ -15389,3 +15389,62 @@ ledgerreport1390, nightwindow23, talosimage1393 y sus review independientes.
 README locales actualizados; documentación común1392 consolida este lote. Sin
 push, servicios/modelos ajenos, enlaces, clones, copias de datos/código o cambios
 en Silvers/Hoardex/Hub/Prospero/Writers/Watch/Book/SABER ni otros frentes ocupados.
+
+
+### 24-10-2026 · álbumes de fotos, tamaños de modelos y fracciones continuas
+
+- **Daguerre1394** (`23dff0d4060f196fa359b00f495455b128c996ab`): Biblioteca y
+  Búsqueda permiten añadir fotos cargadas seleccionadas a un álbum nuevo o
+  existente. Formulario inline con sugerencias de nombres, revisión de nombres
+  e IDs y recibo nativo: nombre/ID reales, creado o existente, incorporaciones
+  nuevas, total del álbum e IDs desconocidos. El total no se deduce de la muestra
+  de diez fotos de la respuesta. Cambiar nombre durante el envío conserva ese
+  borrador; errores permiten reintentar con la selección. Comparación y exportar
+  mantienen sus funciones; exportar conserva su límite20, mientras el atajo
+  Primeras20 no limita la selección manual para álbumes. POST/photos_album96 y
+  la semántica nativa500/deduplicación/nombres sin distinguir acentos se conservan.
+  No mueve ni copia originales, no abre otra página automáticamente y no promete
+  conservar borradores entre rutas, filtros o modos que desmontan el formulario.
+  ROOT añadió una sola relación: seleccionó dos fotos de un álbum que ya tenía
+  una y vio «1 foto incorporada ahora · 2 en el álbum», con nombre/ID originales.
+  Autor317pruebasPASS/15SKIP/1deselected una vez, focalReact material, API/MCP96,
+  navegadorES/EN390 y peer independiente. MAINbuild1.85s, assets exactos y
+  preservación16tablas con el registro de lecturaMCP esperado; nueveJPEG intactos.
+- **Vulcan1396** (`96da57ef3c4669cc0c1e2e9d96f212cd65ac9b46`): Galería ofrece
+  mínimo/máximo del lado mayor de la caja alineada a ejes, en mm registrados.
+  Reutiliza bbox_min/max inclusivos nativos. Vacío omite, cero se conserva y
+  quitar sólo rango mantiene los demás filtros, orden y búsqueda pendiente.
+  URL y contexto final de Faustus distinguen criterios aplicados y borradores.
+  Carga/error/reintento retiran tarjetas de otros criterios; una página extra
+  fallida conserva las filas válidas. Atrás del navegador conserva el rango de
+  URL; el enlace general Galería de la ficha mantiene su comportamiento anterior.
+  No orienta ni escala piezas, garantiza encaje o certifica unidades físicasSTL.
+  API/MCP160/motor intactos; distinct=false evita plegar duplicados en las sondas.
+  ROOT verificó20–40 con los extremos incluidos,0–0 vacío y quitar sólo rango.
+  Focal consumidorfinal y seispruebassearch una vez, API/MCP160, navegador390 y
+  peer con otro rango. MAINbuild2.63s/assets exactos/15tablas73STL intactos.
+  La sondaMAIN superó asercionesAPI/SDK antes de fallar un observador de assets;
+  la corrección leyó sólo assets/SQL, sin inventar respuestas raw ni repetirSDK.
+- **Hypatia1398** (`aaee6f6726682c944bf5d0124bb8c3d891a25917`): «Fracciones
+  continuas» expande un racional finito y muestra términos, convergentes y
+  reconstrucción exacta, con ejemplo editable y copia.355/113 produce[3;7,16]
+  y3,22/7,355/113; los negativos usan cocientes por piso. Enteros, decimales
+  finitos y fracciones conservan todas sus cifras como cadenas, incluidas las
+  mayores que2^53. Reutiliza el parser numérico y SymPy incorporados, sin nuevas
+  dependencias. POST/api/math/continued-fraction y math_continued_fraction
+  comparten función local; catálogo67=49Study+18Teacher. No expande pi/raíces o
+  períodos irracionales ni demuestra optimalidad de aproximación. No modifica
+  el banco de estudio. El panel conserva entrada ante error/cierre y retira
+  resultados incompatibles al editar; tabla con scroll local y borradorFaustus.
+  Trespruebas materiales con reconstrucción Fraction independiente,79del área
+  matemáticaPASS una vez, buildnormal y API/stdio67 reales. La sincronización
+  inicial normal del navegador añade metadata kv y dos tablasProfesor vacías;
+  todos los registros de estudio previos permanecen íntegros, sin reset/reseed.
+
+Las tres capacidades se revisan sobre submission_revision retenida antes de
+probar, con QA ficticia propia y sin modelos, servicios o datos ajenos. Los
+fallos de observadores y límites reales quedan en REVIEW/INTEGRATED y los recibos
+de C:/Users/luism/.codex/scratch/hoard-loop23/dagalbum23, vulcanbbox1396 e
+hypcontinued23. Documentación común1400; no push ni cambios en los productos
+excluidos por Luis. Nuevos frentes de investigación Hermes1399/JobHunter1401
+requieren propuesta contrastada y aceptación concreta antes de implementación.
