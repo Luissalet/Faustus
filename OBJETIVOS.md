@@ -1870,3 +1870,18 @@ apariencias, recursos todavía ausentes, presets y modo estricto Nuzlocke,
 tamaño del APK, motores especiales y huida/estrategia de captura. No hay
 teléfono físico ARM64 ni paridad global acreditada. PENDIENTES no añade
 decisiones nuevas de Luis; se conservan los frentes y documentos ajenos.
+
+
+## HoardDex: seguir tras las elecciones compartibles — 24-10-2026, #1466
+
+Las plantillas de favoritos personalizadas ya están entregadas: grupos,
+opciones y formas propias, plantillas iniciales/tríos editables, PNG y
+códigos de hoja vacía o respuestas, junto a las cuadrículas anteriores.
+Esto no cierra los presets o el modo estricto del cuaderno Nuzlocke.
+Continúa producto por edición; la investigación1465 deja 30 equipos y
+45 contextos de líderes/Liga de Rojo, Azul y Amarillo internacionales,
+todavía fuera del banco de la app. Integrarlos con sus niveles, movimientos,
+variantes del rival y fuentes propias, sin objetos equipados de generaciones
+posteriores, y comprobar enlaces/regreso en web y Android visible.
+Permanecen las demás coberturas, guías y pendientes de producto. No se añade
+una decisión de Luis a PENDIENTES ni se atribuye paridad global o prueba ARM64.

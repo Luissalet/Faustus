@@ -16042,3 +16042,29 @@ sin teléfono físico. Sólo tres APK anteriores retirados después de la QA;
 72 JSON de releases conservados. Colección y 416 archivos ajenos intactos,
 8897/8898 sin cambios. Recibos: research-inbox/hoarddex-emerald-steven/FINAL.json
 y research-inbox/hoarddex-emerald-gym-rematches/FINAL.json.
+
+
+## HoardDex: elecciones personalizadas compartibles — 24-10-2026, #1466
+
+Herramientas → Favoritos conserva las cuadrículas por generación, juego y
+tipo y añade grupos titulados con opciones de Pokémon, formas y variocolores.
+Permite empezar con iniciales, tríos legendarios o una plantilla vacía,
+editar y ordenar grupos/opciones, elegir uno por grupo, vaciar, duplicar
+y deshacer. Compartir distingue una plantilla sin respuestas de las
+elecciones propias, tanto en PNG como en código. Revisar e importar el
+código crea una copia independiente; los tableros van en la copia general
+y se combinan por identificador y fecha. Son preferencias personales,
+independientes de la disponibilidad en el juego de consulta. UI y MCP37
+comparten el modelo; MCP prepara propuestas sin aplicarlas en la app.
+
+Entrega1466 Main270/30a747e3, cinco commits CAS1 exactos y ff-only, sin push.
+Main pasa build web, 480 TS + 3 CJS, TypeScript y MCP37/572. QA web y Android
+visible en español/inglés y texto normal/ampliado: imágenes reales,
+plantillas/respuestas, formas, variocolores, portapapeles, importación,
+edición y regreso. Dos fallos de importación y uno de composición del PNG
+corregidos antes de aprobar; acabado y revisión de dominio separados.
+Ambos APK conservan el runtime probado y los 17.884 recursos exactos.
+x86 publicado e instalado con SHA comprobado; ARM64 compilado sin teléfono
+físico. Se retiran sólo seis APK anteriores y se conservan los 74 JSON.
+Colección original, 416 archivos ajenos y8897/8898 intactos. Recibos:
+research-inbox/hoarddex-choice-boards/FINAL.json; no paridad global afirmada.
