@@ -15327,3 +15327,65 @@ abierto tras editar246, antes de QA; no inspección visual previa retroactiva.
 416ajenos intactos,8897/8898fuera de mutaciones, sin ROM/TalkBack/tableta/iOS
 ni paridad global. Selector1380 yHoenn1375 conservados. Evidencia FINAL247.json
 en research-inbox/hoarddex-safari-rby. Parent864OPEN conservaWT de trabajo.
+
+
+### 24-10-2026 · fichas CRM, evidencia de gastos, ventanas de datos e imágenes del portapapeles
+
+- **Mercator1386** (`dd7d9760a6e64f77c67808bd363021a16b6f06a9`): desde una
+  empresa guardada, «Ver sus oportunidades» consulta su company_id exacto, con
+  nombre guardado e ID visibles. Lista, resumen, JSON/CSV y contexto de Faustus
+  comparten ese ámbito y los demás filtros. Los totales incluyen todos los
+  resultados por moneda, aunque una página contenga50. Quitar la empresa conserva
+  otros filtros y borradores; cero resultados no se sustituye por el total global.
+  Sin escrituras ni herramientas nuevas: CRM/API/MCP25 conservan el motor existente.
+  Ganado no equivale a cobrado. QA Autor/SDK/ROOT comprobó empresas homónimasA53/B1,
+  página50+3 y dos descargas reales JSON/CSV con los53IDs correctos y CSVUTF8BOM;
+ 13tablas y originales ficticios preservados. Las descargas de QA conservadas en
+  Downloads no deben repetirse ni borrarse como limpieza.
+- **Ledger1390** (`2db790c7821601068ce8f4b16321c4e7fd1ceee8`, CAS2): Informes
+  abre el cobro señalado por entry_id y cada antecedente/candidato periódico por
+  evidence.id. Conserva orden, cuenta, moneda e importe nativos; el cargo alto puede
+  quedar fuera de sus antecedentes y tiene enlace separado. El destino muestra
+  el movimiento original firmado y su nota. Las dos secciones identifican periodo
+  aplicado/carga/error, retiran enlaces anteriores y ofrecen reintento. Teclado y
+  tablas móviles con scroll local. Señal/candidato no acredita fraude, error ni
+  suscripción. API/MCP49 y detección permanecen iguales; el mes mantiene su
+  comportamiento vigente al salir y volver a Informes. CAS1 omitía el estado en
+  el consumidor final del copilot; CAS2 lo propaga sólo en reports, con regresión
+  provider→collector→context RED→GREEN y revisión independiente nueva. ROOT abrió
+  los IDs exactos de un cargo50EUR y un periódico20USD;15tablas/42apuntes exactos.
+- **Nightingale1391** (`49ee89ad74cb7fb10db239a192a983a3e41d20cd`): Datos y
+  Canalización comparten desplazamiento offset para lag/lead y window_size para
+  rolling_sum/rolling_mean. Vacío omite y usa defaults nativos1/3; cero y parámetros
+  explícitos no visibles se conservan al editar otro campo del paso. AyudaES/EN:
+  filas ordenadas por partición, incluye actual, ventanas parciales al principio,
+  SUM/AVG ignoranNULL, sin prometer días o estabilidad de empates. API/MCP43 y motor
+  existentes. PreviewDatos no crea versiones ni registros; PreviewCanalización
+  conserva versiones pero añade su entrada de análisis nativa. Aplicar crea la
+  versión/receta normal; la rama futura conserva su regla existente. Autor/peer
+  comprobaron offset2/0, tamaño5/alias y media4 por particiones. ROOT aplicó una
+  sola suma móvil2: A10/30/50/70,B100/300,Ñ5/5/15, con v0 intacta y v1 nueva.
+  Los análisis normales de autor y ROOT se conservan; no se afirma que toda la
+  base permanezca inmutable a través de esas acciones.45pruebas del área una vez,
+  focal material RED→GREEN y browserES/EN390; sin nuevos paquetes/modelos.
+- **Talos1393** (`9bcf46edbd5d64e012143f7f87b6a93b247e8666`): Historial ofrece
+  «Ver imagen», separada de Copiar. Visor inline del PNG guardado completo con
+  Ajustar/100%, scroll local, origen/fecha/ID/dimensiones reales, carga/error/retry
+  y cierre con vuelta de foco. Mantiene búsqueda, selección y lector de texto;
+  sólo una lectura activa. Contexto Faustus reconoce clip-image/estado/escala.
+  Reutiliza HTTPPNG/metadata; MCP97 clip_get sigue devolviendo dimensiones y texto
+  OCR, NO píxeles, comparación visual ni OCRnuevo. Sin backend/tool/dep/política
+  nueva y sin ampliar Fijados.33pruebas de área una vez/APIstdio97 y10tablas9clips/
+  9archivos protegidos exactos. Autor midió390 sin overflow y el revisor acreditó
+  captura móvil390x700 válida, imagen completa4esquinas y scroll100% por teclado.
+  La captura móvil IAB escalada del autor queda excluida como prueba visual.
+
+Las cuatro entregas tienen revisión cruzada con submission_revision retenida
+antes de probar, SHA aprobada exacta y verificación nativa en sus QA ficticias.
+Los fallos de fixtures/observadores y sus correcciones se conservan expresamente;
+SSR no se presenta como navegador ni se inventan pasadas globales verdes.
+Evidencia duradera en C:/Users/luism/.codex/scratch/hoard-loop23/merccompany23,
+ledgerreport1390, nightwindow23, talosimage1393 y sus review independientes.
+README locales actualizados; documentación común1392 consolida este lote. Sin
+push, servicios/modelos ajenos, enlaces, clones, copias de datos/código o cambios
+en Silvers/Hoardex/Hub/Prospero/Writers/Watch/Book/SABER ni otros frentes ocupados.
