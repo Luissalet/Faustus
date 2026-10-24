@@ -15810,3 +15810,64 @@ SHA exactos; ARM64 compilado sin ejecución física. Se retiraron normalmente
 sólo el par251 y las candidatas252/253, conservando todos los JSON.
 416ajenosWT intactos/noindexados,8897/8898 intactos. Recibos:
 research-inbox/hoarddex-original-texts/FINAL.json.
+
+
+## Bucle de Hoards: cierre110 —24oct2026, codex-hoard23, tarea1435
+
+110 mejoras integradas:104 funciones y6UI;108DONE y2históricas aprobadas/integradas
+OPEN Gamer1215/Hypatia1238 por conciliación de limpieza. FINAL110 sustituye el
+estado de107 conservando todas sus capacidades y todos los bytes anteriores.
+Sin push ni nuevas acciones en productos excluidos. Apps reales bajo demanda.
+
+Nightingale1427 CAS1 80615adfcbfbe9d869a4f7d985c1020ee63820b9: paso bin en
+Receta/Pipeline admite edges/labels JSON y los conserva al editar alias. Límites
+no vacíos sustituyen bins; intervalos [lo,hi), último extremo/fuera/NULL→NULL;
+etiquetas faltantes generadas, etiqueta vacía explícita conservada. [] mantiene
+bins. Motor/API/MCP43 intactos. Receta preview no crea log/versión; Pipeline
+dry-run sí registra log nativo, sin versión. Apply explícito. Autor45área PASS,
+materialRED→GREEN1,build5.13/detector[]; ROOT una aplicación v1 y roundtriplocal,
+peer/APIstdio43/catálogoentero exacto/13tablas y3CSV SHA-size-mtime exactos.
+MAINbuild6.43/nuevaSDKreadonly/13tablas/6versions8logs preservados, JS/CSSHTTP=disk
+generado(no blobGitdist). QA63290OFF, cleanupnormal8anc/ALL35738leídoROOT.
+
+Hypatia1433 CAS1 ae1e0a2aa9e8ecc3c1adb07f6d4868e51e69a39f: mejoraUI de navegación
+por15calculadoras con búsqueda/alias/acentos/todaslaspalabras, selector y Enter.
+Abre details/foco/scroll existentes sin hash, cierre ni desmontaje de los otros.
+0resultados conserva15formularios y ofrece Ver todas. Matriz/Taylor y resultado
+general5 preservados en navegador real, escritorio390/console[]. No nueva
+matemática/API/MCP/deps, catálogo71entero exacto. Build8.42/PWA135ms/detector[]
+una vez, sin tests de implementación ni suite matemática repetida;31vulns npm
+heredadas. PeerAPIstdioRREF distinto/15tablasENTERAS exactas. InicialUI añade
+3syncKV y2Teacher vacías;12tablasanterioresnoKV+oldKVexactos, luego15exactas.
+MAINbuild11.53/PWA126ms y nueva inversa[[1/2,0],[0,1/5]] APIstdio71/15tablas
+exactas; entry/CSS/lazyHTTP=diskdistnormal sin copia de bundles. QA63288OFF,
+cleanupnormal8anc/ALL33276leídoROOT. Observerpreflightincluyó su propioPID,
+corregido excluyendo únicamente observador, inicial retenido/sin matar nada.
+
+Prometheus1432 CAS1 9796f7ad260faa265dbe5bdcf3cce3c854255d94: consultaTrabajos
+porSpark/estado nativo ANTESlímite50, encuentrafallosantiguos fuera50globales.
+Mantiene detalle/log/más-menos, alcance devueltos/visibles y aviso50 sin total
+inventado. Terminados sigue filtro local no-running con state vacío nativo;
+contexto distingue ambos. Pendientes iguales se comparten antepoll/version;
+criterio distinto retira datos y respuestasviejas; error/retry conserva filtros.
+Detalle fueraresultado se cierra con aviso y borradoresdescarga sobreviven.
+Backend/API/MCP45/deps intactos. Suitefake282PASS/2SKIPuna vezAGENTS103.09s,
+React19.3material autor/peer pendientesA→B→A/version/StrictMode/retryPASS;
+buildfinal3.74/detector[]una vez. ROOTrealfailed→detalleID/rc7/log40,activeempty,
+ENlost; escritorio390 válido/console[].27archivosSHA-size-mtime/174registros
+ENTEROS exactos. AutorRetrypollrecuperóantesclick ydelayconsumidaantescambio:
+no afirmarcarrera/retrybrowser; la focalReactsí cubre pendientes. EN390autor
+imagenexcluida completada porROOTimagenválida. MAINAPIstdio45ROOTcancelled nuevo,
+catálogo entero/27filesSHA-size-mtime/174registros exactos; assetsHTTP=disk con
+EOLGitfiltered explícito. Observer inicial comparaba catálogo conaliasdistinto;
+normalización de RAW retenido/reusoAPIreadonly, SDK sólo después comparación.
+QA63289OFF/cleanupnormal8anc/ALL8967 leídoROOT; recibos enINTEGRATED.
+
+Recibos completos fueraWT en scratch/hoard-loop23/{nightbin23,hcalcnav1433,
+promjobfilters1432}/INTEGRATED.md yreview1427/1433/1432. MAIN exactas aprobadas,
+pruebas nativas, datos preservados, QApropiasOFF y retirada normalleídaROOT.
+Atlas1426 sigueCAS1congeladaGUI_PENDING/OFF, no contada; Brave403originrefused,
+IABnoejecutacontroles; no nuevos intentos equivalentes/cambiarheadersguardas.
+Funes/Talos1434implementaciónautorizada para retomarcontextos antesunmomento,
+sin contarse hasta cierre. Dosfeatureagents yrevisor existentes, sin duplicar.
+OBJETIVOS/PENDIENTES leídos y preservados; ninguna decisión nueva para Luis.
