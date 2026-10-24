@@ -1805,3 +1805,18 @@ formas/localizaciones y apariencias pendientes por edición, demás
 entrenadores/revanchas/guías, presets Nuzlocke y tamañoAPK. Conservar
 intercambios/áreas1191 yselector1380 porfamilias/DLC; no afirmar imposible
 lo desconocido ni paridad total, sin minijuegos o préstamos sin atribuir.
+
+
+## HoardDex: continuar tras Safari de Platino —24-10-2026, #1408
+
+Platino14 dispone de motor Safari propio en Main251696b49cf, probado en
+web y Android visible, con fuentes de acción, mensajes y aritmética propias.
+Supera sólo la mención antigua de todo SafariDS pendiente; Diamante/Perla,
+HG/SS, huida/estrategia y otros contextos especiales continúan abiertos.
+Tras investigación1416, tarea1418 recuperará descripciones de movimientos
+con nombres históricos verificados y el carácter ordinal conocido, sin
+relajar identidades ni códigos dinámicos. Siguen evoluciones posteriores,
+formas/lugares/apariencias por edición, entrenadores/revanchas/aventura,
+presets Nuzlocke y tamaño del APK. Conservar selector1380, intercambios/
+áreas1191 y demás entregas; no declarar imposible lo desconocido ni
+paridad global o prueba física ARM64, sin minijuegos.

@@ -15649,3 +15649,28 @@ Gamer1215/Hypatia1238 por conciliación de limpieza. No reintentar sus retiradas
 rechazadas ni Cook1205. ManualCAS198párrafos/4targets/194otros enteros y estilos
 exactos; corrige69Hypatia y97=95+2Talos. GrafoStore/MEMORY/continuidad conservan
 aportaciones anteriores. Excluidos intactos, sinpush ni modelos/servicios ajenos.
+
+
+## HoardDex: captura Safari de Platino —24-10-2026, #1408
+
+Main251696b49cf integra por ff-only los dos commits aprobados CAS1, sin push.
+Herramientas/Captura y MCP usan reglas propias de Platino14: cebo, barro,
+mensajes originales de la edición e inventario manual de la visita. Si no
+se conoce el mensaje del barro, muestra los extremos posibles sin inventar
+pesos. Intermedios cero no contrastados se explican sin asignar0% ni
+imposibilidad. Deshacer/Reiniciar, ficha/vuelta e invalidación conservan
+el flujo. No calcula huida, estrategia, presencia ni posterior del PRNG;
+Diamante/Perla y HG/SS siguen sin esta admisión Safari.
+
+Main445TS+3CJS, TypeScript y MCP36/452 pasan; revisión propia independiente
+y oráculo separadas de QA del autor. Web ES/EN1280/390 y ancho1920, Android
+visible x86 texto1/1,3; final251 instalado-r, paquete/SHA y cálculo probados.
+Selector de únicos/contrapartes y pestañas DLC conservados. Dos APK finales
+y JSON, Hermes idéntico a fuente250 y17.884 medios SHA exactos; ARM64
+compilado/verificado sin teléfono físico. Tres APK propios previos retirados
+normalmente y JSON históricos conservados.416ajenos WT intactos,8897/8898
+sin mutaciones. Recibos: research-inbox/hoarddex-safari-pt/FINAL.json.
+
+La investigación1416 identifica30descripciones históricas adicionales
+y el glifo ordinal GBA, pero no entrega esos datos: implementación1418
+sigue pendiente. No equivale a paridad global;864/1195 mantienen el encargo.
