@@ -1793,3 +1793,15 @@ ediciones posteriores, formas/localizaciones, guías/entrenadores/revanchas,
 presets Nuzlocke y tamañoAPK. Conservar selector porfamilias/DLC1380,
 intercambios/áreas1191, textos originales1189 y bancos inicialesHoenn1375.
 Sin minijuegos ni sustituciones de edición sin aviso. No declarar paridad total.
+
+
+## HoardDex: continuar tras las evoluciones originales de Teselia —24-10-2026, #1397
+
+Negro/Blanco dejan de estar pendientes de banco evolutivo propio: entrega
+24975d5504f, fuentes/caller/objetos/reloj/formas auditados, web yAndroid
+verificados, ambosAPKfinales+JSON. Supera esa mención del registro1388.
+Siguen SafariDS yotros motores especiales, evoluciones posteriores,
+formas/localizaciones y apariencias pendientes por edición, demás
+entrenadores/revanchas/guías, presets Nuzlocke y tamañoAPK. Conservar
+intercambios/áreas1191 yselector1380 porfamilias/DLC; no afirmar imposible
+lo desconocido ni paridad total, sin minijuegos o préstamos sin atribuir.

@@ -15503,3 +15503,27 @@ no reintentar sus retiradas rechazadas. README propios, manual, grafo y memoria
 recogen las funciones y sus límites. Corrección de referencia anterior: aceptación
 ROOT de Hermes1399 fue mensaje16144, no16149. Sin push, modelos o servicios
 ajenos, cambios de datos reales ni implementación en productos excluidos.
+
+
+## HoardDex: evoluciones originales de Negro y Blanco —24-10-2026, #1397
+
+Main249 75d5504f, ff-only CAS1 exacta fuente248+docs249, sin push.
+Guía/Evoluciones y MCP consultan Negro17/Blanco18 con datos propios,
+40fuentes primarias fijadas:321tuplas,320pares y328rutas de formas por
+edición. Reloj estacional, prioridad de lugares, objetos, intercambio
+mutuo, formas y Shedinja contrastados;51otras ediciones+overview intactos.
+No presupone captura, disponibilidad de objetos ni entrenamiento de Belleza.
+
+Main437TS+3CJS/TSC0/buildweb/MCP36-440. Fuente248 probada web ESEN desktop/
+390 yAndroid visible1/1.3; final249 instalado-r y probado Feebas/objeto/
+Atrás, filas únicas/contrapartes y pestañas DLC. Webfinal Brave8899/Main
+index3eed235e HTTP=disco/DOM; IAB no recibió entrada efectiva, sin
+atribuir ese límite al producto. ES/System/Black/Pokedex0web y1native
+Bulbasaur/font1 restaurados, logcat0. DosAPK249+JSON en releases, Hermes
+idéntico248 y17884medios SHAidénticos247; ARM64 sin teléfono físico.
+TresAPKpropios anteriores retirados normalmente sin recursión, JSON
+retenidos.416ajenos WT SHAexactos/0indexados,8897/8898sinmutar.
+
+Selector1380, Hoenn1375 ySafariRBY1388 conservados. Paridad global aún
+parcial; evidencia research-inbox/hoarddex-bw-evolution/FINAL.json.
+Parent864OPEN conserva WT864 para continuar el encargo de Luis.
