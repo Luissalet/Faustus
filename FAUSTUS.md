@@ -15679,7 +15679,7 @@ sigue pendiente. No equivale a paridad global;864/1195 mantienen el encargo.
 ### 24-10-2026 · Cuatro mejoras integradas: fracciones parciales, Taylor racional, balance de blancos y unión de viajes
 
 El bucle codex-hoard23 alcanza **104 mejoras integradas: 99 funciones y 5 de UI**.
-Son102 tareas DONE y dos históricas aprobadas e integradas, Gamer1215 e Hypatia1238,
+Son 102 tareas DONE y dos históricas aprobadas e integradas, Gamer1215 e Hypatia1238,
 que siguen abiertas por conciliación de limpieza. No se reintentan sus retiradas
 rechazadas ni Cook1205. Este checkpoint conserva todos los bytes anteriores,
 incluido el registro común1419 de otro agente, y no modifica productos excluidos.
@@ -15689,26 +15689,26 @@ incluido el registro común1419 de otro agente, y no modifica productos excluido
   propias. Mantienen el denominador original distinto de cero aunque se cancele
   un factor o el numerador sea cero. Fórmulas, texto exacto y verificación del
   residuo; editar/cerrar retira resultados anteriores. No extensión algebraica,
-  cálculo de polos, integración ni pasos inventados. Integrada CAS1acaffd7e.
+  cálculo de polos, integración ni pasos inventados. Integrada CAS1 `acaffd7e`.
 - **Hypatia1421, Taylor racional:** Inicio, POST/api/math/rational-taylor y
   math_rational_taylor producen polinomio centrado y expandido, coeficientes0..n
   incluidos los ceros y resto algebraico exacto de P/Q alrededor de un centro
   racional. Grado inclusivo0..12, variablex/y/t. El centro debe pertenecer al dominio
   original, incluso con factores cancelados. No radio de convergencia, cota de
-  error, series trascendentes o pasos de derivadas. Catálogo final71=53Study18Teacher,
-  con las70 definiciones anteriores exactas. Integrada CAS1494a05e6.
+  error, series trascendentes o pasos de derivadas. Catálogo final: 71 herramientas,
+  53 de Study y 18 de Teacher; las 70 definiciones anteriores exactas. CAS1 `494a05e6`.
 - **Daguerre1415, balance de blancos guardado:** Valoración y retoque permite
   guardar temperatura y matiz o quitar cada ajuste. Los valores guardados se
   distinguen del borrador; guardar modifica sólo claves cambiadas, matiz0 es real
   y vacío no equivale a0. Es receta persistida, sin render de estos ajustes en la
   vista previa ni Kelvin medidos para JPEG/TIFF. Escritura XMP mantiene su ajuste
-  vigente. API/MCP96 existentes, sin motor o dependencia nuevos. CAS1b796a799.
+  vigente. API/MCP96 existentes, sin motor o dependencia nuevos. CAS1 `b796a799`.
 - **Hermes1413, unión de viajes:** el formulario existente distingue viajes
   homónimos por ID y fechas, muestra roles y cantidades nativas y conserva el
   recibo devuelto con dos identidades claras. No se cierra ni navega tras unir;
   las notas pendientes siguen separadas. Al reabrir ya no ofrece el viaje
   incorporado. Usa trip_update/API/MCP115 existentes. No FX, simulación, undo ni
-  garantía de idempotencia tras una respuesta perdida. CAS1e6bea00c.
+  garantía de idempotencia tras una respuesta perdida. CAS1 `e6bea00c`.
 
 Las cuatro entregas tienen revisión independiente CAS1, comprobación ROOT y
 prueba de MAIN sobre el SHA aprobado, sin push. QA ficticia propia y preservación
