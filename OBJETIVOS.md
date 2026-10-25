@@ -1967,3 +1967,10 @@ No hay decisión nueva pendiente de Luis.
 La investigación1490 está cerrada e incorporada;1494 investiga la Liga mejorada de Platino, aún sin función de producto.
 Continúan la paridad global, otras ediciones, entrenadores, rutas completas y textos sin fuente.
 No hay decisión nueva pendiente de Luis.
+
+## HoardDex tras la Liga mejorada de Platino —25-10-2026
+
+1497 entregadaMain291: cinco equipos propios y condición de Plutón en MontañaDura.
+207equipos/357contextos/582fuentes16ediciones;web yAPKpublicadox86probados,ARM64compilado.
+1494investigación cerrada e incorporada;1498 investiga las ocho revanchas propias de líderes de Platino, aún sin producto. Siguen otras ediciones, entrenadores, rutas completas y textos sin fuente.
+No hay decisión nueva pendiente de Luis.
