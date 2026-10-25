@@ -1987,3 +1987,7 @@ No hay decisión nueva pendiente de Luis.
 1509 entregada en Main296: cinco equipos opcionales y condiciones individuales/diarias originales.
 Global220 equipos/370 contextos/620 fuentes en16 ediciones; web y APK x86 probados, ARM64 compilado.
 1508 investigada e incorporada. Continúan otros entrenadores, rivales y ediciones, rutas completas y textos sin fuente; no se atribuye paridad global. No hay decisión nueva pendiente de Luis.
+
+## HoardDex tras los equipos iniciales Normales de Teselia —25-10-2026
+
+1513 entregada en Main298: trece equipos propios de Negro2/Blanco2 US Normal con fase, niveles, huecos y objetos originales. Total233/396/698/18; web y APK x86 reales, ARM64 compilado.1515 investigó y revisó cinco equipos de Liga de revancha Normal; falta implementarlos en una entrega separada. Continúan otros modos, entrenadores y ediciones, rutas completas y textos sin fuente, sin atribuir paridad global. No hay decisión nueva pendiente de Luis.
