@@ -1995,3 +1995,7 @@ Global220 equipos/370 contextos/620 fuentes en16 ediciones; web y APK x86 probad
 ## HoardDex tras las revanchas de Liga Normales de Teselia —25-10-2026
 
 1516 entregada en Main301: cinco equipos propios de revancha Normal de Negro2/Blanco2 US tras el primer Hall. Total238/406/703/18; web y APK x86 reales, ARM64 sólo compilado.1517 investigación de tamaño terminada y revisada, aún sin ahorro instalado; optimizador estático assets/height pendiente de producto con RGBA/metadatos exactos y sólo menor tamaño. Continúan otros modos, entrenadores y ediciones, rutas completas y textos sin fuente, sin atribuir paridad global. No hay decisión nueva pendiente de Luis.
+
+## HoardDex tras comprimir ilustraciones —26-10-2026
+
+1520 entregada Main303:32.209.990B menos en derivados y32.208.060B menos en APKx86, sin pérdida deRGBA/dimensiones/metadatos ni retirar contenido. Web/publicadox86reales, ARM64 sólo compilado. Siguen pendientes modelos/otros medios y tamaño global.1524 corrige proximidad unidad/marca en eje con texto ampliado;1521Fácil/Desafío investigado/revisado aúnNOproducto, con nivelbase/ajustado separados y estadísticas sin inventar. Continúan entrenadores, ediciones, textos sin fuente y guías completas; sin paridad global ni nueva decisión pendiente deLuis.
