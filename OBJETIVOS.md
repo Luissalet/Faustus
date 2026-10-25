@@ -1974,3 +1974,10 @@ No hay decisión nueva pendiente de Luis.
 207equipos/357contextos/582fuentes16ediciones;web yAPKpublicadox86probados,ARM64compilado.
 1494investigación cerrada e incorporada;1498 investiga las ocho revanchas propias de líderes de Platino, aún sin producto. Siguen otras ediciones, entrenadores, rutas completas y textos sin fuente.
 No hay decisión nueva pendiente de Luis.
+
+## HoardDex tras las revanchas de Platino —25-10-2026
+
+1500 entregada en Main294: ocho revanchas de líderes, equipos y condición diarios propios.
+Global215 equipos/365 contextos/606 fuentes en16 ediciones. Web y APK publicado x86 probados, ARM64 compilado.
+1498 investigada e incorporada. Siguiente cobertura: los cinco acompañantes del Café Revancha. Continúan otras ediciones, entrenadores, rutas completas y textos sin fuente; sin paridad global atribuida.
+No hay decisión nueva pendiente de Luis.
