@@ -1942,3 +1942,12 @@ Continuar fuentes propias por edición:revanchas de gimnasio,rivales/restoaventu
 guías útiles yEUJP;acceso completoMontePlateado aúnsincontrastar. Conservar el
 avisoCelio sóloRFVH,eleccionescompartibles1466 yselectorfilas/DLC1380.
 No hay nueva decisión deLuis niun pendiente suyo que añadir.
+
+## HoardDex tras los pasos de Oak —25-10-2026
+
+1485 entregadoMain284:condición propiaHGSSUS de Azul/Oak/MO08/pasoMontePlateado,
+sin cerrar requisitos completos de cima ni prestar16medallasGSC. Global186/320/
+485fuentes16ediciones;web yAPKx86 probados/ARM64compilado. Continúan paridad,
+otras ediciones, revanchas/rivales/entrenadores, rutas completas ytextos sinfuente.
+1486 contrasta equipos originales de revanchaHGSS ysu teléfono/horario, sin
+implementación acreditada todavía. No hay nueva decisión pendiente de Luis.

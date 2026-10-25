@@ -16179,3 +16179,22 @@ Recibos research-inbox/hoarddex-hgss-upgraded-product/FINAL.json; FieldDex/docs/
 EUJP,gymrematches,rivales,restoaventura,guías completas,fullMtSilveraccess,
 ROM/fullreachability/TalkBack/tablet/ARMphone/paridadglobal siguenpendientes.
 Eleccionespersonalizadas compartibles1466 yfilas/DLC1380 siguenentregadas.
+
+## HoardDex: pasos propios de Oak hacia Monte Plateado —25-10-2026
+
+Entrega1485 Main284 `09bdf61df75e581194dac75d0325489438eaf81c`, fuente2832d078c65+docs28409bdf61d,
+dos commits CAS1 exactos/ff-only/sinpush. Guía/MCP añade a RojoHGSSUS la
+cadena Azul/CiudadVerde→llamadaOak→laboratorioPaleta→MO08/pasoMontePlateado,
+con aviso explícito de requisitos completos de cima pendientes. Conserva88,
+party, Hallreturn yotros26HGSS/sourceIndices exactos.24SHA/48hechos propios
+contrastados independientemente;append14fuentes/prior55exactos,69HGSS/485globales,
+186equipos320contextos16ediciones;cinco bancos anteriores byteexactos.
+Mainweb497TS+3CJS/TSC0/MCP37-619. QA283realwebESEN1280/390 yAndroid5554
+visiblefont1/1.3;freshgenericfinishship13views/documenter/CAS separados.
+WEB284/NATIVE284 realesMain/APKpublicadox86;ARM64compilado sinphone. AmbasABI
+runtime/media283 exactos;3APKanterioresretirados trasQA y86JSONconservados.
+ES/system/font1/Arceus1de1025 preservado trasapp-onlyreopen;webNegro0.
+Studio/AVDvisible sinreiniciar/ocultar,416ajenos exactosnoindexados,8897/8898intactos.
+No prueba requisito inicialAzul, identidad/usoMO08, fullroute/cima/ROM/EUJP/
+TalkBack/tablet/ARMphone/paridadglobal.1486investiga revanchasHGSS sinproducto aún.
+Recibos research-inbox/hoarddex-hgss-access-product/FINAL.json yFieldDex/docs/BATTLES.md.
