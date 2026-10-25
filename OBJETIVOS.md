@@ -1951,3 +1951,11 @@ sin cerrar requisitos completos de cima ni prestar16medallasGSC. Global186/320/
 otras ediciones, revanchas/rivales/entrenadores, rutas completas ytextos sinfuente.
 1486 contrasta equipos originales de revanchaHGSS ysu teléfono/horario, sin
 implementación acreditada todavía. No hay nueva decisión pendiente de Luis.
+
+## HoardDex tras las revanchas HGSS —25-10-2026
+
+1489 entregadoMain287:dieciséis líderes HGSSUS ycondiciones originales de cita.
+202equipos352contextos508fuentes16ediciones;web yAPKpublicadox86 probados,ARM64compilado.
+1490 investiga cómo obtener sus dieciséis números; aún no incluido en el producto.
+Continúan paridad global, otras ediciones, entrenadores, rutas completas ytextos sinfuente.
+No hay decisión nueva pendiente de Luis.

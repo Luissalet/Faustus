@@ -16198,3 +16198,7 @@ Studio/AVDvisible sinreiniciar/ocultar,416ajenos exactosnoindexados,8897/8898int
 No prueba requisito inicialAzul, identidad/usoMO08, fullroute/cima/ROM/EUJP/
 TalkBack/tablet/ARMphone/paridadglobal.1486investiga revanchasHGSS sinproducto aún.
 Recibos research-inbox/hoarddex-hgss-access-product/FINAL.json yFieldDex/docs/BATTLES.md.
+
+## HoardDex: revanchas originales HGSS —25-10-2026
+
+Entrega1489 DONE Main287/4c79dea0: dieciséis revanchas propias de líderes HGSS US, 96 miembros/384 movimientos/22 objetos por edición; 43 equipos/86 contextos/92 fuentes HGSS y202/352/508 globales16ediciones. Condiciones propias: dieciséis medallas, número ya registrado, cobertura y fuera del Dojo, día yhoras del reloj, aceptar cita, persistencia y reinicio tras victoria. Obtención de números sigue pendiente1490. Prior27 equipos/69 fuentes/sourceIndices/cinco bancos exactos. CASr1 de tres commits182b80fe+239637bf+4c79dea0, ff-only/sinpush. Mainweb/499TS+3CJS/TSC0/MCP37-625. QA real ESEN1280/390 yAndroid5554visible font1/1.3;freshgeneric finish17views ydocumenter7 separados de CAS. Main287 yAPKpublicadox86 probados, ambasABI287/runtime286/media17884 exactos; ARM64 sólo compilado. Cuatro APKobsoletos retirados trasQA/88JSON conservados. ES/system/font1/Arceus1of1025 trasapp-onlyreopen/webNegro0;RuntimeJS0,StudioAVDvisible sinreiniciar/ocultar,416ajenos exactosnoindexados/8897-8898intactos. Sin ROM/EUJP/fullroute/TalkBack/tablet/ARMphone/paridadglobal. Recibos research-inbox/hoarddex-hgss-rematches-product/FINAL.json.
