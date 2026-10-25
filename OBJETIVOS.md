@@ -1959,3 +1959,11 @@ implementación acreditada todavía. No hay nueva decisión pendiente de Luis.
 1490 investiga cómo obtener sus dieciséis números; aún no incluido en el producto.
 Continúan paridad global, otras ediciones, entrenadores, rutas completas ytextos sinfuente.
 No hay decisión nueva pendiente de Luis.
+
+## HoardDex tras la adquisición de números HGSS —25-10-2026
+
+#1493 entregada en Main289: dieciséis adquisiciones propias, separadas de las llamadas de revancha.
+202 equipos/352 contextos/565 fuentes en16 ediciones; web y APK publicado x86 probados, ARM64 compilado.
+La investigación1490 está cerrada e incorporada;1494 investiga la Liga mejorada de Platino, aún sin función de producto.
+Continúan la paridad global, otras ediciones, entrenadores, rutas completas y textos sin fuente.
+No hay decisión nueva pendiente de Luis.
