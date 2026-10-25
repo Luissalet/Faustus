@@ -1981,3 +1981,9 @@ No hay decisión nueva pendiente de Luis.
 Global215 equipos/365 contextos/606 fuentes en16 ediciones. Web y APK publicado x86 probados, ARM64 compilado.
 1498 investigada e incorporada. Siguiente cobertura: los cinco acompañantes del Café Revancha. Continúan otras ediciones, entrenadores, rutas completas y textos sin fuente; sin paridad global atribuida.
 No hay decisión nueva pendiente de Luis.
+
+## HoardDex tras los acompañantes de Platino —25-10-2026
+
+1509 entregada en Main296: cinco equipos opcionales y condiciones individuales/diarias originales.
+Global220 equipos/370 contextos/620 fuentes en16 ediciones; web y APK x86 probados, ARM64 compilado.
+1508 investigada e incorporada. Continúan otros entrenadores, rivales y ediciones, rutas completas y textos sin fuente; no se atribuye paridad global. No hay decisión nueva pendiente de Luis.
