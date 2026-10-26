@@ -1999,3 +1999,7 @@ Global220 equipos/370 contextos/620 fuentes en16 ediciones; web y APK x86 probad
 ## HoardDex tras comprimir ilustraciones —26-10-2026
 
 1520 entregada Main303:32.209.990B menos en derivados y32.208.060B menos en APKx86, sin pérdida deRGBA/dimensiones/metadatos ni retirar contenido. Web/publicadox86reales, ARM64 sólo compilado. Siguen pendientes modelos/otros medios y tamaño global.1524 corrige proximidad unidad/marca en eje con texto ampliado;1521Fácil/Desafío investigado/revisado aúnNOproducto, con nivelbase/ajustado separados y estadísticas sin inventar. Continúan entrenadores, ediciones, textos sin fuente y guías completas; sin paridad global ni nueva decisión pendiente deLuis.
+
+## HoardDex tras entregar tres modos BW2 —26-10-2026
+
+1524/Main306: unidad del eje y marca superior ampliada resueltas sin cambiar medidas.1527/Main309:54equipos BW2US propios18pormodo,base/ajuste/statsunverified,generador reproducible,web/Androidvisible yMCP comprobados. Otrosentrenadores/ediciones/textosporfuente/iconos/guías completas/tamaño global siguen abiertos. ARM64sólobuild; sinROM/fullroute/statrecalc/keyunlock/EUJP/tableta/TalkBack/paridadglobal. Continuar fuentes propias deNegro/Blanco17/18, sin prestar secuelas ni convertir ausencia de datos en imposibilidad. Registrocomún1529 preservaManual/resto,MEMORY/STOP122yGraphStoreembedFalse. Sin nueva decision pendiente deLuis.
