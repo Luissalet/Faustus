@@ -2007,3 +2007,22 @@ Global220 equipos/370 contextos/620 fuentes en16 ediciones; web y APK x86 probad
 ## HoardDex tras los gimnasios originales BW —26-10-2026
 
 Main311:11equipos propiosUS17/18, inicialdeljugador eIrisBlanco/LirioNegro, fuentes ycerosliterales declarados. Guía/MCP yweb/Androidvisible entregados. Global285/498/737/20ediciones. SiguenLiga,N/Ghechis/Mirto propios, otrosentrenadores/juegos/textosporfuente/mapas/iconos/tamaño global. No prestar condiciones HallBW2; sinROM/fullroute/EUJP/efectonativodeceros/ARMfisico/tableta/TalkBack/paridadglobal. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente deLuis.
+
+
+## Silver: completar retratos después de la entrega parcial58 —26-10-2026, #1372
+
+Main e402ba13 ya instala retratos reactivos y HUD compartido en app/HTML, con
+2.018conjuntos completos/832parciales/88ausentes. Mantener la biblioteca previa
+de sprites de combate1469normal/shiny; no confundirla con retratos completos.
+Continuar las16expresiones por variante, revisar las generadas contra su propio
+publicado a40px y ampliado nearest: anatomía, orientación derecha, cámara y
+encuadre cercano sin bordes nuevos, actuación distinta y paleta propia. Corregir
+casillas/rasgos concretos y conservar las buenas; regenerar sólo si la corrección
+local no alcanza calidad. Las plantillas de gradiente/símbolos no sustituyen el
+gesto facial. Tornadus644/645 sigue como propuesta OUT hasta revisión full32.
+
+Cada tanda requiere revisión independiente, biblioteca instalada/HTML con los
+mismos bytes y prueba real de UI/MCP; no certificar por recuento ni por flags.
+Conservar gameplay, originales, créditos y cobertura publicada. Los HTML antiguos
+se reexportan. La entrega parcial58 está aprobadaCAS2 y comprobada en Main; no
+cierra1372, no afirma todo el catálogo revisado y no necesita decisión de Luis.

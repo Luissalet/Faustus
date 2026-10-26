@@ -16249,3 +16249,40 @@ Entregas1524 y1527 completas: HoardDex Main309/b0707383, trescommits1527 aprobad
 ## HoardDex: gimnasios originales de Negro y Blanco —26-10-2026
 
 HoardDex Main311/e165387c: once equipos propios de gimnasios originales Negro/Blanco US17/18, veinte contextos,29 miembros/116 huecos/12 ceros literales/ningun objeto equipado y16 fuentes verificadas. Cada edicion tiene diez alternativas para ocho gimnasios: Snivy del jugador conduce a Zeo, Tepig a Maiz y Oshawott a Millo; no es el inicial del rival. Iris soloBlanco y Lirio soloNegro, maximo43. Alcance y alternativas antes del contador incluso0; no modos prestados de secuelas. Tablas originales y efecto nativo de ceros no confirmado se distinguen. Global285 equipos/498 contextos/737 fuentes en20 ediciones;274 registros/721 fuentes, siete bancos previos y416 archivos ajenos exactos. Ambos manifiestos estadounidenses prueban Black y White para estos archivos, superando la duda preliminar1530; no equivalencia EU/JP. Generador autocontenido16SHA/byte exacto, causal4 RED309/GREEN310mismoSHA. Main522TS+3CJS+11Python/TSC0/MCP37-781/web/generador.19 capturas finales web ES1280/820/EN390oscuro yAndroid5554visibleES1/EN1.3oscuro, referencias/contexto/ceros/edicion; acabado y documenter genericos frescos separados sustituyen especialistas ausentes. Incidentes de accesibilidad/arranque y primeras aserciones fallidas retenidos sin relabelPASS. Doscommits CASr1 exactos/ff-only/sinpush. AmbasABI311 runtime310/media17884cadaSHAexacto309; webMain yAPKpublicadox86 probados realmente; ARM64solobuild sintelefono. TresAPKpropiosobsoletosretirados,106JSONprevios exactos/108total. ES/system/font1/nightno/Arceus1of1025/emptysearch trasapp-onlyreopen,RuntimeJS0; webNegro0. Studio658306/AVDvisible sinreinicio/ocultacion/borrado,8897real/8898intactos/8899Main311. SinROM/juegooriginal/efectonativodeceros/estadisticas/recorridocompleto/partidaarbitraria/EUJP/ARMfisico/tableta/TalkBack/paridadglobal. Liga,N,Ghechis yMirto originales siguen pendientes y requieren sus propias condiciones; no HallBW2 prestado. Recibos research-inbox/hoarddex-bw-gyms-product/FINAL.json. Seguir cobertura por edicion; investigacion futura no es producto entregado.
+
+
+## Silver: retratos reactivos y colección parcial instalada —26-10-2026, #1372/#1537
+
+Main e402ba13 integra los tres commits exactos aprobados en CAS2: biblioteca
+indexada de retratos en app y HTML, plantillas de fondo por expresión y HUD
+compartido con barra angular más gruesa, retrato a toda altura, nivel, PS y la
+Poké Ball asignada a su lado. Las caras responden al reloj del combate; se han
+corregido la ausencia exacta de expresión en el portable y el inicio del reloj
+en la primera reproducción clásica. No cambia gameplay ni retira funciones.
+
+Cobertura de retratos:2.018conjuntos completos de16expresiones,832parciales y88
+ausentes; normal/shiny se cuentan aparte.238registros revisados/3.808expresiones
+instaladas,14packs actuales y33.601mapeos. No es aprobación visual global del
+catálogo ni cierre1372. La biblioteca de sprites de combate1469normal/shiny es
+un alcance previo distinto. Se conservan originales, créditos y buenas casillas;
+las correcciones locales respetan derecha/encuadre/paleta propia. CharizardMegaY
+Determined/Dizzy N/S sustituye sólo4caras,28caras runtime yNormal publicados
+literales. Los pilotos Tornadus644/645 siguen fuera del producto.
+
+QA de Main ya integrado y recompilado, datos vacíos:195herramientas MCP, equipos
+legales, appKO38sec confirmado MCP y HTMLKO887ticks/29,5667sec. Mega ordinaria
+21,4/20,5según logs redondeados; BesoDulce21,6/20,9 causa confusión y ambas
+repeticiones UI pausadas23,00 muestran Dizzy40px normal/shiny. Son estados
+persistentes, no reconstrucción de Pain transitorio.32respuestas HTTP coinciden
+con instalado y HTML;67.186assets binarios/39chunks con SHA correcto, consolas0.
+Builds app/play correctos. Fuente funcional final:697PythonPASS/5skip/advertencia
+existente y640enginePASS/1skip anteriores, con bytes idénticos; CAS2 focal propio
+16Python+7NodePASS. No nueva prueba MP4/importación ni wheel. La selección Main
+contiene únicamente manifest+14packs vigentes; no empaquetar desde WT histórico.
+
+Manual actualizado con CAS y readback: sólo se amplía Silver,197otros párrafos
+texto/estilos exactos. Grafo de proyecto y memoria registran la entrega parcial.
+No servidores/modelos ajenos ni push. Recursos QA propios cerrados;Main5230 no
+iniciado. Recibos:research-inbox/silver-portraits1372/qa-main58-delivery-proof.json,
+partial58-main-integrated.json yreview-cas58-art30.md. Tarea1372 continúa para
+completar y revisar los832parciales/88ausentes, sin decisión pendiente de Luis.
