@@ -2134,3 +2134,7 @@ dosNormal publicados; ojoslejanosDizzyHOLD traspilotos yuna salidaimagegen recha
 GarbodorGigamax:30carasGO contando4anteriores, dosDizzy pendientes de curvaslegibles.
 Todo ello sóloOUT hasta selección yverificación completa; no aprobado porconteo.
 Ninguna decisión pendiente deLuis. No cerrar1372 ni afirmar catálogo completo.
+
+## HoardDex tras las revanchas de Acromo — 26-10-2026
+
+Entregado Main325: primera revancha interior y diaria en cubierta, RotomLavado y tres modos propios.84 equipos BW2/327globales; condiciones, nivel/ajuste separados, fuentes, referencias conBack y alcance con0resultados. Web yAndroidStudio visible probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1568 siguiente: primerN legendario y sus movimientos automáticos al nivelbase70, aún sin candidato aprobado ni producto. Continúan coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otrosHoards/modelos/Hub.
