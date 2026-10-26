@@ -2157,3 +2157,7 @@ Gigamax, contrastados con forma oficial y materiales propios. No ampliar cada
 piloto a 16 ni instalarlo hasta revisar las caras completas; corregir cuadrados
 o componentes individuales y regenerar sólo cuando no alcance la calidad.
 La cobertura y las pruebas de una tanda no son aprobación artística global.
+
+## HoardDex tras el primer combate legendario de N — 27-10-2026
+
+Entregado Main327: primer N con Zekrom o Reshiram propio por edición, tres modos y origen de los movimientos antes del ajuste.90 equipos BW2/333 globales. Web final y APK x86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1578 siguiente: Guayo, tablas propias, selección por lugar/edición y modos sin inferirlos de otros entrenadores. Siguen las coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/modelos/Hub.
