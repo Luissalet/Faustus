@@ -2026,3 +2026,7 @@ mismos bytes y prueba real de UI/MCP; no certificar por recuento ni por flags.
 Conservar gameplay, originales, créditos y cobertura publicada. Los HTML antiguos
 se reexportan. La entrega parcial58 está aprobadaCAS2 y comprobada en Main; no
 cierra1372, no afirma todo el catálogo revisado y no necesita decisión de Luis.
+
+## HoardDex tras Liga y desenlace originales BW —26-10-2026
+
+Main313: doce tablas propiasUS17/18, AltoMando50/73,Npor edición52,Ghechis54,primerMirto77trasfinal/Elitefortalecida;21alternativas10Gym9Liga2historia. Global297/520/73920ediciones. Guía/MCP yweb/Androidvisible entregados;16fuentes nativas/doseditoriales distintas sinpuentenativoacreditado niHallBW2prestado. Seguir otrosentrenadores/juegos/textosporfuente/mapas/formas/iconos/tamaño. ARM64sólobuild/sinROM/fullroute/arbitrarysave/EUJP/tableta/TalkBack/paridadglobal. Una recuperación del Androidinvitado ocurrió,hostAVD/Studio visibles sinreiniciar/ocultar/wipe/snapshot. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente deLuis.
