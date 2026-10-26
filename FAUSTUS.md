@@ -16441,3 +16441,31 @@ revisión del arte anterior: Raticate yMegaClefable32cadauno corregidos yrevisad
 sóloOUT, GolemAlola/LaprasGmax/GarbodorGmax conreparaciones parciales pendientes.
 Recibo qa-six62-main-delivery-v1.json enresearch-inbox/silver-portraits1372.
 ManualCAS sóloSilver,197otros párrafos yestilos anteriores exactos.
+
+
+## Silver: corrección de retratos parcial 63 —26-10-2026, #1372/#1558
+
+Main e84f1cba integra el commit aprobado en CAS1372 revisión 10. Raticate y
+Mega Clefable, normales y shiny: 64 caras revisadas, 56 corregidas y ocho
+publicadas conservadas. Materiales propios, verde shiny, ala de Inspired,
+lágrimas, soplido y ojos corregidos por componente. Se conserva la procedencia
+generada y se acredita la geometría ocular parcial de Marill en Mega Clefable.
+No aumenta la cobertura: 256 registros, 250 atlas, 4096 celdas, 34156 mapeos,
+32974 PNG y 14 packs; 2060 conjuntos completos, 814 parciales y 64 ausentes.
+Los otros 252 registros y los 32918 PNG retenidos conservan sus datos y bytes.
+
+723 pruebas Python pasan con cinco omitidas; 640 de motor pasan y una se omite.
+Aplicación y página exportable compilan. Tras integrar, MCP, equipos Custom
+válidos y ambos combates reales terminan por KO. Retratos completos de 40 px,
+reacción Dizzy y Moon Ball/Level Ball asignadas visibles; consola sin errores.
+La aplicación muestra Raticate shiny en Dynamax. El HTML nuevo no usa Dynamax.
+Las fixtures empiezan con Mega Clefable: esto no prueba activar la megaevolución.
+64 imágenes HTTP coinciden con biblioteca y HTML; 68996 binarios y nueve inline
+verificados por SHA. HTML de 334609027 bytes, SHA256
+30431dcb538292929d3f0cd2d613205373dfdffd8541ab14954035d441f00eb6.
+
+QA propia cerrada y bloqueos temporales liberados. Sin push ni nuevo ensayo
+MP4/importación/wheel. Los HTML antiguos necesitan reexportarse. La tarea1372
+continúa abierta: Golem de Alola, Lapras y Garbodor Gigamax siguen en revisión
+por expresión y componentes. No hay aprobación artística de todo el catálogo.
+Recibo: research-inbox/silver-portraits1372/qa-four63-main-delivery-v1.json.

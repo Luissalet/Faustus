@@ -2095,3 +2095,20 @@ GolemAlolaS separa componente lateral, LaprasGmax repara hocicos recortados y
 GarbodorGmax masas superiores; sólo pilotos concretos aceptados, otros pendientes.
 No levantarHOLD por técnica/procedencia ni afirmar cobertura artística global.
 No decisiónpendiente deLuis; conservar gameplay,funciones ycréditos.
+
+
+## Silver: revisión tras parcial 63 —26-10-2026, #1372
+
+Raticate y Mega Clefable normales y shiny corregidos en Main e84f1cba:
+56 expresiones reparadas y ocho publicadas conservadas. Comprobados en la
+aplicación y un HTML nuevo, con retratos reactivos completos y Ball asignadas.
+Continúan 2060 conjuntos completos, 814 parciales y 64 ausentes, N/S aparte.
+
+Completar las 16 expresiones de todas las variantes y revisar también las
+anteriores. Comparar con referencia propia: orientación a la derecha, detalle
+nativo, primer plano sin marco vacío, anatomía, paleta y gesto legible. Conservar
+cuadros buenos y reparar componentes individuales; regenerar si no bastan.
+Golem de Alola shiny sigue con revisión de materiales y ojo Dizzy; Lapras
+Gigamax con hocicos, encuadres y paletas; Garbodor Gigamax con masas superiores
+por expresión y posterior revisión de materiales y actuación. Las propuestas
+parciales no equivalen a aprobar un atlas entero. No decisión pendiente de Luis.
