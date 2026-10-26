@@ -2112,3 +2112,7 @@ Golem de Alola shiny sigue con revisión de materiales y ojo Dizzy; Lapras
 Gigamax con hocicos, encuadres y paletas; Garbodor Gigamax con masas superiores
 por expresión y posterior revisión de materiales y actuación. Las propuestas
 parciales no equivalen a aprobar un atlas entero. No decisión pendiente de Luis.
+
+## HoardDex tras opcionales BW2 — 26-10-2026
+
+Entregado Main323: Mirto,Cintia yNcuatroestaciones enNormal/Fácil/Desafío,78variantesBW2 y321equiposglobales. Condiciones/niveles/fuentes propios,referencias/regreso yalcance incluso0;web/Androidvisible yambasABIlistos,ARM64sólobuild.1560researchDONE/GOindependiente paraAcromo813conRotomLavado yDOScontextos/ajustes distintos,6oráculosRED; producto siguiente aúnpendiente. Continúanotrascoberturasporjuego,formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida. No haydecisiónpendientedeLuis niparidadglobal. No iniciarotrosHoards/modelos/Hub.
