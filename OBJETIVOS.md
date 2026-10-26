@@ -2050,3 +2050,7 @@ pilotos en preparación sóloOUT; no son atlas completos ni producto aprobado.
 Cada tanda necesita revisión independiente yparidad instalada/HTTP/HTML con
 combates UI/MCP reales. No certificar el catálogo por recuento.1372 permanece
 abierta yno requiere decisión de Luis; gameplay/funciones/créditos intactos.
+
+## HoardDex tras mapa original BW — 26-10-2026
+
+Entregado Main316: mapa y puntos originales US17/18, Frigoríficos independiente, interiores con identidad propia y encuentros sin punto conservados. Viewport vuelve al origen al cambiar mapa/zoom, mantiene selección y enlaces. Web y Android visible probados, ambas ABI listas; ARM64 sólo build. Continúan otros mapas/entrenadores/juegos/textos/formas/iconos y tamaño sin pérdida. La investigación1542 contrasta Negro2/Blanco2 con fuentes propias; aún no es producto. Sin decisión pendiente de Luis ni paridad global. No iniciar otros Hoards, modelos o Hub.
