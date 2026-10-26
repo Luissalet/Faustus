@@ -16473,3 +16473,36 @@ Recibo: research-inbox/silver-portraits1372/qa-four63-main-delivery-v1.json.
 ## HoardDex: combates opcionales propios BW2 — 26-10-2026
 
 HoardDex Main323/6ba691f4: Mirto582,Cintia456 yN782–785 estacionales propios deNegro2/Blanco2 US21/22, tresmodos.18variantes/36contextos/108miembros/432huecos completos/39objetos. Mirto62/61/63,Cintia78/74/82,N77/72/82 Normal/Fácil/Desafío; tabla/ajuste propios±1/±4/±5 separados, sinrecálculoestadístico certificado. Cintia primera invitación independienteestación, presencia posteriorprimavera/verano yrevancha primaveraldiaria; Nviernes/escenas/mesguardado trasganar/cuatroestaciones/primerlegendariopendiente. BW2 78equipos/156contextos/130fuentes;global321/568/768en20ediciones.60registros107fuentesanteriores/12otrosdatos7bancos/416ajenosnoindexados y639WT0Mainprevios exactos. Oráculo9RED321/9GREEN322 mismos5892bytesCRLF movido sinresiduo. Main553TS+3CJS/TSC0/MCP37-920/generador130SHA/web. TécnicaF1independiente34focales/144componentes/110RPC, finish25capturas ship0material ydocumenter distinto conserva60extensiones/todosvalores/bytesliterales previos. QAfuente322actualwebES1280/820EN390dark yAndroid5554visibleES1/EN1.3dark all18variantes,refsPokemon/move/itemBackconsulta-edición-modo/fuentes/cero24-30-6-18. CASr1doscommits exactos/ff-only/sinpush. AmbasABI323runtime322 y17884media cadaSHAexacto. Mainweb ypublicadox86SHA3a951933 probados: CintiaFácil74/tabla78/-4/SpiritombBackcintia, NinviernoDesafío82/tabla77/+5 y0scope. RestablecidoES/system/font1/nightno/Arceus1of1025/queryvacía trasapp-onlyreopen,RuntimeErrors[],mismobootd28de7ebStudio658306visible,sinhost/guestrestart/hide/wipe. WebES/system/Negro0/queryvacía/tabspropiascerradas/viewportreset. NativefuenteChromeFirstRunActivitylaunch cerrado sin leer/tocarlogin;URLpinned sólo verificadaporweb. PNGfinalwebCintia prepaint excluido, DOMactualluegoBackválido ycapturasnativefinales válidas;dosotraswebfinalesválidas.3APKpropiosobsoletosretirados,116JSONanterioresexactos/118total.8897real/8898intactos/8899Main323. ARM64sólobuildsinphone. NoROM/engine/stats/IV/EV/EXP/curación/llaves/RTCfísico/EUJP/rutacompleta/partidaarbitraria/tableta/TalkBack/paridadglobal. FINAL research-inbox/hoarddex-bw2-optional-product/FINAL.json.1560researchDONE conGOindependienteV2/38SHA:Acromo813doscontextosdistintos interior±4/cubierta±3 yRotomLavadoforma2→10009/form10059;6causalREDMain323. Producto1560aúnnoimplementado. No iniciarotrosHoards/modelos/Hub.
+
+
+## Silver: reparación nativa de retratos parcial 64 —26-10-2026, #1372/#1565
+
+Main dfdeb78a incorpora 48 caras existentes de Golem de Alola shiny y Lapras
+Gigamax normal/shiny: 45 reparadas y tres Normal publicados exactos. CAS1372
+revisión11 aprobado por un revisor independiente. Conserva el primer plano,
+orientación a la derecha, materiales propios y fondos/símbolos de expresión.
+Recortes individuales de Lapras recuperan detalle disponible; piezas laterales
+de Golem, paletas y ojos se corrigen por componentes. Se conserva la procedencia
+generada, los RAW y créditos reales: Morei/chime y geometría parcial Lairon.
+Los ojos Dizzy de Lapras son curvas manuales pequeñas; ensayos descartados no
+se presentan como geometría seleccionada. No cambian reglas ni código runtime.
+
+Continúan 2060 completos, 814 parciales y 64 ausentes; 34156 mapeos, 32974 PNG,
+14 packs. Otros253 registros y32929 PNG retenidos exactos. Suite723 Python
+PASS/5 omitidas y640 motor PASS/1 omitida;28 focales después de compactar sólo
+metadatos y39 del revisor. Builds de fuente yMain app/play correctos. Main MCP195
+y batallas reales: app KO315ticks/10,5s, HTML KO274ticks/9,133s. Replays6,6/4,133s
+muestran Determined/Dizzy, retratos40 completos, Ball18 yDynamax en ambas superficies.
+Fixtures parten deliberadamente deLapras-Gmax; no prueban activación desdebase.
+Consolas sin avisos/errores.48 HTTP=instalado=HTML;68996 binarios+10 inline porSHA,
+39chunks. HTML nuevo334498906B SHA256
+1518b163dbaa09558b7cdfdfebdb45cf30b21118fcfba8e8540bb268c06236b0.
+
+QA propia cerrada y cuatro bloqueos temporales liberados, sin arrancar Main5230,
+otras apps ni modelos. Sin push o nueva prueba MP4/importación/wheel. Los HTML
+antiguos requieren reexportarse.1372 abierta: continúan gestos concretos deFearow,
+Eevee yGarbodor, con caras buenas conservadas y regeneración local si la edición
+no alcanza calidad. Una salida del generador paraEevee fue rechazada y no produjo
+imagen; no se cuenta como candidato. No hay aprobación artística global.
+Recibos: research-inbox/silver-portraits1372/qa-three64-main-delivery-v1.json
+yqa-three64-main-resources-closed-v1.json.

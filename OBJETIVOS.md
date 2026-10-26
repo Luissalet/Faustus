@@ -2116,3 +2116,21 @@ parciales no equivalen a aprobar un atlas entero. No decisión pendiente de Luis
 ## HoardDex tras opcionales BW2 — 26-10-2026
 
 Entregado Main323: Mirto,Cintia yNcuatroestaciones enNormal/Fácil/Desafío,78variantesBW2 y321equiposglobales. Condiciones/niveles/fuentes propios,referencias/regreso yalcance incluso0;web/Androidvisible yambasABIlistos,ARM64sólobuild.1560researchDONE/GOindependiente paraAcromo813conRotomLavado yDOScontextos/ajustes distintos,6oráculosRED; producto siguiente aúnpendiente. Continúanotrascoberturasporjuego,formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida. No haydecisiónpendientedeLuis niparidadglobal. No iniciarotrosHoards/modelos/Hub.
+
+
+## Silver: revisión tras parcial 64 —26-10-2026, #1372
+
+Golem de Alola shiny y Lapras Gigamax normal/shiny corregidos enMain dfdeb78a:
+48 caras revisadas,45 reparadas y3 publicadas exactas, sin aumentar cobertura.
+Probados app yHTML nuevo con primeros planos completos, reacciones yBall asignadas.
+
+Continuar las16 expresiones de todas las variantes, normales yshiny, revisando
+también el arte anterior: referencia propia, orientaciónRIGHT, detalle nativo,
+anatomía yprimer plano sinborde vacío. Conservar casillas/componentes buenos;
+reparar localmente yregenerar cuando no baste, sin aceptar sólo por cobertura.
+Fearow:18 caras reparadas GO más7publicadas, tres nuevas propuestas Sigh/Dizzy
+pendientes depeer yPain/InspiredN/S aúnHOLD. EeveeGigamax:28caras noDizzyGO más
+dosNormal publicados; ojoslejanosDizzyHOLD traspilotos yuna salidaimagegen rechazada.
+GarbodorGigamax:30carasGO contando4anteriores, dosDizzy pendientes de curvaslegibles.
+Todo ello sóloOUT hasta selección yverificación completa; no aprobado porconteo.
+Ninguna decisión pendiente deLuis. No cerrar1372 ni afirmar catálogo completo.
