@@ -16373,3 +16373,38 @@ sóloSilver,197otros párrafos yestilos exactos; memoria/grafo actualizados.
 ## HoardDex: mapa propio de Negro 2/Blanco 2 — 26-10-2026
 
 HoardDex Main318/f17c2ff6: Negro2/Blanco2 US21/22 tienen mapa propio reconstruido desde111 recursos públicos fijados por SHA, sin comparación de ROM/archives.61 agrupaciones y136 áreas posicionadas más Reserva Natural sinpunto,137 conservadas. Interiores mantienen nombre/punto regional del padre. Engobe propio; Haxorus60/100% conservado. Generador autónomo/cinco salidas byteexactas. Main540TS+3CJS+11Python/TSC0/MCP37-826/web yambosgeneradores. Fuente317 QArealweb ES1280/820 yEN390oscuro yAndroid5554visible ES1/EN1.3oscuro,20featurefinish0material;documenter aditivo58extensionesprevias exactas. CASr1exact2commits/ff-only/sinpush. AmbasABI318 runtime317 y17884media cadaSHAexacto. Mainweb yx86publicadoSHA09fdbb7c probados: mapa/Engobe/zoompanreducircompleto/100%áreaexactaBack/Reserva60;restoreapp-onlyreopenES/system/font1/nightno/Arceus1of1025/queryvacía/RuntimeErrors[]. WebES/system/Negro0queryvacía/tabspropiascerradas/viewportreset. Mismobootd28de7eb yStudio658306visible,sinreinicio/hide/wipedurante1544.3APKpropiosobsoletosretirados,112JSONpreviosexactos/114total. Otros21mapas/33assets/8bancos/4datos/416ajenosnoindexadosexactos.8897real/8898intactos,8899Main318. ARM64sólobuild,sinteléfono. Sinmotororiginal/RGBnativo/85puntos simultáneos/accesoporpartida/plantas/fronteras/EUJP/tableta/TalkBack/paridadglobal. FINAL research-inbox/hoarddex-bw2-map-product/FINAL.json.1545investiga equipos propios de historiaBW2, aún sinproducto. No iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: Pain y HitGround raster para todas las variantes —26-10-2026, #1502/#1503
+
+Las 1.469 especies y formas instaladas, normales y shiny (2.938 variantes),
+tienen ahora ambas secuencias raster. Se conservan las 531 Pain y 516 HitGround
+publicadas; 2.425 variantes cuentan con exports adicionales revisados, con
+2.407 Pain y 2.422 HitGround utilizados donde faltaban originales. No queda
+acting como sustituto de sprites en el catálogo instalado.
+
+Un impacto individual que quite estrictamente más del 35% de los PS máximos
+activa Pain durante0,65s de reproducción. El KO reproduce HitGround1,2s y
+mantiene el cuerpo tumbado hasta su retirada, con un mínimo de2,4s en el suelo.
+Pausa y velocidad comparten el reloj del renderer; las reglas del combate no
+cambian. App, HTML nuevos y MP4 comparten la función; los HTML antiguos necesitan
+reexportarse. Los cuerpos derrotados conservan su posición al entrar el relevo.
+
+Luis autorizó completar las seis últimas formas de Pikachu mediante composición
+y retoque manual: cinco gorras nativas sobre cuerpos de reacción Hoenn revisados,
+y Rock Star con sus materiales sobre poses revisadas Pop-Star. No se atribuyen
+poses completas nuevas a ese trabajo. Todas sus shiny son recolores de normal,
+con alfa, geometría y materiales propios conservados; la hebilla Rock Star sigue
+verde. Los registros conservan donantes, referencias, operaciones y revisión.
+
+Entrega Silver Main 5396640dfd927d19ad896c33c7cf951ad6715935, revisión independiente CAS11 exacta. Pruebas:
+34 del área, suite Python completa, engine640PASS/1skip, MCP195 y24PNG HTTP exactos;
+paquete portable verificado en RAM para5876rutas. Navegador real muestra Pain de
+Rock Star shiny tras91% de daño y cuatro cuerpos tumbados; los seek acreditan
+aspecto, no una grabación nueva del timing completo. No nuevo MP4/HTML exportado
+ni auditoría visual global del catálogo afirmados en esta entrega. 4826PNG previos
+y1047acciones publicadas conservadas exactas. Main5230 permanece apagado por
+instrucción de Luis. Sin push. Retratos a cargo del otro chat, intactos.
+
+Evidencia: research-inbox/silver-reaction-art1503; comportamiento y límites en
+Silver/BATTLE_REACTIONS.md. La tarea1503 completa las reacciones instaladas.
