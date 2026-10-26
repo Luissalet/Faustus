@@ -16290,3 +16290,45 @@ completar y revisar los832parciales/88ausentes, sin decisión pendiente de Luis.
 ## HoardDex: Liga y desenlace originales BW —26-10-2026
 
 HoardDex Main313/b79ac961: Liga y desenlace propios de Negro/Blanco US17/18. Doce tablas nuevas,22contextos,64miembros/256huecos completos/0objetos equipados; Alto Mando inicial50 yfortalecido73, N52conZekromNegro/ReshiramBlanco, Ghechis54 yprimerMirto77trasfinalN/Ghechis ycuatroAltoMandofortalecidos. Cada edición tiene21alternativas10Gym9Liga2historia. No Hall ni modosBW2 prestados.16SHA nativos yambosmanifiestosUS conservados, dosWikiDexaccess-context separadas/sinSHAHTML inventado, puenteCallGameClear→866 noacreditado. Global297equipos/520contextos/739fuentes/20ediciones,285registros737fuentes previos/sieteotrosbancos/416ajenos exactos noindexados. Generadorautocontenido byteexacto16SHA;5causales originalesRED311/GREEN312mismoSHA. Main527TS3CJS11Python/TSC0/MCP37-803/web/generador.33capturasfinales webES1280/820EN390oscuro yAndroid5554visibleES1/EN1.3oscuro conedición/fases/condiciones/fuentes/0/referencias yBack. Finish/documenter genéricos frescos distintos sustituyen especialistas ausentes; CASr1doscommits exactos/ff-only/sinpush. AmbasABI313runtime312/media17884cadaSHAexacto311;Mainweb/publicadox86reales,ARM64 sólo compilado, sin teléfono físico. TresAPKpropiosobsoletosretirados,108JSONprevios exactos/110total. RestauraciónES/system/font1/nightno/Arceus1of1025/emptysearchtrasapp-onlyreopen/RuntimeJS0,webES/system/Negro0queryvacía. Hubo1reinicioAndroidinvitado pararecuperarserviciosatascados/SystemUIANR; hostAVD18460 yStudio658306visibles sinreiniciohost/ocultación/wipe/snapshot. Incidentes observadoresretenidosnoPASS, sinatribuircausalidadalcódigo.8897real/8898intactos/8899Main313. SinROM/motororiginal/nativebridge/nativezeroeffects/stats/fullroute/arbitrarysave/EUJP/ARMfísico/tableta/TalkBack/paridadglobal. Recibos research-inbox/hoarddex-bw-league-product/FINAL.json. Continuarpendientesútiles ydatospor edición; no iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: retratos parciales59 y60 entregados —26-10-2026, #1372/#1540
+
+Main e207e8cc integra las entregas exactas aprobadas CAS1372r3 y r4. La
+biblioteca alcanza2.040conjuntos completos de16expresiones,826parciales y72
+ausentes, contando normal/shiny aparte;244registros/238entradas de atlas,
+3.904celdas revisadas,33.912mapeos y14packs actuales. No es aprobación visual
+global ni cierre1372. Se conservan los33.857mapeos/32.803PNG anteriores.
+
+Klefki,Carbink yTornadusTherian completan16caras en ambas paletas:96caras
+enteras revisadas a40nativo y ampliado nearest,41publicados con prioridad
+exacta y55expresiones añadidas. Cámara derecha, encuadre cercano, materiales
+propios y fondos con gradiente/símbolos por emoción. Edición por casilla; no
+regeneración indiscriminada. Tornadus usa sólo un pequeño componente ocular
+de procedencia generada documentada; el RAW completo fue rechazado. Carbink
+yKlefki conservan su anatomía sin bocas humanas añadidas. Los antecedentes
+HOLD no se presentan como fuentes actuales aprobadas.
+
+Flabébé/Floette azul,naranja,blanca yamarilla N/S suman256mapeos mediante64
+equivalencias de imagen publicada exacta: los pétalos variables quedan fuera
+del encuadre. No alias genérico entre formas ni flores recoloreadas; propios
+publicados tienen prioridad. No afecta a Florges,Eternal oMega.
+
+QA real tras integrar/recompilar Main:195MCP,equiposlegales, appKO100ticks
+(3,333s),HTMLKO188ticks(6,267s). RayoConfuso activa TornadusS/CarbinkS Dizzy40;
+ambas UI pausadas2,00.96HTTP=instalado=HTML;67.241assets binarios conSHA,
+20inline exactos contra caché propia,39chunks,consolas0. HTML307.908.778B,
+SHA c8226ffb914a2ee831a4aee17b29324d89ad7cc4f660a7b6186a3d0983cd605e.
+Exportar de nuevo sustituyó el HTML de prueba anterior de igual nombre; sus
+recibos históricos permanecen, no el archivo candidato antiguo. Fuente exacta
+del candidato:700PythonPASS/5skip y640enginePASS/1skip; buildMainapp/play0.
+Avisos existentes Pydantic/tamañochunk separados de consolas. Sin nueva prueba
+MP4/importación,wheel o cobertura artística global. Main5230 no iniciado.
+
+La entrega59 final de Main tuvo appKO267ticks8,90s yHTMLKO173ticks5,767s;
+sus capturas pausadas2,00/1,50 muestran Normal, no Determined. Se distinguen
+de las pruebas previas del candidato59. Recibos qa-flower59-main-proof-v2.json,
+qa-six60-main-delivery.json yreview-cas60-art30.md en
+research-inbox/silver-portraits1372. ManualCAS sóloSilver,197otros párrafos
+texto/estilos exactos; memoria/grafo actualizados sinembedding. QA propia
+cerrada yleases temporales liberados, no otrasapps/modelos/push.

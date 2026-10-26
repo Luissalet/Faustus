@@ -2030,3 +2030,23 @@ cierra1372, no afirma todo el catálogo revisado y no necesita decisión de Luis
 ## HoardDex tras Liga y desenlace originales BW —26-10-2026
 
 Main313: doce tablas propiasUS17/18, AltoMando50/73,Npor edición52,Ghechis54,primerMirto77trasfinal/Elitefortalecida;21alternativas10Gym9Liga2historia. Global297/520/73920ediciones. Guía/MCP yweb/Androidvisible entregados;16fuentes nativas/doseditoriales distintas sinpuentenativoacreditado niHallBW2prestado. Seguir otrosentrenadores/juegos/textosporfuente/mapas/formas/iconos/tamaño. ARM64sólobuild/sinROM/fullroute/arbitrarysave/EUJP/tableta/TalkBack/paridadglobal. Una recuperación del Androidinvitado ocurrió,hostAVD/Studio visibles sinreiniciar/ocultar/wipe/snapshot. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente deLuis.
+
+
+## Silver: continuación tras los retratos parciales60 —26-10-2026, #1372
+
+Main e207e8cc:2.040conjuntos completos/826parciales/72ausentes, normal/shiny
+aparte. Klefki,Carbink yTornadusTherian completos yrevisados96caras;55nuevos
+mapeos. Flabébé/Floette usan únicamente equivalencias publicadas por imagen
+exacta. App/HTML nuevos incorporan la biblioteca instalada sin depender de
+descargas de prueba. Los HTML anteriores se reexportan.
+
+Continuar las16expresiones de cada variante y revisar también lo generado
+previamente: referencia propia40nativa, orientación derecha, primer plano sin
+marco añadido, anatomía/materiales/paleta propios y actuación reconocible sin
+depender del fondo. Corregir casillas ocomponentes concretos; conservar buenas
+yregenerar sólo cuando no baste la reparación. Gradientes/símbolos compartidos
+por emoción no sustituyen el gesto. Gengar650/651 yMagneton652/653 tienen
+pilotos en preparación sóloOUT; no son atlas completos ni producto aprobado.
+Cada tanda necesita revisión independiente yparidad instalada/HTTP/HTML con
+combates UI/MCP reales. No certificar el catálogo por recuento.1372 permanece
+abierta yno requiere decisión de Luis; gameplay/funciones/créditos intactos.
