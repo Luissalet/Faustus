@@ -16412,3 +16412,32 @@ Silver/BATTLE_REACTIONS.md. La tarea1503 completa las reacciones instaladas.
 ## HoardDex: combates finales de historia de Negro2/Blanco2 — 26-10-2026
 
 HoardDex Main321/69241553: Negro2/Blanco2 US21/22 añaden Acromo344 en FragataPlasma yGhechis345 trasKyurem fusionado enBoqueteGigante, tresmodos propios cadauno.6variantes/12contextos,33miembros/132huecos/0vacíos/12objetos; máximo52Normal/48Fácil/56Desafío, tabla/ajuste separados yestadísticas sinrecálculo confirmado. Acromo813posterior aúnnoincluido. BW2=60equipos/120contextos/107fuentes;global303/532/745en20ediciones.54registros/101fuentesprevios,7otrosbancos/7datos/416ajenos noindexados exactos. Generador107SHAautónomo byteexacto;oráculo4RED318/4GREEN319mismo4606bytes. F1MCPdiscovery54/18corregido320conregresiónrealRED/GREEN60/20yconfirmaciónpeer. Main544TS+3CJS/TSC0/MCP37-860/generador/web. UI319QArealwebES1280/820EN390darkyAndroid5554visibleES1/EN1.3dark; refsPokemon/move/itemBack/consulta-edición-modo yalcance24/30/6con0. Finish25ship0material,documenter distinto conserva59extensionesanteriores/bytesliterales. CASr1exact3commits/ff-only/sinpush. AmbasABI321runtime319 y17884media cadaSHAexacto. Mainweb ypublicadox86SHA c33d937e probadosdeverdad: GhechisFácil48/tabla52/-4/RestosBack/0scope;restauraciónapp-onlyreopenES/system/font1/nightno/Arceus1of1025/queryvacía/RuntimeErrors[],mismobootd28de7eb/Studio658306visible,sinreboot/hide/wipeen1550. WebES/system/Negro0/queryvacía/tabspropiascerradas/viewportreset.3APKpropiosobsoletosretirados,114JSONpreviosexactos/116total.8897real/8898intactos/8899Main321. ARM64sólobuildsinphone. SinROM/engine/stats/IV/EV/EXP/curación/llaves/EUJP/rutacompleta/partidaarbitraria/tableta/TalkBack/paridadglobal. FINAL research-inbox/hoarddex-bw2-story-product/FINAL.json.1551investiga combatesopcionales/posterioresBW2,aúnsinGO/producto. No iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: retratos parciales62 entregados —26-10-2026, #1372/#1557
+
+Maincdb00eeb integra cuatro commits exactos aprobados CAS1372r9 y conserva
+las entregas concurrentes de reacciones y Ball. Mantyke, Boltund y Dartrix
+tienen16expresiones normales y shiny:96caras revisadas,40publicadas prioritarias
+y56expresiones añadidas. OrientaciónRIGHT, primerplano sinmarcoextra, paletas
+propias yplantillas por emoción; corrección por casilla/componentes. Se conserva
+procedencia generativa ycréditos de geometría parcial. Los34100mapeos y32918PNG
+previos son literales.256registros/250atlas/4096celdas/34156mapeos/32974PNG/14packs:
+2060conjuntos completos,814parciales y64ausentes, normal yshiny aparte.
+
+Fuente combinada7da:723PythonPASS5skip y640enginePASS1skip. RuntimePython yengine
+literal en cdb; focalesNode11PASS ybuildsapp/play0, sin atribuir un nuevo fullrun.
+Tras integrar, Mainapp/play recompilados0,195MCP y equiposlegales. Combateapp
+KO200ticks6,6667s; replay4,8BoltundWorried/MantykeSNormal enDynamax. HTMLnuevo
+KO206ticks6,8667s; replay5,8MantykeDetermined/DartrixSNormal enDynamax. RayoConfuso
+falló: noDizzy probado en esteensayo. Retratos40 yBallasignadas visibles,consolas0.
+96HTTP=instalado=HTML;68996binarios+9inlineSHAexactos,69005total/39chunks.
+HTML334715669B SHAe8c4ed7ef29d5e1fcf18bfa4c97112873bfc6625dfce103eff443b9a610e8b61.
+
+QApropia cerrada,14leases temporales soltados, Main5230/otrosapps/modelos intactos.
+SinMP4/import/wheelnuevo ni push. HTMLanteriores requieren reexportarse.1372abierta:
+ni recuento ni reacciones raster equivalen a aprobación artística global. Continúa
+revisión del arte anterior: Raticate yMegaClefable32cadauno corregidos yrevisados
+sóloOUT, GolemAlola/LaprasGmax/GarbodorGmax conreparaciones parciales pendientes.
+Recibo qa-six62-main-delivery-v1.json enresearch-inbox/silver-portraits1372.
+ManualCAS sóloSilver,197otros párrafos yestilos anteriores exactos.

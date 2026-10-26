@@ -2079,3 +2079,19 @@ Entregado Main318: mapa de las secuelas reconstruido desde sus propios recursos 
 ## HoardDex tras combates de historia BW2 — 26-10-2026
 
 Entregado Main321: Acromo/Ghechis propios enNormal/Fácil/Desafío,52/48/56 ytabla/ajuste separados; guía/MCP con60variantesBW2 y303globales. Referencias/regreso yalcance incluso0, web yAndroidvisible probados;dosABI listas,ARM64sólo build. Continúan otrosentrenadores/juegos, formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida.1551contrasta opcionales/posterioresBW2(Mirto,Cintia,N,Acromo),aúnsinGO/producto. No haydecisiónpendientedeLuis niparidadglobal. No iniciarotrosHoards/modelos/Hub.
+
+
+## Silver: continuación tras retratos parciales62 —26-10-2026, #1372
+
+Maincdb00eeb:2060completos/814parciales/64ausentes N/S separados. Mantyke,
+Boltund yDartrix96caras revisadas,56mapeos nuevos; app/HTMLnuevo comprobados
+con retratosreactivos40, Ballasignadas yDynamax.1372continúaabierta.
+
+Completar16expresiones de cada variante yrevisar el arteanterior. Referenciapropia
+40nativo/nearest, RIGHT/primerplano sinmarco, materiales ypaletas/anatomía/gesto.
+Conservar casillas buenas ycorregir componentes individuales; regenerar si falla.
+RaticateN/S yMegaClefableN/S corregidos/revisados32cadauno sóloOUT aúnnoinstalados.
+GolemAlolaS separa componente lateral, LaprasGmax repara hocicos recortados y
+GarbodorGmax masas superiores; sólo pilotos concretos aceptados, otros pendientes.
+No levantarHOLD por técnica/procedencia ni afirmar cobertura artística global.
+No decisiónpendiente deLuis; conservar gameplay,funciones ycréditos.
