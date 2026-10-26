@@ -2138,3 +2138,22 @@ Ninguna decisión pendiente deLuis. No cerrar1372 ni afirmar catálogo completo.
 ## HoardDex tras las revanchas de Acromo — 26-10-2026
 
 Entregado Main325: primera revancha interior y diaria en cubierta, RotomLavado y tres modos propios.84 equipos BW2/327globales; condiciones, nivel/ajuste separados, fuentes, referencias conBack y alcance con0resultados. Web yAndroidStudio visible probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1568 siguiente: primerN legendario y sus movimientos automáticos al nivelbase70, aún sin candidato aprobado ni producto. Continúan coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: continuidad tras parcial 65 — 26-10-2026, #1372
+
+Main 3fe6f784: Fearow, Eevee Gigamax y Garbodor Gigamax N/S revisados completos,
+96 caras, 87 corregidas y nueve publicadas exactas. App y HTML nuevos probados
+con reacciones, Balls asignadas y Dynamax; no hay cambios de reglas o funciones.
+
+Continuar las 16 expresiones de todas las variantes y shinies, revisando también
+las anteriores por anatomía, orientación derecha, primer plano y detalle real.
+Quedan 814 conjuntos parciales y 64 sin expresiones. El tracker fijado no ofrece
+recuperación confirmada de esos 64; Ogerpon Mask/Tera requiere identificación
+primaria antes de cualquier equivalencia. Usar los nuevos mugshots locales como
+apoyo sin mezclar renders DX/3DS con el estilo DS ni inferir nuevas licencias.
+Primeros pilotos pendientes: Normal N/S de Rillaboom, Cinderace e Inteleon
+Gigamax, contrastados con forma oficial y materiales propios. No ampliar cada
+piloto a 16 ni instalarlo hasta revisar las caras completas; corregir cuadrados
+o componentes individuales y regenerar sólo cuando no alcance la calidad.
+La cobertura y las pruebas de una tanda no son aprobación artística global.

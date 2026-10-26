@@ -16510,3 +16510,40 @@ yqa-three64-main-resources-closed-v1.json.
 ## HoardDex: revanchas propias de Acromo entregadas — 26-10-2026
 
 HoardDex Main325/67426162: Acromo813 tiene primera revancha interior y posteriores diarias en cubierta en Negro2/Blanco2 US, tres modos por contexto. Seis variantes/12 contextos/36 miembros/144 movimientos/36 objetos; Rotom Lavado10009/form10059 con arte y tipos propios. Máximos interior74/70/78 y cubierta74/71/77 Normal/Fácil/Desafío; nivel de tabla y ajustes±4/±3 separados, sin recálculo estadístico certificado. Corpus compartido38 fuentes primarias fijadas;18 nuevas, BW2 84 equipos/168 contextos/148 fuentes, global327/580/786 en20 ediciones. Los78 equipos previos exactos salvo tres avisos ES/EN retirados,130 fuentes previas y12 otros datos exactos;416 ajenos sin indexar y639 WT/0Main no rastreados anteriores preservados. Oráculo causal4781bytes intacto:6RED323→6GREEN324. Main559TS+3CJS/TSC0/MCP37-936/generador148SHA/web pasan. Técnica independiente40 focales/48 vistas/66RPC; acabado fresco33 imágenes ship0material, documenter distinto conserva61 extensiones/todosotrosvalores/generatedAt y bytes previos. QA real fuente324 webES1280/820 EN390dark yAndroid5554 visible ES1/EN1.3dark: seis variantes, referencias Pokémon/movimiento/objeto yBack/contexto, fuentes y cobertura24/30/6/24 con0 resultados. CASr1 dos commits exactos yff-only sin push. AmbasABI325 tienen HBC324 y17884 medios cadaSHA exacto. Mainweb yx86 publicado SHAa55f3da0 probados de verdad: primeraFácil70/tabla74/-4, Rotom Lavado Eléctrico/Agua yBack acromo/Negro2/fase/modo, diariaDesafío77/tabla74/+3 y0scope. Cuatro capturasMainweb son fragmentos superiores1280x574, no900px; matriz completa fuente324 conservada. Siete capturas nativas finales abiertas, restauración ES/system heredado/font1/nightno/Arceus1of1025/queryvacía tras reapertura sólo app, RuntimeErrors[] antes/después, mismo bootd28de7eb yStudio658306 visible, sin reinicio/hide/wipe. Fuente externa URL fijada verificada sólo enweb; nativeChromeFirstRunActivity cerrado sin leer/tocar/capturarlogin, sin afirmar URLnativa. TresJPG820 iniciales malformadas excluidas y sustituidas. TresAPK propios obsoletos retirados,118JSON previos exactos/120total.8897real y8898 intactos,8899Main325. ARM64 sólo build, sin teléfono. NoROM/motor/estadísticas/IV/EV/EXP/curación/llaves/RTCfísico/efectos2805/ruta completa/partida arbitraria/EUJP/tableta/TalkBack/paridadglobal. FINAL: research-inbox/hoarddex-bw2-colress-product/FINAL.json.1568 investiga primerN5/6:20fuentes ymodelo propio524286casos, constructor da cuatro movimientos a nivelbase70 antes del ajuste, sinTriturar71 enDesafío75; edición/acceso completos yGO independiente pendientes, sinproducto. No iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: retratos corregidos, parcial 65 — 26-10-2026, #1372/#1573
+
+Main 3fe6f784 integra las 96 expresiones de Fearow, Eevee Gigamax y Garbodor
+Gigamax, normales y shiny: 87 corregidas y nueve originales publicados exactos.
+Las caras completas se revisaron con referencia propia, orientación derecha,
+primer plano, materiales, actuación y fondos. Se conservan las casillas buenas,
+el linaje generado y los créditos de componentes publicados parciales. Fearow
+Pain/Inspired procede de dos generaciones individuales 1254→40 por vecino más
+próximo; sus colores orales shiny generados no se atribuyen a una fuente publicada.
+Eevee y Garbodor Dizzy usan curvas parciales acreditadas, sin recortar el ojo lejano.
+Dos revisores cubren por separado el arte ajeno a su autoría; ambos aprobaron CAS12.
+
+Cobertura sin cambio: 2060 completos, 814 parciales y 64 ausentes; 34156 mapeos,
+32974 PNG y 14 packs. Otros 250 registros y 32887 PNG retenidos siguen exactos.
+Las seis fuentes anteriores permanecen en Git/disco; los 14 packs retirados del
+índice siguen físicamente en el worktree de la tarea abierta. No cambia runtime.
+Pasan 723 pruebas Python/5 omitidas y 640 del motor/1 omitida; builds app/play
+de fuente y Main correctos. MCP nativo Main lista 195 herramientas y confirma KO
+a 557 ticks/18,5667 s. Replay a 5 s: Garbodor normal Dizzy y Eevee shiny Normal,
+ambos Dynamax. HTML nuevo: KO 477 ticks/15,9 s; replay 3,2 s Garbodor y Fearow
+shiny Dizzy, sólo Fearow Dynamax. Retratos 40 y Ball 18 completos, consolas sin
+avisos ni errores. 96 HTTP coinciden con instalado y HTML; 68996 binarios más
+nueve inline (69005 total) en 39 bloques, todos verificados. HTML 334461344 bytes,
+SHA da7cc47dca6b042b697499f8bdaf8e1813372aa3d58c015e50f6d4bb4038f146.
+
+Fixtures Custom parten de Gmax directamente: no prueban activación desde base ni
+legalidad del juego principal. QA propia cerrada, puertos 58924/58925 y cuatro
+leases temporales liberados, sin abrir Main5230, otras apps o modelos. Sin push
+ni nuevas pruebas de MP4/importación/wheel. Reexportar los HTML anteriores.
+1372 sigue abierta: 814 parciales/64 ausentes y revisión global pendientes.
+Los 2195 mugshots aportados por Luis son apoyo, no nuevas altas o licencias.
+Se preparan pilotos Normal N/S de Rillaboom, Cinderace e Inteleon Gigamax;
+ninguno se aprueba ni se instala por adelantado. Recibos en
+research-inbox/silver-portraits1372/qa-six65-main-delivery-v1.json y
+qa-six65-main-resources-closed-v1.json.
