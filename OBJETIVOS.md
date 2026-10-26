@@ -2071,3 +2071,7 @@ Boltund aún sóloOUT: Pain/AngryMantyke ySurprisedBoltund utilizables, otros
 pilotos siguen enreparación; no atlas completo ni instalación aprobada. No
 declarar cobertura por cifras ni levantarHOLD por procedencia/técnica.1372
 abierta sin decisión pendiente deLuis. Gameplay,funciones ycréditos conservados.
+
+## HoardDex tras mapa propio BW2 — 26-10-2026
+
+Entregado Main318: mapa de las secuelas reconstruido desde sus propios recursos públicos,61agrupaciones/137áreas,ReservaNatural sinpunto conservada. Interiores con identidad propia, selección/mapa completo tras zoom/pan/reducir y áreaexacta/Back. Web yAndroidvisible probados, dosABI listas; ARM64sólo build. Continúan otros mapas,entrenadores,juegos,textos,formas eiconos yoptimización sinpérdida.1545investiga combates dehistoriaBW2 por fuentes propias, todavía sinproducto. No hay decisión pendiente deLuis ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
