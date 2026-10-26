@@ -16336,3 +16336,36 @@ cerrada yleases temporales liberados, no otrasapps/modelos/push.
 ## HoardDex: mapa original BW y viewport — 26-10-2026
 
 HoardDex Main316/647f6f08: mapa original de Negro/Blanco US17/18, con48marcadores y86áreas posicionadas más2sinpunto,88conservadas. Frigoríficos tiene punto propio frente aFayenza; interiores conservan nombre y sólo posición del padre; PalacioN conserva encuentros sin marcador inventado. Generador autocontenido10fuentesSHA/8checks ambosmanifiestos/cincosalidasbyteexactas. El fallo314 de mapa casi vacío después zoom2/pan/reducir se corrige315 con identidad del viewport por mapa/zoom; selección y encuentros quedan en el padre. No se establece causalidad del raster ni pintado nativo RGBexacto: oráculo opcional fallido retenido. Main532TS+3CJS+11Python/TSC0/MCP37-814/web/generador. QA315realwebES1280/820EN390oscuro yAndroid5554visibleES1/EN1.3oscuro,15featurefinales, áreaexacta10%/Back/selección conservadas. Finish ydocumenter genéricos distintos sustituyen especialistas ausentes;CASr1trescommits exactos,ff-only,sinpush. Mainweb yAPKpublicadox86 comprobados;ambasABI316runtime315 y17884media cadaSHAexacto. ARM64sólocompilado,sinteléfono.4APKpropiosobsoletos retirados,110JSONprevios exactos/112total. Otros21mapas/32assets/8bancos/encuentros/catálogo/intercambios/416ajenos noindexados exactos. RestauraciónES/system/font1/nightno/Arceus1of1025/queryvacía trasapp-onlyreopen/JSruntime0;webES/system/Negro0queryvacía. Infraestructura requirió1guestboot y1reiniciooficialhost del mismoAVD/datos,Studio658306siemprevisible,nuevohost199124,sinhide/wipe/snapshot;sinreiniciosadicionales315/316.8897real/8898intactos,8899Main316. SinROM/motororiginal/accesoporpartida/fronteras/plantas/EUJP/ARMfísico/tableta/TalkBack/paridadglobal. Recibos research-inbox/hoarddex-bw-map-product/FINAL.json. Continuar cobertura útil por edición;1542investiga mapaBW2 separado y aúnnoesproducto. No iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: retratos parciales61 entregados —26-10-2026, #1372/#1546
+
+Main2859e76a integra los dos commits exactos aprobados CAS1372r6, incluyendo
+la entrega concurrente de reacciones078cdf2b sin modificar sus432rutas. La
+biblioteca de retratos alcanza2.054conjuntos completos,820parciales y64ausentes,
+normal yshiny aparte;250registros/244entradasatlas/4.000celdas/34.100mapeos,
+32.918PNG/14packs. Tarea1372 abierta: no certificación artística global.
+
+Gengar,Magneton yGoldeen tienen16expresiones en ambas paletas:96caras enteras
+revisadas,36publicados con prioridad y60expresiones nuevas. Referencias propias,
+RIGHT,primerplano,materiales de cada paleta yplantillas por emoción. Se corrigen
+casillas concretas yse conservan las buenas; geometría parcial deGastlyDizzy y
+MagnemiteInspired lleva créditos explícitos.32MegaKangaskhan anteriores también
+revisados enteros sin nuevos defectos de encuadre/orientación detectados; no se
+han repintado. PumpkabooSmall/Large/Super yGourgeistSuper N/S añaden128mapeos
+mediante64imágenes publicadas de encuadre equivalente: no equivalencia de
+cuerpo/escala o alias genérico de formas.33.912mapeos/32.858PNG previos literales.
+
+QA de fuente combinada exacta:701PythonPASS/5skip,640enginePASS/1skip,
+44focalespeer ybuilds0. Tras integrar, Mainapp/play recompilados0,195MCP,
+equiposlegales, nuevo combateappKO78ticks2,60s; replay1,50 muestra Gengar
+Worried/MagnetonshinyNormal. NuevoHTMLKO189ticks6,30s; replay5,00 muestra
+GengarDetermined/GoldeenshinyDizzy conConfusión yDynamax.224HTTP=instalado=HTML,
+68.908binariosSHA/17inlinecachépropia/39chunks/consolas0. HTML333.817.270B SHA
+75ed3fcf05445aa02e9cdfd1c0e9881515ec31f57b1cddaac394419109082aaa.
+Los ensayos previos del candidato61 son distintos yse conservan separados.
+No nuevosMP4/import/wheel ni aprobación global de cuerpos/animaciones. Main5230
+no iniciado, QA propia cerrada ycinco leases temporales liberados, sin modelos,
+otrasapps opush. Recibos qa-six61-main-delivery.json,review-cas61-merge6-art30.md
+ysix61-main-integrated-v2.json enresearch-inbox/silver-portraits1372. ManualCAS
+sóloSilver,197otros párrafos yestilos exactos; memoria/grafo actualizados.

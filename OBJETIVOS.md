@@ -2054,3 +2054,20 @@ abierta yno requiere decisión de Luis; gameplay/funciones/créditos intactos.
 ## HoardDex tras mapa original BW — 26-10-2026
 
 Entregado Main316: mapa y puntos originales US17/18, Frigoríficos independiente, interiores con identidad propia y encuentros sin punto conservados. Viewport vuelve al origen al cambiar mapa/zoom, mantiene selección y enlaces. Web y Android visible probados, ambas ABI listas; ARM64 sólo build. Continúan otros mapas/entrenadores/juegos/textos/formas/iconos y tamaño sin pérdida. La investigación1542 contrasta Negro2/Blanco2 con fuentes propias; aún no es producto. Sin decisión pendiente de Luis ni paridad global. No iniciar otros Hoards, modelos o Hub.
+
+
+## Silver: continuación tras retratos parciales61 —26-10-2026, #1372
+
+Main2859e76a:2.054conjuntos completos/820parciales/64ausentes N/S separados.
+Gengar,Magneton yGoldeen completos yrevisados96caras,60expresiones añadidas;
+Pumpkin sóloequivalencias de imagen publicada exacta. App yHTML nuevo probados
+con retratos reactivos completos40 yConfusión/Dynamax; HTML antiguos reexportar.
+
+Continuar16expresiones de cada variante yrevisión del arteanterior. Comparar
+original propio40nativo/nearest: orientaciónRIGHT,primerplano sinmarcoextra,
+paletas/materiales/anatomía ygesto que funcione sinfondo. Corregir casillas o
+componentes individuales; regenerar cuando no baste. Próxima tandaMantyke y
+Boltund aún sóloOUT: Pain/AngryMantyke ySurprisedBoltund utilizables, otros
+pilotos siguen enreparación; no atlas completo ni instalación aprobada. No
+declarar cobertura por cifras ni levantarHOLD por procedencia/técnica.1372
+abierta sin decisión pendiente deLuis. Gameplay,funciones ycréditos conservados.
