@@ -2075,3 +2075,7 @@ abierta sin decisión pendiente deLuis. Gameplay,funciones ycréditos conservado
 ## HoardDex tras mapa propio BW2 — 26-10-2026
 
 Entregado Main318: mapa de las secuelas reconstruido desde sus propios recursos públicos,61agrupaciones/137áreas,ReservaNatural sinpunto conservada. Interiores con identidad propia, selección/mapa completo tras zoom/pan/reducir y áreaexacta/Back. Web yAndroidvisible probados, dosABI listas; ARM64sólo build. Continúan otros mapas,entrenadores,juegos,textos,formas eiconos yoptimización sinpérdida.1545investiga combates dehistoriaBW2 por fuentes propias, todavía sinproducto. No hay decisión pendiente deLuis ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
+
+## HoardDex tras combates de historia BW2 — 26-10-2026
+
+Entregado Main321: Acromo/Ghechis propios enNormal/Fácil/Desafío,52/48/56 ytabla/ajuste separados; guía/MCP con60variantesBW2 y303globales. Referencias/regreso yalcance incluso0, web yAndroidvisible probados;dosABI listas,ARM64sólo build. Continúan otrosentrenadores/juegos, formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida.1551contrasta opcionales/posterioresBW2(Mirto,Cintia,N,Acromo),aúnsinGO/producto. No haydecisiónpendientedeLuis niparidadglobal. No iniciarotrosHoards/modelos/Hub.
