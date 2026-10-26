@@ -2003,3 +2003,7 @@ Global220 equipos/370 contextos/620 fuentes en16 ediciones; web y APK x86 probad
 ## HoardDex tras entregar tres modos BW2 —26-10-2026
 
 1524/Main306: unidad del eje y marca superior ampliada resueltas sin cambiar medidas.1527/Main309:54equipos BW2US propios18pormodo,base/ajuste/statsunverified,generador reproducible,web/Androidvisible yMCP comprobados. Otrosentrenadores/ediciones/textosporfuente/iconos/guías completas/tamaño global siguen abiertos. ARM64sólobuild; sinROM/fullroute/statrecalc/keyunlock/EUJP/tableta/TalkBack/paridadglobal. Continuar fuentes propias deNegro/Blanco17/18, sin prestar secuelas ni convertir ausencia de datos en imposibilidad. Registrocomún1529 preservaManual/resto,MEMORY/STOP122yGraphStoreembedFalse. Sin nueva decision pendiente deLuis.
+
+## HoardDex tras los gimnasios originales BW —26-10-2026
+
+Main311:11equipos propiosUS17/18, inicialdeljugador eIrisBlanco/LirioNegro, fuentes ycerosliterales declarados. Guía/MCP yweb/Androidvisible entregados. Global285/498/737/20ediciones. SiguenLiga,N/Ghechis/Mirto propios, otrosentrenadores/juegos/textosporfuente/mapas/iconos/tamaño global. No prestar condiciones HallBW2; sinROM/fullroute/EUJP/efectonativodeceros/ARMfisico/tableta/TalkBack/paridadglobal. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente deLuis.
