@@ -2175,3 +2175,7 @@ por conteo ni por un Normal válido. Editar casillas o componentes útiles y
 regenerar cuando la calidad lo exija. Los apoyos DX/3DS no sustituyen DS40.
 Ogerpon Mask/Tera sigue pendiente de identificación primaria y adaptación.
 Ni esta cobertura parcial ni sus pruebas suponen aprobación artística global.
+
+## HoardDex tras Guayo del Área 10 — 27-10-2026
+
+Entregado Main329: Guayo propio de Negro2 y Blanco2, tres modos, movimientos y objetos originales, con aviso del cambio de jefe por llave.96 variantes BW2/339equipos globales. Web y APKx86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1587 siguiente: primer Acromo en Ruta4, tabla358, constructor de movimientos y condiciones propias sin préstamo de la Fragata. Siguen coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/modelos/Hub.
