@@ -2179,3 +2179,7 @@ Ni esta cobertura parcial ni sus pruebas suponen aprobación artística global.
 ## HoardDex tras Guayo del Área 10 — 27-10-2026
 
 Entregado Main329: Guayo propio de Negro2 y Blanco2, tres modos, movimientos y objetos originales, con aviso del cambio de jefe por llave.96 variantes BW2/339equipos globales. Web y APKx86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1587 siguiente: primer Acromo en Ruta4, tabla358, constructor de movimientos y condiciones propias sin préstamo de la Fragata. Siguen coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/modelos/Hub.
+
+## HoardDex tras primer Acromo en Ruta4 — 27-10-2026
+
+Entregado Main332: primerAcromoRuta4 en ambas ediciones BW2US y tresmodos, movimientos generados antesdelajuste, fuentes y referencias con regreso contextual. WebMain y APKx86publicado probados, ambasABI publicadas; ARM64 sólo compilada. Continúan otrosentrenadores yjuegos, guías completas, formas/localizaciones, evoluciones por edición, textos sinfuente, iconos, mapas y reducción de tamaño sinpérdida. No hay decisión pendiente deLuis ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
