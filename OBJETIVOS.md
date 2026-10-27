@@ -2183,3 +2183,18 @@ Entregado Main329: Guayo propio de Negro2 y Blanco2, tres modos, movimientos y o
 ## HoardDex tras primer Acromo en Ruta4 — 27-10-2026
 
 Entregado Main332: primerAcromoRuta4 en ambas ediciones BW2US y tresmodos, movimientos generados antesdelajuste, fuentes y referencias con regreso contextual. WebMain y APKx86publicado probados, ambasABI publicadas; ARM64 sólo compilada. Continúan otrosentrenadores yjuegos, guías completas, formas/localizaciones, evoluciones por edición, textos sinfuente, iconos, mapas y reducción de tamaño sinpérdida. No hay decisión pendiente deLuis ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: continuar después de parcial67 —27-10-2026, #1372
+
+Main925cb29a entrega doce conjuntos normales/shiny completos ydos CamDizzy
+reparados. Quedan811parciales/47ausentes yla revisión de todoel arte anterior.
+Conservar caras buenas ypublicadas, corregir porcasilla/componentes con propio
+Normal como referencia yregenerar lo insuficiente. No certificar calidad por
+recuento. VenusaurMega/Gmax N/S:cuatro Dizzy corregidos con ROOT+peerindependiente
+GO acotado, aún sóloOUT futuro68;otras60caras ycuatroNormal exactos. Coalossal
+Gigamax:dos pilotosNormal N/S entregados sóloOUT, pendientes deROOTpeer antes
+deotras30. Ocho casillas Tentacruel/Hariyama/Shelgon requieren reparación local
+de lectura ocular/materiales; noHOLD inferido sobre lo noinspeccionado.
+Hariyama shiny sigue con sóloNormal, separado de la reparaciónN. Apoyos DX/3DS
+ayudan al gesto/anatomía, manteniendo DS40, orientación yprimerplanopropios.

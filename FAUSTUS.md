@@ -16596,3 +16596,40 @@ HoardDex Main329/c0e91f32 entrega Guayo del Área10 de la instalación original 
 ## HoardDex: primer Acromo en Ruta4 entregado — 27-10-2026
 
 HoardDex Main332/19b842b8 entrega el primer combate de Acromo en Ruta4 de Negro2/Blanco2 US, separado de Fragata y revanchas. Magnemite/Klink21/23Normal,19/21Fácil,23/25Desafío; movimientos generados a nivel de tabla antesdelajuste±2, ChispaEasy19 ysinhelditems. Tresvariantes/seiscontextos,32primarias13nuevas,23propósitos propios sólo358. BW2=99/186/183,93edición31modo9historia30opcionales;global342/598/821/20. Conservados96registros170fuentes/otros12datos/sietebancos/416foreignunindexed/639WT0Main. OráculoV26105bytes8RED329→8GREEN330/331;V1contratoerróneo histórico yGuayoNtests sóloagregados. Main581TS3CJS/TSC0/MCP37-1002/generador183/web. Técnico67/24vistas/66RPC;ROOT54fuente51aceptadas3negativas,acabado genérico fresco48ship0material/docer distinto64previosexactos. CASr1trescommitsexactos/ff-onlysinpush. WebMain yAPKx86publicado reales,BlackChallenge25/Magnemite23,WhiteEasy21/Klink21,refsBackcontexto/vacío24-30-9-30; formatos reales yduplicados declarados. AmbasABI332HBC331/17884mediaeachSHAexactos. x86SHA69a887d753a8 probado5554;ARM64SHAc05b0a6a0046 sólo build sinphone. RestauradoES/system/font1/nightno/Arceus1of1025/queryempty trasapp-onlyreopen,RuntimeErrors[]antes/después,mismobootd28de7eb/Studio658306visible,sinrestart/hide/wipe. URLexternasóloweb331,nativanoinvocada/nologin. CuatroAPKpropiosobsoletosretirados,124JSONexactos/126total.8897readonly8898intacto8899Main332. GetTriggerSCRIDAtPosGrid cuerpo noacreditado; noROM/motor/stats/EXPafteradjust/rewards/fullroute/arbitrarysave/keys/EUJP/physicalARM/tablet/TalkBack/globalparity. FINAL:research-inbox/hoarddex-bw2-route4-colress-product/FINAL.json. Padre864/WT864/app1195abiertos. Continuar coberturas por juego,formas,evoluciones,textos,iconos,mapas y tamaño sinpérdida. No iniciar otrosHoards/modelos/Hub.
+
+
+## Silver: doce conjuntos de expresiones y dos reparaciones —27-10-2026, parcial67
+
+Main925cb29a integra las16expresiones normales/shiny de Corviknight, Orbeetle
+yDrednaw Gigamax yCalyrex base, Jinete Glacial yJinete Espectral. Se reparan
+también los dos Dizzy de Mega Camerupt. Las224casillas seleccionadas incluyen
+siete publicados anteriores ytreinta caras Camerupt conservadas:185mapeos
+nuevos ydos sustituidos. Revisión whole/native40 por cara, componentes y
+materiales propios, orientación yprimer plano de referencia, fondos ysímbolos.
+Los dos revisores aprobaron de nuevo CAS1372r15 tras corregir cinco frases de
+estado documental, con arte propio excluido. El peer adicional de64jinetes
+acepta sólo cabeza ycuello visibles, sin equivalencia global de monturas.
+
+Cobertura:2080conjuntos completos,811parciales y47ausentes;34469mapeos,
+33256PNG/14packs,276registros/269atlas. Otros262registros y33100PNG anteriores
+exactos. Los tres packs ydos atlas retirados del índice siguen físicos en el
+worktree1180 de la tarea abierta. No cambia lector, motor, interfaz ni reglas.
+Procedencia porcasilla en art/portraits/reviewed67-provenance.json.
+
+Fuente:723Python/5omitidas,640motor/1omitida ybuilds app/play PASS. La corrección
+de cinco frases no cambia sus entradas. Builds frescos deMain PASS; MCP195 y
+catorce equipos Custom válidos. AppMain KO1103ticks/36,7667s; replay5 CamN y
+OrbeS Dizzy, sóloOrbeDynamax. HTML nuevo KO297ticks/9,9s; replay5 DredNNormal
+yShadowSShouting, ambosDynamax; tick163 DredDetermined yShadowNormal. Sin Rayo
+Confuso en eseHTML ni prueba de reconstrucción de Pain transitorio. Retratos40,
+Balls18Level/Dream yDive/Moon asignadasexactas, consolasvacías.224HTTPigualPNG
+instalado/HTML ytodosentries/sourcesmanifestexactos.69278binarios/0inline,
+39chunksSHA; HTML335411167B, SHAef77f91b4a472b4f3c530e8aba8518f170aea1b0e0b3927369b7e91a39b56023.
+
+Son fixtures Custom que parten directamente deGmax; no certifican activación
+desde base ni legalidad del juego principal. HTML anteriores:reexportar.
+QA propia cerrada:dos tabs yserviciosfuente/Main verificados poridentidad,
+58928/58929apagados ycuatro leases QA liberados. Main5230/otrasapps/modelos
+no iniciados; sinpush ni nueva prueba MP4/import/wheel. Los2195mugshots deLuis
+son apoyo de anatomía ygesto, sin altas ni licencias inferidas.1372continúa
+abierta, sin aprobación artística global. Recibo qa-fourteen67-main-delivery-v1.json.
