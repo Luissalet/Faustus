@@ -2198,3 +2198,7 @@ deotras30. Ocho casillas Tentacruel/Hariyama/Shelgon requieren reparación local
 de lectura ocular/materiales; noHOLD inferido sobre lo noinspeccionado.
 Hariyama shiny sigue con sóloNormal, separado de la reparaciónN. Apoyos DX/3DS
 ayudan al gesto/anatomía, manteniendo DS40, orientación yprimerplanopropios.
+
+## HoardDex tras los combates directos de Matís — 27-10-2026
+
+Entregado Main334: seis grupos de Matís en BW2 US, tres iniciales y tres modos, con fuentes, movimientos, niveles y fichas enlazadas con regreso contextual. Web y APK x86 publicado probados; ARM64 sólo compilado. Continúa1602: Matís como compañero y dos rivales de Plasma, con reglas propias de niveles y contexto por edición. También continúan otros entrenadores y juegos, guías completas, formas y localizaciones, evoluciones por edición, textos, iconos, mapas y reducción de tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards, modelos o Hub.
