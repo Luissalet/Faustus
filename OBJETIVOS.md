@@ -2202,3 +2202,21 @@ ayudan al gesto/anatomía, manteniendo DS40, orientación yprimerplanopropios.
 ## HoardDex tras los combates directos de Matís — 27-10-2026
 
 Entregado Main334: seis grupos de Matís en BW2 US, tres iniciales y tres modos, con fuentes, movimientos, niveles y fichas enlazadas con regreso contextual. Web y APK x86 publicado probados; ARM64 sólo compilado. Continúa1602: Matís como compañero y dos rivales de Plasma, con reglas propias de niveles y contexto por edición. También continúan otros entrenadores y juegos, guías completas, formas y localizaciones, evoluciones por edición, textos, iconos, mapas y reducción de tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards, modelos o Hub.
+
+
+## Silver: continuar después de parcial68 — 27-10-2026, #1372
+
+Main258ec4fc entrega cuatro conjuntos nuevos completos y seis caras Dizzy
+reparadas. Quedan809 parciales y45 ausentes, además de revisar todo el arte
+generado anterior. Conservar caras buenas/publicadas, corregir por casilla y
+componente con Normal propio, regenerar lo insuficiente. No certificar calidad
+por recuento. Forretress/Vigoroth:26 propuestas shiny regionales tienen ROOT y
+peer independiente GO acotado, todavía sólo OUT futuro69. Granbull: dos Dizzy
+con párpado y boca relajados tienen peer GO y revisión visual ROOT; selección
+formal aún pendiente. Sus13 shiny restantes están en autoría, no entregadas.
+Las tres propuestas de material TentacruelS requieren terminar ROOT/peer;
+otros11 materialesS siguen pendientes. CincoDizzy TentN/S, HariyamaN y ShelN/S
+permanecen HOLD, en reparación sin agrandar ojos ni borrar ceja/coraza.
+HariyamaS tiene sólo Normal: las15 expresiones faltantes son un frente distinto.
+Los mugshots DX/3DS de Luis apoyan gesto/anatomía manteniendo DS40, orientación
+y primer plano propios; no se importan ni se infieren licencias.

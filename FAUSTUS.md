@@ -16637,3 +16637,43 @@ abierta, sin aprobación artística global. Recibo qa-fourteen67-main-delivery-v
 ## HoardDex: combates de Matís entregados — 27-10-2026
 
 Main334/a1b0dce3 entrega los seis grupos de combates directos de Matís en Negro 2 y Blanco 2 US, con tres iniciales y tres modos: 54 variantes y 108 contextos. Distingue tu inicial del rival, Arenisca posliga de la revancha diaria de Fayenza y niveles de tabla del ajuste por zona. Conserva movimientos originales y generados antes del ajuste, objetos y 83 fuentes primarias por propósito (48 nuevas). BW2 reúne 153 variantes almacenadas, 147 por edición y 49 por modo; la guía suma 396 equipos, 706 contextos y 869 fuentes en veinte ediciones. Los 99 registros y 183 fuentes anteriores, otros doce datos, siete bancos y 416 ajenos sin indexar permanecen exactos. Pasan 592 pruebas TS y tres CJS, tipos, MCP 37/1118, generador 231 SHA y build web de Main. El oráculo literal pasó de once fallos causales en Main332 a once aprobados en fuente333. Revisión técnica independiente, acabado fresco y documenter distinto; estos dos últimos fueron sustitutos genéricos declarados. CAS revisión1 de dos commits e integración ff-only sin push. Web de Main y APK x86 publicado probados: referencias con regreso conservando consulta, edición, modo e inicial, fuentes y cobertura antes de cero resultados. Los dos APK334 conservan el runtime333 y cada uno de los 17.884 medios por nombre y SHA. x86 probado en emulator5554 con Studio visible; ARM64 sólo compilado, sin teléfono físico. Android restaurado a ES/sistema/fuente1/Arceus/1de1025/consulta vacía tras reabrir sólo la app, sin errores, reinicio ni ocultación. Web restaurada a su colección propia0de1025. Se retiraron tres APK propios obsoletos y se conservaron126 JSON anteriores (128total). 8897 sólo lectura,8898intacto,8899Main334. Los fallos de los comparadores y controles QA se conservaron y continuaron desde el paso pendiente; ningún helper consumido se repitió. No certifica ROM, VM original, estadísticas ajustadas, recompensas, ruta completa, partidas arbitrarias, EU/JP, teléfono ARM64, tableta, TalkBack ni paridad global. FINAL:research-inbox/hoarddex-bw2-hugh-product/FINAL.json. Continúan padre864/WT864/app1195 e investigación1602 de combates aliados y dos rivales, todavía sin GO de producto. No iniciar otros Hoards, modelos o Hub.
+
+
+## Silver: cuatro conjuntos de expresiones y seis reparaciones — 27-10-2026, parcial68
+
+Main258ec4fc integra las 16 expresiones normales y shiny de Coalossal Gigamax y
+Pikachu con gorra de compañero. Corrige seis caras Dizzy de Mega Venusaur,
+Venusaur Gigamax y Pikachu con gorra original, conservando las demás caras.
+Las 160 casillas seleccionadas reúnen 62 mapeos nuevos, seis sustituciones y
+92 retenciones exactas. Los ocho Normal publicados seleccionados se conservan,
+incluidos los dos espejos explícitos previos de Venusaur Gigamax. Los gestos y
+materiales se revisaron por cara y componente frente a sus propias referencias,
+con orientación y primer plano, fondos y símbolos. Dos revisores aprobaron
+CAS1372r16/258ec4fc con autoría propia excluida. No hay aprobación global del arte.
+
+Cobertura instalada: 2084 conjuntos completos, 809 parciales y 45 ausentes;
+34531 mapeos, 33318 PNG en 14 packs, 280 registros y 273 contenidos de atlas
+distintos. Otros 270 registros y 33250 PNG anteriores permanecen exactos.
+Los 14 packs y seis atlas retirados del índice siguen físicos en el worktree
+1180 de la tarea abierta. No cambia lector, motor, interfaz, reglas ni alias.
+La procedencia durable está en art/portraits/reviewed68-provenance.json.
+
+Fuente: 723 Python/5 omitidas, 640 motor/1 omitida y builds app/play PASS.
+Main: builds frescos app13,55 s/play10,91 s PASS, MCP195 y diez equipos Custom
+válidos. App KO1035 ticks/34,5 s; replay5 MegaVenusaurN y CoalossalGmaxS Dizzy,
+sólo Coalossal Dynamax. HTML nuevo KO861 ticks/28,7 s; replay5 PartnerN Dizzy y
+VenusaurGmaxS Normal, ambos Dynamax. La primera orden de Rayo Confuso del jugador
+se convierte en Maxibarrera: no demuestra VenusaurDizzy en HTML ni reconstrucción
+de Pain transitorio. Retratos nativos40 mostrados96, Balls18 Friend/Heavy y
+Love/Safari asignadas exactas, avatares80 y consolas vacías. Las160 peticiones
+HTTP coinciden con instalado y HTML, al igual que todos los entries/sources.
+69340 binarios/0 inline y39 chunks verificados por SHA; HTML335665786B,
+SHAd862318fe07361595dcaffb02a2399a08369adc7554ef0e02ffdfc69fad2b88b.
+
+Son fixtures Custom que parten de formas Mega/Gmax; no certifican activación
+desde base ni legalidad del juego principal. HTML anteriores: reexportar.
+QA propia fuente/Main cerrada por identidad, cuatro pestañas cerradas y puertos
+58930/58931 apagados; cuatro leases QA liberados. Main5230/otras apps/modelos
+no iniciados; sin push ni nueva prueba MP4/import/wheel. Los2195 mugshots de Luis
+son apoyo de anatomía y gesto, sin importaciones ni licencias inferidas.
+1372 continúa abierta. Recibo qa-ten68-main-delivery-v1.json.
