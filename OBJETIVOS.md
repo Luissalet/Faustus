@@ -2220,3 +2220,27 @@ permanecen HOLD, en reparación sin agrandar ojos ni borrar ceja/coraza.
 HariyamaS tiene sólo Normal: las15 expresiones faltantes son un frente distinto.
 Los mugshots DX/3DS de Luis apoyan gesto/anatomía manteniendo DS40, orientación
 y primer plano propios; no se importan ni se infieren licencias.
+
+
+## Silver: continuar después de parcial69 — 27-10-2026, #1372
+
+Main4f56b305 entrega tres conjuntos shiny completos y tres caras normales
+Dizzy reparadas. Quedan806 parciales y45 ausentes, además de la auditoría de todo
+el arte generado previo. Conservar caras válidas/publicadas y editar casillas
+y componentes; regenerar lo insuficiente. El recuento no demuestra calidad.
+MagmarS15 tiene ROOT y peer independiente GO sóloOUT, incluida la reparación
+InspiredV5 de401 puntos del fondo amarillo. Los1199 restantes y14 otras caras
+másNormalS quedaron exactos. La propuesta anterior teñía el fondo de rosa;
+elHOLD se levanta sólo para elPNGactual9787b31b, no versiones anteriores.
+CascoonS14 tiene ROOT y peer GO OUT; suDizzyN defectuoso no se derivó aS y
+su reparaciónN/S2 está en autoría. No existe todavía su atlas16S completo.
+SteelixS15 y MegaSteelixS15 están en autoría separada con sus referencias
+propias, sin alias de formas ni derivar ciegamente defectos N.
+TentacruelS14material tiene ROOT+peerGO OUT, pero sus dosDizzy siguenHOLD;
+también siguenHOLD losDizzy de HariyamaN y ShelgonN/S. Los pilotos de pose no
+levantaron eseHOLD. HariyamaS sólo tiene Normal:faltan15expresiones.
+La guía builtin de Hariyama de ROOT fue rechazada sin imagen producida; sigue
+la edición de píxeles/paletas autorizada, sin activar modelos alternativos.
+Todos estos futuros están excluidos de69 y requieren sus revisiones antes de
+instalar. MugshotsDX/3DS de Luis como apoyo, respetando orientación/primerplano
+PMD40 propios; sin importación ni inferencia de licencias.1372 continúa abierta.

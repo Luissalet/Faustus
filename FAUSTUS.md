@@ -16677,3 +16677,39 @@ QA propia fuente/Main cerrada por identidad, cuatro pestañas cerradas y puertos
 no iniciados; sin push ni nueva prueba MP4/import/wheel. Los2195 mugshots de Luis
 son apoyo de anatomía y gesto, sin importaciones ni licencias inferidas.
 1372 continúa abierta. Recibo qa-ten68-main-delivery-v1.json.
+
+
+## Silver: tres conjuntos shiny y tres caras de mareo reparadas — 27-10-2026, parcial69
+
+Main4f56b305 integra las16 expresiones shiny de Forretress, Granbull y Vigoroth
+y repara sus tres Dizzy normales. Son96 casillas seleccionadas:45 mapeos nuevos,
+tres sustituciones y48 retenciones exactas. Los seis Normal publicados
+seleccionados conservan sus PNG originales. Se revisaron por cara anatomía,
+gesto, orientación, primer plano, materiales, fondos y símbolos. Los dos peers
+aprobaron CAS1372r17/4f56b305 con autoría propia excluida; no hay GO global.
+
+Cobertura instalada:2087 conjuntos completos,806 parciales y45 ausentes;
+34576 mapeos,33363 PNG en14 packs,283 registros y276 contenidos de atlas.
+Otros277 registros y33315 PNG previos permanecen exactos. Los14 archivos
+retirados del índice (11packs y3atlas) siguen físicos en WT1180 de tarea abierta.
+No cambia lector, motor, interfaz, reglas ni alias. El dossier durable
+art/portraits/reviewed69-provenance.json usa interned-json-v1:264 objetos y295
+referencias,13.848.793 bytes. Su expansión e inversa reproducen los30.650.692
+bytes de procedencia anterior exactos; imágenes e índices no cambian al compactar.
+
+Fuente:723 Python/5 omitidas,640 motor/1 omitida y builds app/play PASS.
+Main: builds frescos app9,21s/play13,93s PASS, MCP195 y seis equipos Custom válidos.
+App KO1408ticks/46,9333s; replay5 ForretressN y GranbullS Dizzy, ambosDynamax.
+HTML nuevo KO934ticks/31,1333s; replay5 GranbullN y VigorothS Dizzy, sóloVigoroth
+Dynamax. El jugador usa Rayo Confuso real antes de esa transformación.
+Retratos40 nativos mostrados96; Balls18 Timer/Dusk y Dusk/Fast asignadas exactas,
+avataresapp80 y consolas vacías. Las96 peticiones HTTP coinciden con instalado
+y HTML, todos los entries/sources y69385 binarios/0inline/39chunks pasan SHA.
+HTML335944254B, SHA48639ccf4cf60c05410350762f0b6e326ccb3f440d73edb6169bd66920771eab.
+
+No se afirma legalidad general, nueva pruebaMP4/import/wheel, hardware ni
+reconstrucción dePain transitorio. HTML anteriores:reexportar. QA fuente/Main
+propia cerrada por identidad, cuatro pestañas cerradas,58932/58933 apagados y
+cuatro leasesQA liberados. Main5230/otrasapps/modelos no iniciados; sinpush.
+Los2195 mugshots de Luis son apoyo de anatomía/gesto, sin importaciones ni
+licencias inferidas.1372 sigue abierta. Recibo qa-six69-main-delivery-v1.json.
