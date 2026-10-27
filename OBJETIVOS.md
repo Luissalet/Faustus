@@ -2260,3 +2260,7 @@ faltan15 expresiones. Una regeneración builtin deHariyama produjo imagen,
 pero se descartó por gesto cansado en vez de mareado; no se instaló. Los2195
 mugshotsDX/3DS deLuis apoyan anatomía/gesto manteniendo detalle40, orientación
 yprimer plano propios.1372 sigue abierta sin aprobación global.
+
+## HoardDex tras los combates aliados — 27-10-2026
+
+Entregado Main340/892cace3: cinco encuentros con Matís compañero y dos rivales BW2 US por inicial y modo, fuentes y referencias; selector web largo corregido. Main y APK x86 publicado probados, ambas ABI generadas; ARM64 sin teléfono físico. Continúan Cheren como aliado y su contexto del PWT, demás entrenadores y juegos, guías completas, formas/localizaciones, evoluciones por edición, textos, iconos, mapas y reducción de tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/Hub/modelos.
