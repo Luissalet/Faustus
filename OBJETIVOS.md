@@ -2298,3 +2298,7 @@ Las demás ausencias Furfrou, Cramorant con presa, Gmax y máscaras Tera necesit
 ## Silver: continuación tras parcial 74 — tarea 1372 abierta
 
 Completar y revisar los 787 conjuntos parciales y 41 ausentes, normales y shiny, además del arte generado anterior. Diamond, La Reine y Pharaoh tienen propuestas fuera del producto, sometidas a revisión por casilla; Estrella inicia su base propia. Mantener orientación derecha, anatomía, detalle nativo, primer plano y fondos/símbolos por emoción. Conservar originales publicados y caras buenas, corregir sólo componentes defectuosos y regenerar los insuficientes. Los 2.195 mugshots de Luis son apoyo, sin importaciones ni licencia inferida. El recuento de cobertura no equivale a aprobación de calidad del catálogo.
+
+## HoardDex después de las revanchas originales — 27-10-2026
+
+Entregadas las revanchas originales de Cheren y Bel en Main347 y ambos APK. Continúan los demás entrenadores y ediciones, guías y localizaciones enlazadas, formas y evoluciones por edición, textos sin fuente, iconos no identificados y tamaño sin pérdida. PWT requiere regulación, participantes y acceso contrastados antes de publicar sus equipos. ARM64 físico no disponible, sin decisión pendiente de Luis ni paridad global. Cuota1% al cierre: no reclamar nuevos frentes ni autores; conservar padre864/WT864/app1195 y paradas de otras apps/modelos.
