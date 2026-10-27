@@ -2161,3 +2161,17 @@ La cobertura y las pruebas de una tanda no son aprobación artística global.
 ## HoardDex tras el primer combate legendario de N — 27-10-2026
 
 Entregado Main327: primer N con Zekrom o Reshiram propio por edición, tres modos y origen de los movimientos antes del ajuste.90 equipos BW2/333 globales. Web final y APK x86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1578 siguiente: Guayo, tablas propias, selección por lugar/edición y modos sin inferirlos de otros entrenadores. Siguen las coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/modelos/Hub.
+
+
+## Silver: continuidad tras parcial 66 — 27-10-2026, #1372
+
+Main8da0b15b completa128 caras de Rillaboom/Cinderace/Inteleon Gigamax y Pichu
+Picoreja N/S, probadas en app y HTML nuevos. Quedan814 conjuntos parciales y56
+sin expresiones. Continuar todas las variantes y shinies, revisando también
+las anteriores por anatomía, orientación derecha, primer plano y calidad real.
+Corviknight Gigamax: evaluar cada expresión contra su forma propia, conservando
+publicados sólo donde la porción visible sea compatible; no equivalencia global
+por conteo ni por un Normal válido. Editar casillas o componentes útiles y
+regenerar cuando la calidad lo exija. Los apoyos DX/3DS no sustituyen DS40.
+Ogerpon Mask/Tera sigue pendiente de identificación primaria y adaptación.
+Ni esta cobertura parcial ni sus pruebas suponen aprobación artística global.

@@ -16551,3 +16551,40 @@ qa-six65-main-resources-closed-v1.json.
 ## HoardDex: primer combate legendario de N entregado — 27-10-2026
 
 HoardDex Main327/1776ac24: primer combate legendario de N propio de cada edición BW2 US: Zekrom en Negro 2 y Reshiram en Blanco 2, tres modos Normal70/Fácil65/Desafío75. Cuatro movimientos generados al nivel de tabla70 ANTES del ajuste; nota de origen UI/API/MCP. Zekrom: Cabezazo Zen/Rayo Fusión/Garra Dragón/Sellar; Reshiram: Paranormal/Llama Fusión/Pulso Dragón/Sellar. No Triturar71 en Desafío75. Condiciones de propuesta y escena inicial propias, separadas de las cuatro estaciones posteriores. Seis variantes/seis contextos, 26 fuentes compartidas/8 nuevas. BW2 90 equipos almacenados/87 por edición/29 por modo/27 opcionales/174 contextos/156 fuentes; global333 equipos/586 contextos/794 fuentes/20 ediciones. Los84 previos conservados salvo12 avisos de N actualizados,148 fuentes anteriores y12 otros datos exactos. Oráculo6295bytes intacto:7RED325 a7GREEN326. Main566TS+3CJS/TSC0/MCP37-962/generador156SHA/web pasan. Revisión técnica independiente47 focales/24vistas/60RPC; ROOT40 imágenes fuente válidas, acabado fresco38 imágenes ship0material y documenter distinto aditivo. CASr1 exacta de dos commits, integración ff-only sin push. QA real final Mainweb6 capturas aceptadas1280x1000 y APKx86 publicado8PNG1344x2992: negroDesafío75/tabla70+5, Zekrom Dragón/Eléctrico yBack conserva consulta/edición/modo, blancoFácil65/tabla70-5, Reshiram y vacío0 con alcance24/30/6/27. Una captura web durante animación excluida y sustituida; black-party duplica black-challenge, sin contabilizar caso independiente. AmbasABI327 HBC326 y17884 medios cadaSHA exactos. x86SHA9b4e8516 probado; ARM64SHA366d49e3 sólo compilado, sin teléfono físico. Restaurado ES/system/font1/nightno/Arceus1of1025/queryvacía tras reapertura sólo app, RuntimeErrors[] antes/después, mismo bootd28de7eb yStudio658306 visible; sin reinicio/hide/wipe. Fuente externa URL fijada verificada sólo enweb; Chrome cerrado sin leer/tocar/capturar login, URLnativa no certificada. TresAPK propios obsoletos retirados,120JSON previos exactos/122total;416 ajenos sin indexar y639WT/0Main no rastreados anteriores exactos.8897real y8898 intactos,8899Main327. No ROM/motor/estadísticas/EXP después del ajuste/llaves/curación/efectos2805/ruta completa/partida arbitraria/RTC físico/EUJP/tableta/TalkBack/paridad global. FINAL: research-inbox/hoarddex-bw2-first-n-product/FINAL.json. Investigación1578 Guayo separada, sin producto ni binding confirmado todavía. No iniciar otros Hoards/modelos/Hub.
+
+
+## Silver: cuatro familias de retratos completadas, parcial 66 — 27-10-2026
+
+Main 8da0b15b incorpora las 16 expresiones de Rillaboom, Cinderace e Inteleon
+Gigamax y Pichu Picoreja, normales y shiny: 128 caras nuevas en la biblioteca.
+Se revisaron completas con referencias propias, orientación derecha, primer
+plano y detalle nativo de 40 píxeles. Se conservaron las caras publicadas útiles
+y las actuaciones originales; las adaptaciones de ojos, materiales y orejas
+mantienen su procedencia y créditos parciales. Las nubes Dynamax son efectos
+externos. Dos revisores aprobaron CAS1372 revisión13, excluyendo su propio arte.
+
+Cobertura actual: 2068 conjuntos completos, 814 parciales y 56 ausentes;
+34284 mapeos, 33102 PNG en 14 packs. Los 256 registros y 32974 PNG anteriores
+permanecen exactos. Once packs retirados del índice siguen físicamente en el
+worktree de la tarea abierta. No cambian las reglas, el lector ni la interfaz.
+Pasan 723 pruebas Python con cinco omitidas y 640 del motor con una omitida;
+28 focales tras corregir sólo los créditos de tres puntos de cada Cinderace
+Dizzy. Builds app/play de fuente y Main correctos, MCP nativo195 y ocho equipos
+Custom válidos. Main: KO827ticks; replay5s Cinderace normal Dizzy y Rillaboom
+shiny Determined, ambos Dynamax. HTML nuevo: KO197ticks; replay3,5s Pichu shiny
+Normal e Inteleon shiny Dizzy, sólo Inteleon Dynamax. Retratos40 y Balls18
+completos; Level/Friend y Love/Dive asignadas, consolas sin avisos ni errores.
+128 HTTP coinciden con instalado y HTML; todos los sources del HTML coinciden
+con el manifiesto final. 69124 binarios y ocho inline,39 bloques verificados.
+HTML334833585bytes SHA6de2a14367701b347de60da3f10fdf2e728d48753a9cb44b15bff1e2f3943c1b.
+
+Estos equipos Custom parten de Gmax directamente: no prueban activación desde
+base ni legalidad del juego principal. Los HTML anteriores deben reexportarse.
+QA propia cerrada, puertos58926/58927 apagados y cuatro leases liberados; no se
+iniciaron Main5230, otros Hoards o modelos. Sin push ni nueva prueba MP4/import/wheel.
+1372 continúa abierta, sin aprobación artística global. Corviknight Gigamax
+tiene dos Normal compatibles con el encuadre publicado revisadas sólo como
+propuestas; sus otras treinta expresiones siguen en revisión, aún sin instalar.
+Los2195 mugshots aportados por Luis son apoyo de anatomía y gesto, sin inferir
+altas ni licencias; se conserva el estilo DS40. Recibos:
+research-inbox/silver-portraits1372/qa-eight66-main-delivery-v1.json.
