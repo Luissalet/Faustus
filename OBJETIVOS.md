@@ -2282,3 +2282,14 @@ Las 45 ausencias se han estudiado por forma y paleta con referencias fijadas; RO
 ## HoardDex después de Cheren aliado — 27-10-2026
 
 Cheren aliado ya está entregado en Main344/c2052e85 y ambos APK, con pruebas web y Android emulado. El PWT sigue en investigación: cerrar perfil37/levelMode, participantes y acceso antes de publicar sus equipos. Continúan otros entrenadores y ediciones, guías, formas y localizaciones, evoluciones por edición, textos sin fuente, iconos no identificados y reducción de tamaño sin pérdida. ARM64 físico no disponible; no hay decisión pendiente de Luis ni paridad global. Mantener las tareas padre864/WT864/app1195 y las paradas de otros Hoards, Hub y modelos.
+
+
+## Silver: continuar hasta completar los retratos — 27-10-2026, tarea 1372
+
+Quedan 789 conjuntos parciales y 45 ausentes, además de la revisión visual del arte anterior. Conservar los retratos publicados y las caras válidas; corregir casillas/componentes o regenerar sólo lo insuficiente. La cobertura no demuestra calidad. Respetar orientación derecha, resolución y primer plano de su referencia, sin bordes vacíos y con fondos/símbolos por emoción. Los 2195 mugshots de Luis son apoyo, sin importación ni licencia inferida.
+
+Fuera del producto: Terapagos Terastal tiene 25 expresiones nuevas revisadas independientemente por ROOT y siete retenciones; se han corregido sus fondos, cuatro gestos Pain/Inspired y dos vapores Sigh, conservando 19 cuerpos. El Normal shiny Stellar actual de 132 píxeles reparados también tiene GO acotado. Otros cinco Normal shiny de formas ausentes ya tienen revisión independiente; ninguno se instala por pertenecer al lote73.
+
+Furfrou Dandy: Normal N generado/refinado con referencia propia y 14 expresiones N más Normal S revisados. Un nuevo Dizzy N y 14 expresiones S se entregaron como propuestas de autor y requieren revisión ROOT; Dizzy S sigue ausente. Furfrou Diamond: Normal N nuevo con raw/prompt preservados y paleta nativa propia, con peer independiente GO por SHA actual; las demás expresiones y la paleta shiny aún faltan. La paleta toma muestras literales del Furfrou PMD publicado y del canon Diamond, con sus créditos separados de la anatomía generada nueva. Se revisa cada cara, sin repetir imágenes válidas ni propagar un HOLD. Lucario Mega Z normal/shiny continúa con autoría de sus 30 expresiones faltantes, usando sus dos Normal propios exactos.
+
+Las demás ausencias Furfrou, Cramorant con presa, Gmax y máscaras Tera necesitan sus componentes reales; equivalencias de sprites no autorizan alias de retratos. Continúa1372 hasta terminar, sin nuevos agentes, goals ni push, y sin borrar WT1180 o históricos mientras siga abierta.
