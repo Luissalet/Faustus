@@ -2244,3 +2244,19 @@ la edición de píxeles/paletas autorizada, sin activar modelos alternativos.
 Todos estos futuros están excluidos de69 y requieren sus revisiones antes de
 instalar. MugshotsDX/3DS de Luis como apoyo, respetando orientación/primerplano
 PMD40 propios; sin importación ni inferencia de licencias.1372 continúa abierta.
+
+
+## Silver: continuar después de parcial70 — 27-10-2026, #1372
+
+Quedan804 conjuntos parciales y45 ausentes, además de revisar todo el arte
+anterior. Conservar caras válidas/publicadas y editar componentes individuales;
+regenerar lo insuficiente. La cobertura no demuestra calidad. Steelix yMega
+Steelix tienen28 materiales shiny y cuatro nuevos Dizzy N/S revisados porROOT
+y peers independientes con autoría excluida, sóloOUT para futura71: todavía
+sinatlas64 final ni compilación ni producto. Las propuestas Dizzy antiguas
+rechazadas siguen excluidas. TentacruelN/S, ShelgonN/S y HariyamaN requieren
+reparación de mareo: autores activos fuera de producto. HariyamaS sóloNormal,
+faltan15 expresiones. Una regeneración builtin deHariyama produjo imagen,
+pero se descartó por gesto cansado en vez de mareado; no se instaló. Los2195
+mugshotsDX/3DS deLuis apoyan anatomía/gesto manteniendo detalle40, orientación
+yprimer plano propios.1372 sigue abierta sin aprobación global.

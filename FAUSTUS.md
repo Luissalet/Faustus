@@ -16713,3 +16713,38 @@ propia cerrada por identidad, cuatro pestañas cerradas,58932/58933 apagados y
 cuatro leasesQA liberados. Main5230/otrasapps/modelos no iniciados; sinpush.
 Los2195 mugshots de Luis son apoyo de anatomía/gesto, sin importaciones ni
 licencias inferidas.1372 sigue abierta. Recibo qa-six69-main-delivery-v1.json.
+
+
+## Silver: Magmar y Cascoon shiny completos y una cara normal reparada — 27-10-2026, parcial70
+
+Main d5fa9b2c integra las16 expresiones shiny de Magmar y Cascoon y repara
+Dizzy normal de Cascoon. Las48 selecciones son30 mapeos nuevos, una sustitución
+y17 retenciones exactas. Los tres Normal publicados seleccionados conservan
+sus PNG. Revisadas por cara anatomía, gesto, orientación derecha, primer plano,
+materiales, fondos y símbolos. CAS1372r18 aprobado por dos revisores exactos
+con autoría propia excluida; no es aprobación artística global.
+
+Biblioteca:2089 conjuntos completos,804 parciales y45 ausentes;34606 mapeos,
+33393 PNG en15 packs,285 registros y278 atlas distintos. Otros282 registros
+y33362 PNG anteriores permanecen exactos. Los13 retirados del índice(12packs
+másunatlas) siguen físicos enWT1180 de tarea abierta. No cambia lector, motor,
+interfaz, reglas ni alias. reviewed70-provenance.json usa interned-json-v1:
+199objetos/242referencias,24053674B; su inversa reproduce67396693B exactos.
+
+Fuente:723Python/5omitidas,640motor/1omitida, builds app/play PASS. Main:
+builds frescos6,81/9,87s PASS; MCP195/cuatro equipos Custom válidos. AppKO820
+(27,3333s), replay25 MagmarS/CascoonN Dizzy, ambos Dynamax3–21 ya terminados.
+HTMLKO712(23,7333s), replay5 MagmarS/CascoonS Dizzy, sóloCascoon Dynamax;
+Rayo Confuso humano0,0 antesDynamaxAI3,0. Retratos40 nativos mostrados96,
+Balls18 Repeat/Moon asignadas exactas, avataresapp80, consolas vacías.
+48HTTP coinciden con instalado yHTML; todos entries/sources y69415 binarios,
+0inline/40chunks verifican SHA. HTML336111497B,
+SHA83b779f92fdc12e79f776e7e6341cb5ffe396b21a437bc107dbc5b25ee449879.
+
+QA propia fuente/Main cerrada por identidad, cuatro pestañas cerradas,
+58934/58935 apagados y cuatro leasesQA liberados. Los nueve permanentes
+mantienen1372 abierta. Main5230/otrasapps/modelos no iniciados; sinpush.
+No nueva pruebaMP4/import/wheel, legalidad general ni reconstrucciónPain
+transitoria. HTML anteriores:reexportar. Los2195 mugshots de Luis apoyan
+anatomía ygesto, sin importación ni licencias inferidas. Recibo
+qa-three70-main-delivery-v1.json.
