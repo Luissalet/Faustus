@@ -1134,11 +1134,9 @@ def _doc_context_messages(entries: List[Dict[str, Any]], owner: Optional[str]) -
 def _project_workspace(request, session_id) -> str:
     """The workspace bound by this chat's project, if it has one.
 
-    A project's folder beats whatever the browser posted. The workspace pill is
-    global localStorage state, so before projects existed, switching chats left
-    the agent confined to the previous folder until you remembered to change it
-    by hand. Resolving it from the session server-side makes confinement follow
-    the conversation instead of the tab.
+    The project supplies this chat's default execution root. A request may
+    narrow it to a vetted descendant; it cannot replace it with another root.
+    Resolving the default from the session keeps it tied to the conversation.
 
     Gated exactly like the posted value: a caller who may not use the
     workspace-backed tools gets nothing here either.
@@ -2259,13 +2257,21 @@ def setup_chat_routes(
         workspace, workspace_rejected = _resolve_request_workspace(
             request, form_data.get("workspace") or (body or {}).get("workspace")
         )
-        # A project bound to this chat's sidebar folder owns the workspace.
-        # Chats that belong to no project fall through to the posted value, so
-        # everything outside projects behaves exactly as it did before.
+        # The project supplies the default execution root. An explicit task
+        # folder may narrow it without changing the project's tool-access roots.
         _project_ws = _project_workspace(request, session)
         _project_roots = _project_work_roots(request, session)
         if _project_ws:
-            workspace, workspace_rejected = _project_ws, ""
+            from src.workspace_selection import select_project_workspace
+            workspace, workspace_rejected = select_project_workspace(
+                workspace, _project_ws, workspace_rejected
+            )
+            if workspace_rejected:
+                return JSONResponse(
+                    {"error": "Workspace must be a valid directory inside the project root",
+                     "workspace_rejected": workspace_rejected},
+                    status_code=400,
+                )
         # Per-project agent knobs → harness_options (checkpoints, tests,
         # review, trusted workspace…). Non-project chats get the defaults.
         _harness_options = _project_harness_options(request, session, workspace)
@@ -2618,6 +2624,14 @@ def setup_chat_routes(
                 # The sealed server record, not mutable composer state,
                 # restores the original action workspace.
                 workspace = pending_tool_approval.workspace or None
+                # Trust follows the sealed effective workspace, while options
+                # added for this request (such as freshness) remain intact.
+                _harness_options.pop("trusted_workspace", None)
+                _harness_options.update({
+                    key: value for key, value in
+                    _project_harness_options(request, session, workspace).items()
+                    if key == "trusted_workspace"
+                })
                 workspace_rejected = None
                 if pending_tool_approval.document_id:
                     active_doc_id = pending_tool_approval.document_id
