@@ -25,7 +25,8 @@ def test_server_identity_and_tool_surface():
     assert srv.server.name == "harness"
     tools = asyncio.run(srv.list_tools())
     assert [t.name for t in tools] == ["degradation_status", "history_projection", "resource_claims", "paired_bench_reports",
-                                       "tool_footprint", "turn_tools", "mcp_config_audit", "harness_proposals", "doc_lint",
+                                       "tool_footprint", "turn_tools", "mcp_config_audit", "harness_proposals", "harness_probes",
+                                       "harness_lessons", "doc_lint",
                                        "spend_cap_status", "injection_eval_run", "injection_eval_report",
                                        "voice_turn_timeline", "think_mode_calibration", "cookbook_job_log"]
     for t in tools:
@@ -170,3 +171,32 @@ def test_harness_proposals_lists_and_reads_but_cannot_apply(tmp_path, monkeypatc
     tools = {t.name: t for t in asyncio.run(srv.list_tools())}
     assert set(tools["harness_proposals"].inputSchema["properties"]) == {"id", "status", "axis", "limit"}
     assert store.get(rec["id"])["status"] == "pending"
+
+
+def test_harness_probes_and_lessons_are_read_only_views(tmp_path, monkeypatch):
+    from services.projects import ProjectStore
+    from src.harness_refinement import experience, probe_store, store, targets
+
+    monkeypatch.setattr(store, "DATA_DIR", str(tmp_path))
+    record = probe_store.create("s1", "", "turn_end:correction", probe_id="p1", domain="general", k=2)
+    probe_store.update("p1", status="done", phase="done", task={"text": "write the notes", "followup": "bullets"},
+                       candidates=[{"id": "c1", "line": "inv", "axis": "memory", "target": "memory:x", "op": "create",
+                                    "valid": True, "result": "discarded", "proposal_id": "abc"}],
+                       outcome={"winner": "base", "mode": "none", "applied": False})
+    listing = _payload("harness_probes", {})
+    assert [p["id"] for p in listing["probes"]] == [record["id"]]
+    assert listing["probes"][0]["winner"] == "base" and listing["probes"][0]["candidates"][0]["result"] == "discarded"
+    assert _payload("harness_probes", {"id": "p1"})["probe"]["task"]["followup"] == "bullets"
+    assert "no probe" in _payload("harness_probes", {"id": "nope"})["error"]
+    assert _payload("harness_probes", {"status": "running"})["probes"] == []
+
+    projects = ProjectStore(str(tmp_path))
+    monkeypatch.setattr(targets, "_project_store", lambda: projects)
+    domain = experience.Domain(key="general", name="general")
+    experience.append(domain, {"cue": "c", "lesson": "l", "evidence": "e", "confidence": "low", "verdict": "hurt"})
+    assert _payload("harness_lessons", {})["domains"][0]["key"] == "general"
+    entries = _payload("harness_lessons", {"project_id": "general"})["entries"]
+    assert entries[0]["lesson"] == "l" and entries[0]["verdict"] == "hurt"
+    tools = {t.name: t for t in asyncio.run(srv.list_tools())}
+    assert set(tools["harness_probes"].inputSchema["properties"]) == {"id", "session_id", "status", "limit"}
+    assert set(tools["harness_lessons"].inputSchema["properties"]) == {"project_id"}

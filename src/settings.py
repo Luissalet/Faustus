@@ -2164,11 +2164,20 @@ DEFAULT_SETTINGS = {
     "fix_memory_auto_recall": True,
     # Harness refinement (src/harness_refinement/): after a task that shows a real
     # problem (a correction, a repeated request, a failed-and-repeated tool call),
-    # a local model may PROPOSE one small edit to the project instructions, a
-    # skill, a memory entry or a sub-agent spec. It only proposes; applying
-    # needs your approval and can be undone by id. Runs in the background, after
+    # the global model may propose one small edit to the project instructions, a
+    # skill, a memory entry or a sub-agent spec. Runs in the background, after
     # the reply, and never loads a model on its own. Off by default.
     "harness_refinement_enabled": False,
+    # With the probe on (the default), each proposal is first tried: the task is
+    # repeated read-only with the harness as it is (k times) and with each
+    # candidate edit (once), and only an edit that measurably helps is kept.
+    # Off: the old behaviour, one untested proposal waiting for approval.
+    "harness_refinement_probe": True,
+    # The edit that wins the probe is applied by itself (undo by id stays). Off:
+    # it waits as a pending proposal for your approval.
+    "harness_refinement_auto_apply": True,
+    # Repeats of the task under the unmodified harness per probe (1-3).
+    "harness_refinement_probe_k": 2,
     # Autonomous bug hunter (src/bug_hunt.py): "" = the resolved utility
     # endpoint's own model, generating and triaging the edge-case tests.
     "bug_hunt_model": "",

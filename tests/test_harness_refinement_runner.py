@@ -19,7 +19,7 @@ from core.database import ChatMessage as DbChatMessage
 from core.database import Session as DbSession
 from services.projects import ProjectStore
 from src import agent_defs
-from src.harness_refinement import proposer, runner, store, targets
+from src.harness_refinement import probe, proposer, runner, store, targets
 from src.memory import MemoryManager
 
 NOW = datetime(2026, 10, 1, 12, 0, 0)
@@ -48,6 +48,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr("services.projects.project_for_session", lambda sid, owner=None: project)
     proposer._INFLIGHT.clear()
     runner.reset_for_tests()
+    monkeypatch.setattr(probe, "probe_enabled", lambda: False)   # these tests are about the untested proposal path
     yield type("Env", (), {"db": factory, "project": project, "projects": projects})
     runner.reset_for_tests()
 

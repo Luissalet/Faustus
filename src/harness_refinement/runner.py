@@ -30,7 +30,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from src.harness_refinement import proposer, signals, store
+from src.harness_refinement import probe, proposer, signals, store
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,8 @@ def enabled() -> bool:
 def status() -> Dict[str, Any]:
     with _STATE_LOCK:
         return {"enabled": enabled(), "queued": _QUEUE.qsize(), "running": _BUSY_SESSION,
-                "stats": dict(_STATS)}
+                "stats": dict(_STATS), "probe": probe.probe_enabled(), "auto_apply": probe.auto_apply_enabled(),
+                "probe_k": probe.probe_k()}
 
 
 # -- admission --------------------------------------------------------------
@@ -181,9 +182,12 @@ def _worker_loop() -> None:
 async def run_job(job: Dict[str, Any], *, sleep: Callable[[float], Any] = asyncio.sleep,
                   admission: Optional[Callable[[Optional[str], Optional[str]], Optional[str]]] = None,
                   llm: Any = None, settle_s: float = SETTLE_S, wait_s: float = ADMISSION_WAIT_S,
-                  poll_s: float = ADMISSION_POLL_S) -> Dict[str, Any]:
+                  poll_s: float = ADMISSION_POLL_S, probe_llm: Any = None,
+                  rollout_loop: Any = None) -> Dict[str, Any]:
     """One queued turn: settle, pre-filter without a model, wait for admission,
-    propose. Returns the proposer's result (or a ``skipped`` one)."""
+    then either probe (the default: propose in two lines, repeat the task, keep what measurably
+    helps) or just propose (``harness_refinement_probe`` off). Returns that run's result (or a
+    ``skipped`` one)."""
     session_id, owner = job["session_id"], job.get("owner") or ""
     if settle_s:
         await sleep(settle_s)
@@ -209,6 +213,16 @@ async def run_job(job: Dict[str, Any], *, sleep: Callable[[float], Any] = asynci
             counted = True
             with _STATE_LOCK:
                 _STATS["ran"] += 1
+        if probe.probe_enabled():
+            # The probe waits for admission before every model call itself; a round that cannot
+            # continue is dropped whole.
+            result = await probe.probe_for_session(
+                session_id, owner=owner, trigger=verdict.trigger, user_initiated=False, llm=probe_llm,
+                loop=rollout_loop, admission=check, sleep=sleep, wait_s=max(0.0, wait_s - waited), poll_s=poll_s)
+            if result.get("blocked"):
+                with _STATE_LOCK:
+                    _STATS["deferred_dropped"] += 1
+            return result
         result = await proposer.propose_for_session(
             session_id, owner=owner, trigger=verdict.trigger, user_initiated=False, llm=llm,
             admission=lambda url, model: check(url, model), log_blocked=False)

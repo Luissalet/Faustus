@@ -1,11 +1,17 @@
 # Harness refinement proposals
 
 After a task, a local model may propose the smallest edit to the harness state
-around the immutable base prompt. It only proposes. Applying needs a person;
-every applied edit can be undone by id.
+around the immutable base prompt. By default a proposal is first **probed**:
+the task is repeated read-only with the harness as it is and with each
+candidate edit, and only the edit that earns it is applied, by itself. With
+the probe off, or auto-apply off, a person approves. Every applied edit can be
+undone by id.
 
-Code: `src/harness_refinement/` (store, targets, signals, proposer, runner),
-`routes/harness_proposals_routes.py`. Studio: Skills > Harness proposals.
+Code: `src/harness_refinement/` (store, targets, signals, proposer, runner,
+and for the probe: `probe`, `rollout`, `compose`, `validator`, `experience`,
+`probe_store`), `routes/harness_proposals_routes.py`, MCP tools
+`harness_proposals`, `harness_probes`, `harness_lessons` in the `harness`
+server. Studio: Skills > Harness proposals.
 
 ## Axes and targets
 
@@ -58,10 +64,73 @@ turn queues one background job per session (bounded queue, one worker thread).
 The job settles, runs the deterministic pre-filter (corrections, repeated
 requests, retries, failed tools, clarifications; trivial successes are skipped
 without a model), then waits for `background_job_guard` / model lease and
-proposes at most one edit with the utility endpoint at temperature 0 and a JSON
-response schema. It never loads a model on its own and never runs in the
-foreground. A session with a pending proposal gets no second one, and the same
-evidence is not proposed twice.
+proposes with the harness endpoint at temperature 0 and a JSON response
+schema. It never loads a model on its own and never runs in the foreground
+(the same admission checks gate every call of a probe). A session with a
+pending proposal gets no second one, and the same evidence is not proposed
+twice.
+
+## Probed refinement
+
+Settings: `harness_refinement_probe` (default on), `harness_refinement_auto_apply`
+(default on, only matters with the probe on), `harness_refinement_probe_k`
+(repeats of the unmodified harness, default 2). With the probe off the job
+behaves as before: one proposal, waiting for a person.
+
+One round (`probe.probe_for_session`):
+
+1. **Propose** on two non-overlapping lines, at most one candidate each:
+   `inv` (how the agent works: process, tool use, checks) and `dom` (what it
+   knows about the domain: facts, names, conventions). The proposer first reads
+   the project's `EXPERIENCE.md` as hypotheses to check, not as facts. A
+   candidate that does not pass `validator.check_edit` is dropped.
+2. **Probe**: the original task (never the person's later correction) is
+   repeated in the background against the global model through the agent loop
+   with the `read_only` preset and `unattended`: the unmodified harness `k`
+   times, each candidate once. Variants are overlays on the system context;
+   no real store is touched. Each run is recorded with its steps.
+3. **Compose**: an aggregator sees the original run, the base repeats and the
+   candidate runs, and the correction as "what the person made explicit
+   later". It accepts an edit only citing a moment of a run that exists
+   (`{run, step, quote}`); a failure in only 1 of `k` observed runs is noise
+   (`failure_not_repeated`); `keep_base` is a valid answer. Enforced in code
+   (`compose.enforce`), not only in the prompt.
+4. **Select blind**: the deliverables of the base repeats and the accepted
+   candidates go in with shuffled ids and a recorded seed; the base can win.
+5. **Validate** the winner once more (`validator`: skills named in the edit
+   exist, cited scripts exist, no broken `{{ }}` / `{% %}` templates); on
+   failure the base stands.
+6. **Adopt**: the winner is stored with its provenance (`probe_id`,
+   `probe_line`, `probe_result`, `probe_reason`, `probe_evidence`,
+   `probe_verdict`) and applied with `by="harness-probe"`, or left pending when
+   auto-apply is off. Every non-winner is stored as rejected with the reason
+   and its evidence. The exact undo (`POST .../{id}/undo`) works as for any
+   applied edit.
+7. **Lesson**: one entry may be appended to the domain's `EXPERIENCE.md`.
+
+### EXPERIENCE.md
+
+Per domain (a project): `<workspace>/.faustus/EXPERIENCE.md`, listed in the
+project's `MEMORY.md`; domains without a workspace fall back to
+`DATA_DIR/harness_proposals/experience/`. Entries are `cue`, `lesson`,
+`evidence`, `confidence` and a verdict: `helped`, `hurt`, `no observed effect`
+or `confounded`. `NO_ENTRY` is the right answer when the round shows no
+contrast; an entry with only a confounded verdict, an incomplete one, a near
+duplicate (similarity 0.85 or more) or one that trips the memory security scan
+is not written. At most 30 entries are kept. `helped` needs the aggregator's
+acceptance and the blind win; otherwise it is capped at `confounded`.
+
+### Probe endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/harness/proposals/probes?status=&session_id=&limit=` | light rows, newest first |
+| GET | `/api/harness/proposals/probes/{id}` | full record (task, rollouts with steps, compose verdicts, selection, experience) and the proposals it created |
+| POST | `/api/harness/proposals/probes` `{session_id, force}` | admin; starts a round in the background and answers at once with `{probe_id, status: "running"}` |
+| GET | `/api/harness/proposals/lessons?project_id=` | without `project_id`, the domains with a lessons file; with it, its entries |
+
+A round that is running when the process stops is marked `aborted` the next
+time the list is read. Records are capped at 120.
 
 ## Authority and concurrency
 

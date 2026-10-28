@@ -33,6 +33,12 @@ running a turn:
   made after a task (diff, rationale, evidence, status). Approving, rejecting
   and undoing stay human actions in Studio or the REST routes.
 
+* ``harness_probes`` - the probed rounds behind those proposals: the task that was repeated
+  read-only, the candidate edits (INV = how the agent works, DOM = what a practitioner knows),
+  every repeat's trajectory, the aggregator's citations, the blind-selection mapping and the
+  outcome (which edit won and whether it was applied by itself or left pending).
+  ``harness_lessons`` - the EXPERIENCE.md lessons per domain (project) that the proposer reads.
+
 * ``voice_turn_timeline`` - the latency timeline of voice turns (speech end,
   transcript, first token, first audio) with p50/p90 per gap.
 
@@ -257,6 +263,45 @@ async def list_tools() -> list[Tool]:
                     "axis": {"type": "string", "enum": ["prompt_layer", "skill", "memory", "subagent_spec"]},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50,
                               "description": "How many to list (default 10)."},
+                },
+            },
+        ),
+        Tool(
+            name="harness_probes",
+            description=(
+                "List or read the probed rounds of the harness refinement: after a task with a real "
+                "signal, the task is repeated read-only in the background with the harness as it is "
+                "(k times) and with each candidate edit (once), an aggregator accepts an edit only "
+                "citing a moment of a trajectory, a blind selection compares the deliverables, and the "
+                "winner is applied by itself (or left pending when auto-apply is off). Without `id` the "
+                "newest rounds are listed (status, phase, candidates and their result, winner); with `id` "
+                "one round comes back whole: repeats with their steps, citations, the shuffled "
+                "labels, the outcome and the lesson written. Read-only. Rondas de prueba del arnes."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Probe id from the listing."},
+                    "session_id": {"type": "string", "description": "Only rounds of this chat."},
+                    "status": {"type": "string", "enum": ["running", "done", "skipped", "aborted", "error"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50,
+                              "description": "How many to list (default 10)."},
+                },
+            },
+        ),
+        Tool(
+            name="harness_lessons",
+            description=(
+                "The lessons that probed harness edits taught, per domain (a Faustus project): "
+                "cue, lesson, evidence, confidence and the verdict (helped / hurt / no observed effect / "
+                "confounded). The refinement proposer reads them before it proposes. Without `project_id` "
+                "the domains that have an EXPERIENCE.md are listed; with it (or `general`) its entries and "
+                "where the file lives. Read-only. Lecciones por dominio del arnes."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "description": "Project id, or `general`."},
                 },
             },
         ),
@@ -619,6 +664,37 @@ def _harness_proposals(args: dict) -> dict:
     return {"proposals": light, "counts": store.counts()}
 
 
+def _harness_probes(args: dict) -> dict:
+    from src.harness_refinement import probe_store
+
+    ident = args.get("id")
+    if ident:
+        record = probe_store.get(str(ident))
+        if not record:
+            return {"error": f"no probe {ident!r}"}
+        return {"probe": record}
+    try:
+        limit = max(1, min(50, int(args.get("limit") or 10)))
+    except (TypeError, ValueError):
+        limit = 10
+    rows = probe_store.list_probes(session_id=args.get("session_id") or None, status=args.get("status") or None,
+                                   limit=limit)
+    return {"probes": [probe_store.summary(r) for r in rows]}
+
+
+def _harness_lessons(args: dict) -> dict:
+    from src.harness_refinement import experience
+
+    key = str(args.get("project_id") or "").strip()
+    if not key:
+        return {"domains": experience.list_domains()}
+    domain = experience.find_domain(key)
+    if domain is None:
+        return {"error": f"no project {key!r}"}
+    return {"domain": {"key": domain.key, "name": domain.name, **experience.location(domain)},
+            "entries": experience.entries(domain)}
+
+
 def _doc_lint_roots() -> list:
     install = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return [os.path.realpath(install), os.path.realpath(os.getcwd())]
@@ -762,6 +838,8 @@ _TOOLS = {
     "turn_tools": _turn_tools,
     "mcp_config_audit": _mcp_config_audit,
     "harness_proposals": _harness_proposals,
+    "harness_probes": _harness_probes,
+    "harness_lessons": _harness_lessons,
     "voice_turn_timeline": _voice_turn_timeline,
     "cookbook_job_log": _cookbook_job_log,
     "think_mode_calibration": _think_mode_calibration,

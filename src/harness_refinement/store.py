@@ -297,8 +297,12 @@ def create_proposal(*, axis: str, target: str, op: str, before: Optional[str], a
                     rationale: str, evidence: Iterable[Mapping[str, Any]], trigger: str,
                     owner: str = "", session_id: str = "", model: str = "",
                     meta: Optional[Mapping[str, Any]] = None, proposal_id: Optional[str] = None,
-                    risk_flags: Optional[Iterable[str]] = None) -> Dict[str, Any]:
-    """Store a PENDING proposal. This never reads or writes the target."""
+                    risk_flags: Optional[Iterable[str]] = None,
+                    extra: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Store a PENDING proposal. This never reads or writes the target.
+
+    ``extra`` adds provenance fields (``probe_id``, ``probe_line``...) that must not collide with the
+    record's own keys."""
     if axis not in AXES:
         raise HarnessError("harness.bad_axis", f"unknown axis {axis!r}")
     if op not in OPS:
@@ -319,6 +323,8 @@ def create_proposal(*, axis: str, target: str, op: str, before: Optional[str], a
         "risk_flags": list(risk_flags or []),
         "meta": dict(meta or {}),
     }
+    for key, value in (extra or {}).items():
+        record.setdefault(key, value)
     with locked():
         records = _load_all()
         records[record["id"]] = record
