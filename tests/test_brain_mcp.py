@@ -15,6 +15,7 @@ against an isolated brain store and memory store per test.
 """
 
 import asyncio
+import json
 
 import pytest
 
@@ -27,7 +28,7 @@ from src.brain import db as brain_db
 TOOL_NAMES = {
     "brain_search", "brain_read_note", "brain_write_note", "brain_append_note",
     "brain_entity", "brain_timeline", "brain_graph_neighbors", "brain_sync",
-    "brain_facts_as_of", "brain_fact_history",
+    "brain_facts_as_of", "brain_fact_history", "brain_graph_ask",
 }
 
 OWNER = "ada"
@@ -219,3 +220,28 @@ def test_name_lookup_prefers_the_exact_entity_and_is_not_limited_to_the_newest_r
     assert bs._resolve_entity_id(OWNER, {"name": "Hopper"}) != grace["id"]
     with pytest.raises(LookupError):
         bs._resolve_entity_id("someone-else", {"name": "Grace"})
+
+
+def test_brain_graph_ask_plans_over_the_owners_graph(monkeypatch):
+    monkeypatch.setenv("ODYSSEUS_MCP_BRAIN_OWNER", OWNER)
+    from src.brain import entities, graph_ask
+    mara = entities.upsert_entity(OWNER, "Mara", type="person")["id"]
+    quito = entities.upsert_entity(OWNER, "Quito", type="place")["id"]
+    entities.add_relation(OWNER, mara, "lives_in", dst_id=quito, confidence=0.9)
+    plan = ("Step1: Where does Mara live?\n"
+            "Action1: Retrieval(s=s1:person[`Mara`], p=p1:lives_in, o=o1:place)\n"
+            "Step2: Return it.\nAction2: Output(o1)")
+    seen = []
+
+    async def fake(prompt, **kw):
+        seen.append(prompt)
+        return plan if prompt.startswith("You plan how to answer") else "Mara vive en Quito."
+
+    monkeypatch.setattr(graph_ask, "default_llm", lambda owner, **kw: fake)
+    out = json.loads(_call("brain_graph_ask", {"question": "Where does Mara live?"})[0].text)
+    assert out["status"] == "ok" and out["values"] == ["Quito"] and out["answer"] == "Mara vive en Quito."
+    assert out["steps"][0]["triples"][0]["p"] == "lives_in"
+    only = json.loads(_call("brain_graph_ask", {"question": "Where does Mara live?", "plan_only": True})[0].text)
+    assert only["plan"][0]["op"] == "retrieval" and only["steps"] == []
+    assert "question" in _call("brain_graph_ask", {})[0].text
+

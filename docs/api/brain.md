@@ -197,6 +197,33 @@ no residente — `background_llm_gate`, nunca carga ni descarga un modelo).
 existen como ajustes (`src/settings.py`) pero no se leen ni escriben por
 estas rutas — se cambian con el mecanismo genérico de ajustes.
 
+### Preguntas de varios saltos (`graph_ask`)
+
+| Método | Ruta | Body | Respuesta |
+| --- | --- | --- | --- |
+| `POST` | `/ask` | `{"question", "plan_only"?, "max_steps"? (1-8, 6), "top_k"? (1-12, 6), "alpha"? (0-1, 0.5)}` | ver abajo |
+
+Responde una pregunta que necesita dos o tres saltos sobre lo que sabe el
+Cerebro (`src/brain/graph_ask.py`, `graph_plan.py`, `graph_index.py`). El
+modelo de la instalación planifica la pregunta como un pequeño programa de
+operadores `Retrieval(s,p,o)`, `Math`, `Deduce` y `Output` ligados por alias
+(`s=o1`); los pasos que no dependen unos de otros corren a la vez, cada paso
+posterior se reescribe con los resultados ya obtenidos, y cada recuperación
+mira a la vez las aristas del grafo y los fragmentos de texto vinculados a las
+entidades (un índice mutuo entidad ↔ fragmento sobre `entities`, `relations` y
+`mentions`), fusionados con una suma ponderada min-max (`alpha` es el peso del
+grafo). Nunca escribe en el Cerebro.
+
+Siempre 200 con un `status`: `ok`, `degraded` (el plan no era utilizable y se
+hizo una búsqueda plana, o algún paso falló), `no_model` (no hay modelo
+configurado), `empty` (el Cerebro no tiene nada que consultar) o `error`.
+Campos: `answer`, `values`, `plan` (texto), `steps` (por paso: operador,
+tripletas, evidencia con `source_ref`, valores), `levels`, `sources`,
+`model_calls`, `ms`. Con `plan_only` devuelve sólo el plan. El modelo sale del
+endpoint `brain_ask` si existe, luego el de utilidad y por último el global.
+La parte de planificación y de fusión adapta técnicas de KAG (Apache-2.0); la
+atribución está en `THIRD_PARTY_NOTICES.md`.
+
 ## Servidor MCP `brain`
 
 `mcp_servers/brain_server.py`. La bóveda sobre la que trabaja la fija la
@@ -215,6 +242,7 @@ escribir en la bóveda de nadie en particular.
 | `brain_timeline` | `entity_id?` \| `name?`, `query?`, `limit?` (1-500) | La historia de una entidad, o la línea de tiempo cruzada si no se da entidad. Sólo lectura. |
 | `brain_facts_as_of` | `entity_id?` \| `name?`, `rel?`, `as_of?`, `known_at?`, `include_closed?`, `limit?` | Relaciones con ambos ejes de tiempo (vigente por defecto; `as_of` = mundo, `known_at` = lo que se sabia). Solo lectura. |
 | `brain_graph_neighbors` | `path?`, `depth?` (1-4), `scope?` (`notes`\|`entities`) | El grafo local alrededor de una nota, o el grafo entero de entidades si no se da `path`. Sólo lectura. |
+| `brain_graph_ask` | `question`, `plan_only?`, `max_steps?`, `top_k?`, `alpha?` | Responde una pregunta de dos o tres saltos: plan por operadores, pasos en paralelo, grafo y texto fusionados. Usa el modelo global; sólo lectura. |
 | `brain_sync` | — | Sincroniza la bóveda ahora mismo (importa ediciones manuales, reexporta, reindexa). |
 
 `brain_entity`/`brain_timeline` aceptan `name` como alternativa a
@@ -249,6 +277,11 @@ tabla de reglas de §175) sin pedir tarjeta de aprobación; `write`, `append` y
 espejada por `write`/`append` sólo toca su zona editable — la sección
 generada de la última sincronización se conserva igual que en las rutas HTTP
 y en el servidor MCP.
+
+La herramienta de agente `graph_ask` (`src/agent_tools/graph_ask_tool.py`,
+capacidad de lectura privada, sin tarjeta de aprobación) recibe los mismos
+argumentos que `POST /ask` como JSON y devuelve la misma respuesta; el dueño
+sale del contexto del turno.
 
 ## Fuente del Context Engine
 

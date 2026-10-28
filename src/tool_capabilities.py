@@ -652,6 +652,10 @@ _register(
 _register({"design_canvas"}, ToolEffect.WRITE_PRIVATE)
 _register({"brain_graph"}, ToolEffect.READ_PRIVATE,
           result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+# `graph_ask` reads the same private graph and the memory/note fragments linked to it, and makes model
+# calls through the endpoint the turn already uses; nothing is written.
+_register({"graph_ask"}, ToolEffect.READ_PRIVATE,
+          result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 _register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
           ToolEffect.NETWORK_EGRESS, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 _register({"reach_crawl"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,

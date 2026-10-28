@@ -57,6 +57,7 @@ actually parses):
 
 from __future__ import annotations
 
+from src.brain.graph_ask import GraphAskRequest
 from src.brain.temporal_graph import GraphQuery
 
 import asyncio
@@ -216,6 +217,14 @@ def setup_brain_routes() -> APIRouter:
             return await asyncio.to_thread(retrieve, _owner(request), body)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.post("/ask")
+    async def post_ask(request: Request, body: GraphAskRequest, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Plan a multi-hop question over the owner's graph and its source texts
+        (`src.brain.graph_ask`). Always 200 with a `status`; the graph is never written."""
+        from src.brain import graph_ask
+        return await graph_ask.ask(_owner(request), body.question, max_steps=body.max_steps, top_k=body.top_k,
+                                   alpha=body.alpha, plan_only=body.plan_only)
 
     # ── status & sync ────────────────────────────────────────────────────
 

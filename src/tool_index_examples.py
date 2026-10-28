@@ -1084,6 +1084,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué relaciones conocíamos entonces y cuáles eran válidas en esa fecha",
         "muestra los vecinos de esta persona con sus fuentes y fechas",
     ],
+    "graph_ask": [
+        "en qué ciudad vive la persona que creó este proyecto según lo que sabes de mí",
+        "qué herramienta usan en común estos dos proyectos de mi grafo",
+        "which organisation does the person I work with belong to, from my knowledge graph",
+    ],
     "reach_browser": [
         "lee esta página dinámica con el navegador local",
         "captura las respuestas JSON que carga esta web al desplazarse",

@@ -317,6 +317,35 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="brain_graph_ask",
+            description=(
+                "Answer a question that needs two or three hops over what the "
+                "Cerebro knows (\"in which city does the person who created X "
+                "live?\", \"which tool do A and B share?\"). The question is "
+                "split into steps (Retrieval of subject-relation-object, Math, "
+                "Deduce, Output) bound by aliases; steps with no dependency run "
+                "together, each later step is rewritten with the results "
+                "already obtained, and every step looks at graph edges AND at "
+                "the source texts linked to the entities, fused by a weight. "
+                "Returns the answer, the values, the plan, every step with its "
+                "triples and evidence, and the sources. `plan_only` returns "
+                "just the plan. Uses the global model; never writes."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The question, in any language."},
+                    "plan_only": {"type": "boolean"},
+                    "max_steps": {"type": "integer", "minimum": 1, "maximum": 8},
+                    "top_k": {"type": "integer", "minimum": 1, "maximum": 12,
+                              "description": "Fragments kept per step."},
+                    "alpha": {"type": "number", "minimum": 0, "maximum": 1,
+                              "description": "Weight of the graph side against the text side. Default 0.5."},
+                },
+                "required": ["question"],
+            },
+        ),
+        Tool(
             name="brain_sync",
             description=(
                 "Sync the markdown vault now: import any file a person edited "
@@ -466,6 +495,18 @@ def _tool_neighbors(owner: str, args: dict) -> list[TextContent]:
     return _json_result({"ok": True, "scope": scope, "graph": graph})
 
 
+async def _tool_graph_ask(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import graph_ask
+    question = str(args.get("question") or "").strip()
+    if not question:
+        raise ValueError("`question` is required")
+    result = await graph_ask.ask(
+        owner, question, plan_only=bool(args.get("plan_only")),
+        max_steps=_limit(args.get("max_steps"), 6, 8), top_k=_limit(args.get("top_k"), 6, 12),
+        alpha=min(1.0, max(0.0, float(args.get("alpha") if args.get("alpha") is not None else 0.5))))
+    return _json_result(result)
+
+
 def _tool_sync(owner: str, args: dict) -> list[TextContent]:
     report = _engine["vault"].sync(owner, budget_s=25.0)
     return _json_result({"ok": True, "report": report})
@@ -481,6 +522,7 @@ _HANDLERS = {
     "brain_facts_as_of": _tool_facts,
     "brain_fact_history": _tool_fact_history,
     "brain_graph_neighbors": _tool_neighbors,
+    "brain_graph_ask": _tool_graph_ask,
     "brain_sync": _tool_sync,
 }
 
@@ -503,7 +545,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return _text_result(f"Error: the brain could not be loaded: {exc}")
 
     try:
-        return _HANDLERS[name](owner, args)
+        result = _HANDLERS[name](owner, args)
+        if asyncio.iscoroutine(result):
+            result = await result
+        return result
     except FileNotFoundError as exc:
         return _text_result(f"{name}: no such note: {exc}")
     except ValueError as exc:
