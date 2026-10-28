@@ -257,3 +257,49 @@ def test_mcp_servers_are_registered_before_the_turn(tmp_path):
     assert calls[0] == ("/api/mcp/servers", {"name": "shop", "transport": "http", "url": "http://svc:8000/mcp", "args": "[]"})
     assert calls[1][1]["command"] == "tool" and json.loads(calls[1][1]["args"]) == ["--x", "1"]
     assert fr.register_mcp_servers(_C(), "") == []
+
+def test_input_budget_is_sent_through_real_http_and_approval_legs(monkeypatch, capsys):
+    monkeypatch.delenv("FAUSTUS_RUN_INPUT_TOKEN_BUDGET", raising=False)
+    srv, url = _serve([[CARD], LEG_DONE])
+    try:
+        code = fr.main(["-p", "readonly fixture", "--url", url, "--session", "owned",
+                        "--model", "fixture", "--json", "--approve",
+                        "--input-token-budget", "48000"])
+    finally:
+        srv.shutdown(); srv.server_close()
+    assert code == 0 and len(_H.forms) == 2
+    assert all(form["input_token_budget"] == "48000" for form in _H.forms)
+    assert _H.forms[1]["tool_approval_id"] == "A1"
+    assert not _H.sessions and not _H.puts
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["input_token_budget"] == 48000
+
+
+def test_input_budget_environment_precedence_and_omission(monkeypatch, capsys):
+    for environment, flag, expected in (("48000", [], "48000"),
+                                         ("invalid", ["--input-token-budget", "64000"], "64000"),
+                                         ("", [], None)):
+        monkeypatch.setenv("FAUSTUS_RUN_INPUT_TOKEN_BUDGET", environment)
+        srv, url = _serve([LEG_DONE])
+        try:
+            code = fr.main(["-p", "readonly", "--url", url, "--session", "owned",
+                            "--model", "fixture", *flag])
+        finally:
+            srv.shutdown(); srv.server_close()
+        assert code == 0 and _H.forms[0].get("input_token_budget") == expected
+        assert not _H.sessions and not _H.puts
+    capsys.readouterr()
+
+
+def test_invalid_input_budget_rejects_before_client_creation(monkeypatch):
+    import pytest
+    def no_client(*args, **kwargs):
+        raise AssertionError("invalid input budget must fail before any client side effect")
+    monkeypatch.setattr(fr, "Client", no_client)
+    for value in ("4095", "200001", "0", "-1", "word", "48000.0", "+48000"):
+        monkeypatch.setenv("FAUSTUS_RUN_INPUT_TOKEN_BUDGET", value)
+        with pytest.raises(SystemExit) as exc:
+            fr.main(["-p", "readonly"])
+        assert exc.value.code == 2
+    with pytest.raises(SystemExit) as exc:
+        fr.main(["-p", "readonly", "--input-token-budget", ""])
+    assert exc.value.code == 2

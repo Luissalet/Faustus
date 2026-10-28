@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 # WebSocket transport for uvicorn (streaming voice, mobile push); without it upgrades are refused.
-websockets
+websockets>=13
 python-multipart
 python-dotenv
 httpx
