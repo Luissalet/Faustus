@@ -34,7 +34,7 @@ durable receipts to avoid repeating accepted effects. Available in Studio,
 HTTP and MCP. [Conversation objectives](docs/api/conversation-objective.md).
 
 The bundled skill library includes local workflows for game development, reverse engineering,
-Blender assets, motion composition, media revisions, code impact, entity
+Blender assets, motion composition (a direction flow with style cards, a treatment, cues and sync and reading checks when Prospero's Montage tools are installed), media revisions, code impact, entity
 investigations, historical evidence and speech comparison. Worked scenarios and
 supporting text files survive installation and remain available through the skill
 reference and project workspace tools. These procedures do not install engines

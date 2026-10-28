@@ -26,8 +26,11 @@ not install a renderer, a speech model or a new application capability.
 
 `diagram-authoring` uses Vitruvius's revisioned graph editor and native
 object operations. `source-explainer-production` uses Prospero's supplied
-sources, scenes, local voice and resumable MP4/SRT production. They check
-the installed tool catalogue before using a capability. The existing
+sources, scenes, local voice and resumable MP4/SRT production; for informative
+videos it keeps a FACTS.md and checks that numbers shown are in it. They check
+the installed tool catalogue before using a capability. `deterministic-motion-production` adds a direction flow for films that must look
+like a known style (style card, treatment, cues, sync and reading checks) that
+uses Prospero's Montage tools when the installed build has them. The existing
 design and deterministic-motion procedures route to the fused owners;
 they do not launch the absorbed applications. `image-composition` uses
 Prospero's retained pixel boxes, exact text, reference images, schematic

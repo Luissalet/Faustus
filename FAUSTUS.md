@@ -17097,3 +17097,18 @@ en la repetición; en ese caso quedarse con la base es lo correcto, y una ronda
 sólo adopta cuando la base de verdad falla (ronda D). Los tiempos de ronda los
 domina la repetición en las Sparks (270-510 s cada una), por eso corre en segundo
 plano.
+
+## Dirección de animaciones HTML en las skills de vídeo — 28-10-2026
+
+`deterministic-motion-production` (1.2.0) y `source-explainer-production` (1.1.0)
+llevan ahora el flujo de dirección de Prospero: elegir una ficha de estilo
+(`motion_styles`, 74 fichas importadas con su licencia; esencia intacta, el resto
+variable), escribir el tratamiento antes del HTML (`motion_treatment`: tres
+estructuras, planos con su porqué, mapa de hitos), fijar los hitos que mueven
+imagen y sonido (`motion_cues`) y comprobar con la página real (`motion_cuecheck`,
+`motion_readcheck`, `motion_facts` con `FACTS.md` en vídeos informativos) antes de
+exportar con sonido. La skill descubre primero las herramientas instaladas y se
+detiene en el paso que falte en esa versión; no instala nada. El flujo y sus
+pruebas en vivo están en `docs/HTML_MOTION.md` de Prospero. Límite: la ficha da un
+andamio y un vocabulario, no una película acabada.
+

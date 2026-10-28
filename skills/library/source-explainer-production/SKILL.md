@@ -1,7 +1,7 @@
 ---
 name: source-explainer-production
 description: Produce an editable narrated video from supplied sources using Prospero's native scenes, voice, graphics and montage. Use when the user asks for a source-linked explainer, «vídeo explicativo», or a correction to an existing explanatory scene.
-version: 1.0.0
+version: 1.1.0
 category: engineering
 tags: [hoards, prospero, explainer, fuentes, escenas, narracion, storyboard, video]
 status: published
@@ -57,6 +57,12 @@ compositions, use `deterministic-motion-production`.
    scenes for checking; that flag adds no mandatory approval stage. Record
    `source_reviewed:true` only after checking the affected scene against its
    material. A later source change invalidates that check again.
+5b. For an informative video keep a `FACTS.md` beside the production
+   (`motion_facts` when scenes are HTML animations): each claim with its
+   source. Numbers shown on screen must be in it. When a scene is an HTML
+   animation made from a style card, follow the direction flow of
+   `deterministic-motion-production` (treatment, cues, `motion_cuecheck`,
+   `motion_readcheck`) before exporting it.
 6. Inspect actual video frames at scene boundaries, listen to the narration,
    and compare numbers/labels with the cited material. Inspect SRT placement;
    per-word times may be estimated when speech alignment is unavailable.
@@ -84,6 +90,8 @@ compositions, use `deterministic-motion-production`.
 - Read back the native project and verify scene/source identities and options.
 - Check the actual MP4, subtitles and requested duration; report estimated timings.
 - After a correction, verify unchanged page/audio IDs and the changed output.
+- For HTML animation scenes, `motion_readcheck` reports every text readable and
+  `motion_facts` `check` finds no number on screen that is missing from FACTS.md.
 - Report whether topic planning, voice, exports and UI were actually exercised.
 
 ## Provenance

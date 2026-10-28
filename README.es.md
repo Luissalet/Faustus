@@ -17,7 +17,7 @@ mantienen las reglas de disponibilidad del escritorio.
 La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
 
 La biblioteca incluye procedimientos locales de desarrollo de juegos, ingeniería inversa, assets
-de Blender, composición de movimiento, revisiones de medios, impacto del código,
+de Blender, composición de movimiento (un flujo de dirección con fichas de estilo, tratamiento, hitos y comprobaciones de sincronía y lectura cuando están instaladas las herramientas de Montaje de Prospero), revisiones de medios, impacto del código,
 investigación de entidades, evidencia histórica y comparación de voces. La
 instalación conserva sus ejemplos y recursos de texto, disponibles mediante las
 herramientas de referencias de skills y del proyecto. Son procedimientos: no
