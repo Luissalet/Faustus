@@ -5,9 +5,11 @@ The PID, creation time, command and launch token must all match our record.
 """
 from __future__ import annotations
 import argparse
+import asyncio
 from contextlib import contextmanager
 from datetime import datetime
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -70,6 +72,89 @@ def listening(port):
     with socket.socket() as connection:
         connection.settimeout(.5)
         return connection.connect_ex(("127.0.0.1",port))==0
+
+
+LISTENER_PROBE_SECONDS=5.0
+LISTENER_MISSES=2
+# A managed server older than this that refuses connections for UNREACHABLE_SECONDS
+# is a zombie: it is alive but its listener is gone and could not be rebuilt.
+ZOMBIE_AFTER_SECONDS=180
+UNREACHABLE_SECONDS=12
+
+
+def _dead_listener(server):
+    """True when the event loop closed a listening socket of this uvicorn server.
+
+    asyncio's Proactor loop closes the listening socket when an accept fails with
+    an unexpected OSError ("Accept failed on a socket", e.g. WinError 64) and
+    never reopens it: the process stays alive but nothing answers on its port.
+    """
+    for item in getattr(server,"servers",None) or []:
+        for sock in getattr(item,"_sockets",None) or ():
+            try:
+                if sock.fileno()==-1:return True
+            except OSError:return True
+    return False
+
+
+async def rebind_listener(server,port,host="127.0.0.1"):
+    """Open a fresh listening socket on the same port for a live uvicorn server.
+
+    Accepted connections belong to uvicorn's own connection set, not to the
+    listening socket, so turns already streaming keep running while the
+    listener is replaced. Returns False when the old protocol factory is not
+    reachable (nothing is changed in that case).
+    """
+    old=list(getattr(server,"servers",None) or [])
+    factory=next((getattr(item,"_protocol_factory",None) for item in old if getattr(item,"_protocol_factory",None)),None)
+    if factory is None:return False
+    # Close the dead server objects first: Server.close() never touches live
+    # connections, and it frees the port in case the socket is half alive.
+    for item in old:
+        try:item.close()
+        except Exception:pass
+    loop=asyncio.get_running_loop()
+    server.servers=[await loop.create_server(factory,host=host,port=port,backlog=server.config.backlog)]
+    return True
+
+
+def watch_listener(server,port,finished,interval=LISTENER_PROBE_SECONDS,misses_allowed=LISTENER_MISSES):
+    """Thread body: rebuild the listener when the port stops accepting connections."""
+    log=logging.getLogger("uvicorn.error")
+    misses=0;delay=interval
+    while not finished.wait(delay):
+        delay=interval
+        if not getattr(server,"started",False) or server.should_exit:
+            misses=0;continue
+        if listening(port) and not _dead_listener(server):
+            misses=0;continue
+        misses+=1
+        if misses<misses_allowed:continue
+        servers=getattr(server,"servers",None) or []
+        try:
+            loop=servers[0].get_loop()
+            log.warning("Port %s stopped accepting connections; reopening the listener",port)
+            ok=asyncio.run_coroutine_threadsafe(rebind_listener(server,port),loop).result(timeout=15)
+        except Exception as exc:
+            ok=False;log.error("Could not reopen the listener on port %s: %s",port,exc)
+        if ok:log.warning("Listener on port %s reopened; running turns were not interrupted",port)
+        # A failed rebuild is retried with a growing pause (max 60 s).
+        misses=0 if ok else misses_allowed-1
+        if not ok:delay=min(interval*4,60)
+
+
+def _unreachable_server(record,port):
+    """True for an owned, old server whose port refuses connections for a while."""
+    process=owned_process(record)
+    if not process:return False
+    try:
+        if time.time()-process.create_time()<ZOMBIE_AFTER_SECONDS:return False
+    except psutil.Error:return False
+    deadline=time.monotonic()+UNREACHABLE_SECONDS
+    while time.monotonic()<deadline:
+        if listening(port):return False
+        time.sleep(1)
+    return True
 
 
 def healthy(port):
@@ -337,17 +422,26 @@ def stop(expected_token="",wait_seconds=30):
         record=read_record()
         if expected_token and record.get("token")!=expected_token:
             return {"stopped":False,"reason":"not_owned_by_this_window"}
-        process=owned_process(record)
-        if not process:
+        if not _retire_server(record,wait_seconds):
             return {"stopped":False,"reason":"no_managed_server"}
-        STOP.write_text(json.dumps({"token":record["token"]}),encoding="utf-8")
-        try:process.wait(timeout=wait_seconds)
-        except psutil.TimeoutExpired:
-            process=owned_process(record)
-            if process:terminate_managed_server_tree(process,ledger_path=RUNTIME / "detached.json")
-        if read_record().get("token")==record["token"]:RECORD.unlink(missing_ok=True)
-        STOP.unlink(missing_ok=True)
         return {"stopped":True,"port":record["port"]}
+
+
+def _retire_server(record,wait_seconds=30):
+    """Ask the owned server to exit (it drains running turns), kill it on timeout.
+
+    The caller must hold the launch lock.
+    """
+    process=owned_process(record)
+    if not process:return False
+    STOP.write_text(json.dumps({"token":record["token"]}),encoding="utf-8")
+    try:process.wait(timeout=wait_seconds)
+    except psutil.TimeoutExpired:
+        process=owned_process(record)
+        if process:terminate_managed_server_tree(process,ledger_path=RUNTIME / "detached.json")
+    if read_record().get("token")==record["token"]:RECORD.unlink(missing_ok=True)
+    STOP.unlink(missing_ok=True)
+    return True
 
 
 def stop_all():
@@ -370,6 +464,11 @@ def stop_all():
 def start(port=7000,owner="web"):
     with launch_lock():
         record=read_record()
+        if owned_process(record) and record.get("port")==port and _unreachable_server(record,port):
+            # Alive but deaf (listener lost and not rebuilt by its watchdog):
+            # drain and replace it instead of leaving every window "not ready".
+            _retire_server(record,25)
+            record=read_record()
         if owned_process(record):
             if record.get("port")!=port:raise ValueError("This checkout already has a managed server on another port")
             # Another window already owns the server. Wait for it to become
@@ -433,6 +532,7 @@ def serve(port,token):
                     return
             except (OSError,ValueError):pass
     threading.Thread(target=watch,daemon=True).start()
+    threading.Thread(target=watch_listener,args=(server,port,finished),daemon=True).start()
     try:server.run()
     finally:
         finished.set()
@@ -476,7 +576,9 @@ def main():
         elif args.action=="stop":result=stop(args.token)
         elif args.action=="stop-all":result=stop_all()
         else:
-            record=read_record();result={"managed":bool(owned_process(record)),"port":record.get("port"),"owner":record.get("owner")}
+            record=read_record();managed=bool(owned_process(record))
+            result={"managed":managed,"port":record.get("port"),"owner":record.get("owner"),
+                "listening":listening(record["port"]) if managed and record.get("port") else False}
         print(json.dumps(result))
     except Exception as exc:
         print(json.dumps({"error":str(exc)}));raise SystemExit(1)
