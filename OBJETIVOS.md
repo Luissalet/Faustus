@@ -1,5 +1,18 @@
 # Objetivos acordados
 
+## Faustus: siguientes pasos tras motor de juego, idioma de búsqueda y listener —28-10-2026, #1710/#1697/#1707
+
+- Hook de diseño de dos niveles (#1695): esperar a que Vitruvius cierre #1694
+  (reglas como datos) y entonces engancharlo a los hooks de ciclo de vida existentes,
+  con activación por proyecto y excepciones con motivo.
+- Diagnosticar por qué el bucle de eventos se bloquea decenas de segundos durante
+  turnos largos (también visto en el 7000 por otro agente): el vigilante lo tolera,
+  pero la causa sigue sin aislarse.
+- Rellenar `alias_equivalents` de la nota de búsqueda vacía cuando Hoard Link
+  publique el servicio de alias (#1698) y medir cuántas búsquedas vacías evita.
+- Más habilidades de Unreal (el selector ya detecta `*.uproject`) cuando exista una
+  colección con licencia compatible; de momento no hay ninguna importada.
+
 ## HoardDex: continuar tras el cuaderno Nuzlocke —23-10-2026, #1345
 
 Main237 añade registro manual de encuentros/reglas por partida, asociado a

@@ -1,5 +1,63 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Motor de juego, idioma de búsqueda y escucha del servidor — 28-10-2026, #1710/#1697/#1707
+
+**El servidor reabre su puerto sin perder turnos (#1710).** Windows puede cerrar el
+socket de escucha tras un `WinError 64` en `IocpProactor.accept`; la prevención de
+`src/windows_asyncio.py` evita ese cierre cuando solo falla un cliente en cola, pero
+si el puerto deja de aceptar por cualquier otro motivo el proceso seguía vivo y
+rechazaba todo. `server_runtime.py` añade un vigilante: cada 5 s comprueba que el
+puerto escucha y, tras dos fallos seguidos, abre un listener nuevo en el mismo puerto
+con la misma fábrica de protocolo de uvicorn. Las conexiones ya aceptadas (turnos en
+marcha, SSE) no se tocan. Si el bucle de eventos está ocupado (turnos largos lo
+bloquean decenas de segundos) la reapertura queda en cola y se registra "The event
+loop is busy…", sin declarar fallo ni lanzar una segunda reapertura. Un lanzador que
+encuentra un servidor propio viejo rechazando conexiones 12 s lo drena y arranca el
+relevo; `status` informa de si el puerto escucha. Pruebas: `tests/
+test_server_runtime_listener.py` (reapertura, bucle ocupado, inyección de WinError 64,
+sin fábrica, reapertura fallida, zombi). En vivo: puerto cerrado a la fuerza en la app
+real, de vuelta en 1,6 s con la conexión keep-alive previa viva; y un `WinError 64`
+real en una instancia privada que se recuperó solo al liberarse el bucle.
+
+**Una búsqueda vacía por idioma ya no se repite (#1697).** Cada `plugin.json` puede
+declarar `data_language` (Silver: `["en","es"]`; sin declarar, español e inglés).
+`src/search_language.py` escucha `post_tool`: si una herramienta de búsqueda de datos
+(no web, código, ficheros ni chat) devuelve vacío con una consulta que no está en el
+idioma del dato, añade al resultado una nota breve con los idiomas del dato y, cuando
+exista el servicio de alias de Hoard Link (#1698), los nombres equivalentes. Tras la
+nota, una segunda búsqueda vacía seguida (o la misma consulta) corta el bucle: la
+herramienta se oculta el resto del turno y la nota pide responder con lo que hay. El
+turno cuenta sus búsquedas vacías (`empty_searches`, estadística de observaciones) y
+emite `harness_check` con `status:"empty_search"`, `empty_searches` y `cut_tools`.
+Nunca bloquea una llamada ni lanza excepciones hacia el bucle del agente. 37 pruebas
+en `tests/test_search_language.py`. En vivo (Silver privado, modelo real): "Terremoto
+Supremo" devolvió vacío, el modelo recibió la nota y reintentó en inglés
+(Earthquake/Magnitude) con potencia 100; el corte se prueba en las pruebas unitarias.
+
+**Habilidades de motor de juego, ordenadas por el motor del espacio de trabajo
+(#1707).** `scripts/import_github_skills.py` importa habilidades de un repositorio
+público en una revisión fijada (40 hex, nunca una rama) con el mismo descargador e
+instalador del panel (guardia SSRF, límites de tamaño), copia la licencia y el aviso
+al lado de cada habilidad y es idempotente; `GITHUB_TOKEN`/`GH_TOKEN` solo se envían
+a api.github.com. Se importaron 27 habilidades publicadas (16 Godot, 8 Unity y
+camera-systems, shader-programming, game-feel; Apache-2.0, categoría gamedev) con
+etiquetas `unity|godot|unreal`. `src/skills_runtime/engine_context.py` detecta el
+motor del workspace por carpetas y ficheros (Assets+ProjectSettings, `project.godot`,
+`*.uproject`) y el selector multiplica por 1,5 las del motor detectado y por 0,25 las
+de otro motor; sin proyecto de juego el orden no cambia. `explain` y
+`/api/skills/selector` aceptan `workspace` y devuelven `engines`. 16 pruebas en
+`tests/test_engine_skills.py`. En vivo: en un proyecto Unity (Blood Arrows) suben las
+de Unity y bajan las de Godot, y al revés en un proyecto Godot.
+
+**Fuera de Faustus (#1708):** el repositorio de Blood Arrows recibe
+`docs/art/art-direction-brief.md`, `docs/art/asset-manifest.json` (26 recursos, 23
+bloqueos visuales, paleta de DESIGN.md), plantillas de prompt y
+`Tools/Art/art_manifest.py` (check/list/prompt). No toca escenas ni recursos.
+
+**Pendiente de otros:** el hook de diseño de dos niveles (#1695) espera a que
+Vitruvius cierre #1694 (reglas como datos); el bloqueo del bucle de eventos durante
+turnos largos se sigue en una tarea propia.
+
 ## Sesión real del navegador — tareas 1671 y 1717
 
 Backend MCP propio y extensión instalable para leer pestañas existentes y
