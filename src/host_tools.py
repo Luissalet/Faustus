@@ -90,12 +90,15 @@ def _app_process_running() -> bool:
         return False
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).lower()
     desktop = os.path.join(root, "desktop").lower()
-    for proc in psutil.process_iter(["name", "exe", "cmdline"]):
+    # Process command lines are expensive on Windows. Inspect only names
+    # first, then read details for possible desktop-app processes.
+    for proc in psutil.process_iter(["name"]):
         try:
             name = str(proc.info.get("name") or "").lower()
             if not name.startswith(("electron", "faustus")):
                 continue
-            line = " ".join(proc.info.get("cmdline") or []).lower() + " " + str(proc.info.get("exe") or "").lower()
+            details = proc.as_dict(attrs=["cmdline", "exe"])
+            line = " ".join(details.get("cmdline") or []).lower() + " " + str(details.get("exe") or "").lower()
             if desktop in line or root in line:
                 return True
         except Exception:  # noqa: BLE001 - a process that went away
@@ -112,7 +115,8 @@ def desktop_app_running() -> bool:
     if now - _app_cache[0] < _APP_CHECK_TTL_S:
         return bool(_app_cache[1])
     ready = _heartbeat_fresh(now) or _app_process_running()
-    _app_cache[0], _app_cache[1] = now, ready
+    # Keep the result fresh for the full TTL even if the probe was slow.
+    _app_cache[0], _app_cache[1] = time.time(), ready
     return ready
 
 
