@@ -2,7 +2,7 @@
 
 The native read_artifact tool can select complete JSON values without paging through character offsets. Existing range and substring reads retain their behavior and use the same owner-scoped artifact lookup.
 
-Use json_pointer (RFC 6901) to select a value. An empty pointer selects the root. Escape / as ~1 and ~ as ~0. Array indices are zero based. A missing selected path or malformed JSON produces an explicit tool error.
+Use json_pointer (RFC 6901) to select a value. An empty pointer selects the root. Escape / as ~1 and ~ as ~0. Array indices are zero based. A missing selected path or malformed JSON produces an explicit tool error. Non-finite constants and numeric overflow also return explicit errors; the reader never replaces an unrepresentable exponent with infinity. This validation applies only to JSON selection.
 
 For an offloaded tool result whose stdout contains a JSON string, set json_source to /stdout first. That field is decoded once, then json_pointer applies inside it. Object-valued sources are selected directly; there is no implicit recursive decoding.
 

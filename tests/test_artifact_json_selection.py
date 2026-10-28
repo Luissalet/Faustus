@@ -100,6 +100,18 @@ class JsonArtifactSelectionTests(unittest.TestCase):
         for key, value in (('query', 'needle'), ('start', 0), ('end', 20)):
             self.assertEqual(self.read([], {'json_pointer': '', key: value})['exit_code'], 1)
 
+    def test_nonfinite_values_and_numeric_overflow_are_explicit_errors(self):
+        for value in (float('nan'), float('inf'), float('-inf')):
+            with self.subTest(value=value):
+                self.assertEqual(self.read(value, {'json_pointer': ''})['exit_code'], 1)
+                self.assertEqual(self.read([1], {'json_pointer': '', 'match_pointer': '',
+                                                'match_value': value})['exit_code'], 1)
+        for text in ('NaN', 'Infinity', '-Infinity', '1e400', '-1e400'):
+            with self.subTest(embedded=text):
+                result = self.read({'stdout': text}, {
+                    'json_source': '/stdout', 'json_pointer': ''})
+                self.assertEqual(result['exit_code'], 1)
+
     def test_legacy_reader_result_is_not_wrapped(self):
         result = self.read({'x': 4}, {'query': 'x'})
         self.assertEqual(result, {'text': '{"x": 4}', 'total_chars': 99})

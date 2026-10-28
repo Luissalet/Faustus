@@ -16,6 +16,7 @@ for a term and get back ranked hits with the offset to open next.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any, Dict, Optional
 
@@ -72,16 +73,31 @@ def _resolve_pointer(value: Any, tokens: list[str]) -> Any:
     return value
 
 
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError('JSON number is outside the supported finite range')
+    return value
+
+
+def _reject_constant(text: str) -> Any:
+    raise ValueError('Non-finite constant is not a JSON number: ' + text)
+
+
+def _load_json(text: str) -> Any:
+    return json.loads(text, parse_float=_finite_float, parse_constant=_reject_constant)
+
+
 def _json_selection(text: str, args: dict, artifact_id: str) -> dict:
     if 'json_pointer' not in args:
         raise ValueError('json_pointer is required for JSON selection')
     if any(key in args for key in ('start', 'end', 'query')):
         raise ValueError('JSON selection cannot be combined with start, end or query')
-    value = json.loads(text)
+    value = _load_json(text)
     source = args.get('json_source', '')
     value = _resolve_pointer(value, _pointer_tokens(source))
     if 'json_source' in args and isinstance(value, str):
-        value = json.loads(value)
+        value = _load_json(value)
     value = _resolve_pointer(value, _pointer_tokens(args['json_pointer']))
     total_items = len(value) if isinstance(value, list) else None
     if ('match_pointer' in args) != ('match_value' in args):
@@ -92,6 +108,8 @@ def _json_selection(text: str, args: dict, artifact_id: str) -> dict:
         expected = args['match_value']
         if expected is not None and not isinstance(expected, (str, int, float, bool)):
             raise ValueError('match_value must be a JSON scalar')
+        if isinstance(expected, float) and not math.isfinite(expected):
+            raise ValueError('match_value must be finite')
         tokens = _pointer_tokens(args['match_pointer'])
         matches = []
         for item in value:
@@ -108,7 +126,7 @@ def _json_selection(text: str, args: dict, artifact_id: str) -> dict:
                'total_items': total_items,
                'matched_items': len(value) if isinstance(value, list) else None,
                'total_chars': len(text)}
-    return {'output': json.dumps(payload, ensure_ascii=False), 'exit_code': 0,
+    return {'output': json.dumps(payload, ensure_ascii=False, allow_nan=False), 'exit_code': 0,
             'artifact_id': artifact_id}
 
 
