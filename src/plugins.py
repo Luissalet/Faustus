@@ -76,8 +76,12 @@ APP_MANIFEST_NAME = "faustus-plugin.json"
 #: ignored into silence.
 TOP_LEVEL_KEYS = {
     "schema", "id", "name", "purpose", "capabilities",
-    "app", "mcp", "placeholders", "defaults", "provides", "notes",
+    "app", "mcp", "placeholders", "defaults", "provides", "notes", "data_language",
 }
+#: Languages the plugin's data (names, titles, descriptions) is written in,
+#: most representative first. An empty search whose query is in another one
+#: gets a hint (src/search_language.py). Undeclared means Spanish and English.
+DEFAULT_DATA_LANGUAGE = ("es", "en")
 APP_KEYS = {"url_default", "ui_url", "health", "identify", "launch_hint"}
 MCP_KEYS = {"transport", "command", "args", "env", "optional_env"}
 HEALTH_KEYS = {"path", "expect"}
@@ -118,6 +122,7 @@ class Plugin:
     # -- everything else it contributes -------------------------------------
     provides: Dict[str, Any] = field(default_factory=dict)
     notes: str = ""
+    data_language: List[str] = field(default_factory=lambda: list(DEFAULT_DATA_LANGUAGE))
     # -- provenance ---------------------------------------------------------
     source: str = "builtin"          # "builtin" | "user"
     path: str = ""                   # the manifest file this came from
@@ -190,6 +195,25 @@ def _as_str_map(value: Any, where: str) -> Dict[str, str]:
 
 
 _PERCENT_VAR_RE = re.compile(r"%([A-Za-z_][A-Za-z0-9_]*)%")
+
+
+def _as_data_language(value: Any) -> List[str]:
+    """`"es, en"` or `["es", "en"]` -> `["es", "en"]`; absent -> the default."""
+    if value is None or value == "" or value == []:
+        return list(DEFAULT_DATA_LANGUAGE)
+    items = value.replace(";", ",").split(",") if isinstance(value, str) else value
+    if not isinstance(items, list) or not all(isinstance(v, str) for v in items):
+        raise ManifestError("'data_language' must be a string like \"es, en\" or a list of codes")
+    codes: List[str] = []
+    for item in items:
+        code = item.strip().lower().replace("_", "-").split("-")[0]
+        if not code:
+            continue
+        if not (2 <= len(code) <= 3 and code.isalpha()):
+            raise ManifestError(f"'data_language' has an invalid language code: {item!r}")
+        if code not in codes:
+            codes.append(code)
+    return codes or list(DEFAULT_DATA_LANGUAGE)
 
 
 def _expand_default(value: str) -> str:
@@ -349,6 +373,7 @@ def parse_manifest(data: Any, *, source: str = "builtin", path: str = "") -> Plu
         optional_env=optional_env,
         provides=dict(provides),
         notes=notes,
+        data_language=_as_data_language(data.get("data_language")),
         source=source,
         path=path,
     )

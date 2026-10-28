@@ -8887,6 +8887,9 @@ async def _stream_agent_loop_body(
             isinstance(m, dict) and m.get("role") == "assistant" for m in messages
         )
         _hook_events = ["turn_start"] if _has_assistant_reply else ["session_start", "turn_start"]
+        # Empty-search language hint and counter (idempotent registration; see src/search_language.py).
+        from src import search_language as _search_language_boot
+        _search_language_boot.install()
         _hook_results = []
         for _hev in _hook_events:
             _hook_results.extend(await _hooks.run_async(_hev, _hooks_ctx))
@@ -18234,6 +18237,18 @@ async def _stream_agent_loop_body(
                         "type": "harness_check", "status": "hooks", "event": "post_tool", "round": round_num,
                         "hooks": [{"id": r.hook_id, "name": r.name, "ok": r.ok, "duration_ms": r.duration_ms}
                                   for r in _post_hook_results],
+                    }) + "\n\n"
+                # Empty searches caused by the query language (src/search_language.py):
+                # the count shows in the activity; a loop that stayed empty after
+                # the hint hides its search tool for the rest of the turn.
+                from src import search_language as _search_language
+                _empty_n = _search_language.take_empty_event(session_id)
+                if _empty_n:
+                    _cut_search = _search_language.take_cut_tools(session_id)
+                    disabled_tools.update(set(_cut_search) - set(disabled_tools))
+                    yield "data: " + json.dumps({
+                        "type": "harness_check", "status": "empty_search", "round": round_num,
+                        "empty_searches": _empty_n, "cut_tools": sorted(_cut_search),
                     }) + "\n\n"
             except Exception:
                 logger.debug("[lifecycle_hooks] post_tool run failed", exc_info=True)

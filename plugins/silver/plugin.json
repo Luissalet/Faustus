@@ -43,6 +43,7 @@
     "pokeball-animation",
     "optional-silver-special"
   ],
+  "data_language": ["en", "es"],
   "x-family": {
     "copilot": true
   },

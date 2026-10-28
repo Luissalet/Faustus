@@ -103,6 +103,12 @@ def _bump(key: str, by: int = 1) -> None:
         _STATS[key] = _STATS.get(key, 0) + by
 
 
+def count_stat(key: str, by: int = 1) -> None:
+    """Count an event of the activity that is not a queue outcome (for example
+    ``empty_searches``, from src/search_language.py)."""
+    _bump(key, by)
+
+
 def queue_limit() -> int:
     return _int_setting("agent_observations_queue_max", 100, 10, 1000)
 

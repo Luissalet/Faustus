@@ -149,6 +149,7 @@ async def survey(*, owner: Optional[str] = None, check: bool = False) -> List[Di
             "purpose": plugin.purpose,
             "capabilities": list(plugin.capabilities),
             "notes": plugin.notes,
+            "data_language": list(plugin.data_language),
             "source": plugin.source,
             "connected": connector is not None,
             "connector_id": (connector or {}).get("id"),
