@@ -6229,6 +6229,13 @@ def _build_system_prompt(
                     )
                 except Exception:
                     logger.debug("[skills] outcome recording failed", exc_info=True)
+                # A Unity/Godot/Unreal project in the workspace makes the
+                # selector prefer skills tagged for that engine.
+                try:
+                    from src.skills_runtime.engine_context import detect_engines as _detect_engines
+                    _skill_engines = _detect_engines(workspace)
+                except Exception:
+                    _skill_engines = []
                 relevant_skills = _skill_selector.select(
                     sm, owner, last_user,
                     skills=sm.load(owner=owner),
@@ -6236,6 +6243,7 @@ def _build_system_prompt(
                     threshold=None,
                     max_items=_skill_max_injected,
                     min_confidence=_skill_min_conf,
+                    engines=_skill_engines,
                 ) if _skill_max_injected > 0 else []
                 lines = [""]
                 level1 = None

@@ -38,6 +38,9 @@ def _error(status: int, message: str) -> JSONResponse:
 class SelectorExplainRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=4000)
     max_items: int = Field(20, ge=1, le=100)
+    # Optional project folder: rank as if a turn ran in this workspace, so
+    # engine skills (tagged unity/godot/unreal) follow its engine.
+    workspace: Optional[str] = Field(None, max_length=1024)
 
 
 class SelectorSettingsRequest(BaseModel):
@@ -74,8 +77,15 @@ def setup_skill_selector_routes() -> APIRouter:
         query = body.query.strip()
         if not query:
             return _error(400, "query is required")
-        candidates = skill_selector.explain(query, owner=owner, max_items=body.max_items)
-        return {"query": query, "candidates": candidates, "count": len(candidates)}
+        workspace = (body.workspace or "").strip() or None
+        engines = None
+        if workspace:
+            from src.skills_runtime.engine_context import detect_engines
+            engines = detect_engines(workspace)
+        candidates = skill_selector.explain(query, owner=owner, max_items=body.max_items,
+                                            engines=engines)
+        return {"query": query, "candidates": candidates, "count": len(candidates),
+                "engines": engines or []}
 
     @router.get("")
     async def get_selector_settings(request: Request) -> Dict[str, Any]:

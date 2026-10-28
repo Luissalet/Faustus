@@ -383,8 +383,10 @@ def record_outcome_from_reaction(owner: Optional[str], skill_ids: Sequence[str],
 
 def _select_hybrid(sm, owner: Optional[str], query: str, skills: List[Dict],
                    threshold: Optional[float], max_items: int,
-                   min_confidence: float) -> List[Dict]:
+                   min_confidence: float,
+                   engines: Optional[Sequence[str]] = None) -> List[Dict]:
     from services.memory.skills import _tokenize
+    from src.skills_runtime.engine_context import engine_factor
 
     weights = _get_weights()
     thr = threshold if threshold is not None else _get_threshold()
@@ -432,13 +434,20 @@ def _select_hybrid(sm, owner: Optional[str], query: str, skills: List[Dict],
                 + eff_weights["trigger"] * trig)
         usage_entry = sm._usage_entry(usage, sk.get("name", ""), sk.get("owner") or owner)
         prior = _outcome_prior(usage_entry)
-        score = base * prior
+        # Engine context: with a Unity/Godot/Unreal project in the workspace,
+        # skills tagged for that engine rank up and other engines' skills
+        # rank down. Engine-neutral skills and workspaces with no engine
+        # project are untouched (factor 1.0).
+        engine = engine_factor(sk, engines)
+        score = base * prior * engine
         if score >= thr:
             out = dict(sk)
             out["_selector"] = {
                 "semantic": sem, "lexical": lex, "trigger": trig,
                 "prior": prior, "score": score,
             }
+            if engine != 1.0:
+                out["_selector"]["engine"] = engine
             scored.append((score, out))
 
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -454,6 +463,7 @@ def select(
     threshold: Optional[float] = None,
     max_items: int = 5,
     min_confidence: float = 0.0,
+    engines: Optional[Sequence[str]] = None,
 ) -> List[Dict]:
     """Drop-in replacement for `SkillsManager.get_relevant_skills(query,
     skills, threshold, max_items, min_confidence)` returning the same
@@ -486,10 +496,13 @@ def select(
             query, skills=skills, threshold=thr,
             max_items=max_items, min_confidence=min_confidence,
         )
-    return _select_hybrid(sm, owner, query, skills, threshold, max_items, min_confidence)
+    return _select_hybrid(sm, owner, query, skills, threshold, max_items, min_confidence,
+                          engines=engines)
 
 
-def explain(query: str, owner: Optional[str] = None, *, max_items: int = 20) -> List[Dict]:
+def explain(query: str, owner: Optional[str] = None, *, max_items: int = 20,
+            workspace: Optional[str] = None,
+            engines: Optional[Sequence[str]] = None) -> List[Dict]:
     """Module-level entry point for `routes/skill_selector_routes.py`: rank
     every skill visible to `owner` against `query` with the full hybrid
     pipeline (ignoring `skill_selector_mode` — this is a diagnostics view,
@@ -500,4 +513,7 @@ def explain(query: str, owner: Optional[str] = None, *, max_items: int = 20) -> 
 
     sm = SkillsManager(DATA_DIR)
     skills = sm.load(owner=owner)
-    return _select_hybrid(sm, owner, query, skills, 0.0, max_items, 0.0)
+    if engines is None and workspace:
+        from src.skills_runtime.engine_context import detect_engines
+        engines = detect_engines(workspace)
+    return _select_hybrid(sm, owner, query, skills, 0.0, max_items, 0.0, engines=engines)

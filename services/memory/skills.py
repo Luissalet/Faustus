@@ -447,8 +447,16 @@ class SkillsManager:
         owner: Optional[str] = None,
         source_url: str = "",
         category: str = "imported",
+        tags: Optional[List[str]] = None,
+        status: Optional[str] = None,
     ) -> Dict:
-        """Install a fetched skill bundle (relative path → text) under skills/."""
+        """Install a fetched skill bundle (relative path → text) under skills/.
+
+        `tags` are merged into the skill's own tags (the selector matches on
+        them), so an importer can mark a bundle with e.g. its game engine.
+        `status` ("published"/"draft") overrides the default draft state; a
+        draft below the injection confidence bar is never offered to the
+        model, so a reviewed, pinned import is published explicitly."""
         from .skill_importer import SkillImportError, pick_skill_md, _safe_relpath
         from core.atomic_io import atomic_write_text
 
@@ -480,6 +488,15 @@ class SkillsManager:
         sk.category = cat
         sk.owner = owner
         sk.source = "imported"
+        if status in ("published", "draft"):
+            sk.status = status
+        if tags:
+            merged = list(sk.tags or [])
+            for t in tags:
+                t = str(t).strip().lower()
+                if t and t not in merged:
+                    merged.append(t)
+            sk.tags = merged
         if source_url:
             extra = (sk.body_extra or "").strip()
             note = f"Imported from {source_url}"

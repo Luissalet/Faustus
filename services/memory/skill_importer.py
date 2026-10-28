@@ -401,7 +401,14 @@ def _list_github_dir(src: ResolvedSource, rel_dir: str, out: Dict[str, str], *, 
     if depth > 4 or len(out) >= MAX_FILES:
         return
     url = _api_contents_url(src, rel_dir)
-    r = _get_checked(url, headers={"Accept": "application/vnd.github+json"}, timeout=30.0)
+    headers = {"Accept": "application/vnd.github+json"}
+    # Anonymous API calls are capped at 60 an hour per address, which a
+    # multi-skill import exhausts. A token in the environment lifts the cap;
+    # it is sent only to the API host this request targets, never logged.
+    token = (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "").strip()
+    if token and (urlparse(url).hostname or "") == "api.github.com":
+        headers["Authorization"] = f"Bearer {token}"
+    r = _get_checked(url, headers=headers, timeout=30.0)
     if r.status_code >= 400:
         raise _github_response_error(r)
     _assert_github_url(str(r.url), context="redirect target")
