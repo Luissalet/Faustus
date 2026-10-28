@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, RotateCcw, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, Check, FlaskConical, RotateCcw, ShieldCheck, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState, Skeleton } from '../../components';
 import {
@@ -9,6 +9,8 @@ import {
   listHarnessProposals,
   proposeForSession,
   rejectHarnessProposal,
+  setHarnessMode,
+  startProbe,
   undoHarnessProposal,
   type HarnessAxis,
   type HarnessLogEntry,
@@ -16,14 +18,17 @@ import {
   type HarnessStatusInfo,
 } from '../../adapters/harness_proposals';
 import { t, tn } from '../../i18n';
+import { LessonsCard, ProbesCard } from './harness_probes';
 import '../settings.css';
 
 /**
  * Harness refinement (`src/harness_refinement`). After a task the assistant
  * may suggest the smallest edit to its own harness state: the project
  * instructions, one skill, one memory entry or one subagent spec. The base
- * system prompt is never a target. Nothing applies until a person approves,
- * and an applied edit can be undone, restoring the exact previous content.
+ * system prompt is never a target. With the probe on, each candidate is tried
+ * on a repeat of the task and the winner is applied by itself; with auto-apply
+ * off it waits for approval. An applied edit can always be undone, restoring
+ * the exact previous content.
  */
 
 function axisLabel(axis: HarnessAxis): string {
@@ -81,6 +86,23 @@ function ProposalCard({ p, busy, onApprove, onReject, onUndo }: { p: HarnessProp
         <span className="fs-hp__status" data-status={p.status}>{isUndo ? t('Undo') : statusLabel(p.status)}</span>
       </div>
       {p.rationale && <p className="fs-hp__why">{p.rationale}</p>}
+      {p.probe_id && (
+        <p className="fs-set__help" data-testid={`harness-probe-note-${p.id}`}>
+          <FlaskConical size={12} aria-hidden="true" />{' '}
+          {p.probe_result === 'discarded' ? t('Discarded after trying it') : p.applied_by === 'harness-probe' ? t('Applied by itself after trying it') : t('Won when tried; waiting for you')}
+          {p.probe_reason ? ` · ${p.probe_reason}` : ''}
+        </p>
+      )}
+      {p.probe_evidence && p.probe_evidence.length > 0 && (
+        <details className="fs-hp__evidence">
+          <summary>{tn(p.probe_evidence.length, '{n} cited moment', '{n} cited moments')}</summary>
+          <ul>
+            {p.probe_evidence.map((e, i) => (
+              <li key={i}><code>{`${e.run} · ${t('step {n}', { n: e.step })}`}</code> {e.quote ? <q>{e.quote}</q> : null}</li>
+            ))}
+          </ul>
+        </details>
+      )}
       {p.stale && p.status === 'pending' && (
         <p className="fs-set__help" data-tone="warn" data-testid="harness-stale">
           <AlertTriangle size={12} aria-hidden="true" /> {t('The target changed since this was proposed. Approving is refused until you propose again.')}
@@ -129,6 +151,7 @@ export function HarnessProposalsPanel({ say }: { say: (msg: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
   const [sessionId, setSessionId] = useState('');
+  const [probeTick, setProbeTick] = useState(0);
 
   const reload = useCallback(async () => {
     try {
@@ -166,6 +189,19 @@ export function HarnessProposalsPanel({ say }: { say: (msg: string) => void }) {
       else say(`${t('Nothing to propose')}${out.reason ? `: ${out.reason}` : ''}`);
     });
 
+  const probeNow = () =>
+    run('probe', async () => {
+      const out = await startProbe(sessionId.trim(), true);
+      say(t('The round started. It repeats the task in the background; the result appears below.'));
+      setProbeTick((n) => n + 1);
+      return out;
+    });
+
+  const setMode = (patch: Parameters<typeof setHarnessMode>[0]) =>
+    run('mode', async () => {
+      await setHarnessMode(patch);
+    });
+
   if (error && !items) {
     return <EmptyState icon={ShieldCheck} title={t('Harness proposals could not be loaded')} body={error} primaryAction={{ label: t('Retry'), onClick: () => void reload() }} />;
   }
@@ -177,7 +213,7 @@ export function HarnessProposalsPanel({ say }: { say: (msg: string) => void }) {
     <div className="fs-set__section" data-testid="skills-harness">
       <header className="fs-set__section-head">
         <p className="fs-prose">
-          {t('After a task, the assistant can suggest the smallest change to its own working state: project instructions, a skill, a memory or a subagent spec. The base system prompt is never touched. Nothing applies until you approve it, and every applied change can be undone.')}
+          {t('After a task, the assistant can suggest the smallest change to its own working state: project instructions, a skill, a memory or a subagent spec. The base system prompt is never touched. A change is first tried on a repeat of the task; the one that wins is applied by itself, or waits for you if you turn that off. Every applied change can be undone.')}
         </p>
       </header>
 
@@ -188,12 +224,30 @@ export function HarnessProposalsPanel({ say }: { say: (msg: string) => void }) {
             {' · '}
             {Object.entries(info.counts).map(([k, v]) => `${statusLabel(k)}: ${v}`).join(' · ')}
           </p>
+          <div className="fs-hp__modes">
+            <label className="fs-set__check">
+              <input type="checkbox" checked={info.enabled} disabled={busy === 'mode'} onChange={(e) => void setMode({ harness_refinement_enabled: e.target.checked })} data-testid="harness-toggle-enabled" />
+              {t('Propose after each task')}
+            </label>
+            <label className="fs-set__check">
+              <input type="checkbox" checked={info.probe} disabled={busy === 'mode'} onChange={(e) => void setMode({ harness_refinement_probe: e.target.checked })} data-testid="harness-toggle-probe" />
+              {t('Try each change on a repeat of the task first')}
+            </label>
+            <label className="fs-set__check">
+              <input type="checkbox" checked={info.auto_apply} disabled={busy === 'mode' || !info.probe} onChange={(e) => void setMode({ harness_refinement_auto_apply: e.target.checked })} data-testid="harness-toggle-auto" />
+              {t('Apply the winner by itself')}
+            </label>
+          </div>
+          {!info.auto_apply && info.probe && <p className="fs-set__help">{t('The winner will wait for your approval.')}</p>}
           <div className="fs-set__form fs-hp__run">
             <input className="fs-field" placeholder={t('Session id')} aria-label={t('Session id')} value={sessionId} onChange={(e) => setSessionId(e.target.value)} data-testid="harness-session" />
             <Button variant="secondary" size="sm" label={t('Review this session')} loading={busy === 'propose'} disabled={!sessionId.trim()} onClick={() => void propose()} testId="harness-propose" />
+            <Button variant="primary" size="sm" icon={FlaskConical} label={t('Try and improve')} loading={busy === 'probe'} disabled={!sessionId.trim()} onClick={() => void probeNow()} testId="harness-probe-start" />
           </div>
         </div>
       )}
+
+      <ProbesCard refreshKey={probeTick} />
 
       <div className="fs-set__card">
         <h3 className="fs-set__card-title">{t('Waiting for your approval')}</h3>
@@ -222,6 +276,8 @@ export function HarnessProposalsPanel({ say }: { say: (msg: string) => void }) {
           </ul>
         )}
       </div>
+
+      <LessonsCard refreshKey={probeTick} />
 
       {log.length > 0 && (
         <details className="fs-set__card" data-testid="harness-log">

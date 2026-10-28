@@ -33,6 +33,7 @@ import { GraphView } from './brain/GraphView';
 import { QuickSwitcher } from './brain/QuickSwitcher';
 import { SettingsDrawer } from './brain/SettingsDrawer';
 import { TrashPanel } from './brain/TrashPanel';
+import { AskPanel } from './brain/AskPanel';
 import { SyncBar } from './brain/SyncBar';
 import { t } from '../i18n';
 import './projects.css';
@@ -75,6 +76,7 @@ export function BrainScreen() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
   const [saveToken, setSaveToken] = useState(0);
   const [focusToken, setFocusToken] = useState(0);
@@ -206,6 +208,7 @@ export function BrainScreen() {
       <SyncBar
         status={status}
         syncing={syncing}
+        onAsk={() => setAskOpen(true)}
         onSync={() => {
           setSyncing(true);
           void runSync()
@@ -334,6 +337,7 @@ export function BrainScreen() {
           />
         )}
         {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
+        {askOpen && <AskPanel onClose={() => setAskOpen(false)} />}
         {trashOpen && (
           <TrashPanel
             onClose={() => setTrashOpen(false)}
@@ -426,6 +430,7 @@ export function BrainScreen() {
         onEscape={() => {
           if (switcherOpen) setSwitcherOpen(false);
           else if (settingsOpen) setSettingsOpen(false);
+          else if (askOpen) setAskOpen(false);
           else if (trashOpen) setTrashOpen(false);
         }}
       />

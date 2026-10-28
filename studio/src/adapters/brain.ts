@@ -127,6 +127,86 @@ export async function runSync(): Promise<SyncReport> {
   return syncReportFrom(await send(`${BASE}/sync`, 'POST'));
 }
 
+/* ── Questions over the graph (graph_ask) ────────────────────────────── */
+
+export interface AskPlanStep {
+  n: number;
+  op: 'retrieval' | 'math' | 'deduce' | 'output';
+  question: string;
+  level: number;
+  s?: string;
+  p?: string;
+  o?: string;
+  content?: string[];
+  target?: string;
+  alias?: string;
+  outputs?: string[];
+  needs: string[];
+  defines: string[];
+}
+
+export interface AskTriple {
+  s: string;
+  p: string;
+  o: string;
+  score: number;
+  evidence: string[];
+}
+
+export interface AskFragment {
+  ref: string;
+  score: number;
+  graph?: number;
+  text_score?: number;
+  entities: string[];
+  text: string;
+}
+
+export interface AskStep {
+  n: number;
+  op: string;
+  question: string;
+  rewritten?: string;
+  level: number;
+  values: string[];
+  via?: 'graph' | 'text' | 'arithmetic' | 'model' | 'none';
+  triples?: AskTriple[];
+  fragments?: AskFragment[];
+  near?: { s: string; p: string; o: string }[];
+  error?: string;
+  ms?: number;
+}
+
+export interface AskResult {
+  question: string;
+  status: 'ok' | 'degraded' | 'no_model' | 'empty' | 'error';
+  answer: string;
+  values: string[];
+  found?: boolean;
+  plan: AskPlanStep[];
+  steps: AskStep[];
+  levels: number[][];
+  sources: string[];
+  fragments?: AskFragment[];
+  model_calls: number;
+  ms: number;
+  error?: string;
+  graph?: { entities: number; relations: number; fragments: number };
+  planner?: { attempts: number; errors: string[] };
+}
+
+/** Plans a question over the owner's graph and its source texts and answers it (the graph is not written). */
+export async function askGraph(question: string, opts: { planOnly?: boolean } = {}): Promise<AskResult> {
+  const raw = (await send(`${BASE}/ask`, 'POST', { question, plan_only: Boolean(opts.planOnly) })) as Partial<AskResult>;
+  return {
+    question: str(raw.question), status: (raw.status ?? 'error') as AskResult['status'], answer: str(raw.answer),
+    values: strArray(raw.values), found: raw.found, plan: Array.isArray(raw.plan) ? raw.plan : [],
+    steps: Array.isArray(raw.steps) ? raw.steps : [], levels: Array.isArray(raw.levels) ? raw.levels : [],
+    sources: strArray(raw.sources), fragments: raw.fragments, model_calls: num(raw.model_calls), ms: num(raw.ms),
+    error: raw.error, graph: raw.graph, planner: raw.planner,
+  };
+}
+
 /* ── Tree ────────────────────────────────────────────────────────────── */
 
 export interface NoteSummary {

@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, MessageCircleQuestion, RefreshCw } from 'lucide-react';
 import { Button } from '../../components';
 import type { BrainStatus } from '../../adapters/brain';
 import { relativeTime } from '../../adapters/home';
@@ -8,7 +8,7 @@ import { t, tn } from '../../i18n';
  *  file edits first, then exports the store to files, then reindexes; this
  *  bar shows what the last run did and lets a person ask for another one
  *  without waiting for `brain_vault_sync_seconds` to come around. */
-export function SyncBar({ status, syncing, onSync }: { status: BrainStatus | null; syncing: boolean; onSync: () => void }) {
+export function SyncBar({ status, syncing, onSync, onAsk }: { status: BrainStatus | null; syncing: boolean; onSync: () => void; onAsk?: () => void }) {
   const report = status?.lastSync ?? null;
   return (
     <div className="fs-brain__syncbar" data-testid="brain-syncbar">
@@ -30,7 +30,10 @@ export function SyncBar({ status, syncing, onSync }: { status: BrainStatus | nul
           t('Never synced yet')
         )}
       </span>
-      <Button variant="ghost" size="sm" icon={RefreshCw} label={syncing ? t('Syncing…') : t('Sync now')} loading={syncing} onClick={onSync} testId="brain-sync-now" />
+      <span className="fs-brain__syncbar-actions">
+        {onAsk && <Button variant="ghost" size="sm" icon={MessageCircleQuestion} label={t('Ask the graph')} onClick={onAsk} testId="brain-ask-open" />}
+        <Button variant="ghost" size="sm" icon={RefreshCw} label={syncing ? t('Syncing…') : t('Sync now')} loading={syncing} onClick={onSync} testId="brain-sync-now" />
+      </span>
     </div>
   );
 }

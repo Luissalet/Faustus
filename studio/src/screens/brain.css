@@ -853,6 +853,19 @@
   border-radius: var(--fs-radius-control);
 }
 
+/* ── Ask the graph ── */
+
+.fs-brain__syncbar-actions { display: inline-flex; align-items: center; gap: var(--fs-space-2); }
+.fs-brain__drawer--wide { inline-size: min(640px, 96vw); }
+.fs-brain__ask-actions { display: flex; flex-wrap: wrap; gap: var(--fs-space-2); }
+.fs-brain__ask-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--fs-space-2); }
+.fs-brain__ask-step { display: grid; gap: var(--fs-space-1); padding: var(--fs-space-2) var(--fs-space-3); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); }
+.fs-brain__ask-step p { margin: 0; }
+.fs-brain__ask-step[data-via='none'] { border-color: var(--fs-warning); }
+.fs-brain__ask-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
+.fs-brain__ask-plan { font-family: var(--fs-font-code); font-size: 0.78rem; color: var(--fs-text-2); overflow-wrap: anywhere; }
+.fs-brain__ask-evidence { margin: var(--fs-space-2) 0 0; padding-inline-start: var(--fs-space-4); display: grid; gap: var(--fs-space-1); font-size: 0.85rem; }
+
 /* ── Mobile ── */
 
 @media (max-width: 767px) {

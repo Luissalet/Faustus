@@ -892,3 +892,13 @@
 .fs-hp__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--fs-space-2); }
 .fs-hp__run { display: flex; flex-wrap: wrap; gap: var(--fs-space-2); align-items: center; }
 .fs-hp__run .fs-field { flex: 1 1 16rem; }
+/* Harness probes and lessons */
+.fs-hp__modes { display: grid; gap: var(--fs-space-2); margin-block: var(--fs-space-2); }
+.fs-hp__cands, .fs-hp__cites { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--fs-space-1); font-size: 0.85rem; }
+.fs-hp__cand { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
+.fs-hp__cand .fs-hp__status { margin-inline-start: 0; }
+.fs-hp__detail { display: grid; gap: var(--fs-space-2); border-top: 1px solid var(--fs-border); padding-top: var(--fs-space-2); }
+.fs-hp__runs { inline-size: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.fs-hp__runs th, .fs-hp__runs td { text-align: start; padding: var(--fs-space-1) var(--fs-space-2); border-bottom: 1px solid var(--fs-border); overflow-wrap: anywhere; }
+.fs-hp__runs th { overflow-wrap: normal; white-space: nowrap; }
+.fs-hp__verdict { font-size: 0.85rem; display: grid; gap: var(--fs-space-1); }

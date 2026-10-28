@@ -325,6 +325,7 @@ Admission: {fits}	Admisión: {fits}
 Advance	Avanzar
 Advanced	Avanzado
 After	Después
+After a task, the assistant can suggest the smallest change to its own working state: project instructions, a skill, a memory or a subagent spec. The base system prompt is never touched. A change is first tried on a repeat of the task; the one that wins is applied by itself, or waits for you if you turn that off. Every applied change can be undone.	Tras una tarea, el asistente puede proponer el cambio más pequeño en su propio estado de trabajo: instrucciones del proyecto, una habilidad, una memoria o una especificación de subagente. El prompt base del sistema nunca se toca. Cada cambio se prueba antes en una repetición de la tarea; el que gana se aplica solo, o espera tu aprobación si lo desactivas. Todo cambio aplicado se puede deshacer.
 After generating	Después de generar
 Against {kind} {id} · {status}	Contra {kind} {id} · {status}
 Against: {no}. A decision does not erase the dissent it was taken over.	En contra: {no}. Una decisión no borra el disenso sobre el que se tomó.
@@ -472,6 +473,8 @@ Appearance	Apariencia
 Appearance and theme	Apariencia y tema
 Appearance: the mode, or a saved theme by name.	Apariencia: el modo, o un tema guardado por su nombre.
 Appearance: {mode}	Apariencia: {mode}
+Applied by itself	Aplicado automáticamente
+Applied by itself after trying it	Aplicado automáticamente tras probarlo
 Applied the "{tier}" profile — {n} settings updated{fixes}.	Aplicado el perfil «{tier}» — {n} ajustes cambiados{fixes}.
 Applied to every request for this model on this endpoint, under anything the chat sets explicitly.	Se aplica a cada petición de este modelo en este endpoint, por debajo de lo que el chat fije explícitamente.
 Applied {n} file(s) into the main copy.	Se aplicaron {n} fichero(s) a la copia principal.
@@ -488,6 +491,7 @@ Apply and re-check	Aplicar y volver a comprobar
 Apply crop	Aplicar recorte
 Apply crop or transform	Aplicar recorte o transformación
 Apply style	Aplicar estilo
+Apply the winner by itself	Aplicar solo el ganador
 Apply to all occurrences	Aplicar a todas las apariciones
 Apply to this repo	Aplicar a este repositorio
 Applying…	Aplicando…
@@ -546,6 +550,7 @@ Ask anything about this chat	Pregunta lo que quieras sobre este chat
 Ask for a synthesis	Pedir una síntesis
 Ask for approval	Preguntar
 Ask something worth several searches. Faustus plans, reads, reflects and writes a report with its sources.	Pregunta algo que merezca varias búsquedas. Faustus planifica, lee, reflexiona y escribe un informe con sus fuentes.
+Ask the graph	Preguntar al grafo
 Ask the source that owns this to look again now.	Pide a la fuente dueña de esto que vuelva a mirar ahora.
 Ask the sources that disagree, and settle what can be settled.	Pregunta a las fuentes que discrepan y resuelve lo que se pueda resolver.
 Ask the teacher	Preguntar al profesor
@@ -701,6 +706,7 @@ Blend mode	Modo de fusión
 Blends the layers above the base photo into it: colour match shifts their lighting and tone; seam fix inpaints the cut-out edge (needs a local inpaint model).	Funde las capas de encima con la foto base: el ajuste de color acerca su luz y tono; el arreglo de costura repinta el borde del recorte (necesita un modelo de inpaint local).
 Blind	A ciegas
 Blind answer	Respuesta a ciegas
+Blind choice	Elección a ciegas
 Blind mode hides the names until you have voted. That is the only honest way to compare.	El modo a ciegas esconde los nombres hasta que votas. Es la única forma honesta de comparar.
 Block	Bloque
 Block size	Tamaño de bloque
@@ -769,6 +775,7 @@ CalDAV	CalDAV
 CalDAV (other)	CalDAV (otro)
 CalDAV account	Cuenta CalDAV
 CalDAV account saved.	Cuenta CalDAV guardada.
+Calculate	Calcular
 Calendar	Calendario
 Calendar (CalDAV)	Calendario (CalDAV)
 Calendar provider	Proveedor de calendario
@@ -927,6 +934,7 @@ Choose the signature	Elegir la firma
 Chooses which LOCAL model answers a turn from evidence this installation has actually recorded — off by default, and it never switches to a paid model on its own.	Elige qué modelo LOCAL responde un turno a partir de evidencia que esta instalación ha registrado de verdad — apagado por defecto, y nunca pasa a un modelo de pago por su cuenta.
 Choose…	Elige…
 Choosing a folder is for administrators only.	Elegir carpeta es solo para administradores.
+Choosing blind	Eligiendo a ciegas
 Chore	Mantenimiento
 Chosen	Elegido
 Chosen for this conversation.	Elegido para esta conversación.
@@ -1065,6 +1073,7 @@ Compare: the same prompt to several models side by side, blind, with a vote.	Com
 Compare: {model}	Comparar: {model}
 Compared again.	Comparado otra vez.
 Compared.	Comparado.
+Comparing the repeats	Comparando las repeticiones
 Comparison	Comparativa
 Comparison copied as Markdown.	Comparativa copiada como Markdown.
 Comparisons	Comparaciones
@@ -1536,6 +1545,7 @@ Custom order	Orden personalizado
 Custom persona	Personaje propio
 Custom persona (prefix, suffix, sampling)…	Personaje propio (prefijo, sufijo, muestreo)…
 Custom…	Personalizado…
+Cut off	Interrumpida
 Cut the selection to a layer	Cortar la selección a una capa
 Cut to layer	Cortar a capa
 Cyan – Red	Cian – Rojo
@@ -1565,6 +1575,7 @@ Decisions in force	Decisiones vigentes
 Decisions that condition it	Decisiones que lo condicionan
 Declared by the schema and never looked at. Listed here rather than left out, because an absence nobody can see gets read as a no.	Declarados por el esquema y nunca mirados. Se listan aquí en vez de omitirse, porque una ausencia que nadie ve acaba leyéndose como un no.
 Decode CUDA graph	CUDA graph de decodificación
+Deduce	Deducir
 Deep Research	Investigación profunda
 Deep Research for the next message: several rounds of search and reading, then the answer with sources	Investigación profunda para el próximo mensaje: varias rondas de búsqueda y lectura y después la respuesta con fuentes
 Deep Research on or off.	Deep Research encendido o apagado.
@@ -1753,6 +1764,8 @@ Discard changes in {path}	Descartar cambios en {path}
 Discard changes?	¿Descartar los cambios?
 Discard draft	Descartar borrador
 Discard the saved preferences for this endpoint?	¿Descartar las preferencias guardadas de este endpoint?
+Discarded	Descartado
+Discarded after trying it	Descartado tras probarlo
 Discarded.	Descartado.
 Discards the unlikely (0.05)	Descarta lo improbable (0.05)
 Disconnect	Desconectar
@@ -1872,6 +1885,7 @@ Each participant answers after the previous one and sees what was said.	Cada par
 Each participant answers on its own, then one synthesis.	Cada participante responde por su cuenta y después hay una síntesis.
 Each pick replaces the selection	Cada elección sustituye la selección
 Each result lands on its own layer, so nothing is lost.	Cada resultado va a su propia capa, así no se pierde nada.
+Each round repeats the task read-only with the setup as it is and with each candidate edit. An edit is kept only if the repeats show a repeated failure it fixes and a blind comparison prefers its answer.	Cada ronda repite la tarea en solo lectura con la configuración actual y con cada cambio candidato. Un cambio solo se queda si las repeticiones muestran un fallo repetido que corrige y una comparación a ciegas prefiere su respuesta.
 Each slot is a model — or a search provider, in Search mode. Add up to eight; they run in parallel unless you say otherwise.	Cada hueco es un modelo (o un buscador, en modo Search). Hasta ocho; van en paralelo salvo que digas lo contrario.
 Each slot is a model. Add up to eight; they run in parallel unless you say otherwise.	Cada hueco es un modelo. Hasta ocho; van en paralelo salvo que digas lo contrario.
 Each with the reason it did not run. The vocabulary is closed, because a rejection nobody wrote down comes back next round and is rejected again, forever.	Cada uno con el motivo por el que no se ejecutó. El vocabulario es cerrado, porque un rechazo que nadie anotó vuelve en la siguiente ronda y se rechaza otra vez, para siempre.
@@ -2274,6 +2288,7 @@ Footnotes	Notas al pie
 Footprint & VRAM	Huella y VRAM
 For Gmail, iCloud and Yahoo: an app password, not the account one.	Para Gmail, iCloud y Yahoo: una contraseña de aplicación, no la de la cuenta.
 For local voice on Windows: Whisper for input and Windows installed voices for output. The first Whisper use downloads its model. CPU leaves GPU memory free for your assistant.	Para voz local en Windows: Whisper para escuchar y las voces instaladas de Windows para responder. El primer uso de Whisper descarga su modelo. Usar CPU deja la memoria de la GPU libre para tu asistente.
+For questions that need two or three hops, such as the city where the person who created a project lives. The question is split into steps, each one reads the graph and the texts linked to it, and nothing is written.	Para preguntas que necesitan dos o tres saltos, como la ciudad donde vive quien creó un proyecto. La pregunta se divide en pasos, cada uno lee el grafo y los textos enlazados a él, y no se escribe nada.
 For the links in mail or webhook alerts: https://chat.example.com	Para los enlaces de los avisos por correo o webhook: https://chat.ejemplo.com
 For: {yes}	A favor: {yes}
 Forbidden phrases (one per line)	Frases prohibidas (una por línea)
@@ -2500,6 +2515,7 @@ Hide nearby apps	Ocultar apps cercanas
 Hide notes	Ocultar notas
 Hide overlay	Ocultar superposición
 Hide saved evidence	Ocultar evidencia guardada
+Hide the evidence	Ocultar la evidencia
 Hide the report	Ocultar el informe
 Hide what was superseded	Ocultar lo superado
 High	Alta
@@ -2526,6 +2542,7 @@ How far each mode goes past the literal ask, and what it will spend on going the
 How far it pushes when nothing overrides it. Depth, never permission.	Hasta dónde llega cuando nada lo cambia. Profundidad, nunca permiso.
 How far this turn may go before it must stop and check in.	Hasta dónde puede llegar este turno antes de tener que detenerse y avisar.
 How it failed	Cómo falló
+How it works	Cómo trabaja
 How long the rounds may run before the report is written. A local 27B needs 4–5 minutes per round; sized for the model gives it up to 60 % of the run's wall clock.	Cuánto pueden durar las rondas antes de escribir el informe. Un 27B local necesita 4–5 minutos por ronda; «según el modelo» le da hasta el 60 % del tiempo total de la ejecución.
 How long this session has been open.	Cuánto lleva abierta esta sesión.
 How many candidates it considers (20)	Cuántos candidatos considera (20)
@@ -2679,6 +2696,7 @@ Intensity	Intensidad
 Intent	Intención
 Interface language	Idioma de la interfaz
 Interrupt and speak	Interrumpir y hablar
+Invalid	No válido
 Invalid project context response	La respuesta del contexto del proyecto no es válida
 Invalid project context status response	La respuesta sobre el estado del contexto no es válida
 Invalid request	Solicitud no válida
@@ -2695,6 +2713,7 @@ Issue	Incidencia
 Issue a new URL	Emitir una URL nueva
 Issues	Problemas
 Issues table	Tabla de incidencias
+It cited no moment of a run that exists.	No citó ningún momento de una ejecución que exista.
 It could not have claimed more: {tier} is capped here.	No podía afirmar más: {tier} tiene aquí su tope.
 It does not fit whole on {gpu}. This is the best split:	No cabe entero en {gpu}. Este es el mejor reparto:
 It does not go anywhere you can get it back from: the conversation loses it for good.	No va a ningún sitio del que puedas recuperarlo: la conversación lo pierde para siempre.
@@ -2730,6 +2749,7 @@ Item	Elemento
 Its chat	Su conversación
 Its own id becomes a label; dependencies become "blocks" links.	Su propio id se convierte en una etiqueta; las dependencias se convierten en enlaces "bloquea".
 Its own workers are the last generation (depth ceiling {n}).	Sus workers son la última generación (techo {n}).
+Its repeat delivered nothing.	Su repetición no entregó nada.
 Its runs go with it. This cannot be undone.	Sus ejecuciones se van con ella. No se puede deshacer.
 Its stored summary is searched; the full text is never injected.	Se busca en su resumen guardado; el texto completo no se inyecta nunca.
 JSON	JSON
@@ -2860,6 +2880,8 @@ Legal-but-suspicious configurations — distinct from the schema errors the cata
 Legal-but-suspicious profile and workflow configurations	Configuraciones de perfiles y workflows legales pero sospechosas
 Length	Longitud
 Less	Menos
+Lesson	Lección
+Lessons	Lecciones
 Let OpenRouter decide	Que decida OpenRouter
 Let OpenRouter itself retry on a fallback model list before Faustus's own retry logic ever sees the failure.	Deja que el propio OpenRouter reintente con una lista de modelos de reserva antes de que la lógica de reintento de Faustus llegue a ver el fallo.
 Let’s reconnect	Vamos a reconectar
@@ -3506,6 +3528,7 @@ No context fits entirely in the available VRAM.	Ningún contexto cabe por comple
 No conversation has that name.	Ninguna conversación se llama así.
 No conversation matches "{q}".	Ninguna conversación coincide con «{q}».
 No conversations yet. You start the first one below.	Todavía no hay conversaciones. La primera la empiezas abajo.
+No decision was given.	No se dio ninguna decisión.
 No decisions found for this file.	No se encontraron decisiones para este fichero.
 No decisions logged for this family yet.	Todavía no hay decisiones registradas para esta familia.
 No decisions logged yet.	Aún no hay decisiones registradas.
@@ -3550,6 +3573,7 @@ No key yet; the app needs one to reach servers without a password.	Aún no hay c
 No known deployments yet	Todavía no hay despliegues conocidos
 No known deployments yet.	Aún no hay deployments conocidos.
 No launch profiles yet.	Todavía no hay perfiles de arranque.
+No lessons yet.	Aún no hay lecciones.
 No links yet.	Todavía no hay enlaces.
 No links.	Sin enlaces.
 No local browser voice for this language. Configure a speech output provider.	No hay una voz local del navegador para este idioma. Configura un proveedor de síntesis.
@@ -3577,6 +3601,7 @@ No model answered.	No ha respondido ningún modelo.
 No model available	No hay ningún modelo disponible
 No model calls recorded for this session yet.	Todavía no hay llamadas al modelo registradas para esta sesión.
 No model endpoints configured. `/setup local URL` adds one.	No hay endpoints de modelos. `/setup local URL` añade uno.
+No model is configured for questions to the Cerebro.	No hay ningún modelo configurado para las preguntas al Cerebro.
 No model loaded (ollama ps is empty).	Ningún modelo cargado (ollama ps está vacío).
 No model matches "{q}". /models opens the list.	Ningún modelo coincide con «{q}». /models abre la lista.
 No model matches.	Ningún modelo coincide.
@@ -3626,6 +3651,7 @@ No review loaded. Ask an expert to review a passage (the	No hay ninguna revisió
 No revisions.	Sin revisiones.
 No room in VRAM for {model}	No hay sitio en la VRAM para {model}
 No room in VRAM — waiting for you to choose what to unload	No hay sitio en la VRAM — esperando a que elijas qué descargar
+No rounds yet.	Aún no hay rondas.
 No rules yet: add one below or let the agent learn from outcomes.	Todavía no hay reglas: añade una abajo o deja que el agente aprenda de los resultados.
 No runs yet.	Aún no hay ejecuciones.
 No saved signatures yet — draw one below.	Aún no hay firmas guardadas: dibuja una abajo.
@@ -3663,6 +3689,7 @@ No tools match.	Ninguna herramienta coincide.
 No tools reported yet — connect the server first.	Aún no se han listado herramientas: conecta antes el servidor.
 No tools.	No hay herramientas.
 No tournaments yet	Aún no hay torneos
+No usable plan was made, so this answer comes from a plain search of the texts.	No se pudo hacer un plan utilizable, así que esta respuesta sale de una búsqueda simple en los textos.
 No usage data: the server did not answer /api/system/usage.	Sin datos de uso: el servidor no ha contestado a /api/system/usage.
 No users.	No hay usuarios.
 No variables	Sin variables
@@ -3822,6 +3849,7 @@ Nothing standing right now.	No hay nada vigente ahora mismo.
 Nothing that day.	Nada ese día.
 Nothing ticked.	Nada marcado.
 Nothing to apply: the main copy already matches.	Nada que aplicar: la copia principal ya coincide.
+Nothing to change	Nada que cambiar
 Nothing to change: the settings already match.	Nada que cambiar: los ajustes ya coinciden.
 Nothing to continue yet	Todavía no hay nada que continuar
 Nothing to draw yet	Aún no hay nada que dibujar
@@ -3941,6 +3969,7 @@ Only one engine is carrying every result. It will hand back the same pages for a
 Only partially extracted.	Solo se extrajo parcialmente.
 Only read tools are offered — nothing changes on disk or anywhere else; low budgets.	Solo se ofrecen herramientas de lectura — nada cambia en disco ni en ningún otro sitio; presupuestos bajos.
 Only route to providers contractually committed to not retaining your data.	Enrutar solo a proveedores comprometidos por contrato a no retener tus datos.
+Only show the plan	Solo mostrar el plan
 Only skill nodes are priced; every other node type is structural and costs nothing by itself.	Solo se valoran los nodos skill; cualquier otro tipo de nodo es estructural y no cuesta nada por sí mismo.
 Only that file goes; the rest of the repo stays cached.	Solo se va ese archivo; el resto del repo sigue en caché.
 Only the administrator can see and change the agent.	Solo el administrador puede ver y cambiar el agente.
@@ -4253,6 +4282,7 @@ Placement: auto	Ubicación: auto
 Placement: fill GPU {n} first	Ubicación: llenar primero la GPU {n}
 Plain answers: no tools, no memory, no documents. The fairest test of the model itself.	Respuestas a secas: sin herramientas, memoria ni documentos. La prueba más justa del modelo en sí.
 Plan	Plan
+Plan and steps	Plan y pasos
 Plan steps	Pasos del plan
 Plan, execute, review, verify. This room may change things.	Planificar, ejecutar, revisar, verificar. Esta sala sí puede cambiar cosas.
 Planning the research…	Planificando la investigación…
@@ -4360,11 +4390,13 @@ Proposal rejected — the skill was not changed.	Propuesta rechazada: la habilid
 Proposal, critique, rebuttal, synthesis, verdict.	Propuesta, crítica, réplica, síntesis, veredicto.
 Proposal: return to {label}	Propuesta: volver a {label}
 Proposals	Propuestas
+Propose after each task	Proponer tras cada tarea
 Propose document edits	Propone cambios en documentos
 Proposed	Propuesto
 Proposed by a human	Propuesto por un humano
 Proposed by the model	Propuesto por el modelo
 Proposed: {text}	Propone: {text}
+Proposing	Proponiendo
 Proved	Demostrado
 Provenance	Procedencia
 Provenance graph: {n} nodes, {e} edges	Grafo de procedencia: {n} nodos, {e} aristas
@@ -4712,9 +4744,11 @@ Repair finished.	Reparación terminada.
 Repeat	Repetir
 Repeat penalty	Penalización por repetición
 Repeat the new password	Repite la contraseña nueva
+Repeating the task	Repitiendo la tarea
 Repeats	Se repite
 Repeats per case	Repeticiones por caso
 Repeat…	Repetir…
+Repetition	Repetición
 Replace	Sustituir
 Replace all	Sustituir todo
 Replace the original	Sustituir la original
@@ -5235,8 +5269,10 @@ Settings is one screen with sections down the side. Each has its own address.	Aj
 Settings to review	Configuración que revisar
 Settings → Agent	Ajustes → Agente
 Settings → Linked devices → Link a device	Ajustes → Dispositivos vinculados → Vincular un dispositivo
+Setup	Configuración
 Setup & settings	Configuración y ajustes
 Setup and sign-in help	Ayuda de instalación e inicio de sesión
+Setup kept as it was	Configuración sin cambios
 Several models in one conversation, each as itself or wearing a persona. They answer you and each other.	Varios modelos en una conversación, cada uno como él mismo o con un personaje. Te responden a ti y entre ellos.
 Several models think about one matter, and exactly one of them may act on each resource. Group chat could not tell you who had said what; here authorship and permission are fields, not prose.	Varios modelos piensan sobre un mismo asunto y exactamente uno puede actuar sobre cada recurso. El chat en grupo no sabía decirte quién había dicho qué; aquí la autoría y el permiso son campos, no prosa.
 Severity	Gravedad
@@ -5287,6 +5323,7 @@ Show or hide the sidebar	Mostrar u ocultar la barra
 Show overlay	Mostrar superposición
 Show recent decisions	Mostrar decisiones recientes
 Show the available models	Muestra los modelos disponibles
+Show the evidence	Mostrar la evidencia
 Show the original HTML	Ver el HTML original
 Show the reader view	Ver la vista de lectura
 Show the report	Ver el informe
@@ -5360,6 +5397,7 @@ Skip automatic skills	Omitir skills automáticas
 Skip memory recall	Sin recuerdos automáticos
 Skip the ones already audited	Saltar las ya auditadas
 Skip to content	Saltar al contenido
+Skipped	Omitida
 Skips skill suggestions and their automatic tool selection. Explicit tool requests and project instructions remain available.	Omite las sugerencias de skills y su selección automática de herramientas. Las peticiones explícitas de herramientas y las instrucciones del proyecto siguen disponibles.
 Sleep pass proposed a revision — review it below.	La pasada de reposo propone una revisión: revísala abajo.
 Slice	Porción
@@ -5724,6 +5762,7 @@ That worker is no longer running.	Ese worker ya no está en marcha.
 The API is not responding.	La API no responde.
 The API is not responding. The previous interface does not depend on this screen and keeps working.	La API no responde. La interfaz anterior no depende de esta pantalla y sigue funcionando.
 The Calendar has a form.	El Calendario tiene un formulario.
+The Cerebro has no entities yet. Run an extraction first.	El Cerebro aún no tiene entidades. Lanza antes una extracción.
 The Cookbook says what fits this machine, downloads it and launches it with the right engine.	El Cookbook dice qué cabe en esta máquina, lo descarga y lo lanza con el motor adecuado.
 The Faustus process log (data/logs/app.log), newest at the bottom.	El registro del proceso de Faustus (data/logs/app.log), lo último abajo.
 The Host entry in ~/.ssh/config; leave empty for github.com directly.	La entrada Host de ~/.ssh/config; déjalo vacío para github.com directamente.
@@ -5796,6 +5835,8 @@ The closeout	El cierre
 The code expired. Start again.	El código ha caducado. Vuelve a empezar.
 The command is required.	Hace falta el comando.
 The commit failed	El commit ha fallado
+The comparison could not be read.	No se pudo leer la comparación.
+The comparison did not accept it.	La comparación no lo aceptó.
 The compiler marked it degraded without leaving a warning behind.	El compilador lo marcó como degradado sin dejar ningún aviso.
 The compiler wrote warnings, and they lived beside the manifest that has since been evicted. Recompile the request to read them.	El compilador escribió avisos, y vivían junto al manifiesto que desde entonces se ha desalojado. Recompila la petición para leerlos.
 The completion engine is switched off (Settings → Agent & automation). No new turn will be judged by it. Every decision already recorded is still below, still complete and still readable.	El motor de terminación está apagado (Ajustes → Agente y automatización). Ningún turno nuevo será juzgado por él. Todas las decisiones ya registradas siguen abajo, completas y legibles.
@@ -5833,6 +5874,7 @@ The engine is on but has not compiled anything in this scope yet. The first turn
 The estimate follows your edits. Live readings describe the loaded model; saving applies the new context on its next request.	La estimación cambia al editar. La medición corresponde al modelo cargado; al guardar, el contexto nuevo se aplica en su siguiente petición.
 The exact program to run — never a shell string.	El programa exacto a ejecutar — nunca una cadena de shell.
 The experiences could not be read	No se han podido leer las experiencias
+The failure it cites did not repeat across runs (noise).	El fallo que cita no se repitió entre ejecuciones (ruido).
 The feedback could not be recorded	No se ha podido anotar la valoración
 The file changed outside this editor. Your draft is preserved.	El archivo ha cambiado fuera de este editor. Tu borrador se conserva.
 The file goes with it. This cannot be undone.	El archivo se va con ella. No se puede deshacer.
@@ -5937,6 +5979,7 @@ The pass has never run on this install.	La pasada nunca se ha ejecutado en esta 
 The passage that was reviewed	El pasaje que se revisó
 The passwords do not match.	Las contraseñas no coinciden.
 The patch must be valid JSON.	El patch debe ser JSON válido.
+The person then said	La persona dijo después
 The picture could not be uploaded.	No se ha podido subir la imagen.
 The picture lands on its own layer; drag it into place with Move.	La imagen va a su propia capa; colócala con Mover.
 The plan changed since preflight; re-run preflight and approve again.	El plan cambió desde el preflight; repite el preflight y aprueba de nuevo.
@@ -5952,6 +5995,7 @@ The project of this conversation: folder, instructions and memory.	El proyecto d
 The project's tests run after every turn that changes files.	Los tests del proyecto corren tras cada turno que cambia archivos.
 The provenance graph is turned off	El grafo de procedencia está apagado
 The provider returned no models. Check API access before connecting.	El proveedor no devolvió modelos. Comprueba el acceso a la API antes de conectar.
+The question could not be answered.	No se pudo responder a la pregunta.
 The quoted text no longer occurs unambiguously in the document — this comment was not silently reattached elsewhere. Find the passage and either resolve or delete it by hand.	La cita ya no aparece de forma inequívoca en el documento — este comentario no se ha reubicado en otro sitio en silencio. Busca el pasaje y resuélvelo o elimínalo a mano.
 The recipient is missing.	Falta el destinatario.
 The record carries no reason from the closed vocabulary. A refusal nobody justified cannot be told, a month later, from one nobody meant, and the engine refuses to build a row like this -- so this one did not come through the contract.	El registro no lleva ningún motivo del vocabulario cerrado. Un rechazo que nadie justificó no se distingue, un mes después, de uno que nadie quiso, y el motor se niega a construir una fila así: esta no pasó por el contrato.
@@ -5967,6 +6011,7 @@ The review found problems	La revisión encontró problemas
 The role was recorded.	El rol quedó anotado.
 The room could not be opened.	No se pudo abrir la sala.
 The room is running again.	La sala vuelve a correr.
+The round started. It repeats the task in the background; the result appears below.	La ronda ha empezado. Repite la tarea en segundo plano; el resultado aparece debajo.
 The round stopped adding anything.	La ronda dejó de aportar nada.
 The run this comparison was recorded against.	La ejecución contra la que se registró esta comparación.
 The same prompt for every pane…	El mismo prompt para todos los paneles…
@@ -6001,6 +6046,7 @@ The server stopped building at its node budget{limit} — this is a partial grap
 The server will not bind `{path}` as a working folder. If Faustus runs in Docker, use the path inside the container.	El servidor no acepta `{path}` como carpeta de trabajo. Si Faustus corre en Docker, usa la ruta de dentro del contenedor.
 The server wrote no closeout for this one.	El servidor no escribió ningún cierre para esta.
 The session is stopped first, then the card goes.	Primero se para la sesión; después se va la tarjeta.
+The setup unchanged	La configuración sin cambios
 The sidecar has no items.	El sidecar no tiene elementos.
 The sign-in was refused.	Se ha rechazado el inicio de sesión.
 The skills; with a query, the ones that match.	Las skills; con una consulta, las que coinciden.
@@ -6033,10 +6079,12 @@ The turn finished, but its evidence could not be saved. The summary remains in t
 The turn was cancelled.	El turno se canceló.
 The two edits do not touch the same lines.	Las dos ediciones no tocan las mismas líneas.
 The unavailable sources may contain work. Refresh to check again.	Puede haber trabajo en los servicios que no responden. Actualiza para comprobarlo de nuevo.
+The unmodified setup was kept.	Se mantuvo la configuración sin cambios.
 The web search's	El de la búsqueda web
 The whole parent transcript is inherited instead of stopping at that turn.	Se hereda toda la transcripción de la madre en su lugar, en vez de detenerse en ese turno.
 The whole series	Toda la serie
 The whole tour	El tour entero
+The winner will wait for your approval.	El ganador esperará tu aprobación.
 The work carried on from here.	El trabajo siguió a partir de aquí.
 The work was done and nothing left cleared the bar.	El trabajo se hizo y nada de lo que quedaba superaba el listón.
 The work was worth doing and the money ran out. Raise the budget.	El trabajo valía la pena y se acabó el dinero. Sube el presupuesto.
@@ -6285,6 +6333,7 @@ Trash	Papelera
 Travel	Viajes
 Triadic	Triádica
 Triage	Triaje
+Tried before kept	Probado antes de quedarse
 Trigger	Disparador
 Trims the tail of the probability distribution (0.8)	Recorta la cola de la distribución de probabilidad (0.8)
 Trust remote code	Confiar en el código remoto
@@ -6292,6 +6341,7 @@ Trust this verified host	Confiar en este servidor verificado
 Trusted folder	Carpeta de confianza
 Trusted sub-agents	Sub-agentes de confianza
 Try again	Volver a intentarlo
+Try and improve	Probar y mejorar
 Try another filter or search.	Prueba otro filtro u otra búsqueda.
 Try another filter: the one you chose has nothing right now.	Prueba con otro filtro: el que has elegido no tiene nada ahora mismo.
 Try another kind or a shorter search.	Prueba otro tipo o una búsqueda más corta.
@@ -6301,6 +6351,7 @@ Try another source or a shorter title.	Prueba otro origen o un título más cort
 Try another text, or another kind of artefact.	Prueba con otro texto, u otro tipo de artefacto.
 Try another text, tag or album.	Prueba otro texto, etiqueta o álbum.
 Try arguments	Probar argumentos
+Try each change on a repeat of the task first	Probar cada cambio antes en una repetición de la tarea
 Try it	Probarlo
 Try more than one approach to the same task, each isolated from the other and from your own edits, then compare and apply the one you want — never a silent overwrite.	Prueba más de un enfoque a la misma tarea, cada uno aislado del resto y de tus propias ediciones, y luego compara y aplica el que quieras — nunca una sobrescritura silenciosa.
 Tue	Mar
@@ -6517,6 +6568,7 @@ VRAM: {a} models, {b} other, {c} free	VRAM: {a} modelos, {b} otros, {c} libres
 Valid	Válido
 Valid arguments.	Argumentos válidos.
 Value	Valor
+Values	Valores
 Variables	Variables
 Vault	Bóveda
 Vault (Bitwarden / Vaultwarden)	Bóveda (Bitwarden / Vaultwarden)
@@ -6580,6 +6632,7 @@ WSL	WSL
 Wait for it	Esperar
 Wait for the current turn to finish before delegating.	Espera a que termine el turno actual antes de delegar.
 Wait for the delegation to finish before repeating a worker.	Espera a que termine la delegación antes de repetir un worker.
+Waiting for approval	Esperando aprobación
 Waiting for capacity	Esperando capacidad
 Waiting for its turn	Esperando su turno
 Waiting for its turn (#{n})	Esperando su turno (#{n})
@@ -6640,6 +6693,7 @@ What each agent may use, touch and not do; its slug goes on a task	Qué puede us
 What each engine needs installed, and the recipe to install it.	Lo que cada motor necesita instalado, y la receta para instalarlo.
 What each engine needs on this server	Qué necesita cada motor en este servidor
 What each turn did beyond the literal ask, what it refused and why, and how it ended. A run that ran out of budget, a run that had nothing left worth doing and a run that stopped with work still open are three different endings here, and they never wear each other’s colours.	Lo que cada turno hizo más allá de lo pedido al pie de la letra, qué rechazó y por qué, y cómo terminó. Una ejecución que se quedó sin presupuesto, una que ya no tenía nada que valiera la pena y una que se detuvo con trabajo abierto son tres finales distintos aquí, y nunca llevan el color de los otros.
+What earlier rounds taught, per project. The proposer reads them before it proposes, as hypotheses to check.	Lo que enseñaron las rondas anteriores, por proyecto. Quien propone las lee antes de proponer, como hipótesis que comprobar.
 What every auxiliary component (not just the main chat model) is allowed to send off this machine. Wired: the custom/HTTP embedding lane, the ChromaDB vector store, the remote compaction summarizer and the reranker. OCR and telemetry call sites have not been audited against this profile yet.	Qué puede enviar fuera de esta máquina cada componente auxiliar (no solo el modelo de chat principal). Cableado: la vía de embeddings HTTP/personalizada, la conexión ChromaDB, el resumidor remoto de compactación y el reranker. Los puntos de OCR y telemetría aún no se han auditado contra este perfil.
 What every auxiliary component (not just the main chat model) is allowed to send off this machine. Wired: the custom/HTTP embedding lane, the ChromaDB vector store, the remote compaction summarizer, the reranker, OCR/vision, and remote TTS/STT. Telemetry has no network egress to gate.	Qué puede enviar fuera de esta máquina cada componente auxiliar (no solo el modelo de chat principal). Cableado: la vía de embeddings HTTP/personalizada, la conexión ChromaDB, el resumidor remoto de compactación, el reranker, OCR/visión y TTS/STT remotos. La telemetría no tiene salida de red que auditar.
 What fits this machine, what is already here, and the engines that serve it.	Qué cabe en esta máquina, qué hay ya aquí y los motores que lo sirven.
@@ -6655,6 +6709,7 @@ What is up right now, its output, and a diagnosis when a launch fails.	Lo que es
 What it did	Qué hizo
 What it does	Qué hace
 What it is for	Para qué sirve
+What it knows	Qué sabe
 What it may spend	Lo que puede gastar
 What it must satisfy	Qué debe cumplir
 What it refused	Lo que rechazó
@@ -6678,6 +6733,7 @@ What the agent would actually receive for a task touching these files or ids —
 What the assistant knows about you and uses when it fits; pinned ones always go.	Lo que el asistente sabe de ti y usa cuando viene al caso; lo fijado va siempre.
 What the assistant remembers about you, and the rules it has learned. Both editable, both deletable.	Lo que el asistente recuerda de ti, y las reglas que ha aprendido. Ambas se editan y se borran.
 What the assistant remembers about you. Add one by hand, or let it pull them out of a conversation.	Lo que el asistente recuerda de ti. Añade uno a mano, o deja que los saque de una conversación.
+What the graph does hold there	Lo que el grafo sí tiene ahí
 What the machine has	Lo que tiene la máquina
 What the machine is doing: GPU, VRAM, the model that is loaded. Click it for the detail.	Lo que está haciendo la máquina: GPU, VRAM, el modelo cargado. Haz clic para el detalle.
 What the model receives, literally	Lo que recibe el modelo, literalmente
@@ -6767,11 +6823,15 @@ Wins over the global default above for that project or session only — nothing 
 Wire	Cablear
 With /v1 at the end for OpenAI-compatible servers: http://127.0.0.1:11434/v1	Con /v1 al final para servidores compatibles con OpenAI: http://127.0.0.1:11434/v1
 With attachments	Con adjuntos
+With edit {id}	Con el cambio {id}
 With style	Con estilo
 Withdraw	Retirar
 Without style	Sin estilo
+Won	Ganó
+Won when tried; waiting for you	Ganó al probarlo; espera tu decisión
 Won't fix	No se arreglará
 Won't fix / Duplicate	No se arreglará / Duplicada
+Won, waiting for approval	Ganó, esperando aprobación
 Word (.docx)	Word (.docx)
 Work happening on this machine, as seen within its guarantee.	Trabajo que ocurre en esta máquina, visto dentro de su garantía.
 Work on a separate branch (faustus/…)	Trabajar en una rama aparte (faustus/…)
@@ -6857,6 +6917,7 @@ Your message	Tu mensaje
 Your official clients	Tus clientes oficiales
 Your own account through a local bridge, like WhatsApp Web: nothing runs until you start it, and it stays on this machine.	Tu propia cuenta a través de un puente local, como WhatsApp Web: nada se ejecuta hasta que lo inicies, y se queda en esta máquina.
 Your own account through a local bridge: read what people wrote, answer from a chat, get a daily digest card.	Tu propia cuenta a través de un puente local: lee lo que escribió la gente, responde desde un chat, recibe una tarjeta de resumen diario.
+Your question	Tu pregunta
 Your reason is stored against the improvement itself, not against this decision — so this record keeps showing that it was offered here and turned down, and future runs stop proposing it. If anything fails to store, the screen says so instead of claiming otherwise.	Tu motivo se guarda contra la mejora en sí, no contra esta decisión — así que este registro sigue mostrando que se ofreció aquí y se rechazó, y las ejecuciones futuras dejan de proponerla. Si algo no llega a guardarse, la pantalla lo dice en vez de afirmar lo contrario.
 Your rooms	Tus salas
 Your session has expired. Sign in again to get your conversations back — nothing has been lost.	Tu sesión ha caducado. Vuelve a iniciar sesión para recuperar tus conversaciones: no se ha perdido nada.
@@ -6899,6 +6960,7 @@ a remote worker	un worker remoto
 a specialist with its own corpus	un especialista con su propio corpus
 a standing rule or fact the agent remembers	una regla o un hecho que el agente recuerda
 accepted	aceptadas
+accepted by the comparison	aceptado por la comparación
 acted	actuó
 action	acción
 active	activas
@@ -6984,6 +7046,7 @@ by {method} ({tier})	por {method} ({tier})
 by {who}	de {who}
 byte identity	identidad de bytes
 bytes {v}	bytes {v}
+calculated	calculado
 can be a worker	puede ser worker
 can do	puede
 cancelled	cancelado
@@ -7155,6 +7218,7 @@ free	libres
 from	de dónde sale
 from an earlier turn	desde un turno anterior
 from metadata	desde metadatos
+from the graph	del grafo
 from turn {n}	desde el turno {n}
 from {n} chat	de {n} chat
 from {n} chats	de {n} chats
@@ -7239,6 +7303,7 @@ layers opened: {what}	capas abiertas: {what}
 lean approve, still ask	tiende a aprobar, aun así pregunta
 leave empty for the global view	déjalo vacío para la vista global
 left work open	dejó trabajo abierto
+level {n}	nivel {n}
 lines {v}	líneas {v}
 load	carga
 loaded	cargado
@@ -7349,8 +7414,11 @@ nobody	nadie
 nobody named	nadie nombrado
 nobody recorded why	nadie registró por qué
 none	ninguna
+none (no real contrast)	ninguna (sin contraste real)
 none — a root node	ninguno — un nodo raíz
 none: measures the running configuration	ninguno: mide la configuración en marcha
+not accepted	no aceptado
+not accepted by the comparison	no aceptado por la comparación
 not answering	no responde
 not asked yet	no solicitado aún
 not audited	sin auditar
@@ -7374,6 +7442,7 @@ not wired	sin cablear
 nothing	nada
 nothing backs what was claimed	nada respalda lo afirmado
 nothing could be read: check the search provider	no se ha podido leer nada: revisa el buscador
+nothing found	no se encontró nada
 nothing is injected into a turn. Everything here still edits fine.	no se inyecta nada en un turno. Todo lo de aquí se sigue editando igual.
 nothing is left unaccounted for	no queda nada sin justificar
 nothing loaded on this card	nada cargado en esta tarjeta
@@ -7462,6 +7531,7 @@ ran out of budget	agotó el presupuesto
 ran out of rounds	agotó las rondas
 re-encoded	recodificado
 read from a stored record, not asserted by a model	leído de un registro guardado, no afirmado por un modelo
+read from the texts	leído de los textos
 read-only	solo lectura
 reading {n} sources	leyendo {n} fuentes
 ready	listo
@@ -7546,6 +7616,7 @@ stale · {n}d old	desactualizado · {n}d
 stalled	atascado
 starting…	arrancando…
 starts with	empieza por
+step {n}	paso {n}
 stopped	parado
 structure	estructura
 subscribed on this device	suscrito en este dispositivo
@@ -7612,6 +7683,7 @@ the target could not be read	no se pudo leer el destino
 the target was readable	el destino se pudo leer
 the tests fail	los tests fallan
 the tests passed and every claimed file really changed	las pruebas pasaron y cada fichero reclamado cambió de verdad
+the unmodified setup	la configuración sin cambios
 the value did not clear the bar	el valor no superó el listón
 the whole ledger, pruned by age on the maintenance pass	todo el registro, podado por antigüedad en la pasada de mantenimiento
 these packets could not carry everything they should have	estos paquetes no pudieron llevar todo lo que debían
@@ -10169,3 +10241,13 @@ Brief template	Plantilla de encargo
 Choose a template	Elegir una plantilla
 Apply replaces the draft text and keeps linked work. Save to keep your edits.	Aplicar sustituye el texto del borrador y conserva el trabajo enlazado. Guarda para conservar tus cambios.
 Apply template to draft	Aplicar plantilla al borrador
+worked out	razonado
+written	escrita
+{n} cited moment	{n} momento citado
+{n} cited moments	{n} momentos citados
+{n} lesson	{n} lección
+{n} lessons	{n} lecciones
+{n} model call	{n} llamada al modelo
+{n} model calls	{n} llamadas al modelo
+{n} repeat of the unmodified setup	{n} repetición de la configuración sin cambios
+{n} repeats of the unmodified setup	{n} repeticiones de la configuración sin cambios
