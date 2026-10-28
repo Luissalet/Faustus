@@ -1,5 +1,6 @@
 """JSON selection and legacy read behavior at the native tool boundary."""
 import asyncio
+import ast
 import importlib.util
 from pathlib import Path
 import json
@@ -34,6 +35,24 @@ class JsonArtifactSelectionTests(unittest.TestCase):
         props = TOOL_SCHEMA['function']['parameters']['properties']
         for name in ('json_source', 'json_pointer', 'match_pointer', 'match_value'):
             self.assertIn(name, props)
+
+    def test_native_catalogue_matches_handler_schema(self):
+        path = Path(__file__).resolve().parents[1] / 'src/tool_schemas.py'
+        tree = ast.parse(path.read_text(encoding='utf8'))
+        schemas = next(node.value for node in tree.body
+                       if isinstance(node, ast.Assign) and any(
+                           isinstance(target, ast.Name) and target.id == 'FUNCTION_TOOL_SCHEMAS'
+                           for target in node.targets))
+        for node in schemas.elts:
+            try:
+                schema = ast.literal_eval(node)
+            except (ValueError, TypeError):
+                continue
+            if schema.get('function', {}).get('name') == 'read_artifact':
+                self.assertEqual(schema, TOOL_SCHEMA)
+                break
+        else:
+            self.fail('read_artifact absent from native catalogue')
 
     def test_structured_source_and_complete_rows(self):
         rows = [{'ref': {'id': 8}, 'slots': [0, 3, 0], 'rate': 4},

@@ -901,7 +901,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_artifact",
-            "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result.",
+            "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result. For JSON, select a json_pointer and optionally filter an array by match_pointer + match_value. For a serialized JSON tool body, set json_source to /stdout or /output first.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -919,6 +919,27 @@ FUNCTION_TOOL_SCHEMAS = [
                     "query": {
                         "type": "string",
                         "description": "Case-insensitive substring to locate instead of a range."
+                    },
+                    "json_source": {
+                        "type": "string",
+                        "description": "RFC 6901 pointer to a JSON body inside the stored result, e.g. /stdout. A string body is decoded as JSON once. Default: stored result itself."
+                    },
+                    "json_pointer": {
+                        "type": "string",
+                        "description": "RFC 6901 pointer within the JSON body, e.g. /entries. Empty string selects the root. Use instead of start/end/query."
+                    },
+                    "match_pointer": {
+                        "type": "string",
+                        "description": "RFC 6901 pointer within each selected array item, e.g. /reference/id. Keep all items whose field equals match_value; missing fields do not match."
+                    },
+                    "match_value": {
+                        "type": [
+                            "string",
+                            "number",
+                            "boolean",
+                            "null"
+                        ],
+                        "description": "Exact JSON scalar to match. Numbers and booleans remain distinct. Requires match_pointer."
                     }
                 },
                 "required": [
