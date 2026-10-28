@@ -2307,3 +2307,7 @@ Entregadas las revanchas originales de Cheren y Bel en Main347 y ambos APK. Cont
 ## Silver: continuación tras parcial 75 — tarea 1372 abierta
 
 Completar y revisar los 787 conjuntos parciales y 35 ausentes, normales y shiny, y el arte generado anterior. Mantener orientación derecha, detalle nativo, encuadre cercano y fondos y símbolos por emoción. Conservar originales publicados y caras válidas; corregir casillas o componentes concretos y regenerar sólo lo insuficiente. Estrella y los demás pilotos fuera del producto necesitan sus revisiones independientes actuales antes de instalarse; ni autoría ni cobertura equivalen a aprobación artística. Los 2.195 mugshots de Luis son apoyo, sin importaciones ni licencia inferida. Seguir sin cambiar gameplay ni perder funciones.
+
+## HoardDex después de los opcionales originales — 28-10-2026
+
+Cintia y Morimoto originales US entregados en Main349 y ambosAPK. Continúan entrenadores y ediciones, localizaciones enlazadas, formas/evoluciones por edición, textos sin fuente, iconos sin identificar y reducción de APK conservando todos los medios. Investigación1652 encuentra1748duplicados extra y potencial24.6MBcomprimidos, todavía sin modificación ni ahorro. No rebajar resolución, animación o transparencia. PWT requiere regulación/participantes/acceso contrastados. ARM64 físico no disponible, sin decisión pendiente de Luis ni paridad global. Mantener padre864/WT864/app1195 abiertos y paradas de otras apps/modelos.
