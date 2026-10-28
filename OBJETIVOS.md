@@ -2315,3 +2315,10 @@ Cintia y Morimoto originales US entregados en Main349 y ambosAPK. Continúan ent
 ## HoardDex después de reducir el APK sin pérdida — 28-10-2026
 
 Entregada en353 la deduplicación sin pérdida de746 recursos, con23991489bytes de ahorro por ABI y todos los contenidos distintos preservados. El tamaño global continúa abierto; no rebajar resolución, fotogramas, transparencia o uso sin conexión. Continuar con los36equipos automáticos previos de Cheren/Bel originales BW y su constructor propio; no rellenar huecos ni prestar movimientos de BW2. Siguen otros entrenadores/ediciones, PWT sin regulación/participantes/acceso contrastados, localizaciones enlazadas, formas y evoluciones por edición, textos sin fuente e iconos sin identificar. ARM64 físico no disponible; no hay decisión pendiente de Luis ni paridad global. Mantener864/WT864/app1195 abiertos y las paradas de otras apps/modelos.
+
+
+## Silver: continuación tras parcial 76 — tarea 1372 abierta
+
+Completar y revisar los 784 conjuntos parciales y 30 ausentes, normales y shiny, y la calidad del arte generado histórico. Mantener anatomía, orientación propia válida, detalle nativo, primer plano y fondos y símbolos por emoción. Conservar originales publicados y caras válidas; corregir componentes concretos y regenerar sólo lo insuficiente. Una cara frontal válida conserva su referencia, sin imponer un flip arbitrario.
+
+Las propuestas fuera del producto, incluidos Cramorant Gulping/Gorging, Toxtricity Gigamax y Centiskorch, requieren su recepción final por SHA antes de instalarse. Un peer parcial o la cobertura de dieciséis caras no autoriza un atlas entero ni una aprobación artística global. Los 2.195 mugshots de Luis son apoyo, sin importaciones ni licencia inferida. Seguir sin cambiar gameplay ni perder funciones. Mantener abierta 1372 y sus nueve bloqueos de ROOT; no borrar WT1180 ni históricos. Este cierre común documental no cierra el trabajo artístico ni autoriza nuevos agentes, modelos o push.
