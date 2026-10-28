@@ -95,6 +95,32 @@ def test_dead_listener_is_detected_and_rebuilt_without_dropping_connections(serv
         finished.set();thread.join(2);running.close()
 
 
+def test_busy_event_loop_gets_one_rebuild_and_no_error(served,monkeypatch,caplog):
+    """A heavy turn can block the loop for far longer than the watchdog waits.
+
+    Seen live on 28-10-2026: the first rebuild "failed" with an empty error because the
+    loop had not run it yet, and it then ran by itself. The watchdog must stop waiting,
+    queue exactly one rebuild and report the real outcome when it happens.
+    """
+    monkeypatch.setattr(runtime,"REBUILD_WAIT_SECONDS",.2)
+    calls=[];real=runtime.rebind_listener
+    async def counted(*args,**kwargs):
+        calls.append(time.monotonic());return await real(*args,**kwargs)
+    monkeypatch.setattr(runtime,"rebind_listener",counted)
+    for sock in list(served.servers[0]._sockets):sock.close()
+    served.loop.call_soon_threadsafe(time.sleep,1.5)  # the loop is busy and cannot run the rebuild
+    caplog.set_level("INFO",logger="uvicorn.error")
+    finished,thread=start_watchdog(served)
+    try:
+        assert wait_until(lambda:runtime.listening(served.port),10),"listener was not reopened after the loop freed up"
+        time.sleep(.6)  # several more probe cycles: they must not queue another rebuild
+        assert len(calls)==1
+        text="\n".join(record.getMessage() for record in caplog.records)
+        assert "event loop is busy" in text and "reopened" in text and "Could not reopen" not in text
+    finally:
+        finished.set();thread.join(2)
+
+
 def test_healthy_listener_is_left_alone(served):
     before=served.servers[0]
     finished,thread=start_watchdog(served)

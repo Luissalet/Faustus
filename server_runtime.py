@@ -6,6 +6,7 @@ The PID, creation time, command and launch token must all match our record.
 from __future__ import annotations
 import argparse
 import asyncio
+import concurrent.futures
 from contextlib import contextmanager
 from datetime import datetime
 import json
@@ -76,6 +77,9 @@ def listening(port):
 
 LISTENER_PROBE_SECONDS=5.0
 LISTENER_MISSES=2
+# How long the watchdog waits for the event loop to run a rebuild before it stops waiting
+# (the rebuild stays queued and is reported when it finishes).
+REBUILD_WAIT_SECONDS=15
 # A managed server older than this that refuses connections for UNREACHABLE_SECONDS
 # is a zombie: it is alive but its listener is gone and could not be rebuilt.
 ZOMBIE_AFTER_SECONDS=180
@@ -121,9 +125,23 @@ async def rebind_listener(server,port,host="127.0.0.1"):
 def watch_listener(server,port,finished,interval=LISTENER_PROBE_SECONDS,misses_allowed=LISTENER_MISSES):
     """Thread body: rebuild the listener when the port stops accepting connections."""
     log=logging.getLogger("uvicorn.error")
-    misses=0;delay=interval
+    misses=0;delay=interval;pending=None
+
+    def report(future):
+        # Runs whenever the rebuild finishes, even long after the watchdog stopped waiting.
+        try:ok=future.result()
+        except BaseException as exc:
+            log.error("Could not reopen the listener on port %s: %r",port,exc);return
+        if ok:log.warning("Listener on port %s reopened; running turns were not interrupted",port)
+        else:log.error("Could not reopen the listener on port %s: no protocol factory to rebuild from",port)
+
     while not finished.wait(delay):
         delay=interval
+        if pending is not None:
+            # The loop is too busy to have run the rebuild yet (heavy turns can block it for
+            # tens of seconds). Never queue a second one on top of it.
+            if not pending.done():continue
+            pending=None
         if not getattr(server,"started",False) or server.should_exit:
             misses=0;continue
         if listening(port) and not _dead_listener(server):
@@ -131,13 +149,20 @@ def watch_listener(server,port,finished,interval=LISTENER_PROBE_SECONDS,misses_a
         misses+=1
         if misses<misses_allowed:continue
         servers=getattr(server,"servers",None) or []
+        ok=False
         try:
             loop=servers[0].get_loop()
             log.warning("Port %s stopped accepting connections; reopening the listener",port)
-            ok=asyncio.run_coroutine_threadsafe(rebind_listener(server,port),loop).result(timeout=15)
+            pending=asyncio.run_coroutine_threadsafe(rebind_listener(server,port),loop)
+            pending.add_done_callback(report)
+            ok=pending.result(timeout=REBUILD_WAIT_SECONDS)
+            pending=None
+        except concurrent.futures.TimeoutError:
+            log.warning("The event loop is busy; the listener on port %s is reopened as soon as it runs",port)
+            misses=0;continue
         except Exception as exc:
-            ok=False;log.error("Could not reopen the listener on port %s: %s",port,exc)
-        if ok:log.warning("Listener on port %s reopened; running turns were not interrupted",port)
+            if pending is None:log.error("Could not reopen the listener on port %s: %r",port,exc)
+            pending=None  # otherwise the done callback has already logged the reason
         # A failed rebuild is retried with a growing pause (max 60 s).
         misses=0 if ok else misses_allowed-1
         if not ok:delay=min(interval*4,60)
