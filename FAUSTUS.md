@@ -16989,3 +16989,111 @@ QA Main propia de ROOT: app humana hasta KO natural a 1.179 ticks/39,3 s, entrad
 ROOT vio seis fotogramas Main completos; la cámara Mega con cero fotogramas no se acredita como secuencia temporal. Mobile 390×844, tres estilos, movimiento reducido y pausa son pruebas de fuente, no una repetición Main de todos los estados. No se afirman FPS/hardware, cada especie/material, ampliación clásica/campal, MP4 ni paridad ajena. Cinco archivos físicos ajenos Main se conservan exactos y sin indexar; build/replay Main quedan atribuidos a ese contexto, con las suites aisladas separadas. Recibo final qa-main-delivery-root-v1.json, SHA c294e13ac8abdec49986ad167efe0c347d6a34dddecb2e5284a631c082ed4150.
 
 Pestañas, servicios/wrappers y cuatro leases QA propios cerrados; puertos 58954/58955 apagados y trece bloqueos permanentes ROOT conservados hasta su cierre de 1673. Esta nota supera únicamente el estado VFX fuera de Main/QA pendiente de Common78, sin reescribirlo ni atribuir VFX al QA de retratos78. Cobertura de retratos intacta: 2.132 completos, 784 parciales y 22 ausentes; 1372 sigue abierta y la calidad histórica pendiente. Reexportar HTML anteriores. Documentación común en la tarea ecosystem 1731; no modifica Silver ni cierra 1673 o 1372, sin push.
+
+## Cerebro responde preguntas de varios saltos (`graph_ask`) — 28-10-2026
+
+Ágora #1706. `src/brain/graph_plan.py`, `graph_ask.py` y `graph_index.py` añaden
+una forma de preguntar al segundo cerebro que no se queda en buscar texto: el
+modelo global planifica la pregunta como un pequeño programa de operadores
+`Retrieval(s,p,o)`, `Math`, `Deduce` y `Output` ligados por alias (`s=o1`, como
+en «la persona que creó X» → «dónde vive esa persona»); los pasos de un mismo
+nivel de dependencia corren a la vez; cada paso posterior se reescribe con los
+resultados ya obtenidos; y cada recuperación mira las aristas del grafo y los
+fragmentos de texto vinculados a las entidades a través de un índice mutuo
+entidad ↔ fragmento (sobre `entities`, `relations` y `mentions`; fuentes
+`mem:`, `pmem:` y `note:`), fusionados con una suma ponderada min-max. Un plan
+inservible se repara una vez y, si sigue mal, cae a una búsqueda plana con
+estado `degraded`; sin modelo, `no_model`; sin entidades, `empty`. Nunca escribe
+en el Cerebro y no inventa: una entidad que no existe se dice, no se rellena.
+Superficies: `POST /api/brain/ask`, herramienta de agente `graph_ask` (lectura
+privada, sin tarjeta), herramienta MCP `brain_graph_ask` y el cajón «Preguntar
+al grafo» de la pantalla Cerebro, con el plan, cada paso, sus tripletas y la
+evidencia. Las técnicas de planificación, la ejecución por niveles y el índice
+mutuo adaptan las de KAG (Apache-2.0); la atribución está en los docstrings,
+`THIRD_PARTY_NOTICES.md` y `docs/adaptations/provenance.json`.
+
+**Medido, no proclamado.** Diez preguntas de dos o tres saltos sobre el Cerebro
+real del propietario (47 entidades, 35 relaciones, 45 fragmentos; sólo lectura,
+con el modelo global en las Sparks, sin tocar los datos), con respuesta
+esperada fijada antes de medir. Plan válido 10/10, cadena de saltos bien
+enlazada 10/10, todos a la primera (sin reparación), 2 o 3 llamadas al modelo
+por pregunta y entre 1,6 y 3,8 s. Acierto de la respuesta: **9/10** en la
+primera medición. El fallo no fue una invención sino «no he encontrado»: el
+planificador pidió `member_of` y el extractor había guardado `part_of`, con la
+arista además en sentido inverso. Se añadió una tabla corta de sinónimos de
+predicado (miembro/parte/pertenece, vive/reside/ubicado, creó/fundó/autor,
+estudió/asistió, usa/utiliza) con puntuación por debajo de la coincidencia
+exacta, con su prueba, y la segunda medición dio **10/10**. Son diez preguntas
+sobre un grafo pequeño: sirve para detectar roturas, no para prometer un
+porcentaje general. Las preguntas y respuestas esperadas contienen datos
+personales y no se guardan en el repositorio, sólo en la evidencia local.
+
+**Prefix caching.** Comprobado en las recetas del clúster de las Sparks:
+las de vLLM (`glm53-tp3`,
+`glm53-tp2`, `glm53-qad-tp2`) lo llevan activo (`--enable-prefix-caching` en el
+arranque de la imagen y en el ejecutor de la receta QAD) y la de SGLang con el
+modelo global (`dsv41-tp4`) está en marcha sin `--disable-radix-cache` (proceso vivo en la
+Spark3, con `--enable-cache-report`), de modo que la caché radix está activa.
+No se miró la receta SGLang de Qwen. No hizo falta abrir ninguna tarea en el espacio `prometheus`.
+
+## El refinamiento del harness prueba lo que propone — 28-10-2026
+
+Ágora #1693 (OBJ-28). Antes, una propuesta salía de leer la trayectoria y
+esperaba aprobación sin saber si servía. Ahora `src/harness_refinement/probe.py`
+la prueba: en segundo plano repite la tarea original con el modelo global (la
+base dos veces y cada candidata una vez, en sólo lectura, sin supervisión,
+carga `background` y en la carpeta del propio proyecto), con candidatas en dos
+líneas que no se solapan (invertir el fallo / lo que sabría un especialista).
+El agregador (`compose.py`) sólo acepta ediciones que citan momentos concretos
+de la trayectoria; un fallo en una de las dos repeticiones es ruido; quedarse
+con la base es válido; la elección es ciega (ids barajados, la base puede
+ganar). La ganadora se aplica sola con el deshacer exacto por id de antes
+(`applied_by: harness-probe`), las demás se descartan con su evidencia, y el
+ajuste `harness_refinement_auto_apply` devuelve el modo «pedir aprobación».
+`validator.py` comprueba que las skills y scripts citados existen y que no hay
+plantillas rotas, y cae a la base si falla. `experience.py` guarda un
+`EXPERIENCE.md` por dominio en la memoria del proyecto (pista, lección,
+evidencia, confianza; veredictos ayudó/perjudicó/sin efecto observado/
+confundido; `NO_ENTRY` sin contraste) que lee el siguiente proponente. Respeta
+las puertas de admisión (cede ante la actividad en primer plano) y descarta la
+ronda entera si las pierde. Superficies: rutas `/api/harness/proposals/probes`
+y `/lessons`, herramientas MCP `harness_probes` y `harness_lessons`, y en
+Skills → harness las tarjetas «Probado antes de quedarse» y «Lecciones» con los
+interruptores y la evidencia de cada ronda. Método adaptado de Harness²
+(Apache-2.0; ver `THIRD_PARTY_NOTICES.md`).
+
+**Prueba en vivo** (instancia privada con datos propios en el puerto 7311, sin
+GPU 0 ni 1, modelo global en las Sparks, proyecto con carpeta propia donde el
+asistente contestó `pytest` y la persona corrigió con `python -m unittest
+discover -s checks -p "check_*.py"`). Cuatro rondas, cada una de 20 a 30
+minutos, con la evidencia completa en `research-inbox/faustus-harness-28-10/`:
+
+- **A**, memoria ya con la corrección (el propio agente la había guardado): las
+  dos repeticiones de la base aciertan, las candidatas se descartan («el fallo
+  no se repite», ruido), se queda la base, sin lección. Es el comportamiento
+  esperado.
+- **B**: gana una edición de memoria (redacción más tajante) y se aplica sola;
+  `POST /api/harness/proposals/{id}/undo` devuelve el texto exacto anterior y
+  deja el registro de deshacer. El veredicto fue «confundido» (la base también
+  acertaba desde memoria) y no se escribió lección.
+- **C**: una repetición de la base acierta y la otra no entrega; ambas
+  candidatas se descartan con razón y se queda la base.
+- **D**, tras quitar de la instancia privada la memoria y las dos skills que el
+  propio agente se había escrito en la primera sesión: las dos repeticiones de
+  la base contestan `pytest` (el fallo se reproduce), la candidata de memoria con
+  el comando exacto entrega el correcto, gana a ciegas y se aplica sola; la misma
+  edición de la otra línea se descarta porque su única repetición agotó el
+  tiempo. Se escribió una lección en `EXPERIENCE.md`.
+
+Hallazgos de la prueba, corregidos con prueba: las repeticiones no recibían la
+carpeta del proyecto (ahora sí); y la lección de la ronda D llevaba el veredicto
+del primer candidato con veredicto útil en vez del de la ganadora (aquí «sin
+efecto observado», del que agotó el tiempo, junto a una lección sobre la
+ganadora). Ahora una lección tras una victoria sólo descansa en el veredicto de
+la ganadora: si el modelo la llama «confundida», no se escribe nada. La entrada
+de esa ronda se conserva como evidencia. Hallazgo de fondo: Faustus guarda por
+sí mismo las correcciones en memoria y skills, y por eso la base suele acertar
+en la repetición; en ese caso quedarse con la base es lo correcto, y una ronda
+sólo adopta cuando la base de verdad falla (ronda D). Los tiempos de ronda los
+domina la repetición en las Sparks (270-510 s cada una), por eso corre en segundo
+plano.

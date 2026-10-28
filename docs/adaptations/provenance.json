@@ -88,6 +88,72 @@
       "destination": "src/visual_index/embedder.py",
       "reason": "Embedding screenshot strips and text queries with a Qwen3-VL embedding model: last non-padding token, L2 normalised, with an instruction on the query side, so a text query retrieves images.",
       "modifications": "Reimplementation, not a port: a lazy transformers loader that downloads into the Faustus models folder, never uses GPUs 0 or 1 (a VRAM-arbiter lease on the allowed cards, else CPU), unloads after an idle TTL, and ships a deterministic fake embedder for tests. No server, Docker or vector-database code is carried over."
+    },
+    {
+      "id": "kag-graph-ask-planner",
+      "source_repo": "https://github.com/OpenSPG/KAG",
+      "commit": "unknown",
+      "path": "kag/solver/prompt/lf_static_planning_prompt.py (technique, not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/brain/graph_plan.py",
+      "reason": "Planning a multi-hop question as a small text program of retrieval, math, deduce and output operators bound by aliases, so the steps that do not depend on each other can run together.",
+      "modifications": "Reimplementation for Faustus' own brain tables: own plan grammar, own prompt, one repair attempt, a cap of 8 steps. The module docstring carries the Apache-2.0 attribution."
+    },
+    {
+      "id": "kag-graph-ask-executor",
+      "source_repo": "https://github.com/OpenSPG/KAG",
+      "commit": "unknown",
+      "path": "kag/solver/pipeline/kag_static_pipeline.py (technique, not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/brain/graph_ask.py",
+      "reason": "Running the planned steps level by level, rewriting a sub-question with the results already obtained, and fusing graph and text evidence into one ranking.",
+      "modifications": "Reimplementation: asyncio levels over Faustus' own retrieval and a safe arithmetic evaluator; degrades to a flat search when the plan is unusable. The module docstring carries the Apache-2.0 attribution."
+    },
+    {
+      "id": "kag-graph-ask-mutual-index",
+      "source_repo": "https://github.com/OpenSPG/KAG",
+      "commit": "unknown",
+      "path": "kag/builder/ and kag/solver/ (entity and chunk linking; technique, not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/brain/graph_index.py",
+      "reason": "A two-way index between entities and the source fragments that mention them, plus a weighted min-max fusion of graph scores and text scores.",
+      "modifications": "Built over the existing entities, relations and mentions tables (memory, project memory and notes as sources); BM25 over the linked fragments; no KAG code or schema is carried over."
+    },
+    {
+      "id": "harness2-probe-and-compose",
+      "source_repo": "https://github.com/google-research/harness2",
+      "commit": "unknown",
+      "path": "method (propose, probe against a baseline, compose, select blind; not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/harness_refinement/probe.py",
+      "reason": "Testing each proposed harness edit by repeating the original task in the background against the baseline, and keeping an edit only if it helps.",
+      "modifications": "Reimplementation for Faustus' four edit axes and its own agent loop; repeats run read-only and unattended on the global model; failures in one of k repeats count as noise; keeping the baseline is a valid outcome."
+    },
+    {
+      "id": "harness2-compose-select",
+      "source_repo": "https://github.com/google-research/harness2",
+      "commit": "unknown",
+      "path": "method (aggregator with evidence, blind selection; not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/harness_refinement/compose.py",
+      "reason": "An aggregator that accepts only edits citing trajectory moments, and a blind selection among shuffled candidates where the baseline can win.",
+      "modifications": "Own prompts and parsers; candidates stay on two non-overlapping lines; the winner is applied through the existing exact undo by id."
+    },
+    {
+      "id": "harness2-experience-notes",
+      "source_repo": "https://github.com/google-research/harness2",
+      "commit": "unknown",
+      "path": "method (per-domain experience library; not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/harness_refinement/experience.py",
+      "reason": "A per-domain EXPERIENCE.md of cue, lesson, evidence and confidence with verdicts helped, hurt, no observed effect or confounded, read by the next proposer.",
+      "modifications": "Stored in Faustus project memory, written only when the probe has a contrast between baseline and candidate (NO_ENTRY otherwise)."
     }
   ]
 }

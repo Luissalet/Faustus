@@ -999,7 +999,7 @@ recuperación de herramientas (OBJ-7) son los primeros destinos. OBJ-24
 lado: si la fase 1 deja una capa de decodificación restringida reutilizable,
 OBJ-24 se apoya en ella.
 
-## OBJ-28 · Refinamiento del harness propuesto tras cada tarea — HECHO (comprobado 11-10-2026: `src/harness_refinement/`, `routes/harness_proposals_routes.py`, pantalla `studio/src/screens/skills/harness_proposals.tsx`, MCP `mcp_servers/harness_server.py`)
+## OBJ-28 · Refinamiento del harness propuesto tras cada tarea — HECHO (ampliado y comprobado en vivo 28-10-2026; comprobado 11-10-2026: `src/harness_refinement/`, `routes/harness_proposals_routes.py`, pantalla `studio/src/screens/skills/harness_proposals.tsx`, MCP `mcp_servers/harness_server.py`)
 
 Del mismo barrido. El patrón: al terminar una tarea, revisar la trayectoria y
 **proponer el edit CRUD más pequeño** sobre el estado del harness — prompt,
@@ -1015,6 +1015,28 @@ otros tres ejes y añadir el deshacer.
 proyecto de donde sale el patrón es justamente que se auto-modifica sin
 aprobación humana obligatoria. Encaja con OBJ-26 (cuándo corre) y con las
 tarjetas de aprobación que ya existen (cómo se acepta).
+
+**Ampliación (28-10-2026, Ágora #1693): ahora prueba lo que propone.** La regla
+«propone, nunca aplica» se sustituye por «aplica sólo lo que ha probado, y se
+puede volver a pedir aprobación con un ajuste». Tras una tarea con corrección,
+una pasada en segundo plano (`src/harness_refinement/probe.py`) repite la tarea
+original en sólo lectura y sin supervisión con el modelo global: la base dos
+veces y cada candidata una vez, sobre dos líneas que no se solapan (una que
+invierte el fallo, otra que añade lo que sabría un especialista del dominio).
+Un agregador sólo acepta ediciones que citan momentos de la trayectoria; un
+fallo en una de las dos repeticiones es ruido; conservar la base es un
+resultado válido; la elección entre las supervivientes es ciega (ids
+barajados). La ganadora se aplica sola con el deshacer exacto por id que ya
+existía, las demás se descartan con su evidencia, y un validador del harness
+(skills y scripts existen, sin plantillas rotas) cae a la base ante un fallo.
+Un `EXPERIENCE.md` por dominio en la memoria del proyecto (pista, lección,
+evidencia, confianza; veredictos ayudó, perjudicó, sin efecto observado,
+confundido; `NO_ENTRY` si no hay contraste) lo lee el siguiente proponente.
+Ajustes: `harness_refinement_probe`, `harness_refinement_auto_apply`,
+`harness_refinement_probe_k`. Superficies: rutas `/api/harness/proposals/probes`
+y `/lessons`, herramientas MCP `harness_probes` y `harness_lessons`, y la
+tarjeta «Probado antes de quedarse» en la vista del harness de Skills. Prueba en vivo y
+resultado en FAUSTUS.md (28-10-2026).
 
 ## OBJ-29 · Omisión recuperable en el Context Engine — HECHO EN CÓDIGO, FALTA VERIFICAR EN VIVO (23-09-2026)
 

@@ -123,6 +123,28 @@ forget to keep in sync with the code.
   folder was owned by another change when this landed); add one with
   `destination` set to the three files above.
 
+- **[KAG](https://github.com/OpenSPG/KAG)** by **OpenSPG**. **Apache-2.0.**
+  Techniques reimplemented against Faustus' own brain tables (no source
+  file is vendored; no commit is pinned, so `docs/adaptations/provenance.json`
+  says `"commit": "unknown"`). The module docstrings carry the attribution:
+
+  - `src/brain/graph_plan.py` - a question planned as a text program of
+    retrieval, math, deduce and output operators bound by aliases.
+  - `src/brain/graph_ask.py` - level-parallel execution, sub-question
+    rewriting with the results obtained so far, graph and text fusion.
+  - `src/brain/graph_index.py` - a two-way index between entities and the
+    source fragments that mention them, and a weighted min-max fusion.
+
+- **[Harness2](https://github.com/google-research/harness2)** by **Google
+  Research**. **Apache-2.0.** The method (propose, probe against a baseline,
+  compose, select blind, keep per-domain experience) reimplemented for
+  Faustus' four harness edit axes; no source file is vendored and no commit
+  is pinned:
+
+  - `src/harness_refinement/probe.py`, `compose.py`, `experience.py` (with
+    `rollout.py`, `validator.py` and `probe_store.py` as Faustus' own
+    support code).
+
 ## Bundled
 
 - **Skill library, rule library and agent library** (`skills/library/`,
