@@ -1,8 +1,19 @@
 {
   "schema": 1,
+  "x-family": {
+    "copilot": {
+      "version": 1,
+      "info": "/api/copilot/info",
+      "panel": "/api/copilot/panel.js",
+      "proxy": "/api/copilot/proxy",
+      "launcher": "/api/copilot/launcher.js",
+      "context": "window.hoardCopilot.context",
+      "refresh": "window.hoardCopilot.onTurnEnd"
+    }
+  },
   "id": "links",
   "name": "Links Hoard",
-  "purpose": "Read-later bookmark library with extracted article text, tags and highlights, stored locally; also downloads the video, audio or photos behind a link (YouTube, X, Instagram, TikTok…) to disk.",
+  "purpose": "Read-later bookmark library with extracted article text, tags and highlights, stored locally; downloads the video, audio or photos behind a link (YouTube, X, Instagram, TikTok…) to disk, signs in to sites from the app, and leaves a layered text digest of a video (speech, frames, on-screen text, what it sounds like) that an assistant can read, search and question; listens to audio locally (what a sound is, music and effects by section, loudness, recorded or synthesized) with its Sentidos engine.",
   "capabilities": [
     "bookmarks",
     "read-later",
@@ -22,8 +33,19 @@
     "audio-download",
     "highlights-to-flashcards",
     "resurface",
+    "time-budgeted-reading-plan",
     "daily-digest",
-    "job-events"
+    "job-events",
+    "video-digest",
+    "video-insight",
+    "article-questions",
+    "site-sign-in",
+    "sound-description",
+    "sound-search",
+    "soundtrack-timeline",
+    "audio-measurement",
+    "soundtrack-digest",
+    "faustus-copilot"
   ],
   "placeholders": [
     "LINKS_DIR",
@@ -76,5 +98,5 @@
     },
     "optional_env": []
   },
-  "notes": "Keep the app running (npm start) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. save_link waits briefly for the background fetch to report a real title and excerpt."
+  "notes": "Own Hoard again (decision of 2026-10-28; it had been folded into Writer's Hoard). Keep the app running (npm start, or start it from Hoard Hub) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. save_link waits briefly for the background fetch to report a real title and excerpt. Writer calls this app as an external module to keep references. The audio_* tools need Sentidos prepared once (audio_status with action setup, or the Sentidos page): its own Python environment and about 1.1 GB of models, downloaded on first use."
 }
