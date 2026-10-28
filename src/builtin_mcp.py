@@ -77,6 +77,9 @@ def _find_npx() -> str:
 # carries hundreds of LOC of unique IMAP / HTTP / manager logic not worth
 # duplicating into the native path right now.
 _BUILTIN_SERVERS = {
+    # Existing browser tabs through the product's extension. This transport
+    # never launches a browser or falls back to an isolated profile.
+    "browser_session": ("src/browser_relay/server.py", "Built-in: Browser session"),
     "conversation_objective": ("mcp_servers/conversation_objective_server.py", "Built-in: Conversation objective"),
     "project_workspace": ("mcp_servers/project_workspace_server.py", "Built-in: Project workspace"),
     "groups": ("mcp_servers/groups_server.py", "Built-in: Persistent working groups"),

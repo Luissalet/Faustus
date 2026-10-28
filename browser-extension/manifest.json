@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Faustus Browser Session",
+  "description": "Connect Faustus to explicitly selected tabs in this browser session.",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwiufWOY6ACVA4JnTlAFQ7cFQRDlN1A8vleR/zRDdBhhI8bG+gXFlBaEpTqnRudJ/p8nFXegzHlDAnbFqvC+3KDnD1szEy06ASJ1884YkVWH79pBVqCN+WA8M/Kbu3CM8XwNSV9K7Pi2SUVtBcVwawuufOl5dijK+2UVm7Jlome7HtaB2G8O48xdmsdE+c41Ks8AbKj/jErLjj66oCvTcHTN3da7m9LUw/20VRjqW8uC2PGo830e8G4ILYYFH9j11RekDgjZ23mE7U35OWibXTzOJHWRqCd+D+m8xmAIdgzhu1Koye0U/WPlHe/AYSfVUICiKGhsWL0XaRADRg6jerwIDAQAB",
+  "permissions": ["debugger", "tabs", "alarms"],
+  "background": {"service_worker": "worker.js", "type": "module"},
+  "action": {"default_title": "Faustus Browser: disconnected. Click to reconnect."},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self'; connect-src ws://127.0.0.1:7016"}
+}

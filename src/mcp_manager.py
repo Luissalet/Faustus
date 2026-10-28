@@ -2508,7 +2508,7 @@ class McpManager:
         for server_id, tools in self._tools.items():
             # Skip builtin Python servers — they use the code-block tool format
             # But include NPX-based builtins (like browser) which need function calling
-            if self.is_builtin(server_id) and server_id != "builtin_browser":
+            if self.is_builtin(server_id) and server_id not in {"builtin_browser", "browser_session"}:
                 continue
             conn = self._connections.get(server_id, {})
             server_name = conn.get("name", server_id)
@@ -2741,6 +2741,7 @@ class McpManager:
             "memory",
             "rag",
             "email",
+            "browser_session",
         }
 
     # TOOL-03: degraded — connected, but struggling. Two independent signals,
@@ -2895,7 +2896,7 @@ class McpManager:
         for t in tools:
             # Skip builtin Python servers — they're already in the agent prompt
             # But include NPX-based builtins (like browser) which aren't hardcoded
-            if self.is_builtin(t["server_id"]) and t["server_id"] != "builtin_browser":
+            if self.is_builtin(t["server_id"]) and t["server_id"] not in {"builtin_browser", "browser_session"}:
                 continue
             if t.get("is_disabled"):
                 continue

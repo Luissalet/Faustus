@@ -1,5 +1,16 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Sesión real del navegador — tareas 1671 y 1717
+
+Backend MCP propio y extensión instalable para leer pestañas existentes y
+enviarles input del navegador con lectura posterior del resultado. Comparte
+el perfil actual; no controla el escritorio ni arranca otro navegador.
+La extensión instalada ya permite manejar Writer en Brave real y en segundo
+plano: Root probó las ocho acciones MCP, Biblioteca y regreso a Inicio.
+La lectura compacta conserva controles y texto, con vista completa opcional.
+El uso autónomo por el modelo de Faustus y el ejecutable portable siguen
+pendientes. Véanse [instalación, pruebas y límites](src/browser_relay/README.md).
+
 ## HoardDex: cuaderno Nuzlocke por partida —23-10-2026, #1345
 
 Colección → Mis ejemplares añade un cuaderno opcional con reglas y límite manual,

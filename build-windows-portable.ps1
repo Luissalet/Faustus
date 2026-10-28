@@ -58,6 +58,8 @@ $dataArgs = @(
     "--add-data", "static;static",
     "--add-data", "scripts;scripts",
     "--add-data", "mcp_servers;mcp_servers",
+    "--add-data", "src/browser_relay;src/browser_relay",
+    "--add-data", "browser-extension;browser-extension",
     "--add-data", "services/hwfit/data;services/hwfit/data",
     "--add-data", "config;config",
     "--add-data", ".env.example;.env.example"

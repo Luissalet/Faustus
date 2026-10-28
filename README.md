@@ -3,6 +3,16 @@
 
 Navigation now follows the work: chat actions and document workspaces in Studio, repositories inside each project, specialist apps under Hoards, and five searchable settings areas. All existing tools and saved data remain accessible. See [navigation](docs/ui/navigation.md).
 
+The browser-session backend under task 1671 adds an MCP transport and an
+installable extension for existing Chromium tabs. It uses tab-specific browser
+input and returns an accessibility readback after actions. All eight actions
+have been exercised through the installed extension in real Brave by an MCP
+client, including background operation in Writer. Compact readbacks retain
+controls and text, with full detail available. Autonomous Faustus-model use
+and portable runtime support remain pending. It shares the operator's profile
+and does not launch another browser or control the desktop.
+[Setup and current limits](src/browser_relay/README.md).
+
 Saved conversations can keep an editable objective, context, deliverable and
 native work links. Revisions prevent conflicting edits; runs retain their exact
 identity and starting brief. Pause requests a generation safe point, while
