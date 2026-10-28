@@ -1,6 +1,6 @@
 # Project task workspaces
 
-A request to /api/chat may supply workspace as multipart form data or JSON.
+A request to /api/chat_stream may supply workspace as multipart form data or JSON.
 The native CLI already forwards --workspace. For a project chat, an explicit,
 already-vetted directory equal to the primary project root or canonically
 inside it becomes the execution and checkpoint workspace. With no selection,
