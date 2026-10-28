@@ -33,7 +33,8 @@ Exit codes: 0 answered, 1 error, 2 stopped on an approval, 3 timed out.
 
 Environment: FAUSTUS_URL (default http://127.0.0.1:7000), FAUSTUS_API_TOKEN
 (a token with the `sessions` scope) or FAUSTUS_USER/FAUSTUS_PASS (sign-in),
-FAUSTUS_MODEL, FAUSTUS_ENDPOINT_URL.
+FAUSTUS_MODEL, FAUSTUS_ENDPOINT_URL, FAUSTUS_RUN_INPUT_TOKEN_BUDGET (optional
+per-turn input cap; --input-token-budget takes precedence).
 """
 from __future__ import annotations
 
@@ -285,6 +286,18 @@ def register_mcp_servers(client: "Client", spec: str) -> List[str]:
     return names
 
 
+def _parse_input_token_budget(value: str) -> int:
+    """Mirror the existing API boundary without importing the app into the CLI."""
+    try:
+        budget = int(value) if str(value).strip().isdigit() else 0
+    except (ValueError, TypeError):
+        budget = 0
+    if not 4096 <= budget <= 200_000:
+        raise argparse.ArgumentTypeError(
+            "input_token_budget must be an integer between 4096 and 200000")
+    return budget
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Run one Faustus agent turn headless.")
     ap.add_argument("-p", "--prompt", required=True, help="the message; '-' reads stdin, '@file' reads a file")
@@ -300,6 +313,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="per-turn reasoning mode (what the composer chip sends)")
     ap.add_argument("--initial-response-timeout", type=float, default=None,
                     help="initial response budget for this turn, 5–900 seconds; includes admission and queue")
+    ap.add_argument("--input-token-budget", type=_parse_input_token_budget,
+                    default=os.environ.get("FAUSTUS_RUN_INPUT_TOKEN_BUDGET") or None,
+                    help="per-turn input budget, 4096–200000; defaults to "
+                         "FAUSTUS_RUN_INPUT_TOKEN_BUDGET, otherwise the server policy")
     ap.add_argument("--plan", action="store_true", help="plan mode: read and propose, no changes")
     ap.add_argument("--web", action="store_true", help="allow web search for the turn")
     ap.add_argument("--unattended", action="store_true",
@@ -370,6 +387,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             form["think_mode"] = args.think_mode
         if args.initial_response_timeout is not None:
             form["initial_response_timeout_s"] = args.initial_response_timeout
+        if args.input_token_budget is not None:
+            form["input_token_budget"] = args.input_token_budget
         if args.plan:
             form["plan_mode"] = "true"
         if args.web:
@@ -383,6 +402,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                      "workspace": args.workspace, "plan": args.plan, "approve": args.approve,
                      "project_id": (args.resolved_project or {}).get("id"), "agent_id": args.agent_id,
                      "project_warnings": args.project_warnings,
+                     "input_token_budget": args.input_token_budget,
                      "started": round(started, 3)})
     form = base_form()
     if args.resume_approval:
