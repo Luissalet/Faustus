@@ -16,6 +16,7 @@ for a term and get back ranked hits with the offset to open next.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, Optional
 
 TOOL_SCHEMA: Dict[str, Any] = {
@@ -27,7 +28,9 @@ TOOL_SCHEMA: Dict[str, Any] = {
             "(start/end, 0-based, end exclusive) or a `query` substring with "
             "surrounding context. Use it to read past a "
             "'[... chars omitted; open the artifact ...]' truncation left in an "
-            "earlier tool result."
+            "earlier tool result. For JSON, select a json_pointer and optionally "
+            "filter an array by match_pointer + match_value. For a serialized JSON "
+            "tool body, set json_source to /stdout or /output first."
         ),
         "parameters": {
             "type": "object",
@@ -36,11 +39,77 @@ TOOL_SCHEMA: Dict[str, Any] = {
                 "start": {"type": "integer", "description": "0-based start offset (range mode)."},
                 "end": {"type": "integer", "description": "Exclusive end offset (range mode)."},
                 "query": {"type": "string", "description": "Case-insensitive substring to locate instead of a range."},
+                "json_source": {"type": "string", "description": "RFC 6901 pointer to a JSON body inside the stored result, e.g. /stdout. A string body is decoded as JSON once. Default: stored result itself."},
+                "json_pointer": {"type": "string", "description": "RFC 6901 pointer within the JSON body, e.g. /entries. Empty string selects the root. Use instead of start/end/query."},
+                "match_pointer": {"type": "string", "description": "RFC 6901 pointer within each selected array item, e.g. /reference/id. Keep all items whose field equals match_value; missing fields do not match."},
+                "match_value": {"type": ["string", "number", "boolean", "null"], "description": "Exact JSON scalar to match. Numbers and booleans remain distinct. Requires match_pointer."},
             },
             "required": ["artifact_id"],
         },
     },
 }
+
+
+def _pointer_tokens(pointer: str) -> list[str]:
+    if not isinstance(pointer, str) or (pointer and not pointer.startswith('/')):
+        raise ValueError('JSON pointer must be empty or begin with /')
+    if re.search(r'~(?![01])', pointer):
+        raise ValueError('JSON pointer escape must be ~0 or ~1')
+    return [part.replace('~1', '/').replace('~0', '~')
+            for part in pointer[1:].split('/')] if pointer else []
+
+
+def _resolve_pointer(value: Any, tokens: list[str]) -> Any:
+    for token in tokens:
+        if isinstance(value, dict):
+            value = value[token]
+        elif isinstance(value, list):
+            if not re.fullmatch(r'0|[1-9][0-9]*', token):
+                raise KeyError('invalid array index')
+            value = value[int(token)]
+        else:
+            raise KeyError('pointer cannot traverse a scalar')
+    return value
+
+
+def _json_selection(text: str, args: dict, artifact_id: str) -> dict:
+    if 'json_pointer' not in args:
+        raise ValueError('json_pointer is required for JSON selection')
+    if any(key in args for key in ('start', 'end', 'query')):
+        raise ValueError('JSON selection cannot be combined with start, end or query')
+    value = json.loads(text)
+    source = args.get('json_source', '')
+    value = _resolve_pointer(value, _pointer_tokens(source))
+    if 'json_source' in args and isinstance(value, str):
+        value = json.loads(value)
+    value = _resolve_pointer(value, _pointer_tokens(args['json_pointer']))
+    total_items = len(value) if isinstance(value, list) else None
+    if ('match_pointer' in args) != ('match_value' in args):
+        raise ValueError('match_pointer and match_value must be supplied together')
+    if 'match_pointer' in args:
+        if not isinstance(value, list):
+            raise ValueError('array matching requires an array selection')
+        expected = args['match_value']
+        if expected is not None and not isinstance(expected, (str, int, float, bool)):
+            raise ValueError('match_value must be a JSON scalar')
+        tokens = _pointer_tokens(args['match_pointer'])
+        matches = []
+        for item in value:
+            try:
+                field = _resolve_pointer(item, tokens)
+            except (KeyError, IndexError):
+                continue
+            if (isinstance(field, bool) == isinstance(expected, bool)
+                    and field == expected):
+                matches.append(item)
+        value = matches
+    payload = {'artifact_id': artifact_id, 'json_source': source,
+               'json_pointer': args['json_pointer'], 'value': value,
+               'total_items': total_items,
+               'matched_items': len(value) if isinstance(value, list) else None,
+               'total_chars': len(text)}
+    return {'output': json.dumps(payload, ensure_ascii=False), 'exit_code': 0,
+            'artifact_id': artifact_id}
 
 
 class ReadArtifactTool:
@@ -62,6 +131,7 @@ class ReadArtifactTool:
         owner = effective_storage_owner(ctx.get("owner"), auth_is_disabled=None) or ""
         if not owner:
             return {"error": "artifact not found", "exit_code": 1}
+        json_mode = any(key in args for key in ("json_source", "json_pointer", "match_pointer", "match_value"))
         query = args.get("query")
         try:
             start = int(args.get("start") or 0)
@@ -73,6 +143,12 @@ class ReadArtifactTool:
         except (TypeError, ValueError):
             end = None
         try:
+            if json_mode:
+                stored = read_artifact_range(artifact_id, owner=owner)
+                try:
+                    return _json_selection(stored["text"], args, artifact_id)
+                except (ValueError, TypeError, KeyError, IndexError) as exc:
+                    return {"error": "JSON selection: " + str(exc), "exit_code": 1}
             return read_artifact_range(
                 artifact_id, owner=owner,
                 start=start if query is None else 0,
