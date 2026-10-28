@@ -12,7 +12,9 @@ import time
 # subprocess call. Force ProactorEventLoop here so the right loop is always
 # used, regardless of how the process is launched.
 if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    from src.windows_asyncio import configure_windows_asyncio
+
+    configure_windows_asyncio()
 
 
 def register_static_mime_types() -> None:
