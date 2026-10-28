@@ -41,6 +41,8 @@ BOARD_TOOL_NAMES: frozenset[str] = frozenset({
 
 EXAMPLES: Dict[str, List[str]] = {
     "unity": ["edita este componente del prefab en Unity y comprueba el resultado", "asigna un material HDRP a este objeto de Blood Arrows", "ejecuta las pruebas PlayMode y lee los errores de compilacion del proyecto Unity"],
+    "godot": ["crea una escena nueva en mi proyecto de Godot y añade un sprite", "cambia la posición de este nodo en la escena de Godot", "ejecuta el juego de Godot y dime qué errores salen", "add a node to my Godot scene and attach the player script"],
+    "project_workspace": ["lee las instrucciones de este proyecto", "guarda en la memoria del proyecto que usamos Postgres", "qué habilidades tiene instaladas este proyecto", "write down this decision in the project memory", "add a skill from the library to this project"],
     # -- Shared coordination board (tasks, locks and reviews with other agents) --
     "coordination_board": ["qué hay en el tablero de coordinación", "quién está trabajando en qué ahora", "show me the shared task board", "what are the other agents doing"],
     "coordination_poll": ["¿hay algo nuevo para mí en el tablero?", "mira si me han escrito los otros agentes", "any new messages or reviews for me", "check my coordination inbox"],

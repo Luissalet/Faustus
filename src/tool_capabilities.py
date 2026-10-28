@@ -769,7 +769,9 @@ _register(
     # operations and the official Blender tools also execute bpy, edit the open
     # scene and write caller-selected project/export files. Loopback MCP needs
     # no external service. Full access uses the existing authority policy.
-    {"blender_scene", "unity"},
+    # Godot scene edits write saved scene files in the project and its runs and
+    # debug processes execute the installed engine.
+    {"blender_scene", "unity", "godot"},
     ToolEffect.READ_WORKSPACE,
     ToolEffect.WRITE_PRIVATE,
     ToolEffect.WRITE_WORKSPACE,
