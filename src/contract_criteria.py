@@ -1793,8 +1793,10 @@ class CriteriaBook:
                     round_num: int = 0) -> Optional[Dict[str, Any]]:
         """One tool call of the turn. `kind`/`ok`/`paths` come from the turn
         ledger's own record of it (src/agent_harness.py TurnLedger.record): a
-        successful mutation or effect makes every earlier call stale, except a
-        write that only touched documentation, and takes back every criterion
+        successful workspace mutation or conservative non-coordination effect makes
+        earlier calls stale, except a documentation-only write. Coordination
+        remains an effect receipt without changing workspace freshness. The change
+        takes back every criterion
         the harness proved by itself (`auto_link`) from an earlier call.
         Returns the recorded call (None for `criteria_check`)."""
         if tool == "criteria_check":
@@ -1823,7 +1825,11 @@ class CriteriaBook:
             "mutation": bool(ok and kind in ("mutation", "effect")),
         }
         self.calls.append(call)
-        if ok and kind in ("mutation", "effect"):
+        # Agora writes change remote coordination state, not this workspace.
+        # Keep their effect receipts, but do not expire prior checks or auto proofs.
+        workspace_changed = bool(ok and (kind == "mutation" or
+                                 (kind == "effect" and not str(tool or "").startswith("coordination_"))))
+        if workspace_changed:
             docs_only = bool(paths) and all(_DOC_ONLY_RE.search(str(p or "")) for p in paths)
             if not docs_only:
                 self.last_mutation_seq = self.seq
@@ -2124,13 +2130,17 @@ class CriteriaBook:
         the first open criteria in priority order (sections in turn), bounded."""
         open_rows = self.ordered(self.open())
         example = (open_rows[0] if open_rows else (self.criteria[0] if self.criteria else {})).get("id") or "C001"
+        link_example = json.dumps({"links": [{"id": example, "call_id": "..."}]})
         head = (
-            "[Contract criteria - automatic runtime message] The task statement was read as "
-            f"{len(self.criteria)} checkable requirements ({len(open_rows)} open). Show each "
-            "one with a tool call whose OUTPUT shows it, run after your last change, and link it with "
-            f"`criteria_check` (`{{\"links\": [{{\"id\": \"{example}\", \"call_id\": \"...\"}}]}}` or `\"command\": \"<text "
-            "of the command you ran>\"`); an echo of your own words is not evidence; mark one not_applicable "
-            "only with a real reason. The harness also links by itself what a fresh run of yours clearly shows.\n"
+            "[Contract criteria - advisory runtime message] The task statement was read as "
+            f"{len(self.criteria)} proposed requirements ({len(open_rows)} open). Complete the actual request; "
+            "use existing successful tool calls whose OUTPUT demonstrates a requirement and link them with "
+            f"`criteria_check` `{link_example}`, or identify the command you already ran. "
+            "An echo of your own words is not evidence. "
+            "Do not repeat successful external actions just to satisfy inferred evidence labels. "
+            "A pending matcher result is advisory: keep it pending and explain the limitation; "
+            "do not invent proof or mark it not_applicable without a real reason. "
+            "Fix genuinely missing work or failed checks.\n"
         )
         secs = " · ".join(f"{s}: {n}" for s, n in self.sections(open_rows))
         if len(secs) > 600:
@@ -2157,9 +2167,10 @@ class CriteriaBook:
             "does not count for another):"
         ) if rows else "In particular, requirements extracted from the task statement still lack evidence:"
         foot = (
-            "For each: run a command or test whose OUTPUT shows it, after your last change, fix what fails, then "
-            "call `criteria_check` with the call (`call_id` or `command`), or `status: \"unmet\"` if it still "
-            "fails, or `status: \"not_applicable\"` with a real reason."
+            "Link suitable existing evidence with `criteria_check` (call_id or command). "
+            "Do not repeat successful external actions just to satisfy these labels. "
+            "A pending matcher result is advisory; retain the pending state and explain what the matcher "
+            "could not establish. Fix actual missing work or failed checks; do not invent evidence."
         )
         recent = self.recent_calls(n=6, chars=70)
         foot_full = foot + (("\nRecent tool calls of this turn: " + " ; ".join(recent)) if recent else "")
@@ -2199,8 +2210,9 @@ class CriteriaBook:
         head = ("[Harness check - automatic runtime message, not a new user request] "
                 f"{len(rows)} requirements of the task statement still have no accepted evidence"
                 + (f" ({len(fresh)} of them not listed in the audit, shown first)" if fresh and seen else "") + ":\n")
-        foot = ("\nCheck each one with a tool now and link it with `criteria_check` (a link the harness did not "
-                "accept says why), or mark it unmet / not_applicable with a reason. "
+        foot = ("\nThese inferred checks are advisory. Link suitable existing calls when useful. "
+                "Do not repeat successful external actions to clear evidence labels. "
+                "Keep unsupported checks pending and explain the limitation; fix real missing work or failures. "
                 + (NA_MASS_GUIDANCE + " " if self.na_mass() else "")
                 + "This is the last reminder; then give your final answer.")
         lines, n = self._fill(fresh + seen, max(400, max_chars - len(head) - len(foot) - 120), 120)
