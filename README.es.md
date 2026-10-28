@@ -1,6 +1,19 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
+Los turnos de terminal aceptan --input-token-budget (4096–200000), o
+FAUSTUS_RUN_INPUT_TOKEN_BUDGET, como presupuesto estimado de contexto por turno.
+Una conversación de proyecto puede elegir con --workspace una subcarpeta
+vetada para ejecutar y crear checkpoints, conservando identidad y raíces
+adjuntas de acceso. Una selección explícita inválida devuelve HTTP 400.
+[Presupuesto CLI](docs/CLI-TURN-BUDGET.md) · [Carpetas de tarea](docs/CLI-WORKSPACE-SCOPE.md).
+
+En Windows se consultan primero los nombres de los procesos y sólo después los
+detalles de candidatos a la app. El resultado se conserva cinco segundos desde
+el final del sondeo; se evitan lecturas repetidas de comandos ajenos y se
+mantienen las reglas de disponibilidad del escritorio.
+[Sondeo y límites observados](docs/HOST-PROCESS-PROBE.md).
+
 La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
 
 La biblioteca incluye procedimientos locales de desarrollo de juegos, ingeniería inversa, assets

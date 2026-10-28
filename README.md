@@ -1,6 +1,19 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
+Terminal turns accept --input-token-budget (4096–200000), or
+FAUSTUS_RUN_INPUT_TOKEN_BUDGET, for an estimated per-turn context budget.
+A project chat can select a vetted task subdirectory with --workspace for
+execution and checkpoints while retaining its project identity and attached
+tool-access roots. Invalid explicit project selections return HTTP 400.
+[CLI budget](docs/CLI-TURN-BUDGET.md) · [Task folders](docs/CLI-WORKSPACE-SCOPE.md).
+
+Windows desktop-app discovery reads process names before inspecting details
+of candidate app processes, and caches its result for five seconds after the
+probe completes. This removes repeated command-line reads of unrelated
+processes while retaining the existing desktop availability rules.
+[Discovery and observed limits](docs/HOST-PROCESS-PROBE.md).
+
 Navigation now follows the work: chat actions and document workspaces in Studio, repositories inside each project, specialist apps under Hoards, and five searchable settings areas. All existing tools and saved data remain accessible. See [navigation](docs/ui/navigation.md).
 
 The browser-session backend under task 1671 adds an MCP transport and an

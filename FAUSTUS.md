@@ -1,5 +1,43 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Tareas de terminal y preparación en Windows — 28-10-2026, #1716/#1728/#1733
+
+La CLI acepta --input-token-budget entre 4096 y 200000, también mediante
+FAUSTUS_RUN_INPUT_TOKEN_BUDGET; la bandera tiene prioridad. Lo envía en cada
+tramo de aprobación y lo registra en run_start. Es un presupuesto estimado de
+contexto; no garantiza un techo exacto de tokens procesados o facturados.
+
+Una conversación de proyecto puede usar --workspace para ejecutar y crear
+checkpoints en una subcarpeta vetada de su raíz principal. Sin selección se usa
+la raíz; una selección explícita inválida devuelve HTTP 400. La identidad y las
+raíces adjuntas de herramientas se conservan. Al reanudar una acción aprobada
+manda su carpeta sellada y se actualiza sólo trusted_workspace, conservando
+las otras opciones del turno. Véase [selección](docs/CLI-WORKSPACE-SCOPE.md).
+
+En Windows, el detector de la app enumera primero nombres y consulta exe/cmdline
+sólo para candidatos Electron/Faustus. Conserva heartbeat, identificación,
+overrides, errores y permisos. La caché de cinco segundos empieza al terminar
+el sondeo. Antes, leer todos los comandos bloqueaba el hilo principal durante
+la preparación; el perfilador lo observó sin leer variables locales.
+[Sondeo y límites](docs/HOST-PROCESS-PROBE.md).
+
+Fuente 8b3a97ff aprobada e integrada; oráculo causal de 7 casos,15 regresiones y9 casos
+adicionales del revisor pasan. Main repite 7+15. En dos ensayos nativos similares,
+con el mismo SID/proyecto/modelo y seis herramientas/seis rondas, el total fue
+468,54 s antes y134,57 s después. Las dos consultas de HoardDex conservaron tres
+variantes cada una; cwd/checkpoint, archivo sintético, state/outcomes y el
+checkpoint global anterior quedaron verificados. La actividad respondió en 10 ms
+durante inferencia y el navegador mostró 37/37 herramientas. No es un factor global
+controlado: cambiaron historia, caché, procesos y esquemas; no se demuestra ahorro
+de tokens. El primer sondeo de nombres aún cuesta tiempo y la identificación
+positiva de app se acredita por fixtures, sin abrir la app de escritorio.
+
+El contraste previo de cuatro contratos de HoardDex obtuvo 303 comprobaciones correctas; no equivale
+a paridad general ni a pruebas Android de Faustus. Continúa el uso acotado para
+contrastar intercambios y zonas en la tarea 1737. Datos e históricos se conservan; el
+vigilante estuvo en pausa normal durante los ensayos, sin resetear sus resultados
+inciertos. [Presupuesto CLI](docs/CLI-TURN-BUDGET.md).
+
 ## Motor de juego, idioma de búsqueda y escucha del servidor — 28-10-2026, #1710/#1697/#1707
 
 **El servidor reabre su puerto sin perder turnos (#1710).** Windows puede cerrar el

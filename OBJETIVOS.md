@@ -1,5 +1,21 @@
 # Objetivos acordados
 
+## Continuación tras las tareas técnicas — 28-10-2026, #1716/#1728/#1733
+
+Se ha aislado y corregido una causa concreta de las pausas del bucle: leer los
+comandos de todos los procesos de Windows al preparar herramientas. La nota
+anterior sobre la causa sin aislar queda acotada por esta evidencia, sin afirmar
+que todas las pausas estén resueltas. La selección de subcarpeta de proyecto y
+el presupuesto estimado CLI están activos y probados con el mismo SID nativo.
+
+Continuar con tareas reales de HoardDex:1737 contrasta intercambios y zonas por
+MCP, además de los entrenadores, localizaciones, textos e iconos por edición y
+reducción del APK pendientes. Conservar la edición, formas y condiciones; vacío
+no significa imposibilidad. El resultado acotado134,57 s frente468,54 s no acredita
+un factor general, ahorro de tokens o todas las tareas de programación e
+investigación. Separar el primer sondeo frío de los posteriores y medir otros
+bloqueos sólo cuando haya evidencia nueva, sin reiniciar modelos ni históricos.
+
 ## Faustus: siguientes pasos tras motor de juego, idioma de búsqueda y listener —28-10-2026, #1710/#1697/#1707
 
 - Hook de diseño de dos niveles (#1695): esperar a que Vitruvius cierre #1694
