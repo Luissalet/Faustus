@@ -2789,6 +2789,43 @@ _RELATIVE_FILE_ACTION_RE = re.compile(
 )
 
 
+def _browser_only_observation_request(text: str) -> bool:
+    """Explicit browser-only work without a local delivery request.
+
+    UI verbs and a conditional browser error are not repository work. Keep
+    positive file/code clauses, including ones added after the browser brief.
+    """
+    text = str(text or "")
+    if not re.search(r"\b(?:usa|utiliza|use)\s+(?:s[oó]lo|only)\s+(?:el\s+|the\s+)?"
+                     r"(?:navegador|browser)\b", text, re.IGNORECASE):
+        return False
+    # Reuse concrete coding signals in every positive clause. A bare MCP or
+    # schema identifier (e.g. context_nodes) alone is not a source artifact.
+    positive = []
+    for clause in re.split(r"[;.!?\n](?!\w)|\b(?:pero|but|adem[aá]s|also)\b", text,
+                           flags=re.IGNORECASE):
+        clause = re.sub(r"\b(?:no|sin|ni|do not|don't|without|never)\b.*", "", clause,
+                        flags=re.IGNORECASE)
+        if (_has_concrete_programming_signal(clause)
+                and any(not re.fullmatch(r"[a-z][a-z0-9]*_[a-z0-9_]+", match.group(), re.IGNORECASE)
+                        for match in _SOURCE_ARTIFACT_SIGNAL_RE.finditer(clause))):
+            return False
+        positive.append(clause)
+    from src.deliverables import requested_files
+    if requested_files("\n".join(positive)):
+        return False
+    local_target = (r"\b(?:archivos?|ficheros?|files?|repos?(?:itory)?|workspace|"
+                    r"c[oó]digo|code|scripts?|diff|patch|commit|branch|pull\s+request)\b")
+    return not any(
+        _WORKSPACE_CODE_ACTION_RE.search(clause)
+        and (re.search(local_target, clause, re.IGNORECASE)
+             or _RELATIVE_FILE_ACTION_RE.search(clause)
+             or any(re.search(r"[./\\]", match.group())
+                    for match in _WORKSPACE_CODE_TARGET_RE.finditer(clause)))
+        for clause in positive
+    )
+
+
 def _looks_like_workspace_coding_request(text: str) -> bool:
     """Best-effort signal that a request itself asks for coding work.
 
@@ -2798,6 +2835,8 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
     """
     text = str(text or "")
     if not text.strip():
+        return False
+    if _browser_only_observation_request(text):
         return False
     if re.search(r"\b(?:pull request|pr|diff|patch)\b", text, re.IGNORECASE):
         return True
@@ -12830,7 +12869,9 @@ async def _stream_agent_loop_body(
                     _promote_tool_names(_cc_permitted(
                         ("criteria_check",), disabled_tools=disabled_tools, tool_policy=tool_policy,
                         admin=bool(_cc_owner_admin(owner))))
-                if unattended and _cc_book.open():
+                if (unattended and _cc_book.open()
+                        and (not _browser_only_observation_request(_last_user)
+                             or _intent.get("workspace_work"))):
                     # Once, bounded (counts per section, the first open
                     # criteria by priority): the statement itself is already
                     # in the prompt; the rest is paged by criteria_check.

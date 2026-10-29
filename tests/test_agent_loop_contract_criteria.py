@@ -451,3 +451,153 @@ def test_local_audit_and_gap_keep_history_but_replace_the_final_answer(loop, mon
     history = "\n".join(metrics["round_texts"])
     assert all(draft in history for draft in drafts)
     assert attempted_http == []
+
+
+_BROWSER_OBSERVATION_1797 = (
+    "Comprobación breve de interfaz, sin entregable de código ni artefacto local.\n"
+    "No modificar archivos, crear planes de implementación ni retomar pendientes locales.\n"
+    "Usa sólo el navegador compartido incorporado mcp__browser_session__browser_session "
+    "para observar y actuar sobre la interfaz.\n"
+    "No shell, escritorio, otro navegador, lecturas de código o artefactos.\n"
+    "- Los IDs de pestañas actuales deben conservarse.\n"
+    "- Elige la pestaña QA únicamente si su URL empieza por http://127.0.0.1:63395/.\n"
+    "- Abre ese proyecto y lee el botón Biblioteca.\n"
+    "- El contador debe obtenerse literalmente antes de volver a Inicio.\n"
+    "- Los seis proyectos deben comprobarse sin editar datos.\n"
+    "- El resultado debe confirmar release y ser breve.\n"
+    "Si el servidor o la extensión no están disponibles, conserva el error y termina.\n"
+)
+
+
+@pytest.mark.parametrize("extra,local", [
+    ("", False),
+    ("Además modifica src/editor.ts y ejecuta sus pruebas.", True),
+    ("Además escribe informe.xlsx con el resultado.", True),
+    ("Además revisa el código del repositorio.", True),
+    ("Además lee src/editor.ts y explica su comportamiento.", True),
+    ("No edites datos; pero además modifica src/editor.ts.", True),
+    ("No crear archivos, pero escribe informe.xlsx con el resultado.", True),
+    ("Además revisa el diff.", True),
+    ("Además ejecuta pytest.", True),
+    ("Además lee src/main.go y explica su comportamiento.", True),
+    ("Además ejecuta npm test.", True),
+    ("Después ejecuta pytest.", True),
+    ("Además lee el contador de la Biblioteca.", False),
+    ("La vista añade context_nodes con sus padres originales.", False),
+    ("Después lee src/parse_count.go y explica su comportamiento.", True),
+    ("Además revisa la función parse_count(value).", True),
+])
+def test_explicit_browser_scope_preserves_positive_local_requests(extra, local):
+    text = _BROWSER_OBSERVATION_1797 + extra
+    intent = al._classify_agent_request([{"role": "user", "content": text}], text)
+    assert intent["workspace_work"] is local
+
+
+@pytest.mark.parametrize("mode", ["browser", "browser_failure", "code", "file", "local_read"])
+def test_browser_only_loop_keeps_advisory_criteria_without_local_closing_discipline(
+        tmp_path, monkeypatch, mode):
+    import httpx
+    import requests
+    from src import model_context, run_model_pin, tool_utils
+    from src.browser_relay.protocol import SCHEMA
+    from src.mcp_manager import McpManager
+    from tests.test_agent_harness_functional import _patch_common
+
+    attempts = []
+    def no_http(*args, **kwargs):
+        attempts.append(True)
+        raise AssertionError("CPU fixture must not perform HTTP")
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", no_http)
+    monkeypatch.setattr(httpx.Client, "send", no_http)
+    monkeypatch.setattr(requests.Session, "request", no_http)
+    monkeypatch.setattr(model_context, "_query_context_length", lambda *a, **k: (131072, True))
+    monkeypatch.setattr(run_model_pin, "restore_keep_alive", lambda *a, **k: None)
+    monkeypatch.setattr("src.tool_execution.get_active_workspace", lambda: str(tmp_path))
+    _patch_common(monkeypatch, settings={
+        "agent_project_tests": False, "agent_ui_smoke": False, "agent_auto_review": "off",
+        "agent_project_todos": False, "agent_contract_criteria_min_chars": 0,
+        "agent_contract_criteria_auto_link": False, "agent_plan_autocontinue": False,
+    })
+    # Populate the ordinary discovery cache with the shipping Browser schema.
+    # The real manager qualifies, advertises and filters it; no phantom alias
+    # or bypass of the loop's normal MCP catalogue is involved.
+    manager = McpManager()
+    manager._tools["browser_session"] = [{
+        "name": "browser_session", "description": "Use the existing browser session.",
+        "input_schema": SCHEMA,
+    }]
+    manager._connections["browser_session"] = {"name": "Browser Session", "transport": "stdio"}
+    monkeypatch.setattr(al, "get_mcp_manager", lambda: manager)
+    monkeypatch.setattr(tool_utils, "_mcp_manager", manager)
+    alias = "mcp__browser_session__browser_session"
+    assert alias in {s["function"]["name"] for s in manager.get_all_openai_schemas()}
+    executed = []
+
+    async def execute(block, *args, **kwargs):
+        executed.append((block.tool_type, block.content))
+        if block.tool_type == alias:
+            action = json.loads(block.content)["action"]
+            if mode == "browser_failure" and action == "snapshot":
+                return alias, {"output": json.dumps({"ok": False, "error": {
+                    "code": "document_changed", "phase": "not_dispatched"}}), "exit_code": 1}
+            result = ({"released": True} if action == "release" else
+                      {"tabs": [{"id": 7, "active": True, "url": "http://127.0.0.1:63395/"}]} if action == "tabs" else
+                      {"nodes": [{"ref": "p1", "role": "StaticText", "name": "36 visibles de 36"}]})
+            return alias, {"output": json.dumps({"ok": True, "result": result}), "exit_code": 0}
+        if block.tool_type == "read_file":
+            return "read_file", {"output": "const count = 36;", "exit_code": 0}
+        raise AssertionError("Unexpected tool: " + block.tool_type)
+
+    monkeypatch.setattr(al, "execute_tool_block", execute)
+    suffix = {"code": "Además modifica src/editor.ts y ejecuta sus pruebas.",
+              "file": "Además escribe informe.xlsx con el resultado."}.get(mode, "")
+    user = _BROWSER_OBSERVATION_1797 + suffix
+    commands = [{"action": "tabs"}, {"action": "snapshot", "tab_id": 7},
+                {"action": "tabs"}, {"action": "release", "tab_id": 7}]
+    rounds = [[{"name": alias, "arguments": json.dumps(c)}] for c in commands]
+    if mode == "local_read":
+        rounds.append([{"name": "read_file", "arguments": '{"path":"src/editor.ts"}'}])
+    rounds.extend(["Observación terminada.", "Comprobación local pendiente.",
+                   "Resultado final; quedan requisitos sin acreditar."])
+    calls = {"n": 0, "messages": []}
+
+    async def scripted_stream(_candidates, messages, **kwargs):
+        item = rounds[min(calls["n"], len(rounds) - 1)]
+        calls["n"] += 1
+        calls["messages"].append([dict(m) for m in messages])
+        packet = {"delta": item} if isinstance(item, str) else {"type": "tool_calls", "calls": item}
+        yield "data: " + json.dumps(packet) + "\n\n"
+        yield "data: " + json.dumps({"type": "finish", "finish_reason":
+                                    "stop" if isinstance(item, str) else "tool_calls"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", scripted_stream)
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b", [{"role": "user", "content": user}],
+        relevant_tools={alias, "read_file", "todowrite"}, workspace=str(tmp_path),
+        session_id="browser-scope1797-" + mode, unattended=True,
+        # Same explicit full-access task mode as the authorized native run;
+        # trusted_workspace alone covers files, not unknown MCP capabilities.
+        security_gate_bypass=True,
+        harness_options={"trusted_workspace": str(tmp_path)}, max_rounds=9,
+    )))
+    summary = _summary(events)
+    assert [t for t, _ in executed] == [alias] * 4 + (["read_file"] if mode == "local_read" else [])
+    assert attempts == [] and summary["mutations"] == [] and summary["effects"] == 0
+    assert summary["failed_calls"] == int(mode == "browser_failure")
+    assert json.loads(executed[3][1])["action"] == "release"
+    assert summary["criteria"]["pending"] > 0 and not summary["criteria"]["ids"]["proven"]
+    notes = "\n".join(m.get("content", "") for batch in calls["messages"] for m in batch
+                      if m.get("_harness_note"))
+    reasons = [e.get("reason") for e in events if e.get("type") == "harness_check"]
+    if mode in {"browser", "browser_failure"}:
+        assert calls["n"] == 5
+        assert "completion_audit" not in reasons and "contract_gap" not in reasons
+        assert "[Contract criteria" not in notes and "Call todowrite ONCE" not in notes
+        assert not summary["criteria"]["shown"]
+    else:
+        assert reasons.count("completion_audit") == 1 and reasons.count("contract_gap") == 1
+        assert calls["n"] == (8 if mode == "local_read" else 7)
+        if mode != "local_read":
+            assert "[Contract criteria" in notes and "Call todowrite ONCE" in notes
