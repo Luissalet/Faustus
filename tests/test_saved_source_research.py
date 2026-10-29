@@ -138,3 +138,40 @@ def test_four_public_reads_finish_without_forced_progress_or_completion_audit(mo
     assert not any((e.get('reason') == 'completion_audit' for e in events))
     notes = [m.get('content', '') for messages in seen for m in messages if m.get('_harness_note')]
     assert not any(('todowrite ONCE' in str(note) for note in notes))
+
+
+MCP_REQUEST = 'Read these public sources https://example.com/source.json and publish the table in your answer.'
+MCP_SOURCE_TOOL = 'mcp__connector_fixture__hub_web_fetch'
+
+def mcp_source_ledger(tmp_path, **changes):
+    l = h.TurnLedger(str(tmp_path), MCP_REQUEST)
+    payload = {'ok': True, 'status': 200, 'url': 'https://example.com/source.json', 'content': 'source text'}
+    payload.update(changes)
+    l.record(MCP_SOURCE_TOOL, json.dumps({'url': 'https://example.com/source.json'}), {'output': json.dumps(payload), 'exit_code': 0})
+    l.record('coordination_post', '{}', {'output': 'posted', 'exit_code': 0})
+    return l
+
+def test_observed_mcp_source_read_is_not_workspace_work(tmp_path):
+    assert not al._workspace_completion_work({'workspace_work': True}, [], mcp_source_ledger(tmp_path))
+
+@pytest.mark.parametrize('change', [{'ok': False}, {'status': 403}, {'content': ''}, {'content': None}, {'url': 'https://example.com/unrequested.json'}])
+def test_failed_or_unmatched_receipts_do_not_exempt(tmp_path, change):
+    assert al._workspace_completion_work({'workspace_work': True}, [], mcp_source_ledger(tmp_path, **change))
+
+@pytest.mark.parametrize('tool,args', [('read_file', {'path': 'x.py'}), ('write_file', {'path': 'x.py', 'content': 'x=1'}), ('bash', {'command': 'pwd'})])
+def test_real_local_work_still_requires_completion(tmp_path, tool, args):
+    l = mcp_source_ledger(tmp_path)
+    l.record(tool, json.dumps(args), {'output': 'ok', 'exit_code': 0})
+    assert al._workspace_completion_work({'workspace_work': True}, [], l)
+
+def test_source_receipt_does_not_change_authorization(tmp_path):
+    caps = al.capabilities_for_tool(MCP_SOURCE_TOOL)
+    assert not caps.known
+    assert al.ToolEffect.WRITE_WORKSPACE in caps.effects
+    assert al._workspace_completion_work({'workspace_work': True}, ['result.md'], mcp_source_ledger(tmp_path))
+
+def test_remote_read_does_not_hide_a_recorded_mutation(tmp_path):
+    l = h.TurnLedger(str(tmp_path), 'Read the public source https://example.com/a and answer.')
+    l.record('mcp__fixture__reader', json.dumps({'url': 'https://example.com/a'}), {'output': json.dumps({'ok': True, 'status': 200, 'url': 'https://example.com/a', 'content': 'source'}), 'exit_code': 0})
+    l.events.append({'tool': 'fixture-worker', 'ok': True, 'kind': 'mutation', 'paths': ['changed.py']})
+    assert al._workspace_completion_work({'workspace_work': True}, [], l)

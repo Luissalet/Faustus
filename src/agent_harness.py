@@ -717,6 +717,26 @@ def _computed_list_claim_text(text: str) -> str:
     return pattern.sub(replace, text)
 
 
+def _has_remote_source_result(tool: str, content: str, result: dict) -> bool:
+    """A connector returned source text for the requested URL, not just a tool name."""
+    if not tool.startswith("mcp__"):
+        return False
+    try:
+        requested = json.loads(content).get("url")
+        raw = _result_text(result)
+        payload = json.loads(raw) if raw else result
+        return bool(
+            isinstance(requested, str) and requested.startswith(("https://", "http://"))
+            and isinstance(payload, dict) and payload.get("url") == requested
+            and payload.get("ok") is True
+            and type(payload.get("status")) is int and 200 <= payload["status"] < 300
+            and not payload.get("error") and not payload.get("blocked")
+            and isinstance(payload.get("content"), str) and payload["content"].strip()
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 def _has_computed_list_result(tool: str, content: str, result: dict) -> bool:
     """A HomeHoard check returned the requested rows; this is read evidence."""
     if not tool.startswith("mcp__") or tool.split("__")[-1] != "home_check_list":
@@ -1967,6 +1987,8 @@ class TurnLedger:
         ev["verification_key"] = hashlib.sha256(json.dumps(
             identity, sort_keys=True, ensure_ascii=False, default=str,
         ).encode("utf-8", errors="surrogatepass")).hexdigest()
+        if ok and _has_remote_source_result(tool, content, result):
+            ev["remote_source_read"] = True
         if ok and _has_computed_list_result(tool, content, result):
             ev["computed_list"] = True
         if isinstance(result, dict):

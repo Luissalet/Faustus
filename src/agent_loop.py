@@ -2840,7 +2840,8 @@ def _workspace_completion_work(intent, deliverable_files, ledger) -> bool:
         for event in ledger.events
     )
     if (not deliverable_files and not workspace_actions and not ledger.mutations
-            and any(event.get("ok") and event.get("tool") in {"read_artifact", "web_fetch", "reach_read"} for event in ledger.events)
+            and any(event.get("ok") and (event.get("tool") in {"read_artifact", "web_fetch", "reach_read"}
+                                        or event.get("remote_source_read")) for event in ledger.events)
             and _saved_source_answer_request(_harness.user_authored_text(ledger.user_text))):
         # A completed progress list or an Agora post is not workspace work.
         return False
