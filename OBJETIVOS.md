@@ -2413,3 +2413,5 @@ Ensayo nativo1760: Ruta203 de Platino US, ordinales247/248/249 correctos desde u
 ## Investigación de fuentes guardadas — seguimiento #1763
 
 La lectura literal y la publicación de una respuesta ya evitan inferencias de edición local cuando sólo se han consultado artefactos. Se han corregido las referencias publicadas, los falsos entregables saved/generated y el uso de capacidades MCP desconocidas como prueba de ejecución. El segundo ensayo nativo aporta tres identificadores válidos sin progreso ni auditoría forzados. Siguen pendientes la eficiencia de encargos grandes, la autonomía general del modelo y la contrastación factual de cada contribución. Los contadores de uso no equivalen a facturación. HoardDex 363 entrega Ruta 203; la investigación de Ruta 209 y los demás pendientes de paridad siguen abiertos.
+
+La ambigüedad del progreso histórico observada en el ensayo 1763 está resuelta mediante etiquetas de alcance de conversación (1775). No se borran listas ni cambios y no se reasocian automáticamente a turnos. La eficiencia y la autonomía generales del modelo siguen bajo evaluación.

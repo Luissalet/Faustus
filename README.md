@@ -1434,3 +1434,5 @@ Faustus can query a literal source string inside a saved result with read_artifa
 ### Saved-source research
 
 Artifact queries and publication of their results can finish from observed evidence without forcing a local-edit completion audit when no local work or deliverable was requested. Real workspace changes retain their checks. A native Route 209 query published three independently checked identifiers with eight tools and no forced progress or completion audit. Useful bounded research still needs review; broad model autonomy remains under evaluation. [Behavior, tests and limits](docs/SAVED-SOURCE-RESEARCH.md).
+
+The Progress panel labels the conversation’s last saved checklist, latest recorded plan and latest recorded changes. They may come from earlier turns; their content remains available and updates with later records.

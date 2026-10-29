@@ -807,3 +807,5 @@ Ensayo nativo1760: Ruta203 de Platino US, ordinales247/248/249 correctos desde u
 ### Consulta de fuentes guardadas
 
 Las consultas de artefactos y la publicación de sus resultados pueden terminar con su evidencia sin imponer una auditoría de edición local cuando no hay trabajo local observado ni un entregable pedido. Conserva las comprobaciones de cambios reales. La prueba nativa de Ruta 209 publicó tres identificadores contrastados con ocho herramientas y sin progreso ni auditoría forzados. Ayuda útil para investigación acotada con revisión; la autonomía general sigue bajo evaluación. [Comportamiento, pruebas y límites](docs/SAVED-SOURCE-RESEARCH.md).
+
+El panel Progreso identifica la última lista, el último plan y los últimos cambios guardados de la conversación. Pueden proceder de turnos anteriores; se conservan y se actualizan con nuevos registros.
