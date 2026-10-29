@@ -1430,3 +1430,7 @@ Each new HTML contains 70,170 binaries/forty chunks/zero inline images. Authorit
 ## Direct reading of saved sources —29-10-2026
 
 Faustus can query a literal source string inside a saved result with read_artifact text_pointer, reporting original line numbers while keeping existing modes. Silver1760 passed fourteen external contracts on Main and independent review. The native continuation resolved three Platinum Route203 ordinals correctly without downloading again, but took215.88sCLI/147.09sruntime and ten tools across eight rounds, including redundant reads and completion bookkeeping. Its self-count and an extra sentinel statement were corrected in the shared thread. This is useful supervised research, not satisfactory general efficiency or a controlled comparison. The source-reference warning and redundant workspace audit remain to fix.
+
+### Saved-source research
+
+Artifact queries and publication of their results can finish from observed evidence without forcing a local-edit completion audit when no local work or deliverable was requested. Real workspace changes retain their checks. A native Route 209 query published three independently checked identifiers with eight tools and no forced progress or completion audit. Useful bounded research still needs review; broad model autonomy remains under evaluation. [Behavior, tests and limits](docs/SAVED-SOURCE-RESEARCH.md).
