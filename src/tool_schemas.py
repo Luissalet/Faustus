@@ -901,7 +901,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_artifact",
-            "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result. For JSON, select a json_pointer and optionally filter an array by match_pointer + match_value. For a serialized JSON tool body, set json_source to /stdout or /output first.",
+            "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. For repeated symbols, set occurrence (1-based, default 1) to skip declarations or calls; context_chars sets characters on each side (default 400). Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result. For JSON, select a json_pointer and optionally filter an array by match_pointer + match_value. For a serialized JSON tool body, set json_source to /stdout or /output first.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -920,6 +920,8 @@ FUNCTION_TOOL_SCHEMAS = [
                         "type": "string",
                         "description": "Case-insensitive substring to locate instead of a range."
                     },
+                    "occurrence": {"type":"integer","minimum":1,"description":"1-based non-overlapping match to return (default 1). Requires a non-empty query."},
+                    "context_chars": {"type":"integer","minimum":0,"description":"Characters before and after the query match (default 400). Requires a non-empty query."},
                     "json_source": {
                         "type": "string",
                         "description": "RFC 6901 pointer to a JSON body inside the stored result, e.g. /stdout. A string body is decoded as JSON once. Default: stored result itself."

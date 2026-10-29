@@ -24,15 +24,7 @@ TOOL_SCHEMA: Dict[str, Any] = {
     "type": "function",
     "function": {
         "name": "read_artifact",
-        "description": (
-            "Read back the full text of an artifact by id — a character range "
-            "(start/end, 0-based, end exclusive) or a `query` substring with "
-            "surrounding context. Use it to read past a "
-            "'[... chars omitted; open the artifact ...]' truncation left in an "
-            "earlier tool result. For JSON, select a json_pointer and optionally "
-            "filter an array by match_pointer + match_value. For a serialized JSON "
-            "tool body, set json_source to /stdout or /output first."
-        ),
+        "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. For repeated symbols, set occurrence (1-based, default 1) to skip declarations or calls; context_chars sets characters on each side (default 400). Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result. For JSON, select a json_pointer and optionally filter an array by match_pointer + match_value. For a serialized JSON tool body, set json_source to /stdout or /output first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -40,6 +32,8 @@ TOOL_SCHEMA: Dict[str, Any] = {
                 "start": {"type": "integer", "description": "0-based start offset (range mode)."},
                 "end": {"type": "integer", "description": "Exclusive end offset (range mode)."},
                 "query": {"type": "string", "description": "Case-insensitive substring to locate instead of a range."},
+                "occurrence": {"type":"integer","minimum":1,"description":"1-based non-overlapping match to return (default 1). Requires a non-empty query."},
+                "context_chars": {"type":"integer","minimum":0,"description":"Characters before and after the query match (default 400). Requires a non-empty query."},
                 "json_source": {"type": "string", "description": "RFC 6901 pointer to a JSON body inside the stored result, e.g. /stdout. A string body is decoded as JSON once. Default: stored result itself."},
                 "json_pointer": {"type": "string", "description": "RFC 6901 pointer within the JSON body, e.g. /entries. Empty string selects the root. Use instead of start/end/query."},
                 "match_pointer": {"type": "string", "description": "RFC 6901 pointer within each selected array item, e.g. /reference/id. Keep all items whose field equals match_value; missing fields do not match."},
@@ -91,8 +85,8 @@ def _load_json(text: str) -> Any:
 def _json_selection(text: str, args: dict, artifact_id: str) -> dict:
     if 'json_pointer' not in args:
         raise ValueError('json_pointer is required for JSON selection')
-    if any(key in args for key in ('start', 'end', 'query')):
-        raise ValueError('JSON selection cannot be combined with start, end or query')
+    if any(key in args for key in ('start', 'end', 'query', 'occurrence', 'context_chars')):
+        raise ValueError('JSON selection cannot be combined with start, end, query, occurrence or context_chars')
     value = _load_json(text)
     source = args.get('json_source', '')
     value = _resolve_pointer(value, _pointer_tokens(source))
@@ -167,12 +161,19 @@ class ReadArtifactTool:
                     return _json_selection(stored["text"], args, artifact_id)
                 except (ValueError, TypeError, KeyError, IndexError) as exc:
                     return {"error": "JSON selection: " + str(exc), "exit_code": 1}
-            return read_artifact_range(
+            query_options = {key: args[key] for key in ("occurrence", "context_chars") if key in args}
+            result = read_artifact_range(
                 artifact_id, owner=owner,
                 start=start if query is None else 0,
                 end=end if query is None else None,
                 query=str(query) if query is not None else None,
+                **query_options,
             )
+            if query_options and not query:
+                raise ValueError("occurrence and context_chars require a non-empty query")
+            return result
+        except ValueError as exc:
+            return {"error": "Artifact query: " + str(exc), "exit_code": 1}
         except ArtifactAccessDenied:
             # Same words for "not yours" and "does not exist" (A13).
             return {"error": "artifact not found", "exit_code": 1}

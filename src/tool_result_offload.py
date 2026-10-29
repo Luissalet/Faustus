@@ -234,14 +234,16 @@ class ArtifactAccessDenied(LookupError):
 def read_artifact_range(artifact_id: str, *, owner: str, start: int = 0,
                         end: Optional[int] = None,
                         query: Optional[str] = None,
-                        context_chars: int = 400) -> Dict[str, Any]:
+                        context_chars: int = 400,
+                        occurrence: int = 1) -> Dict[str, Any]:
     """Read back an offloaded result's full text, scoped to `owner` exactly
     the way `routes/artifact_routes.py` scopes a download.
 
     `start`/`end` slice the text (0-based, `end` exclusive, clamped to the
     text's own bounds). `query`, when given instead, returns the first
-    case-insensitive match plus `context_chars` on each side, or an empty
-    `matches` list when nothing is found — never an exception for "not
+    case-insensitive match by default, or the requested 1-based
+    non-overlapping `occurrence`, plus `context_chars` on each side. An empty
+    `matches` list is returned when that occurrence is absent — never an exception for "not
     found within the text" (as opposed to "not found/not yours", which is
     `ArtifactAccessDenied`).
     """
@@ -258,8 +260,21 @@ def read_artifact_range(artifact_id: str, *, owner: str, start: int = 0,
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
 
+    if type(occurrence) is not int or occurrence < 1:
+        raise ValueError("occurrence must be a positive integer")
+    if type(context_chars) is not int or context_chars < 0:
+        raise ValueError("context_chars must be a non-negative integer")
+    if not query and (occurrence != 1 or context_chars != 400):
+        raise ValueError("occurrence and context_chars require a non-empty query")
+
     if query:
-        idx = text.lower().find(query.lower())
+        haystack, needle = text.lower(), query.lower()
+        idx, next_start = -1, 0
+        for _ in range(occurrence):
+            idx = haystack.find(needle, next_start)
+            if idx < 0:
+                break
+            next_start = idx + len(needle)
         if idx < 0:
             return {"artifact_id": artifact_id, "query": query, "matches": [],
                     "total_chars": len(text)}
