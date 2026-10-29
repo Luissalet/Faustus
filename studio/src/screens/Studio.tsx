@@ -737,7 +737,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   /* Last follow mark for the open session. `undefined` means "first
      observation after a session switch" — history-load owns that rejoin.
      Idle→live / run-id change / session watermark growth is the MCP-external
-     case (#941). */
+     case (issue 941). */
   const externalFollowPrevRef = useRef<ExternalFollowMark | undefined>(undefined);
   const externalFollowGateRef = useRef(createExternalFollowGate());
   /* Bumped when a stream controller releases so a deferred external RID

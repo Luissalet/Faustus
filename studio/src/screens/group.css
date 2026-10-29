@@ -1091,7 +1091,7 @@
     position: absolute;
     inset: 0;
     z-index: 11;
-    background: var(--fs-scrim, #0008);
+    background: rgb(0 0 0 / 0.5);
   }
   .fs-room__head { flex-wrap: wrap; }
   .fs-room__title { flex: 1 1 170px; }

@@ -31,7 +31,7 @@
   color: var(--fs-text-2);
   font-size: var(--fs-label-size);
 }
-.fs-debate__chevron { flex-shrink: 0; transition: transform 140ms ease-out; }
+.fs-debate__chevron { flex-shrink: 0; transition: transform var(--fs-duration-fast) var(--fs-ease); }
 .fs-debate[open] .fs-debate__chevron { transform: rotate(90deg); }
 .fs-debate__replies { padding: var(--fs-space-3) var(--fs-space-2); }
 .fs-debate__replies > div + div { margin-top: var(--fs-space-5); }
