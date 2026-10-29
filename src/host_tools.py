@@ -18,6 +18,8 @@ import functools
 import os
 import shutil
 import sys
+import threading
+import time
 
 DESKTOP_TOOLS = frozenset({
     "desktop_screenshot", "desktop_list_windows", "desktop_focus_window",
@@ -110,14 +112,54 @@ def desktop_app_running() -> bool:
     """True when the desktop tools can show their indicator (Windows needs the app)."""
     if os.name != "nt":
         return True
-    import time
     now = time.time()
     if now - _app_cache[0] < _APP_CHECK_TTL_S:
         return bool(_app_cache[1])
-    ready = _heartbeat_fresh(now) or _app_process_running()
-    # Keep the result fresh for the full TTL even if the probe was slow.
+    if _heartbeat_fresh(now):
+        _app_cache[0], _app_cache[1] = time.time(), True
+        return True
+    if _app_cache[0] > 0:
+        # Walking every process of the machine takes seconds on a busy Windows PC (7.9 s seen
+        # inside a long turn, which stood the whole event loop still): the tool lists are built
+        # on the loop once per round, so a stale answer is served while a thread refreshes it.
+        _refresh_app_probe_in_background()
+        return bool(_app_cache[1])
+    ready = _app_process_running()  # the first answer of the process: nothing to serve yet
     _app_cache[0], _app_cache[1] = time.time(), ready
     return ready
+
+
+_probe_lock = threading.Lock()
+_probe_running = False
+
+
+def _refresh_app_probe_in_background() -> None:
+    """Re-run the process scan in a worker thread; at most one at a time. The cache keeps its old
+    answer until the scan ends and is stamped fresh only then."""
+    global _probe_running
+    with _probe_lock:
+        if _probe_running:
+            return
+        _probe_running = True
+
+    def run() -> None:
+        global _probe_running
+        try:
+            ready = _app_process_running()
+            _app_cache[0], _app_cache[1] = time.time(), ready
+        except Exception:  # noqa: BLE001 - keep the previous answer
+            pass
+        finally:
+            with _probe_lock:
+                _probe_running = False
+
+    threading.Thread(target=run, name="host-app-probe", daemon=True).start()
+
+
+def warm_app_probe() -> None:
+    """Take the first process scan off the request path (called once at startup, in a thread)."""
+    if os.name == "nt" and _app_cache[0] <= 0:
+        _refresh_app_probe_in_background()
 
 
 def turn_unavailable_tools() -> frozenset[str]:

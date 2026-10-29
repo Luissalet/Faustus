@@ -20,7 +20,7 @@ from src.settings import get_setting
 from src.llm_core import normalize_model_id
 from src.endpoint_resolver import normalize_base
 from src.context_compactor import annotate_history_positions, maybe_compact, trim_for_context
-from src.model_context import estimate_tokens, get_context_length
+from src.model_context import estimate_tokens, get_context_length, warm_context_length
 from src.auth_helpers import effective_user
 from src.prompt_security import untrusted_context_message
 from src.attachment_refs import attachment_ref, attachment_refs_from_metadata
@@ -1016,7 +1016,7 @@ async def build_chat_context(
     # session history before we know which route can answer and would make a
     # later larger-context candidate unable to recover discarded history.
     if defer_context_shaping:
-        context_length = get_context_length(sess.endpoint_url, sess.model)
+        context_length = await warm_context_length(sess.endpoint_url, sess.model, get_context_length)
         was_compacted = False
     else:
         messages, context_length, was_compacted = await maybe_compact(

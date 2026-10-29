@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.model_context import get_context_length, estimate_tokens
+from src.model_context import get_context_length, estimate_tokens, warm_context_length
 from src.token_calibration import estimate_tokens_for
 from src.llm_core import llm_call_async
 from src.endpoint_resolver import resolve_endpoint
@@ -1107,7 +1107,7 @@ async def maybe_compact(
     Returns (messages, context_length, was_compacted).
     """
     messages = refresh_compaction_approvals(messages)
-    context_length = get_context_length(endpoint_url, model)
+    context_length = await warm_context_length(endpoint_url, model, get_context_length)
     # Calibrated: `model` is known here, so the compaction-threshold gate
     # uses this model's real chars->tokens ratio instead of the generic
     # chars*0.3 guess (src/token_calibration.py).
@@ -2264,7 +2264,7 @@ async def apply_midturn_pressure(
     except Exception:  # noqa: BLE001
         spill_chars = DEFAULT_MIDTURN_SPILL_CHARS
 
-    context_length = get_context_length(endpoint_url, model)
+    context_length = await warm_context_length(endpoint_url, model, get_context_length)
     report["context_length"] = context_length
     if not context_length:
         report["skipped"] = "unknown_context_length"

@@ -29,7 +29,7 @@ def test_server_identity_and_tool_surface():
                                        "harness_lessons", "doc_lint",
                                        "spend_cap_status", "injection_eval_run", "injection_eval_report",
                                        "voice_turn_timeline", "think_mode_calibration", "cookbook_job_log",
-                                       "design_hook_status", "design_hook_start", "design_hook_run"]
+                                       "loop_stalls", "design_hook_status", "design_hook_start", "design_hook_run"]
     for t in tools:
         assert len(t.description) > 60
         for required in t.inputSchema.get("required", []):
@@ -201,3 +201,14 @@ def test_harness_probes_and_lessons_are_read_only_views(tmp_path, monkeypatch):
     tools = {t.name: t for t in asyncio.run(srv.list_tools())}
     assert set(tools["harness_probes"].inputSchema["properties"]) == {"id", "session_id", "status", "limit"}
     assert set(tools["harness_lessons"].inputSchema["properties"]) == {"project_id"}
+
+
+def test_loop_stalls_lists_what_the_watchdog_wrote(tmp_path, monkeypatch):
+    import json as _json
+    monkeypatch.setattr("core.constants.DATA_DIR", str(tmp_path))
+    (tmp_path / "logs").mkdir()
+    row = {"ts": "2026-10-29T01:00:00", "duration_s": 8.0, "calls": ["File \"x.py\", line 1, in f"], "stacks": [{"stack": ["a"]}], "threads": []}
+    (tmp_path / "logs" / "loop_stalls.jsonl").write_text(_json.dumps(row) + "\n", encoding="utf-8")
+    slim = _payload("loop_stalls", {})
+    assert slim["stalls"] == [{"ts": row["ts"], "duration_s": 8.0, "calls": row["calls"]}]
+    assert _payload("loop_stalls", {"full": True})["stalls"][0]["stacks"] == [{"stack": ["a"]}]

@@ -11139,9 +11139,9 @@ async def _stream_agent_loop_body(
             # crossed — maybe_compact's lossier LLM summary remains the
             # fallback for exactly that case, and for any error here.
             try:
-                from src.model_context import get_context_length
+                from src.model_context import get_context_length, warm_context_length
                 from src.token_calibration import estimate_tokens_for
-                _ctx_len_for_compaction = get_context_length(candidate_url, candidate_model)
+                _ctx_len_for_compaction = await warm_context_length(candidate_url, candidate_model, get_context_length)
                 # Calibrated: candidate_model is known here, so this
                 # compaction-threshold gate uses its real chars->tokens
                 # ratio (src/token_calibration.py) instead of the generic

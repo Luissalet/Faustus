@@ -861,6 +861,9 @@ app.include_router(setup_harness_proposals_routes(memory_vector=memory_vector))
 # Design check of UI edits with the design workshop's rules (src/design_hook).
 from routes.design_hook_routes import setup_design_hook_routes
 app.include_router(setup_design_hook_routes())
+# Stack of whatever blocks the event loop for seconds (src/loop_watchdog).
+from routes.loop_watchdog_routes import setup_loop_watchdog_routes
+app.include_router(setup_loop_watchdog_routes())
 # A25: git-backed skill sources (pinned revision, verified update, rollback).
 from routes.skill_source_routes import setup_skill_source_routes
 app.include_router(setup_skill_source_routes())
@@ -2271,6 +2274,25 @@ async def _startup_event():
             _run_marker.watch_slow_startup(90.0)
         except Exception as e:  # noqa: BLE001 - diagnostics never block startup
             logger.debug(f"run marker skipped: {e}")
+        # A blocked event loop (tens of seconds in long turns) leaves the stack of the blocking call in
+        # data/logs/loop_stalls.jsonl and in GET /api/diag/loop.
+        try:
+            from src import loop_watchdog as _loop_watchdog
+            _loop_watchdog.install(DATA_DIR)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"loop watchdog skipped: {e}")
+        try:
+            from src import httpx_ssl_cache as _httpx_ssl_cache
+            _httpx_ssl_cache.install()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"httpx TLS context cache skipped: {e}")
+        # The scan of the machine's processes behind the desktop-tool check is slow on Windows; do the first
+        # one now, in a thread, instead of inside the first turn's tool list.
+        try:
+            from src import host_tools as _host_tools
+            _host_tools.warm_app_probe()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"host tools warm-up skipped: {e}")
     # OPS-05: mark this boot attempt before anything risky below runs. Most
     # real launch paths (Docker, the Windows/macOS scripts, `uvicorn app:app`
     # directly) invoke this lifespan without going through launcher.py's own

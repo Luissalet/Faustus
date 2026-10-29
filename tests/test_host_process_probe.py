@@ -8,6 +8,15 @@ import pytest
 from src import host_tools as ht
 
 
+_REAL_PROBE = ht._app_process_running  # taken at import, before conftest's autouse fixture replaces it
+
+
+@pytest.fixture(autouse=True)
+def real_process_probe(monkeypatch):
+    """These tests exercise the probe itself; conftest's `desktop_app_seen_open` replaces it for everything else."""
+    monkeypatch.setattr(ht, "_app_process_running", _REAL_PROBE)
+
+
 class Process:
     def __init__(self, name, *, exe="", cmdline=None, unavailable=False):
         self.info = {"name": name}

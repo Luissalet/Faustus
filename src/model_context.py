@@ -5,10 +5,12 @@ Query and cache model context window sizes from OpenAI-compatible APIs.
 Provides token estimation for context usage tracking.
 """
 
+import asyncio
 import ipaddress
 import logging
 import os
 import sys
+import threading
 from typing import Dict, List, Optional, Tuple
 
 from urllib.parse import urlparse
@@ -251,10 +253,58 @@ LOCAL_CONTEXT_TTL_S = 5.0
 _local_context_recent: Dict[Tuple[str, str], Tuple[int, bool, float]] = {}
 
 
+# The last answer per (endpoint, model), whatever it was. A probe is a blocking HTTP call (5 s timeout) and the
+# window is asked for on the event loop once per round of a turn; on the loop an expired answer is served from
+# here while a thread asks again, so the loop never waits for the network (task #1725).
+_last_seen: Dict[Tuple[str, str], Tuple[int, bool]] = {}
+_refreshing: set = set()
+_refresh_lock = threading.Lock()
+
+
 def clear_context_caches() -> None:
     """Forget every remembered context window (remote and recent local)."""
     _context_cache.clear()
     _local_context_recent.clear()
+    _last_seen.clear()
+
+
+def _on_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
+def _refresh_in_background(endpoint_url: str, model: str) -> None:
+    """Ask for the window again in a worker thread (one per endpoint and model at a time)."""
+    key = (endpoint_url, model)
+    with _refresh_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def run() -> None:
+        try:
+            _get_context_length_cached(endpoint_url, model)
+        except Exception:  # noqa: BLE001 - the old answer stays
+            logger.debug("background context-length refresh failed", exc_info=True)
+        finally:
+            with _refresh_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=run, name="context-length-refresh", daemon=True).start()
+
+
+async def warm_context_length(endpoint_url: str, model: str, getter=None) -> int:
+    """`get_context_length` for a coroutine: the first answer for an endpoint and model is fetched in a thread,
+    so the event loop is not held while the endpoint is probed. Later calls are served from memory.
+    `getter` is the caller's own `get_context_length` (default: this module's)."""
+    getter = getter or get_context_length
+    key = (endpoint_url, model)
+    if key in _last_seen or key in _context_cache:
+        return getter(endpoint_url, model)  # on the loop: stale-while-revalidate, never a probe
+    return await asyncio.to_thread(getter, endpoint_url, model)
 
 
 def _probe_host_dead(url: str) -> bool:
@@ -294,7 +344,13 @@ def _get_context_length_cached(endpoint_url: str, model: str) -> Tuple[int, bool
         if recent and time.monotonic() - recent[2] < LOCAL_CONTEXT_TTL_S:
             return recent[0], recent[1]
 
+    if _on_event_loop() and cache_key in _last_seen:
+        # Expired, and this is the event loop: serve the last answer and let a thread refresh it.
+        _refresh_in_background(endpoint_url, model)
+        return _last_seen[cache_key]
+
     ctx, known = _query_context_length(endpoint_url, model)
+    _last_seen[cache_key] = (ctx, known)
     if is_local:
         _local_context_recent[cache_key] = (ctx, known, time.monotonic())
     # Only cache non-default values to allow retry on next request.

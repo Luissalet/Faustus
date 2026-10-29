@@ -50,6 +50,9 @@ running a turn:
   Owner-scoped: ODYSSEUS_MCP_HARNESS_OWNER (or the context/brain owner), or
   the only owner the database has.
 
+* ``loop_stalls`` - the moments the server's event loop stood still for seconds (src/loop_watchdog) and the
+  call that held it. Read-only.
+
 * ``design_hook_status`` / ``design_hook_start`` / ``design_hook_run`` - the design check of UI edits
   (src/design_hook): whether the design rules can be asked (workshop running and its design module on)
   and the last closing pass of a chat; turning the design module on; and an on-demand run of the rules
@@ -456,6 +459,23 @@ async def list_tools() -> list[Tool]:
                              "description": "How many trailing lines (default 200)."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 200,
                               "description": "How many jobs when listing (default 50)."},
+                },
+            },
+        ),
+        Tool(
+            name="loop_stalls",
+            description=(
+                "Moments when the server's event loop stood still for two seconds or more, with the call that held "
+                "it (the innermost frame of the project's own code) and, with full=true, the captured stacks and what "
+                "the other threads were doing. Written by the stall watchdog (src/loop_watchdog) to "
+                "data/logs/loop_stalls.jsonl, so it covers earlier runs of the server too. Use it when the interface "
+                "or /api/health stops answering during a long turn. Bloqueos del bucle de eventos del servidor. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "How many of the latest stalls (default 10)."},
+                    "full": {"type": "boolean", "description": "Include the stacks and the other threads."},
                 },
             },
         ),
@@ -880,6 +900,14 @@ def _injection_eval_report(args: dict) -> dict:
     return slim
 
 
+def _loop_stalls(args: dict) -> dict:
+    from core.constants import DATA_DIR
+    from src import loop_watchdog
+
+    rows = loop_watchdog.read_log(DATA_DIR, int(args.get("limit") or 10), full=bool(args.get("full")))
+    return {"threshold_s": loop_watchdog.STALL_S, "log": loop_watchdog.log_path(DATA_DIR), "stalls": rows}
+
+
 def _design_hook_status(args: dict) -> dict:
     from src import design_hook
 
@@ -928,6 +956,7 @@ _TOOLS = {
     "harness_lessons": _harness_lessons,
     "voice_turn_timeline": _voice_turn_timeline,
     "cookbook_job_log": _cookbook_job_log,
+    "loop_stalls": _loop_stalls,
     "design_hook_status": _design_hook_status,
     "design_hook_start": _design_hook_start,
     "design_hook_run": _design_hook_run,
