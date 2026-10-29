@@ -121,8 +121,12 @@ def test_routes_and_shell_registration():
     assert "label: 'Brain'" in routes_ts, "routes.ts should carry a Brain tool entry"
 
     app_shell = (_REPO / "studio" / "src" / "shell" / "AppShell.tsx").read_text(encoding="utf-8")
-    assert "screens/Brain" in app_shell, "AppShell.tsx should lazy-load the Brain screen"
-    assert '<Route path="/brain" element={<BrainScreen />} />' in app_shell
+    # The Brain screen lives under Library > Knowledge (3a0d7c08): /brain is a route of
+    # the Knowledge screen, which lazy-loads the Brain screen itself.
+    assert '<Route path="/brain" element={<KnowledgeScreen />} />' in app_shell
+    knowledge = (_REPO / "studio" / "src" / "screens" / "library" / "Knowledge.tsx").read_text(encoding="utf-8")
+    assert "import('../Brain')" in knowledge, "Knowledge.tsx should lazy-load the Brain screen"
+    assert "pathname === '/brain' ? <BrainScreen />" in knowledge
     assert "pathname.startsWith('/brain')" in app_shell, "the Brain screen should get the wide-screen layout"
 
 

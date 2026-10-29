@@ -60,9 +60,12 @@ def test_workspace_bound_coding_chat_is_escalated_to_agent():
     from pathlib import Path
     from src.agent_loop import _looks_like_workspace_coding_request as looks
     src = (Path(__file__).resolve().parent.parent / "routes" / "chat_routes.py").read_text(encoding="utf-8")
-    block = src[src.index("workspace-bound coding request"):]
-    assert "_looks_like_workspace_coding_request(message)" in src
-    assert 'chat_mode == "chat"' in src[src.index("_looks_like_workspace_coding_request(message)") - 400:src.index("_looks_like_workspace_coding_request(message)")]
+    # The heuristic runs through run_preparation (9c05a605) so the route does not block
+    # the event loop; the escalation condition itself is unchanged.
+    call = "run_preparation(_looks_like_workspace_coding_request, message)"
+    assert call in src
+    assert 'chat_mode == "chat"' in src[src.index(call) - 400:src.index(call)]
+    assert "workspace-bound coding request" in src[src.index(call):]
     # the heuristic itself is multilingual
     assert looks("Añade a la interfaz botones para eliminar proyectos y chats en sus tarjetas")
     assert looks("Corrige el bug de static/js/cards.js")

@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import agent_harness
+
 
 @lru_cache(maxsize=1)
 def closeout_code():
@@ -44,7 +46,7 @@ def run_case(used, *, proposed=True, shadow=False, plan=True, plan_used=0):
                  _last_user="finish test", round_num=8, messages=[],
                  _ledger=SimpleNamespace(stop_reason="completion_continue"), _lang_note=lambda t: t,
                  _plan_coverage_gap=lambda *a: plan_checks.append(True) or ["finish test"],
-                 _xr=_extra_rounds())
+                 _xr=_extra_rounds(), _harness=agent_harness)
     exec(closeout_code(), state)
     generator = state["run"]()
     events = []
