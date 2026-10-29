@@ -75,6 +75,29 @@ same text. Empty/default node fields may be omitted. There are no node, text or
 depth truncation limits. `full` preserves all original snapshot fields; an
 unfamiliar graph that cannot safely be projected also retains its full form.
 
+`view` optionally selects a flat page from the original AX nodes of `snapshot`
+or the readback of `click`, `type`, `press`, and `navigate`. Like `detail`, it is
+removed in Python before dispatch to the extension. For example,
+`view:{query:"Biblioteca",roles:["button"],offset:0,limit:10}` selects a literal
+case-insensitive substring of name/value AND an exact role. Query uses Unicode
+casefold without accent or whitespace normalization. An omitted roles filter
+accepts all roles; an empty array selects none. Offset defaults to 0; an explicit
+limit must be an integer at least 1. Without limit, all matches from offset are
+returned. There is no default truncation.
+
+The selected snapshot has `selection:{kind:"flat",total,matches,offset,next_offset}`:
+total is the original AX node count, matches is the count before pagination,
+and next_offset is null at the end. Rows keep original order, references
+(including null), names, values and properties; only child_refs is removed to
+avoid presenting a partial selection as a complete graph. This view is selected
+before compacting, so full/compact both return the same selected rows. Snapshot
+tab/document/generation metadata and mutation action/phase remain unchanged.
+Without view, compact/full retain the existing behavior. An unfamiliar snapshot
+without a list of object nodes is returned unchanged, without claiming a flat
+selection. Filtering reduces returned content, not AX acquisition time or the
+cost of a model turn. This delta still requires independent review and separate
+real MCP/Brave and Faustus-agent acceptance.
+
 Failures distinguish `not_dispatched`, `outcome_unknown`, and
 `action_confirmed` with incomplete readback. A CDP acknowledgement establishes
 that a command ran, not that the application achieved the intended result.

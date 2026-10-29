@@ -86,10 +86,35 @@ def compact_snapshot(snapshot: dict) -> dict:
     return {**snapshot, "nodes": projected}
 
 
-def present_payload(payload: dict, detail: str) -> dict:
-    if detail == "full" or not payload.get("ok") or not isinstance(payload.get("result"), dict):
+def filtered_snapshot(snapshot: dict, view: dict) -> dict:
+    nodes = snapshot.get("nodes")
+    if not isinstance(nodes, list) or any(not isinstance(node, dict) for node in nodes):
+        return snapshot
+    query = view.get("query", "").casefold()
+    roles = view.get("roles")
+    matches = [node for node in nodes
+               if (roles is None or node.get("role") in roles)
+               and (not query or any(query in str(node[key]).casefold()
+                                     for key in ("name", "value") if node.get(key) is not None))]
+    offset = int(view.get("offset", 0))
+    end = offset + int(view["limit"]) if "limit" in view else len(matches)
+    selected = [{key: value for key, value in node.items() if key != "child_refs"}
+                for node in matches[offset:end]]
+    next_offset = offset + len(selected)
+    return {**snapshot, "nodes": selected,
+            "selection": {"kind": "flat", "total": len(nodes), "matches": len(matches),
+                          "offset": offset, "next_offset": next_offset if next_offset < len(matches) else None}}
+
+
+def present_payload(payload: dict, detail: str, view: dict | None = None) -> dict:
+    if not payload.get("ok") or not isinstance(payload.get("result"), dict):
         return payload
-    result = compact_snapshot(payload["result"])
+    if view is None and detail == "full":
+        return payload
+    def project(snapshot):
+        return filtered_snapshot(snapshot, view) if view is not None else compact_snapshot(snapshot)
+
+    result = project(payload["result"])
     if isinstance(result.get("snapshot"), dict):
-        result = {**result, "snapshot": compact_snapshot(result["snapshot"])}
+        result = {**result, "snapshot": project(result["snapshot"])}
     return {**payload, "result": result}

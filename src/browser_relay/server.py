@@ -18,9 +18,9 @@ from src.browser_relay.transport import BrowserRelay
 from src.stdio_guard import guard
 
 
-def mcp_result(payload: dict, detail: str = "compact") -> CallToolResult:
+def mcp_result(payload: dict, detail: str = "compact", view: dict | None = None) -> CallToolResult:
     # The wire image appears once as an MCP image, never again in text/structuredContent.
-    payload = dict(present_payload(payload, detail))
+    payload = dict(present_payload(payload, detail, view))
     images = []
     if payload.get("ok") and "image" in payload.get("result", {}):
         result = dict(payload["result"])
@@ -51,6 +51,9 @@ def create_server(relay: BrowserRelay) -> Server:
             "press optionally focuses ref. type inserts Unicode text. Mutations return automatic readback. "
             "release detaches this tool without closing the tab. Main-frame snapshots only. "
             "detail defaults to compact (original refs and useful text/controls); full returns the complete AX graph. "
+            "For snapshot or mutation readback, optional view selects flat original AX rows: query is a literal "
+            "case-insensitive name/value substring; roles are exact and combine with query. offset defaults to 0; "
+            "limit, if given, is at least 1; omitted means all matches. selection reports total, matches and next_offset. "
             "An outcome_unknown must be observed before deciding any explicit retry; never replay it automatically."),
             inputSchema=SCHEMA, annotations=ToolAnnotations(readOnlyHint=False, idempotentHint=False))]
 
@@ -63,7 +66,8 @@ def create_server(relay: BrowserRelay) -> Server:
         except ValueError as exc:
             return mcp_result(failure("invalid_arguments", str(exc)))
         detail = args.pop("detail", "compact")
-        return mcp_result(await relay.call(args), detail)
+        view = args.pop("view", None)
+        return mcp_result(await relay.call(args), detail, view)
 
     return server
 

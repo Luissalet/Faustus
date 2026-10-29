@@ -1,6 +1,8 @@
 """The browser relay's small, shared wire contract. No browser execution here."""
 from __future__ import annotations
 
+from copy import deepcopy
+
 EXTENSION_ID = "cneonpjikbdhbaddfpmmdjemfdphlppa"
 ORIGIN = "chrome-extension://" + EXTENSION_ID
 READ_ACTIONS = frozenset({"tabs", "snapshot", "screenshot"})
@@ -15,6 +17,16 @@ SCHEMA = {
         "key": {"type": "string", "minLength": 1},
         "url": {"type": "string", "minLength": 1},
         "detail": {"type": "string", "enum": ["compact", "full"], "default": "compact"},
+        "view": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "roles": {"type": "array", "items": {"type": "string"}},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1},
+            },
+            "additionalProperties": False,
+        },
     },
     "required": ["action"], "additionalProperties": False,
     "allOf": [
@@ -26,7 +38,8 @@ SCHEMA = {
             ("press", ["tab_id", "key"]), ("navigate", ["tab_id", "url"]),
             ("release", ["tab_id"]),
         ]
-    ],
+    ] + [{"if": {"required": ["view"]},
+          "then": {"properties": {"action": {"enum": ["snapshot", "click", "type", "press", "navigate"]}}}}],
 }
 
 
@@ -39,8 +52,8 @@ def validate_arguments(arguments: object) -> dict:
     errors = list(Draft202012Validator(SCHEMA).iter_errors(arguments))
     if errors:
         raise ValueError(errors[0].message)
-    # Detach the caller's dictionary before any await.
-    return dict(arguments)
+    # Presentation options include a nested roles array; detach before any await.
+    return deepcopy(arguments)
 
 
 def validate_result(value: object) -> dict:

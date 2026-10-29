@@ -1,11 +1,11 @@
 """Exercise the actual manager discovery methods without booting app/database.
 
-Only the methods under test are compiled from the production class. Transport
-is covered separately by a real stdio server; this test has no model or DB.
+The methods and their pure schema helper are compiled from production source.
+Transport is covered separately by a real stdio server; no model or DB.
 """
 import ast
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,11 +17,15 @@ def manager():
     names = {"is_builtin", "get_all_openai_schemas", "get_all_tools", "_grouped_prompt_tools"}
     methods = [node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name in names]
     assert len(methods) == len(names)
-    namespace = dict(Dict=Dict, List=List, Optional=Optional,
+    helpers = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "llm_safe_tool_schema"]
+    constants = [node for node in tree.body if isinstance(node, ast.Assign)
+                 and any(isinstance(target, ast.Name) and target.id == "_SCHEMA_VALUE_KEYS" for target in node.targets)]
+    assert len(helpers) == len(constants) == 1
+    namespace = dict(Any=Any, Dict=Dict, List=List, Optional=Optional,
                      BROWSER_MCP_SERVER_ID="builtin_browser",
                      builtin_browser_policy_disabled=lambda: set(),
                      _browser_tool_denied=lambda name, denied: False)
-    exec(compile(ast.Module(body=methods, type_ignores=[]), "manager-discovery", "exec"), namespace)
+    exec(compile(ast.Module(body=constants + helpers + methods, type_ignores=[]), "manager-discovery", "exec"), namespace)
     subset = type("ManagerDiscovery", (), {name: namespace[name] for name in names})()
     schema = {"type": "object", "properties": {"action": {"type": "string"}}}
     subset._tools = {
