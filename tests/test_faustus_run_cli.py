@@ -221,7 +221,7 @@ def test_new_explicit_actor_uses_native_owner_api_and_exact_saved_scope(capsys):
     srv,url=_serve([LEG_DONE],gets={'/api/projects/p1':p,'/api/projects/resolve/session/s1':{'project':p},'/api/coordination/s1':{'binding':None,'template':template}})
     try:code=fr.main(['-p','do it','--url',url,'--project-id','p1','--agent-id','faustus-reviewer'])
     finally:srv.shutdown()
-    assert code==0 and _H.puts==[('/api/coordination/s1',{**template,'actor':'faustus-reviewer'})]
+    assert code==0 and _H.puts==[('/api/coordination/s1',{**template,'actor':'faustus-reviewer','space_id':'ecosystem'})]
     assert not {'actor','agent_id','coordination_binding'} & _H.forms[0].keys()
 
 
@@ -243,6 +243,10 @@ def test_mcp_servers_are_registered_before_the_turn(tmp_path):
     calls = []
 
     class _C:
+        def get_json(self, path):
+            assert path == "/api/mcp/servers"
+            return []
+
         def post_form(self, path, form, timeout=30):
             calls.append((path, form))
             return {"id": "x"}
@@ -303,3 +307,89 @@ def test_invalid_input_budget_rejects_before_client_creation(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         fr.main(["-p", "readonly", "--input-token-budget", ""])
     assert exc.value.code == 2
+
+
+class _AndroidCatalogue:
+    def __init__(self, servers=None):
+        self.servers = list(servers or [])
+        self.posts = []
+
+    def get_json(self, path):
+        assert path == "/api/mcp/servers"
+        return json.loads(json.dumps(self.servers))
+
+    def post_form(self, path, form, timeout=30):
+        assert path == "/api/mcp/servers"
+        self.posts.append(dict(form))
+        row = {**form, "args": json.loads(form["args"]), "id": "android-owned", "status": "connected", "env": {}, "is_enabled": True}
+        self.servers.append(row)
+        return row
+
+
+ANDROID_SPEC = [{"name": "Android QA", "transport": "stdio", "command": "npx", "args": ["-y", "mobile-fixture@1"]}]
+ANDROID_CONNECTED = {**ANDROID_SPEC[0], "id": "existing", "status": "connected", "env": "{}", "is_enabled": True, "inherit_env": False}
+
+
+def test_android_registration_retry_reuses_exact_healthy_connection():
+    client = _AndroidCatalogue()
+    for _ in range(2):
+        assert fr.register_mcp_servers(client, json.dumps(ANDROID_SPEC)) == ["Android QA"]
+    assert len(client.posts) == 1
+    assert len(client.servers) == 1
+
+
+def test_android_registration_does_not_overwrite_a_same_name_different_service():
+    import pytest
+    client = _AndroidCatalogue([{**ANDROID_CONNECTED, "command": "another-service"}])
+    with pytest.raises(RuntimeError):
+        fr.register_mcp_servers(client, json.dumps(ANDROID_SPEC))
+    assert client.posts == []
+
+
+def test_android_registration_refuses_ambiguous_duplicate_connections():
+    import pytest
+    client = _AndroidCatalogue([ANDROID_CONNECTED, {**ANDROID_CONNECTED, "id": "other"}])
+    with pytest.raises(RuntimeError):
+        fr.register_mcp_servers(client, json.dumps(ANDROID_SPEC))
+    assert client.posts == []
+
+
+def test_android_registration_does_not_treat_disabled_or_pending_servers_as_healthy():
+    import pytest
+    for changed in [{"status": "disconnected"}, {"is_enabled": False}, {"manifest_pending_approval": True}, {"security_scan_pending_approval": True}, {"has_oauth": True}, {"env": {"SERVICE_SETTING": "different"}}, {"inherit_env": True}]:
+        client = _AndroidCatalogue([{**ANDROID_CONNECTED, **changed}])
+        with pytest.raises(RuntimeError):
+            fr.register_mcp_servers(client, json.dumps(ANDROID_SPEC))
+        assert client.posts == []
+
+
+def test_nondefault_project_space_is_copied_into_new_actor_binding(capsys):
+    p={"id":"p1"};template={"connector_id":"c1","space_id":"hoarddex","operations":["poll"],"resources":["app:emulator-5554"],"repos":["fielddex"],"thread_ids":[1988],"active":True}
+    srv,url=_serve([LEG_DONE],gets={"/api/projects/p1":p,"/api/projects/resolve/session/s1":{"project":p},"/api/coordination/s1":{"binding":None,"template":template}})
+    try: code=fr.main(["-p","Android smoke","--url",url,"--project-id","p1","--agent-id","faustus"])
+    finally: srv.shutdown()
+    assert code==0
+    assert _H.puts[0][1]["space_id"]=="hoarddex"
+    assert not {"actor","space_id"} & _H.forms[0].keys()
+
+
+def test_binding_confirmation_with_the_wrong_space_does_not_start_inference():
+    import argparse
+    import pytest
+    template={"connector_id":"c1","space_id":"hoarddex","operations":["poll"],"resources":[],"repos":[],"thread_ids":[],"active":True}
+    class C:
+        def get_json(self, path): return {"binding":None,"template":template}
+        def put_json(self, path, body): return {"binding":{**body,"project_id":"p1","space_id":"ecosystem"}}
+    with pytest.raises(RuntimeError):
+        fr.select_agent_identity(C(),argparse.Namespace(agent_id="faustus",session=None),"new-owned",{"id":"p1"})
+
+
+def test_setup_failure_retains_the_created_session_for_reconciliation(capsys):
+    p={"id":"p1"}
+    srv,url=_serve([],gets={"/api/projects/p1":p,"/api/projects/resolve/session/s1":{"project":p},"/api/coordination/s1":{"binding":None,"template":None}})
+    try: code=fr.main(["-p","Android smoke","--url",url,"--project-id","p1","--agent-id","faustus","--json"])
+    finally: srv.shutdown()
+    summary=json.loads(capsys.readouterr().out.strip())
+    assert code==fr.EXIT_ERROR and summary["stop"]=="error"
+    assert summary["session"]=="s1"
+    assert not _H.forms

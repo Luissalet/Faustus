@@ -208,8 +208,10 @@ def select_agent_identity(client: Client, args, session: str, project: Optional[
         raise RuntimeError("The project has no active coordination configuration.")
     body = {key: template[key] for key in ("connector_id", "operations", "resources", "repos", "thread_ids", "active")}
     body["actor"] = args.agent_id
+    body["space_id"] = template.get("space_id", "ecosystem")
     saved = (client.put_json(path, body) or {}).get("binding") or {}
-    if saved.get("actor") != args.agent_id or saved.get("project_id") != project["id"]:
+    if (saved.get("actor") != args.agent_id or saved.get("project_id") != project["id"]
+            or saved.get("space_id", "ecosystem") != body["space_id"]):
         raise RuntimeError("The server did not confirm the requested project coordination identity.")
 
 
@@ -281,6 +283,36 @@ def register_mcp_servers(client: "Client", spec: str) -> List[str]:
         if server.get("command"):
             form["command"] = str(server["command"])
         form["args"] = json.dumps([str(a) for a in server.get("args") or []])
+        catalog = client.get_json("/api/mcp/servers")
+        if not isinstance(catalog, list):
+            raise RuntimeError("The MCP catalogue could not be confirmed; registration was not attempted.")
+        named = [row for row in catalog if isinstance(row, dict) and row.get("name") == form["name"]]
+        if named:
+            if len(named) != 1:
+                raise RuntimeError("Several MCP servers have the requested name; no server was changed.")
+            existing = named[0]
+            try:
+                argv = existing.get("args") or []
+                argv = json.loads(argv) if isinstance(argv, str) else argv
+                env = existing.get("env") or {}
+                env = json.loads(env) if isinstance(env, str) else env
+            except ValueError as exc:
+                raise RuntimeError("The existing MCP configuration could not be confirmed.") from exc
+            existing_transport = str(existing.get("transport") or "stdio").lower().replace("_", "-")
+            if existing_transport == "streamable-http":
+                existing_transport = "http"
+            equivalent = (existing_transport == transport
+                          and (existing.get("url") or "") == form.get("url", "")
+                          and (existing.get("command") or "") == form.get("command", "")
+                          and isinstance(argv, list) and [str(a) for a in argv] == json.loads(form["args"])
+                          and env == {} and not existing.get("inherit_env") and not existing.get("headers"))
+            healthy = (existing.get("status") == "connected" and existing.get("is_enabled", True) is True
+                       and not any(existing.get(key) for key in ("has_oauth", "needs_oauth",
+                                   "manifest_pending_approval", "security_scan_pending_approval")))
+            if not equivalent or not healthy:
+                raise RuntimeError("The MCP name is already registered with a different configuration or state; no server was changed.")
+            names.append(form["name"])
+            continue
         client.post_form("/api/mcp/servers", form, timeout=120)
         names.append(form["name"])
     return names
@@ -341,10 +373,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     if hasattr(out, "reconfigure"):
         out.reconfigure(encoding="utf-8", errors="replace")
     started = time.time()
+    session = args.session
     try:
         client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
                         os.environ.get("FAUSTUS_API_TOKEN"))
-        session = args.session
         project = select_project(client, args)
         args.resolved_project = project
         if args.agent_id and (not project or not re.fullmatch(r"faustus(?:[-_][a-z0-9][a-z0-9_-]{0,38})?", args.agent_id)):
@@ -372,7 +404,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(warning, file=sys.stderr)
         message = read_prompt(args.prompt)
     except (urllib.error.URLError, OSError, RuntimeError, ValueError) as exc:
-        _emit_summary(out, args, None, Turn(), started, "error", _error_text(exc))
+        _emit_summary(out, args, session, Turn(), started, "error", _error_text(exc))
         return EXIT_ERROR
 
     def base_form() -> Dict[str, Any]:
