@@ -2417,3 +2417,8 @@ La lectura literal y la publicación de una respuesta ya evitan inferencias de e
 La ambigüedad del progreso histórico observada en el ensayo 1763 está resuelta mediante etiquetas de alcance de conversación (1775). No se borran listas ni cambios y no se reasocian automáticamente a turnos. La eficiencia y la autonomía generales del modelo siguen bajo evaluación.
 
 La precedencia del enlace explícito de coordinación ya está corregida y probada en el flujo nativo (1778). La siguiente corrección 1782 aborda la auditoría local forzada después de responder consultas de fuentes web, sin cambios locales. No se considera alcanzada la autonomía o eficiencia general ni la paridad global de HoardDex.
+
+
+## Investigación asistida de HoardDex — actualización 1782
+
+Corregida la continuación local ficticia para consultas de fuentes públicas y recibos MCP. Las instrucciones negativas locales ya no se interpretan como peticiones positivas en el vocabulario cubierto. R5 acredita investigación acotada útil con revisión, sin auditoría local impuesta. Mantener contraste factual antes de publicar, resolver erratas en una sola entrega y estudiar el grant no disponible al primer turno tras un reinicio, cuya causa aún no está demostrada. La heurística no cubre toda la lengua y no se atribuyen mejoras globales de latencia o facturación. HoardDex 365 está entregado; 1784 añade quince equipos en QA y revisión. Continuar la paridad útil, incluidos combates aliados y otras ediciones, con fuentes propias y pruebas en web y Android visible.

@@ -1438,3 +1438,8 @@ Artifact queries and publication of their results can finish from observed evide
 The Progress panel labels the conversation’s last saved checklist, latest recorded plan and latest recorded changes. They may come from earlier turns; their content remains available and updates with later records.
 
 A valid explicit chat coordination binding takes precedence over the project template, including when that template refers to an old connector configuration. Inherited bindings and explicit revocations retain their behavior. Native task reads and publication in Silver were verified; fresh-source research still has redundant completion work under investigation.
+
+
+## Public source research
+
+Faustus can read web/GitHub sources and answer or publish without inventing local editing work, a progress plan or a local completion audit. Observed remote MCP source receipts and explicitly negated local actions are distinguished from positive requests, actual local effects and deliverables. Approved source 1782 passes 46 external contracts on Main and 427 source regression checks. The useful R5 trial ends with five tools and four rounds without shell or local audit; a second post corrects a species token typo. Factual research still requires independent checks; this does not establish general autonomy or latency gains. [Scope and contracts](docs/SAVED-SOURCE-RESEARCH.md).

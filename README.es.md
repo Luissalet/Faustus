@@ -811,3 +811,8 @@ Las consultas de artefactos y la publicación de sus resultados pueden terminar 
 El panel Progreso identifica la última lista, el último plan y los últimos cambios guardados de la conversación. Pueden proceder de turnos anteriores; se conservan y se actualizan con nuevos registros.
 
 Un enlace explícito de coordinación válido del chat tiene prioridad sobre la plantilla del proyecto, incluso si esta conserva una configuración antigua del conector. Se mantienen la herencia y las revocaciones. Se han probado lecturas de tareas y publicación nativas en Silver; continúa la corrección del trabajo redundante al consultar fuentes web nuevas.
+
+
+## Consultas de fuentes públicas
+
+Faustus puede leer fuentes web/GitHub y responder o publicar sin añadir un plan ni una auditoría de cambios locales cuando no hay trabajo local ni entregable. Reconoce recibos remotos MCP y la negación explícita de acciones locales, conservando acciones positivas y efectos reales. La fuente 1782 aprobada en revisión 4 pasa 46 contratos en Main y 427 regresiones. R5 termina con cinco herramientas y cuatro rondas, sin shell ni auditoría local, pero necesita una segunda publicación para corregir una errata. La ayuda factual requiere contraste independiente; no acredita autonomía ni eficiencia global. [Alcance y contratos](docs/SAVED-SOURCE-RESEARCH.md).
