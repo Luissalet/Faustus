@@ -2818,8 +2818,29 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
     )
 
 
+def _saved_source_answer_request(text: str) -> bool:
+    """A request to read a stored result and report its contents, not edit files."""
+    text = str(text or "")
+    return bool(
+        re.search(r"\b(?:read_artifact|artifacts?|artefactos?)\b", text, re.IGNORECASE)
+        and re.search(r"\b(?:read|query|source|lines?|consulta(?:r)?|lee|leer|fuentes?|l[ií]neas?)\b", text, re.IGNORECASE)
+        and not _PROGRAMMING_ACTION_SIGNAL_RE.search(text)
+        and not re.search(r"\b(?:save|download|export|guarda(?:r)?|descarga(?:r)?|exporta(?:r)?)\b", text, re.IGNORECASE)
+    )
+
+
 def _workspace_completion_work(intent, deliverable_files, ledger) -> bool:
     """Positive work evidence, independent of a merely bound workspace."""
+    workspace_actions = any(
+        capabilities_for_tool(event.get("tool", "")).effects
+        & {ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE, ToolEffect.EXECUTE_CODE}
+        for event in ledger.events
+    )
+    if (not deliverable_files and not workspace_actions and not ledger.mutations
+            and any(event.get("ok") and event.get("tool") == "read_artifact" for event in ledger.events)
+            and _saved_source_answer_request(_harness.user_authored_text(ledger.user_text))):
+        # A completed progress list or an Agora post is not workspace work.
+        return False
     return bool(
         intent.get("workspace_work") or deliverable_files or ledger.effects or ledger.progress
         or any(ToolEffect.READ_WORKSPACE in capabilities_for_tool(event.get("tool", "")).effects
@@ -19774,6 +19795,7 @@ async def _stream_agent_loop_body(
         if (
             _harness_enabled and _harness_scope_active and not _todo_nudged
             and _ledger.progress is None and len(_ledger.events) >= 4
+            and _workspace_completion_work(_intent, _deliverable_files, _ledger)
             and _todowrite_offered
         ):
             _todo_nudged = True
@@ -19792,6 +19814,7 @@ async def _stream_agent_loop_body(
             _harness_enabled and _harness_scope_active and not _todo_refresh_nudged
             and _harness.progress_list_is_complete(_ledger.progress)
             and _ledger.tools_since_progress() >= 4
+            and _workspace_completion_work(_intent, _deliverable_files, _ledger)
             and _todowrite_offered
         ):
             _todo_refresh_nudged = True

@@ -17,7 +17,9 @@ _EXTS = r"(?:md|markdown|txt|csv|tsv|json|yaml|yml|html|docx|xlsx|py|js|ts|sql)"
 _FILE = r"[\w./\\-]*[\w-]\." + _EXTS + r"\b"
 _VERB = (r"(?:escrib\w*|guard\w*|crea\w*|genera\w*|entreg\w*|deja\w*|redact\w*|rellen\w*|"
          r"write|writes|save|create|produce|generate|deliver|put)")
-_ASK = re.compile(_VERB + r"[^.\n]{0,80}?\b(" + _FILE + r")", re.IGNORECASE)
+_ASK = re.compile(
+    r"\b(?!(?:(?:escrit|guardad|cread|generad|entregad|dejad|redactad|rellenad)[oa]s?|created|generated)\b)"
+    + _VERB + r"\b[^.\n]{0,80}?\b(" + _FILE + r")", re.IGNORECASE)
 _ASK_AFTER = re.compile(r"\b(" + _FILE + r")[^.\n]{0,40}?\b(?:con|with|que contenga|containing)\b", re.IGNORECASE)
 _PATH_RUN = re.compile(r"[\w./\\-]+")
 _FILE_END = re.compile(r"(?<=[\w-])\." + _EXTS + r"\b", re.IGNORECASE)
