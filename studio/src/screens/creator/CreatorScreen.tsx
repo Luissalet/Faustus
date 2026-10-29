@@ -606,8 +606,10 @@ export function CreatorScreen() {
   useEffect(() => {
     if (!projectId) { setCaps(null); return; }
     const controller = new AbortController();
-    api.getAvailability(controller.signal)
-      .then((a) => (a.enabled ? api.getCapabilities(projectId, controller.signal) : 'disabled' as const))
+    (async (): Promise<api.CreatorCapabilities | 'disabled'> => {
+      const availability = await api.getAvailability(controller.signal);
+      return availability.enabled ? api.getCapabilities(projectId, controller.signal) : 'disabled';
+    })()
       .then((c) => setCaps(c))
       .catch(() => { if (!controller.signal.aborted) setCaps('disabled'); });
     return () => controller.abort();
