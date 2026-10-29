@@ -58,6 +58,115 @@ _WINDOWS_USER_SID: Optional[str] = None
 _WINDOWS_SID_UNAVAILABLE = False
 
 
+def _win_api():
+    """``(kernel32, advapi32)`` with the argument types the calls below need,
+    or ``None`` off Windows / when the libraries cannot be loaded. Typed
+    explicitly: the default ``int`` conversion truncates 64-bit pointers."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        kernel32.LocalFree.restype = ctypes.c_void_p
+        advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+        advapi32.OpenProcessToken.restype = wintypes.BOOL
+        advapi32.GetTokenInformation.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+        advapi32.GetTokenInformation.restype = wintypes.BOOL
+        advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+        advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.DWORD)]
+        advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+        advapi32.GetSecurityDescriptorDacl.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        advapi32.SetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.c_void_p]
+        advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+        return kernel32, advapi32
+    except (OSError, AttributeError):
+        return None
+
+
+def _native_user_sid() -> Optional[str]:
+    """SID (``S-1-5-21-…``) of the account running this process, read from its
+    own token with the Win32 API. ``None`` when that is not possible."""
+    api = _win_api()
+    if api is None:
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32, advapi32 = api
+    token = wintypes.HANDLE()
+    TOKEN_QUERY, TOKEN_USER = 0x0008, 1
+    if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), TOKEN_QUERY, ctypes.byref(token)):
+        return None
+    try:
+        size = wintypes.DWORD(0)
+        advapi32.GetTokenInformation(token, TOKEN_USER, None, 0, ctypes.byref(size))
+        if not size.value:
+            return None
+        buf = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(token, TOKEN_USER, buf, size, ctypes.byref(size)):
+            return None
+        # TOKEN_USER starts with SID_AND_ATTRIBUTES { PSID Sid; DWORD Attributes }.
+        psid = ctypes.cast(buf, ctypes.POINTER(ctypes.c_void_p))[0]
+        text = ctypes.c_void_p()
+        if not psid or not advapi32.ConvertSidToStringSidW(psid, ctypes.byref(text)):
+            return None
+        try:
+            sid = ctypes.wstring_at(text.value)
+        finally:
+            kernel32.LocalFree(text)
+        return sid if sid.startswith("S-1-") else None
+    finally:
+        kernel32.CloseHandle(token)
+
+
+def _restrict_native(path, sid: str) -> Optional[bool]:
+    """What ``icacls <path> /inheritance:r /grant:r *<sid>:(F)`` does, without
+    a child process: replace the DACL with a protected one (no inherited
+    entries) holding a single entry, full control for ``sid``. ``True`` when
+    applied, ``False`` when Windows refused, ``None`` when the API is not
+    usable here (the caller falls back to ``icacls``)."""
+    api = _win_api()
+    if api is None:
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32, advapi32 = api
+    descriptor = ctypes.c_void_p()
+    # D:P = protected DACL; (A;;FA;;;SID) = allow FILE_ALL_ACCESS to SID.
+    if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            f"D:P(A;;FA;;;{sid})", 1, ctypes.byref(descriptor), None):
+        return None
+    try:
+        present, defaulted, dacl = wintypes.BOOL(), wintypes.BOOL(), ctypes.c_void_p()
+        if not advapi32.GetSecurityDescriptorDacl(
+                descriptor, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted)):
+            return None
+        SE_FILE_OBJECT = 1
+        DACL_SECURITY_INFORMATION = 0x00000004
+        PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+        rc = advapi32.SetNamedSecurityInfoW(
+            str(path), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            None, None, dacl, None)
+        return rc == 0
+    finally:
+        kernel32.LocalFree(descriptor)
+
+
 def _current_user_sid() -> Optional[str]:
     """SID of the account running Faustus, cached. ``None`` if it can't be read.
 
@@ -67,6 +176,12 @@ def _current_user_sid() -> Optional[str]:
     global _WINDOWS_USER_SID, _WINDOWS_SID_UNAVAILABLE
     if _WINDOWS_USER_SID or _WINDOWS_SID_UNAVAILABLE:
         return _WINDOWS_USER_SID
+    # The process token already knows the SID: no child process, so nothing
+    # that can stall the event loop for seconds on a busy machine.
+    sid = _native_user_sid()
+    if sid:
+        _WINDOWS_USER_SID = sid
+        return sid
     try:
         proc = subprocess.run(
             ["whoami", "/user", "/fo", "csv", "/nh"],
@@ -98,6 +213,16 @@ def restrict_to_owner(path) -> bool:
     sid = _current_user_sid()
     if not sid:
         return False
+    # The Win32 call takes milliseconds. `icacls` as a child process took 5-7 s
+    # on a busy machine, and this runs inside atomic writes that happen on the
+    # event loop (seen live in /api/diag/loop at every start), so it stays a
+    # fallback for when the API is not usable.
+    try:
+        native = _restrict_native(path, sid)
+    except (OSError, AttributeError, ValueError):
+        native = None
+    if native is not None:
+        return native
     try:
         proc = subprocess.run(
             ["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:(F)"],
