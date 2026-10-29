@@ -2427,3 +2427,12 @@ Corregida la continuación local ficticia para consultas de fuentes públicas y 
 ## HoardDex tras la entrega 368
 
 Entregados los quince equipos directos restantes del rival de Platino estadounidense y la legibilidad del inicial/umbral en el selector, con revisión cruzada, pruebas de main y APK final x86_64 instalado y probado en Android Studio visible. Los dos paquetes y sus JSON sustituyen solo los APK anteriores verificados; el historial de informes se conserva. Continúan los combates aliados de Platino, las demás ediciones y la cobertura útil pendiente de los juegos. La prueba física ARM64 sigue sin estar disponible. No se considera alcanzada la paridad global.
+
+
+## HoardDex: entrega 371 de combates aliados
+
+HoardDex Main 4d7709e1, versión 371, entrega seis contextos de Israel aliado en Columna Lanza y Zona Combate de Platino US. Cada opción separa dos adversarios de tres miembros y un aliado de seis, con reglas acreditadas por scripts, mapas, conversor y motor propios; no se ejecutó ROM. El inicial aparece primero y se lee completo al 200% en Android. El banco alcanza518 equipos/920 contextos/1024 fuentes en20 ediciones; Platino 61 equipos/263 miembros principales y54 auxiliares nuevos contabilizados aparte.
+
+CAS2 aprueba la fuente baaf4a4e;371 sólo añade documentación. Main pasa 727 TS+23 CJS, tipos,37 herramientas/1285 llamadas MCP y build web. Se comprobó el bundle final y el APK x86 final instalado por SHA; conserva exactamente el runtime de 370 probado en ES/EN, oscuro, enlaces con vuelta, vacío y recuperación. Se restauraron preferencias y colección del emulador visible y la sesión web. Ambos APK y sus JSON están publicados localmente:150 JSON previos exactos y sólo dos APK anteriores verificados retirados. ARM64 está compilado sin ejecución física. Sin push ni paridad global.
+
+Faustus1794 contrastó tres tablas públicas en una única respuesta:18 miembros/72 movimientos e item:null cotejados por Root con las fuentes ySHA fijados. Es apoyo factual acotado, sin atribuir revisión del motor, autonomía o eficiencia general. Se restauró el vigilante normal tras el reinicio sin borrar sus mensajes/estado ni reiniciar el servidor o las Sparks. Continúan los encuentros con Lucas/Maya y las demás coberturas. Tareas hoarddex1793 y faustus1800; recibos en research-inbox/hoarddex-platinum-allies/ROOT-FINAL371.json,PUBLISHED371.json yMANUAL371.json.
