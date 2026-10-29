@@ -486,6 +486,13 @@ def select(
     skills = [sk for sk in skills
               if not (sk.get("extra") or {}).get("manual_only")
               and not sk.get("manual_only")]
+    # A skill that does by hand what a connected tool already does stays out
+    # of the matches (`fallback_for_tools`), so the agent is not told to run
+    # yt-dlp in a shell while the Links `media_download` tool is there.
+    from services.memory.skills import connected_tool_names, superseded_by_tools
+    connected = connected_tool_names()
+    if connected:
+        skills = [sk for sk in skills if not superseded_by_tools(sk, connected)]
     if not (query or "").strip() or not skills:
         return []
 

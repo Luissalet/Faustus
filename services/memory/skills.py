@@ -93,6 +93,81 @@ def _lexical_score(query: str, query_tokens: set, sk: Dict) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Skills that a connected tool makes redundant
+# ---------------------------------------------------------------------------
+
+#: A skill that does by hand what a tool does can say so with
+#: `fallback_for_tools: [tool_name]` in its frontmatter: while one of those
+#: tools is connected and enabled the skill is left out of the agent's index
+#: and of the matched skills, and it comes back by itself when the tool is
+#: gone. `fallback_for_toolsets` cannot say this: it names Faustus's built-in
+#: tool sections, not the tools a connected app brings.
+#:
+#: Skills the agent learned on its own never carry the field, so those that
+#: describe a download by hand with yt-dlp inherit it here: a learned
+#: "download a YouTube video with yt-dlp" skill sent the agent to bash
+#: while Links Hoard's `media_download` was connected. `fallback_for_tools:
+#: none` opts a skill out (an empty list would not survive the SKILL.md
+#: writer, which leaves empty values out).
+_IMPLIED_FALLBACK_TOOLS = (
+    ("media_download", ("yt-dlp", "yt_dlp", "youtube-dl")),
+)
+_NO_FALLBACK_TOOLS = ("none", "false", "no", "-")
+
+
+def fallback_tools_for(skill: Dict) -> List[str]:
+    """Tool names that make ``skill`` unnecessary while they are connected."""
+    extra = skill.get("extra") or {}
+    declared = extra.get("fallback_for_tools", skill.get("fallback_for_tools"))
+    if declared is not None:
+        if declared is False or (isinstance(declared, str) and declared.strip().lower() in _NO_FALLBACK_TOOLS):
+            return []
+        if isinstance(declared, str):
+            declared = [declared]
+        return [str(t).strip() for t in declared if str(t).strip()]
+    text = " ".join([
+        skill.get("name", "") or "",
+        skill.get("description", "") or "",
+        skill.get("when_to_use", "") or "",
+        " ".join(skill.get("tags", []) or []),
+        " ".join(skill.get("procedure", []) or []),
+    ]).lower()
+    return [tool for tool, needles in _IMPLIED_FALLBACK_TOOLS if any(n in text for n in needles)]
+
+
+def connected_tool_names() -> set:
+    """Bare and qualified names of every enabled tool of a connected MCP
+    server. Empty when no manager is running (tests, the CLI)."""
+    try:
+        from src.tool_utils import get_mcp_manager
+
+        manager = get_mcp_manager()
+        if manager is None:
+            return set()
+        names = set()
+        for tool in manager.get_all_tools():
+            if tool.get("is_disabled"):
+                continue
+            if manager.get_server_status(tool["server_id"]).get("status") != "connected":
+                continue
+            names.add(tool["name"])
+            names.add(tool.get("qualified_name") or tool["name"])
+        return names
+    except Exception:  # noqa: BLE001 - a missing tool list must never hide the skill index
+        logger.debug("connected tool names unavailable", exc_info=True)
+        return set()
+
+
+def superseded_by_tools(skill: Dict, available_tools: Optional[Iterable[str]]) -> bool:
+    """True when a tool named in the skill's `fallback_for_tools` is available."""
+    wanted = fallback_tools_for(skill)
+    if not wanted or not available_tools:
+        return False
+    available = set(available_tools)
+    return any(t in available or any(a.endswith("__" + t) for a in available) for t in wanted)
+
+
+# ---------------------------------------------------------------------------
 # SkillsManager
 # ---------------------------------------------------------------------------
 
@@ -690,9 +765,15 @@ class SkillsManager:
         active_toolsets: Optional[List[str]] = None,
         platform: Optional[str] = None,
         include_manual: bool = False,
+        available_tools: Optional[Iterable[str]] = None,
     ) -> List[Dict]:
         """Return the `[{name, description, category, status}]` list the
         agent sees in its system prompt.
+
+        A skill whose `fallback_for_tools` names a tool that is connected is
+        left out (see `superseded_by_tools`); `available_tools=None` reads the
+        connected tools from the running MCP manager. Explicit use through a
+        slash command (`include_manual=True`) is never hidden this way.
 
         Includes:
           - All published skills.
@@ -707,8 +788,12 @@ class SkillsManager:
         prompt with half-finished procedures.
         """
         out = []
+        if available_tools is None and not include_manual:
+            available_tools = connected_tool_names()
         for s in self.load(owner=owner):
             if not include_manual and ((s.get("extra") or {}).get("manual_only") or s.get("manual_only")):
+                continue
+            if not include_manual and superseded_by_tools(s, available_tools):
                 continue
             status = s.get("status")
             # Published + None (pre-status legacy) always included.
