@@ -24,6 +24,7 @@ def _parse_json_or_bare(content: str, bare_key: str) -> dict:
 def _result_to_output(result) -> Dict[str, Any]:
     data = result.to_dict()
     text = data.get("text") or ""
+    full_text = text if len(text) > MAX_OUTPUT_CHARS else None
     truncated = data.get("truncated", False)
     if len(text) > MAX_OUTPUT_CHARS:
         text = text[:MAX_OUTPUT_CHARS]
@@ -59,6 +60,7 @@ def _result_to_output(result) -> Dict[str, Any]:
         "truncated": truncated,
         "attempts": data["attempts"],
         "untrusted_content": True,
+        **({"full_text": full_text} if full_text is not None else {}),
     }
 
 

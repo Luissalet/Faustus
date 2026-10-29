@@ -3,11 +3,14 @@ when set), (2) `gh` CLI when installed, (3) Jina Reader on the page."""
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import json
 import re
 import shutil
 import subprocess
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
@@ -24,6 +27,13 @@ def _parse_target(url_or_id: str) -> dict[str, Any]:
     raw = (url_or_id or "").strip()
     if not raw:
         raise ReachBackendError("empty url/id")
+    parsed = urlparse(raw)
+    parts = parsed.path.strip("/").split("/")
+    if parsed.hostname == "github.com" and len(parts) >= 4 and parts[2] in ("tree", "blob"):
+        return {
+            "kind": parts[2], "owner": parts[0], "repo": parts[1],
+            "ref": unquote(parts[3]), "path": unquote("/".join(parts[4:])),
+        }
     m = _ISSUE_RE.search(raw)
     if m:
         return {"kind": "issue_or_pr", "owner": m["owner"], "repo": m["repo"], "num": m["num"], "is_pr": "/pull/" in raw}
@@ -32,7 +42,7 @@ def _parse_target(url_or_id: str) -> dict[str, Any]:
     m = _REPO_RE.match(stripped)
     if m:
         return {"kind": "repo", "owner": m["owner"], "repo": m["repo"]}
-    raise ReachBackendError(f"not a recognizable GitHub repo/issue/PR: {raw!r}")
+    raise ReachBackendError(f"not a recognizable GitHub repo/issue/PR/file/directory: {raw!r}")
 
 
 class GithubApiBackend(Backend):
@@ -83,6 +93,8 @@ class GithubApiBackend(Backend):
                     author=(repo.get("owner") or {}).get("login", ""), text=text or (repo.get("description") or ""),
                     published_at=repo.get("created_at", ""), source_trust="public_api",
                 )
+            if target["kind"] in ("tree", "blob"):
+                return await self._read_source(client, target)
             # issue or PR
             kind_path = "pulls" if target["is_pr"] else "issues"
             resp = await client.get(
@@ -111,6 +123,55 @@ class GithubApiBackend(Backend):
                 author=(issue.get("user") or {}).get("login", ""), text=issue.get("body") or "",
                 items=comments_items, published_at=issue.get("created_at", ""), source_trust="public_api",
             )
+
+    async def _read_source(self, client: httpx.AsyncClient, target: dict[str, Any]) -> ReachResult:
+        owner, repo, ref, path = (target[key] for key in ("owner", "repo", "ref", "path"))
+        api = f"https://api.github.com/repos/{owner}/{repo}"
+        resp = await client.get(
+            f"{api}/contents/{quote(path, safe='/')}", params={"ref": ref},
+            headers={"Accept": "application/vnd.github.object+json"},
+        )
+        if resp.status_code >= 400:
+            raise ReachBackendError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+        data = resp.json()
+        if isinstance(data, dict) and data.get("type") == "dir":
+            data = data.get("entries", [])
+        directory_limited = isinstance(data, list) and len(data) >= 1000
+        base = f"https://github.com/{owner}/{repo}"
+        pinned_ref = quote(ref, safe="")
+        source_url = f"{base}/{target['kind']}/{pinned_ref}"
+        if path:
+            source_url += f"/{quote(path, safe='/')}"
+        if isinstance(data, list):
+            entries = []
+            for item in data:
+                kind = "tree" if item.get("type") == "dir" else "blob"
+                entry_path = item.get("path", "")
+                entries.append({
+                    "name": item.get("name", ""), "path": entry_path,
+                    "type": item.get("type", ""), "sha": item.get("sha", ""),
+                    "url": f"{base}/{kind}/{pinned_ref}/{quote(entry_path, safe='/')}",
+                })
+            text = json.dumps({"ref": ref, "path": path, "entries": entries}, ensure_ascii=False)
+        else:
+            if data.get("encoding") == "none" and data.get("sha"):
+                resp = await client.get(f"{api}/git/blobs/{quote(data['sha'], safe='')}")
+                if resp.status_code >= 400:
+                    raise ReachBackendError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+                data = resp.json()
+            if data.get("encoding") != "base64" or not isinstance(data.get("content"), str):
+                raise ReachBackendError("GitHub source is not available as base64 text")
+            try:
+                encoded = "".join(data["content"].split())
+                text = base64.b64decode(encoded, validate=True).decode("utf-8")
+            except (binascii.Error, UnicodeDecodeError) as exc:
+                raise ReachBackendError("GitHub source is not valid UTF-8 text") from exc
+            if "\0" in text:
+                raise ReachBackendError("GitHub source contains binary data")
+        return ReachResult(
+            channel="github", url=source_url, title=f"{owner}/{repo}: {path or '/'} @ {ref}",
+            author=owner, text=text, source_trust="public_api", truncated=directory_limited,
+        )
 
     async def search(self, query: str, **kwargs: Any) -> list[ReachResult]:
         kind = kwargs.get("kind", "repositories")
