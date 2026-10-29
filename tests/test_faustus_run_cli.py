@@ -393,3 +393,26 @@ def test_setup_failure_retains_the_created_session_for_reconciliation(capsys):
     assert code==fr.EXIT_ERROR and summary["stop"]=="error"
     assert summary["session"]=="s1"
     assert not _H.forms
+
+
+def test_whole_registration_batch_is_validated_before_any_create():
+    import pytest
+    client=_AndroidCatalogue([ANDROID_CONNECTED])
+    batch=[{"name":"New first service","transport":"stdio","command":"new-service","args":[]},{**ANDROID_SPEC[0],"command":"conflicting-service"}]
+    with pytest.raises(RuntimeError):
+        fr.register_mcp_servers(client,json.dumps(batch))
+    assert client.posts==[]
+    assert client.servers==[ANDROID_CONNECTED]
+
+
+def test_same_batch_duplicate_names_are_checked_before_any_create():
+    import pytest
+    for second in [ANDROID_SPEC[0],{**ANDROID_SPEC[0],"command":"conflicting-service"}]:
+        client=_AndroidCatalogue()
+        if second==ANDROID_SPEC[0]:
+            assert fr.register_mcp_servers(client,json.dumps([ANDROID_SPEC[0],second]))==["Android QA","Android QA"]
+            assert len(client.posts)==1
+        else:
+            with pytest.raises(RuntimeError):
+                fr.register_mcp_servers(client,json.dumps([ANDROID_SPEC[0],second]))
+            assert client.posts==[]

@@ -271,6 +271,7 @@ def register_mcp_servers(client: "Client", spec: str) -> List[str]:
             spec = fh.read()
     servers = json.loads(spec)
     names: List[str] = []
+    forms: List[Dict[str, Any]] = []
     for server in servers if isinstance(servers, list) else []:
         if not isinstance(server, dict) or not server.get("name"):
             continue
@@ -283,9 +284,20 @@ def register_mcp_servers(client: "Client", spec: str) -> List[str]:
         if server.get("command"):
             form["command"] = str(server["command"])
         form["args"] = json.dumps([str(a) for a in server.get("args") or []])
-        catalog = client.get_json("/api/mcp/servers")
-        if not isinstance(catalog, list):
-            raise RuntimeError("The MCP catalogue could not be confirmed; registration was not attempted.")
+        forms.append(form)
+    if not forms:
+        return []
+    catalog = client.get_json("/api/mcp/servers")
+    if not isinstance(catalog, list):
+        raise RuntimeError("The MCP catalogue could not be confirmed; registration was not attempted.")
+    pending: Dict[str, Dict[str, Any]] = {}
+    for form in forms:
+        transport = form["transport"]
+        if form["name"] in pending:
+            if pending[form["name"]] != form:
+                raise RuntimeError("The requested MCP batch gives one name different configurations; no server was changed.")
+            names.append(form["name"])
+            continue
         named = [row for row in catalog if isinstance(row, dict) and row.get("name") == form["name"]]
         if named:
             if len(named) != 1:
@@ -313,8 +325,12 @@ def register_mcp_servers(client: "Client", spec: str) -> List[str]:
                 raise RuntimeError("The MCP name is already registered with a different configuration or state; no server was changed.")
             names.append(form["name"])
             continue
-        client.post_form("/api/mcp/servers", form, timeout=120)
+        pending[form["name"]] = form
         names.append(form["name"])
+    # Validate the entire request before the first creation. Transport failures
+    # during creation can still have effects; a retry reads the catalogue again.
+    for form in pending.values():
+        client.post_form("/api/mcp/servers", form, timeout=120)
     return names
 
 
