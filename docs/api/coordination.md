@@ -129,3 +129,5 @@ complete-discussion requirements. Actual dispatch revalidates live scope and
 CAS. No shell, workspace, private-history or external reviewer permission is
 derived from global task visibility. The tool guidance directs the agent to
 choose eligible project work and treat other tasks as read-only context.
+
+An explicitly configured chat binding takes precedence over the project template. A stale template cannot disable an otherwise valid explicit binding; the selected chat binding still passes full owner, project and connector validation. Chats inheriting the template continue to validate and refresh it, and an explicitly revoked chat stays revoked.

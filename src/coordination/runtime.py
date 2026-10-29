@@ -135,7 +135,12 @@ def resolve_grant(owner, session_id, *, project_id=None, manager=None, read_only
     store = get_store()
     project = project_for_session(session_id, owner)
     template = store.template(storage_owner(owner), project["id"]) if project else None
-    if template and template.active:
+    bindings = store.session_bindings(storage_owner(owner), session_id)
+    previous = bindings[0] if bindings else None
+    # materialize preserves explicit chat configuration and revocation.
+    # Validate a template only when it will actually supply the binding.
+    preserve_chat = previous and (not previous.active or not previous.template_id)
+    if template and template.active and not preserve_chat:
         # A chat override must never inherit a connector it explicitly denied.
         validate(template.for_session(session_id), owner=owner, session_id=session_id,
                  project_id=project_id, manager=manager or get_mcp_manager())
