@@ -1476,3 +1476,12 @@ HoardDex adds twelve Platinum US ally contexts for Dawn/Lucas in Jubilife and Ve
 ### HoardDex delivery375: original game texts
 
 HoardDex Main 48499584, version375, closes the bounded audit of295 untranslated imported rows:287 original bilingual descriptions from the same game and eight empty source fields with an explicit notice. All27124 previous records remain exact;102 English texts are corrected with provenance. Queenly Majesty, four Embody Aspect mask texts and six Arceus balls retain their exact source identities. CAS1 approved source374; twelve non-documentation files stay exact in375. Main passes751 TS,23 CJS, types and37 MCP tools/1596 calls. Web and visible Android x86 checks cover the sensitive ES/EN cases, dark/light appearance,200% native masks, contextual return and empty/recovery states. Final packages have separate smoke checks and the exact source374 runtime. Both APKs and JSON receipts are published locally; x86 is installed by SHA, ARM64 is compiled only. All154 previous JSON receipts remain exact; only two verified old APKs were removed. No push or global parity claim. Edition evolution rules, special calculators, locations/forms, technical reference translations and resources remain; Faustus1802 is unresolved.
+
+
+### Browser task completion verified in real Brave — 1797
+
+Faustus can use Browser with the installed extension in existing Brave tabs. An explicit browser-only request no longer creates a repository deliverable or forces local progress and file auditing when no local work was requested or performed. Positive code requests and actual local operations keep their existing checks.
+
+With the approved 536848fe code active and the configured global model, native run R7 read the literal Library counter “36 visibles de 36 · Todos los documentos”, returned to Home with six projects, preserved all ten tabs and the active tab, then released its QA tab. The normal CLI completed with 12 successful Browser calls, 13 rounds and 71.7 seconds; it used no other tools and made no calls after release.
+
+This completes the bounded native check previously marked pending. It establishes this real workflow, not global autonomy, Writer feature parity or a controlled performance gain. Moving the installed extension to its canonical folder and portable runtime acceptance remain separate pending work. [Browser setup and limits](src/browser_relay/README.md).

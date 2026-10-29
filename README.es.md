@@ -850,3 +850,12 @@ HoardDex Main 2edadc08, versión 373, añade doce contextos con Maya/Lucas aliad
 ### HoardDex: entrega375 de textos originales
 
 HoardDex Main 48499584, versión 375, cierra las 295 filas importadas sin español auditadas: 287 descripciones originales del mismo juego y ocho campos de fuente vacíos con aviso bilingüe, conservando los 27.124 registros previos. Corrige 102 textos ingleses con procedencia explícita. Regia Presencia recupera la protección frente a prioridad, Evocarrecuerdos conserva cuatro textos por máscara y las seis Balls de Arceus se distinguen de sus recetas. Fuente374 aprobada CAS1; los doce archivos no documentales permanecen exactos en375. Main pasa 751 TS, 23 CJS, tipos y 37 herramientas/1596 llamadas MCP. Web y Android x86 visible comprueban ES/EN, claro/oscuro, máscaras al200%, enlaces con vuelta y vacío/recuperación; los paquetes finales tienen smoke separado y runtime idéntico a374. Ambos APK y JSON están publicados localmente, con x86 instalado por SHA. Se conservan154 JSON anteriores y se retiran sólo los dos APK obsoletos verificados. ARM64 sólo compilado; sin push ni paridad global. Siguen efectos técnicos generales, sprites, evoluciones por edición, motores especiales, localizaciones y formas. Faustus1802 continúa abierto por el fallo procedural observado.
+
+
+### Cierre de navegador comprobado en Brave real — 1797
+
+Faustus puede usar Browser con la extensión instalada en las pestañas existentes de Brave. Una petición explícita de usar sólo el navegador ya no crea un entregable de repositorio ni fuerza progreso o auditoría local cuando no se ha pedido ni realizado trabajo local. Las órdenes positivas de código y las operaciones locales reales conservan sus comprobaciones.
+
+Con el código aprobado 536848fe activo y el modelo global configurado, el ensayo nativo R7 leyó el contador literal «36 visibles de 36 · Todos los documentos», volvió a Inicio con seis proyectos, conservó las diez pestañas y su activa y liberó sólo la pestaña de QA. La CLI normal terminó con 12 llamadas Browser correctas, 13 rondas y 71,7 segundos, sin otras herramientas ni llamadas después de release.
+
+Queda completada la comprobación nativa acotada que antes figuraba pendiente. Acredita ese recorrido real, sin certificar autonomía general, paridad de Writer ni mejora controlada de rendimiento. La migración de la extensión a su carpeta canónica y la aceptación portable siguen como trabajos separados. [Instalación y límites](src/browser_relay/README.md).
