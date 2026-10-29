@@ -2819,10 +2819,11 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
 
 
 def _saved_source_answer_request(text: str) -> bool:
-    """A request to read a stored result and report its contents, not edit files."""
+    """A request to read referenced sources and report their contents, not edit files."""
     text = str(text or "")
     return bool(
-        re.search(r"\b(?:read_artifact|artifacts?|artefactos?)\b", text, re.IGNORECASE)
+        re.search(r"\b(?:read_artifact|artifacts?|artefactos?|web|github|urls?)\b|https?://"
+                  r"|\b(?:public\s+sources?|fuentes?\s+p[uú]blicas?)\b", text, re.IGNORECASE)
         and re.search(r"\b(?:read|query|source|lines?|consulta(?:r)?|lee|leer|fuentes?|l[ií]neas?)\b", text, re.IGNORECASE)
         and not _PROGRAMMING_ACTION_SIGNAL_RE.search(text)
         and not re.search(r"\b(?:save|download|export|guarda(?:r)?|descarga(?:r)?|exporta(?:r)?)\b", text, re.IGNORECASE)
@@ -2839,7 +2840,7 @@ def _workspace_completion_work(intent, deliverable_files, ledger) -> bool:
         for event in ledger.events
     )
     if (not deliverable_files and not workspace_actions and not ledger.mutations
-            and any(event.get("ok") and event.get("tool") == "read_artifact" for event in ledger.events)
+            and any(event.get("ok") and event.get("tool") in {"read_artifact", "web_fetch", "reach_read"} for event in ledger.events)
             and _saved_source_answer_request(_harness.user_authored_text(ledger.user_text))):
         # A completed progress list or an Agora post is not workspace work.
         return False
