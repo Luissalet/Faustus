@@ -1,5 +1,53 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Control de diseño, bloqueos del bucle de eventos y presets — 29-10-2026, #1695/#1725/#1723/#1741
+
+**Control de diseño en dos niveles (#1695).** Con «Control de diseño» activado en Ajustes del proyecto
+(`design_hook`, apagado por defecto), las ediciones del agente en `.tsx .jsx .css .html .vue` pasan por las reglas del
+registro de Vitruvius (144 reglas con `engine` y `severity`; módulo `src/design_hook/`):
+tras cada edición, solo las reglas estáticas inequívocas (nivel Floor, `POST /api/lint` con `engines:["static"]`, sin
+navegador) y, si fallan, una nota corta en el resultado de la herramienta (`hook_notes`, un listener `post_tool` en hilo,
+sin repetir el mismo conjunto de reglas en el mismo fichero); al cerrar el turno, el pase completo una sola vez
+(todas las reglas estáticas más un render a 390 y 1440 px y las reglas de navegador de cada página tocada o que enlaza
+una hoja tocada), con como mucho una ronda de arreglo (`design_fix` en la política de rondas extra) y sin repetir
+mientras no cambien los ficheros ni las excepciones. `src/design_hook/source.py` reduce JSX, TSX y Vue al HTML que
+leen las reglas sin inventar nada (las expresiones se descartan) y las reglas que hablan de la página entera no se
+aplican a un fragmento. El taller solo se consulta, nunca se arranca: parado, o con su módulo de diseño apagado, el
+control calla. Excepciones por proyecto (`design_waivers`: regla y motivo de 24 caracteres o más, una por regla, motivos
+distintos; las reglas Floor no se pueden exceptuar). En Ajustes del proyecto aparece el estado del taller, el botón
+«Encender el módulo de diseño» y la lista de excepciones. API: `GET /api/design-hook/status`,
+`POST /api/design-hook/start`, `POST /api/design-hook/run` (`static` o `full`). Herramientas MCP del servidor
+`harness`: `design_hook_status`, `design_hook_start`, `design_hook_run`. Pruebas: `tests/test_design_hook.py` (34).
+En vivo, con Vitruvius arrancado desde el Hub y el modelo de las Sparks: el agente escribió `site.css` con
+`#fff/#000` y `transition: all`, el resultado de la herramienta llevó la nota con `slop/pure-black-white` y
+`craft/transition-all`, el cierre del turno hizo el pase completo (render de la página, 1,2 s) y una ronda de arreglo,
+y el segundo pase quedó sin reglas Floor.
+
+**El bucle de eventos ya no se queda parado en turnos largos (#1725).** Causa: trabajo síncrono dentro del bucle, una
+vez por ronda del agente. `src/loop_watchdog.py` (nuevo, activo desde el arranque; `FAUSTUS_LOOP_STALL_SECONDS`, 0 lo
+apaga) deja un latido en el bucle y un hilo vigía que, si pasan 2 s sin latido, captura la pila del hilo del bucle (otra
+vez cada 5 s mientras dure) y, al recuperarse, escribe `data/logs/loop_stalls.jsonl` con duración, pilas y qué hacían
+los demás hilos; `GET /api/diag/loop` y la herramienta MCP `loop_stalls` lo leen. En un turno real capturó tres
+bloqueos: el recorrido de todos los procesos del PC que decide si las herramientas de escritorio se ofrecen
+(`host_tools._app_process_running`, 7,9 s en cada ronda con el caché caducado), la consulta HTTP síncrona de la
+ventana de contexto del modelo (`model_context._query_context_length`, hasta 5 s de espera por ronda) y el contexto TLS
+que `httpx.get` reconstruye en cada llamada suelta (3 s, `ssl.create_default_context`). Arreglos: el recorrido de
+procesos sirve la respuesta anterior mientras un hilo la renueva (y se calienta al arrancar); la ventana de contexto
+sirve la última respuesta en el bucle y la renueva en un hilo, y la primera consulta de cada modelo va en un hilo
+(`warm_context_length`); `src/httpx_ssl_cache.py` construye el contexto TLS por defecto una vez por proceso (los
+contextos propios, `verify=False`/CA propia y certificados de cliente no se tocan). Antes y después, mismo turno con las
+Sparks: bloqueos de 3,0 y 7,9 s durante el turno antes; ninguno después, con 122 sondeos a `/api/health` cada medio
+segundo, todos por debajo de 1 s. Quedan dos paradas de 3-4 s solo al arrancar el proceso (construcción perezosa del
+enrutador en la primera petición), que el vigía también registra. Pruebas: `tests/test_loop_watchdog.py`,
+`tests/test_loop_blocking_fixes.py`. De paso, `tests/test_host_process_probe.py` volvía a fallar en master porque el
+`conftest` sustituye la sonda: ahora restaura la real.
+
+**Presets de Links y Kafka (#1723) y catálogos de herramientas (#1741).** El preset integrado de Links es el manifiesto
+de su app propia (puerto 5181: resumen de vídeo, preguntas sobre artículos, descargas, herramientas de audio, plan de
+lectura y descriptor del copiloto) y el de Kafka suma el mismo descriptor y la lista de capacidades actual; los dos son
+copias byte a byte de los manifiestos de las apps. `godot` y `project_workspace` tienen clase de capacidad, descripción
+de índice y ejemplos, y la prueba de paridad de esquemas lee los nombres de las entradas con constantes de módulo.
+
 ## Tareas de terminal y preparación en Windows — 28-10-2026, #1716/#1728/#1733
 
 La CLI acepta --input-token-budget entre 4096 y 200000, también mediante
