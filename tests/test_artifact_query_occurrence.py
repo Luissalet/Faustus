@@ -81,3 +81,18 @@ def test_json_selection_and_range_still_read_exact_stored_bytes(stored, monkeypa
     assert execute(stored, {'start': 11, 'end': 30}, monkeypatch)['text'] == whole[11:30]
     selected = execute(stored, {'json_pointer': '/output'}, monkeypatch)
     assert json.loads(selected['output'])['value'] == json.loads(whole)['output']
+
+
+@pytest.mark.parametrize('text,query,occurrence,context,expected', [
+    ('İ Entry(); middle Entry(){heal();}', 'entry', 2, 0, {'offset': 18, 'text': 'Entry'}),
+    ('xİy', 'İ', 1, 0, {'offset': 1, 'text': 'İ'}),
+    ('A İ B İ C', 'i\u0307', 2, 0, {'offset': 6, 'text': 'İ'}),
+    ('aİbXİc', 'İ', 2, 1, {'offset': 4, 'text': 'Xİc'}),
+])
+def test_unicode_lowercase_expansion_keeps_original_offsets_and_extent(tmp_path, monkeypatch, text, query, occurrence, context, expected):
+    from src import artifact_identity
+    path = tmp_path / 'unicode.txt'
+    path.write_text(text, encoding='utf8')
+    monkeypatch.setattr(artifact_identity, 'path_for', lambda artifact_id, *, owner: path)
+    result = offload.read_artifact_range('own_fixture', owner='reader', query=query, occurrence=occurrence, context_chars=context)
+    assert result['matches'] == [expected]

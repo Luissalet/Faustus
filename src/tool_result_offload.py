@@ -278,8 +278,15 @@ def read_artifact_range(artifact_id: str, *, owner: str, start: int = 0,
         if idx < 0:
             return {"artifact_id": artifact_id, "query": query, "matches": [],
                     "total_chars": len(text)}
+        match_end = idx + len(needle)
+        if len(haystack) != len(text):
+            # Unicode lowercasing may expand one original character (e.g. İ).
+            # Both match boundaries must refer to the original stored text.
+            original_indices = [i for i, char in enumerate(text) for _ in char.lower()]
+            match_end = original_indices[match_end - 1] + 1
+            idx = original_indices[idx]
         lo = max(0, idx - context_chars)
-        hi = min(len(text), idx + len(query) + context_chars)
+        hi = min(len(text), match_end + context_chars)
         return {"artifact_id": artifact_id, "query": query,
                 "matches": [{"offset": idx, "text": text[lo:hi]}],
                 "total_chars": len(text)}
