@@ -2447,3 +2447,10 @@ Faustus1794 contrastó tres tablas públicas en una única respuesta:18 miembros
 ## HoardDex: prioridad tras entrega 373
 
 Cerrar inventario1806 antes de abrir más microlotes de entrenadores. Separar funciones completas de cobertura por juego y contar sólo ausencias demostradas: obtención/localizaciones/formas, evoluciones/compatibilidad, textos/iconos, guías/combates, motores especiales y recursos/tamaño. No estimar porcentaje ni plazo sin denominador. Entrega373 publicada y probada con alcance descrito en FAUSTUS.md; ARM64 sin ejecución física. Resolver1802 por su causa observada sin atribuírselo a1797 ni añadir permisos o controles generales.
+
+
+## HoardDex: entrega375 de textos originales
+
+HoardDex Main 48499584, versión 375, cierra las 295 filas importadas sin español auditadas: 287 descripciones originales del mismo juego y ocho campos de fuente vacíos con aviso bilingüe, conservando los 27.124 registros previos. Corrige 102 textos ingleses con procedencia explícita. Regia Presencia recupera la protección frente a prioridad, Evocarrecuerdos conserva cuatro textos por máscara y las seis Balls de Arceus se distinguen de sus recetas. Fuente374 aprobada CAS1; los doce archivos no documentales permanecen exactos en375. Main pasa 751 TS, 23 CJS, tipos y 37 herramientas/1596 llamadas MCP. Web y Android x86 visible comprueban ES/EN, claro/oscuro, máscaras al200%, enlaces con vuelta y vacío/recuperación; los paquetes finales tienen smoke separado y runtime idéntico a374. Ambos APK y JSON están publicados localmente, con x86 instalado por SHA. Se conservan154 JSON anteriores y se retiran sólo los dos APK obsoletos verificados. ARM64 sólo compilado; sin push ni paridad global. Siguen efectos técnicos generales, sprites, evoluciones por edición, motores especiales, localizaciones y formas. Faustus1802 continúa abierto por el fallo procedural observado.
+
+Continuar con evoluciones por edición y calculadoras, usando el inventario1806 y sin abrir nuevos microlotes de entrenadores. No sumar pares hipotéticos desconocidos como si fueran evoluciones distintas ausentes, ni convertir ausencia de datos en imposibilidad.
