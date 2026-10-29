@@ -52,6 +52,18 @@ enrutador en la primera petición), que el vigía también registra. Pruebas: `t
 `tests/test_loop_blocking_fixes.py`. De paso, `tests/test_host_process_probe.py` volvía a fallar en master porque el
 `conftest` sustituye la sonda: ahora restaura la real.
 
+**Despliegue del 29-10-2026: dos paradas más y un esquema que rompía turnos.** (1) El descubrimiento de conectores
+(`connector_discovery.discover`/`find_app`, lo que construye la lista de Conectores) leía la línea de comandos y el
+directorio de cada proceso que escucha dentro del bucle: hasta 27 s sin atender nada según el vigía; ahora el
+recorrido va en un hilo (`tests/test_connectors.py::test_port_scan_runs_off_the_event_loop`). (2) Una herramienta MCP
+con argumentos en tupla publica `items: [a, b]` (forma draft-07) y un endpoint estricto rechaza la petición entera
+("is not of type 'object', 'boolean'"), de modo que un solo `media_download` de Links dejaba sin respuesta todos los
+turnos. `llm_safe_tool_schema` (`src/mcp_manager.py`) lo convierte en `prefixItems` al descubrir la herramienta, así que
+el catálogo, la búsqueda de herramientas y el vigía de contrato del paso (`step_snapshot`) ven el mismo esquema
+(`tests/test_mcp_tuple_items_schema.py`). Verificado en el 7000: «descárgame este vídeo» llama a
+`media_download` de Links y el MP4 queda en su carpeta de descargas; «lista mis plazos de Kafka» llama a
+`deadlines_list` de Kafka.
+
 **Presets de Links y Kafka (#1723) y catálogos de herramientas (#1741).** El preset integrado de Links es el manifiesto
 de su app propia (puerto 5181: resumen de vídeo, preguntas sobre artículos, descargas, herramientas de audio, plan de
 lectura y descriptor del copiloto) y el de Kafka suma el mismo descriptor y la lista de capacidades actual; los dos son
