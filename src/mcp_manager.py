@@ -538,6 +538,37 @@ def _sanitize_schema_token(value: Any, limit: int = _MCP_TOKEN_MAX) -> str:
     return text
 
 
+_SCHEMA_VALUE_KEYS = frozenset({"enum", "const", "default", "examples", "required"})
+
+
+def llm_safe_tool_schema(schema: Any) -> Any:
+    """A tool's JSON Schema in the 2020-12 form model servers validate.
+
+    A server that builds its schemas from tuples (`z.tuple` and friends)
+    publishes the draft-07 array form `items: [a, b]`; a strict endpoint
+    rejects the whole request over it ("is not of type 'object', 'boolean'"),
+    so one such tool made every turn fail. The array becomes `prefixItems`;
+    `additionalItems` becomes `items`. Anything else is returned untouched."""
+    if isinstance(schema, list):
+        return [llm_safe_tool_schema(child) for child in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out: Dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in _SCHEMA_VALUE_KEYS:
+            out[key] = value
+        elif key == "properties" and isinstance(value, dict):
+            out[key] = {name: llm_safe_tool_schema(child) for name, child in value.items()}
+        elif key == "items" and isinstance(value, list):
+            out.setdefault("prefixItems", [llm_safe_tool_schema(child) for child in value])
+        elif key == "additionalItems" and isinstance(schema.get("items"), list):
+            if isinstance(value, (dict, bool)):
+                out["items"] = llm_safe_tool_schema(value)
+        else:
+            out[key] = llm_safe_tool_schema(value)
+    return out
+
+
 def _format_mcp_params(input_schema: Any) -> str:
     """Render an MCP tool's JSON-Schema inputs as a compact prompt hint.
 
@@ -2528,7 +2559,7 @@ class McpManager:
                     "function": {
                         "name": qualified,
                         "description": f"[MCP:{label}] {tool['description']}",
-                        "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+                        "parameters": llm_safe_tool_schema(tool.get("input_schema", {"type": "object", "properties": {}})),
                     },
                 }
                 schemas.append(schema)

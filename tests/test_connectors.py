@@ -701,6 +701,27 @@ async def test_concurrent_find_app_calls_share_one_scan(monkeypatch):
     assert calls == []  # answered from the shared probes
 
 
+@pytest.mark.asyncio
+async def test_port_scan_runs_off_the_event_loop(monkeypatch):
+    """Reading every listener's command line can take many seconds on
+    Windows; the scan must never run on the event loop thread."""
+    import threading
+    from src import connector_discovery as cd
+
+    seen = []
+
+    def fake_listening_ports():
+        seen.append(threading.current_thread() is threading.main_thread())
+        return []
+
+    monkeypatch.setattr(cd, "listening_ports", fake_listening_ports)
+    cd._shared_probes.clear()
+    cd._shared_inflight.clear()
+    assert await cd.discover() == []
+    assert await cd.find_app(connectors.get_preset("jobhunter")) is None
+    assert seen == [False, False], seen
+
+
 # ── refresh-tools: re-read one connector's tool list ──────────────────────
 
 class _ToolSession:

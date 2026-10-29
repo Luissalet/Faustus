@@ -173,6 +173,14 @@ def listening_ports() -> List[ListeningPort]:
     return sorted(found.values(), key=lambda lp: lp.port)
 
 
+async def _listening_ports_off_loop() -> List[ListeningPort]:
+    """`listening_ports()` on a worker thread. Reading the command line and
+    working directory of every listener can take many seconds on Windows
+    (security software scans each handle); done inline it froze every request
+    and stream of the server for that long."""
+    return await asyncio.to_thread(listening_ports)
+
+
 def _netstat_ports() -> List[ListeningPort]:
     args = ["netstat", "-ano" if sys.platform == "win32" else "-tln"]
     try:
@@ -384,7 +392,7 @@ async def _probe_port(lp: ListeningPort, sem: asyncio.Semaphore, tokens: Optiona
 async def discover(*, ports: Optional[List[ListeningPort]] = None, exclude: Optional[set] = None) -> List[Candidate]:
     """Every loopback web app that answers, recognised presets first."""
     skip = set(SKIP_PORTS) | _own_ports() | set(exclude or ())
-    listing = [lp for lp in (ports if ports is not None else listening_ports()) if lp.port not in skip]
+    listing = [lp for lp in (ports if ports is not None else await _listening_ports_off_loop()) if lp.port not in skip]
     sem = asyncio.Semaphore(MAX_PARALLEL_PROBES)
     tokens = _known_tokens()
     results = await asyncio.gather(*(_probe_port(lp, sem, tokens) for lp in listing), return_exceptions=True)
@@ -400,7 +408,7 @@ async def find_app(preset: ConnectorPreset, *, current_url: str = "",
     Tries the ports nearest the preset's default first (that is where a
     "first free port from N" app lands), then everything else listening.
     Returns None when nothing on this machine fingerprints as that app."""
-    listing = ports if ports is not None else listening_ports()
+    listing = ports if ports is not None else await _listening_ports_off_loop()
     try:
         from urllib.parse import urlsplit
         base = int(urlsplit(preset.app_url_default).port or 0)
