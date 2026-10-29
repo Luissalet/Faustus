@@ -52,8 +52,11 @@ def create_server(relay: BrowserRelay) -> Server:
             "release detaches this tool without closing the tab. Main-frame snapshots only. "
             "detail defaults to compact (original refs and useful text/controls); full returns the complete AX graph. "
             "For snapshot or mutation readback, optional view selects flat original AX rows: query is a literal "
-            "case-insensitive name/value substring; roles are exact and combine with query. offset defaults to 0; "
-            "limit, if given, is at least 1; omitted means all matches. selection reports total, matches and next_offset. "
+            "case-insensitive name/value substring; roles are case-sensitive, e.g. StaticText or button, and combine with query. "
+            "offset defaults to 0; limit, if given, is at least 1; omitted means all matches. "
+            "selection reports total, matches and next_offset; matched_roles diagnoses roles that eliminate all query matches. "
+            "For split text use view:{query:'visibles',roles:['StaticText'],context:true}: context_nodes adds original "
+            "direct parents and siblings, while nodes remains flat. No ancestry is invented for null refs. "
             "An outcome_unknown must be observed before deciding any explicit retry; never replay it automatically."),
             inputSchema=SCHEMA, annotations=ToolAnnotations(readOnlyHint=False, idempotentHint=False))]
 

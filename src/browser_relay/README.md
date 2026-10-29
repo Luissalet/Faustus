@@ -98,6 +98,19 @@ selection. Filtering reduces returned content, not AX acquisition time or the
 cost of a model turn. This delta still requires independent review and separate
 real MCP/Brave and Faustus-agent acceptance.
 
+`view.context:true` adds `context_nodes` containing original direct parents and
+all their addressable child rows (including the selected row). `nodes` stays
+flat and pagination/counts stay unchanged. Context is for the selected page,
+not every match; it preserves original raw order, duplicates, fields and
+child_refs. It is partial context, not a closed subtree: no recursive expansion,
+text synthesis, missing-link repair or ancestry inferred for selected null refs.
+For split labels use `view:{query:"visibles",roles:["StaticText"],context:true}`.
+
+Roles are case-sensitive: use `StaticText` or `button`, not `statictext` or
+`Button`. If roles eliminates all pre-pagination query matches, selection adds
+`matched_roles:{role:count}` for those original matches. It never substitutes a
+role or changes matches=0. An out-of-range page alone does not emit this hint.
+
 Failures distinguish `not_dispatched`, `outcome_unknown`, and
 `action_confirmed` with incomplete readback. A CDP acknowledgement establishes
 that a command ran, not that the application achieved the intended result.

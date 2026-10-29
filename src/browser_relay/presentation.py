@@ -86,24 +86,55 @@ def compact_snapshot(snapshot: dict) -> dict:
     return {**snapshot, "nodes": projected}
 
 
+def _context_nodes(nodes: list[dict], selected: list[dict]) -> list[dict]:
+    # Indices, not refs, identify rows: repeated/null refs remain original rows.
+    selected_refs = {node["ref"] for node in selected if isinstance(node.get("ref"), str)}
+    by_ref = {}
+    for index, node in enumerate(nodes):
+        ref = node.get("ref")
+        if isinstance(ref, str):
+            by_ref.setdefault(ref, []).append(index)
+    kept = set()
+    for index, node in enumerate(nodes):
+        children = node.get("child_refs")
+        if not isinstance(children, list) or not any(isinstance(child, str) and child in selected_refs for child in children):
+            continue
+        kept.add(index)
+        for child in children:
+            if isinstance(child, str):
+                kept.update(by_ref.get(child, ()))
+    # One hop only. Keep raw child_refs, order and fields, never synthesize text.
+    return [node for index, node in enumerate(nodes) if index in kept]
+
+
 def filtered_snapshot(snapshot: dict, view: dict) -> dict:
     nodes = snapshot.get("nodes")
     if not isinstance(nodes, list) or any(not isinstance(node, dict) for node in nodes):
         return snapshot
     query = view.get("query", "").casefold()
     roles = view.get("roles")
-    matches = [node for node in nodes
-               if (roles is None or node.get("role") in roles)
-               and (not query or any(query in str(node[key]).casefold()
-                                     for key in ("name", "value") if node.get(key) is not None))]
+    query_matches = [node for node in nodes
+                     if not query or any(query in str(node[key]).casefold()
+                                         for key in ("name", "value") if node.get(key) is not None)]
+    matches = [node for node in query_matches if roles is None or node.get("role") in roles]
     offset = int(view.get("offset", 0))
     end = offset + int(view["limit"]) if "limit" in view else len(matches)
-    selected = [{key: value for key, value in node.items() if key != "child_refs"}
-                for node in matches[offset:end]]
+    page = matches[offset:end]
+    selected = [{key: value for key, value in node.items() if key != "child_refs"} for node in page]
     next_offset = offset + len(selected)
-    return {**snapshot, "nodes": selected,
-            "selection": {"kind": "flat", "total": len(nodes), "matches": len(matches),
-                          "offset": offset, "next_offset": next_offset if next_offset < len(matches) else None}}
+    selection = {"kind": "flat", "total": len(nodes), "matches": len(matches),
+                 "offset": offset, "next_offset": next_offset if next_offset < len(matches) else None}
+    if roles is not None and not matches and query_matches:
+        matched_roles = {}
+        for node in query_matches:
+            role = node.get("role")
+            if isinstance(role, str):
+                matched_roles[role] = matched_roles.get(role, 0) + 1
+        selection["matched_roles"] = matched_roles
+    result = {**snapshot, "nodes": selected, "selection": selection}
+    if view.get("context", False):
+        result["context_nodes"] = _context_nodes(nodes, page)
+    return result
 
 
 def present_payload(payload: dict, detail: str, view: dict | None = None) -> dict:
