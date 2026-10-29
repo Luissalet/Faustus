@@ -22,8 +22,8 @@ import './creator.css';
  * through `adapters/creator.ts` onto the API that already exists.
  *
  * Gated end to end on `creator_enabled` (CONTRATO.md rule 5): the sidebar
- * entry only appears once `GET /api/creator/capabilities` answers something
- * other than 404 (see `shell/routes.ts`'s `useCreatorAvailable`), and this
+ * entry only appears once `GET /api/creator/availability` says `enabled`
+ * (see `shell/routes.ts`'s `useCreatorAvailable`), and this
  * screen re-checks the same flag on its own mount so a direct link or a
  * stale nav still lands on the disabled message rather than a broken UI.
  */
@@ -600,13 +600,16 @@ export function CreatorScreen() {
     writeDraft(projectId, { docId, panelWidths: { left: 280, right: 320 }, libraryFilter: filter });
   }, [projectId, docId, filter]);
 
-  // Capability flag: 404 → disabled message; anything else → the manifest.
+  // Capability flag: ask `/availability` first (always 200), so a switched-off
+  // Creator shows its disabled message without a 404 in the console; only an
+  // enabled one goes on to fetch the manifest.
   useEffect(() => {
     if (!projectId) { setCaps(null); return; }
     const controller = new AbortController();
-    api.getCapabilities(projectId, controller.signal)
+    api.getAvailability(controller.signal)
+      .then((a) => (a.enabled ? api.getCapabilities(projectId, controller.signal) : 'disabled' as const))
       .then((c) => setCaps(c))
-      .catch((err) => setCaps(err instanceof api.CreatorApiError && err.status === 404 ? 'disabled' : 'disabled'));
+      .catch(() => { if (!controller.signal.aborted) setCaps('disabled'); });
     return () => controller.abort();
   }, [projectId]);
 

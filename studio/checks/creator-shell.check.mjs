@@ -42,10 +42,16 @@ for (const p of [
     'export function listLibrary', 'export function exportManifest', 'export function getLineage', 'export function buildProxy',
     'export function listKnownModels', 'export function getCapabilityProfile', 'export function getParamSchema', 'export function validateParams',
     'export function runPreflight', 'export function approvePreflight', 'export function getResources',
-    'export function useCreatorAvailable',
+    'export function useCreatorAvailable', 'export function getAvailability',
   ]) {
     assert.ok(src.includes(fn), `creator.ts must export: ${fn}`);
   }
+  // The nav probe must ask the route that always answers 200: probing
+  // /capabilities left a 404 in the console on every load while the flag is off.
+  const hook = src.slice(src.indexOf('export function useCreatorAvailable'));
+  assert.ok(hook.includes('getAvailability()'), 'useCreatorAvailable must probe /availability');
+  assert.ok(!hook.includes('getCapabilities('), 'useCreatorAvailable must not probe /capabilities (404 while the flag is off)');
+  assert.ok(src.includes('/api/creator/availability'), 'creator.ts must call /api/creator/availability');
   for (const route of [
     '/api/creator/capabilities', '/api/creator/documents', '/api/creator/profile', '/api/creator/library',
     '/api/creator/params', '/api/creator/preflight', '/api/creator/resources',

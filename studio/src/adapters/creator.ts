@@ -233,6 +233,13 @@ const q = (params: Record<string, string | undefined>): string => {
 
 // ── capabilities (WP02 flag surface) ────────────────────────────────────
 
+/** `{ enabled }` straight from the `creator_enabled` setting. Always answers
+ *  200 (the other Creator routes answer 404 while it is off), so asking never
+ *  leaves an error in the browser console. */
+export function getAvailability(signal?: AbortSignal): Promise<{ enabled: boolean }> {
+  return get('/api/creator/availability', signal);
+}
+
 export function getCapabilities(projectId: string, signal?: AbortSignal): Promise<CreatorCapabilities> {
   return get(`/api/creator/capabilities${q({ project_id: projectId })}`, signal);
 }
@@ -340,19 +347,20 @@ export function getResources(signal?: AbortSignal): Promise<ResourcesSnapshot> {
 
 /**
  * Whether Creator's sidebar entry should show at all: `null` while the one
- * check is in flight, then the real flag. A 404 on `/capabilities` means
- * `creator_enabled` is off (CONTRATO.md rule 5) -- the tool disappears from
- * the rail, exactly like any other feature-flagged destination; opening
- * `/creator` directly still works and explains itself (the screen redoes
- * this same check with a real `project_id`, since this probe intentionally
- * sends none).
+ * check is in flight, then the real flag. `/availability` answers 200 with
+ * `{ enabled }` (the other Creator routes answer 404 while `creator_enabled`
+ * is off, CONTRATO.md rule 5, which left an error in the console on every
+ * load) -- when off, the tool disappears from the rail, exactly like any
+ * other feature-flagged destination; opening `/creator` directly still works
+ * and explains itself (the screen asks the same route, then fetches the
+ * capabilities with a real `project_id`).
  */
 export function useCreatorAvailable(): boolean | null {
   const [available, setAvailable] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
-    getCapabilities('')
-      .then(() => { if (!cancelled) setAvailable(true); })
+    getAvailability()
+      .then((a) => { if (!cancelled) setAvailable(a.enabled === true); })
       .catch(() => { if (!cancelled) setAvailable(false); });
     return () => { cancelled = true; };
   }, []);

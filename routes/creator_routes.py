@@ -71,6 +71,18 @@ def _doc_error(exc: Exception) -> None:
 def setup_creator_routes() -> APIRouter:
     router = APIRouter(prefix="/api/creator", tags=["creator"])
 
+    @router.get("/availability")
+    def get_availability(request: Request):
+        """Whether the Creator is switched on, as an answer instead of an error.
+
+        Every other Creator route answers 404 while `creator_enabled` is off
+        (CONTRATO rule 5), so a client that wants to know whether to show the
+        Creator at all could only ask one of them and take a red 404 in its
+        console on every load. This one always answers 200 and reveals nothing
+        beyond the flag."""
+        require_user(request)
+        return {"enabled": _creator_enabled()}
+
     @router.get("/capabilities")
     def get_capabilities(request: Request, project_id: str = ""):
         require_user(request)
