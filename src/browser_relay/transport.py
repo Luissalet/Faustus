@@ -96,7 +96,14 @@ class BrowserRelay:
                 await asyncio.wait_for(peer.send(json.dumps({"type": "command", "id": request_id, "arguments": args}, ensure_ascii=False)), self.timeout)
                 return await asyncio.wait_for(asyncio.shield(future), self.timeout)
             except asyncio.TimeoutError:
-                return self._lost(args["action"], "command_timeout", "No response before timeout; no command was replayed")
+                # The extension may still await CDP: retire its serialized queue before another call.
+                if self._peer is peer:
+                    self._ready = False
+                try:
+                    await peer.close(1011, "browser_relay_command_timeout")
+                except ConnectionClosed:
+                    pass
+                return self._lost(args["action"], "command_timeout", "No response before timeout; the expired connection was closed; no command was replayed")
             except ConnectionClosed:
                 return self._lost(args["action"], "extension_disconnected", "Extension disconnected during dispatch; no command was replayed")
             finally:

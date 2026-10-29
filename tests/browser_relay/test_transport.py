@@ -97,12 +97,13 @@ async def test_one_connection_heartbeat_serial_tabs_unicode_and_phase():
 
 
 @pytest.mark.asyncio
-async def test_timeout_late_id_isolation_no_replay_and_new_connection():
+async def test_late_id_isolation_timeout_retires_peer_no_replay_and_new_connection():
     async with running_relay(timeout=.08) as relay:
         peer = await hello(relay)
         call = asyncio.create_task(relay.call({"action": "click", "tab_id": 1, "ref": "g1:r1"}))
         old = json.loads(await peer.recv())
-        assert (await call)["phase"] == "outcome_unknown"
+        await reply(peer, old, {"first": True})
+        assert (await call)["result"] == {"first": True}
         next_call = asyncio.create_task(relay.call({"action": "snapshot", "tab_id": 2}))
         new = json.loads(await peer.recv())
         await reply(peer, old, {"stale": True})
@@ -111,6 +112,9 @@ async def test_timeout_late_id_isolation_no_replay_and_new_connection():
         read = asyncio.create_task(relay.call({"action": "tabs"}))
         await peer.recv()
         assert (await read)["phase"] == "not_dispatched"
+        await peer.wait_closed()
+        assert peer.close_code == 1011 and peer.close_reason == "browser_relay_command_timeout"
+        peer = await hello(relay)
         active = asyncio.create_task(relay.call({"action": "navigate", "tab_id": 1, "url": "https://example.test"}))
         await peer.recv()
         queued = asyncio.create_task(relay.call({"action": "release", "tab_id": 2}))
