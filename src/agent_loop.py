@@ -14334,7 +14334,7 @@ async def _stream_agent_loop_body(
                     unattended
                     and not (round_response or "").strip()
                     and _unattended_transport_retryable(error_data, terminal_status)
-                    and _transport_retries < _UNATTENDED_TRANSPORT_RETRIES
+                    and _xr.permits("transport_retry", _transport_retries, _UNATTENDED_TRANSPORT_RETRIES)
                     and round_num < _rounds_budget
                 ):
                     _transport_retries += 1
@@ -14350,6 +14350,8 @@ async def _stream_agent_loop_body(
                             "type": "harness_check", "status": "auto_continue",
                             "reason": "transport_retry", "round": round_num,
                             "attempt": _transport_retries, "max_attempts": _UNATTENDED_TRANSPORT_RETRIES,
+                            **_xr.preview("transport_retry", used=_transport_retries,
+                                          limit=_UNATTENDED_TRANSPORT_RETRIES),
                             "wait_s": _wait_s,
                         }) + "\n\n"
                     )
@@ -15064,6 +15066,8 @@ async def _stream_agent_loop_body(
             if round_response and full_response.endswith(round_response):
                 full_response = full_response[:-len(round_response)]
             _ledger.notes.append(f"transport_retry@{round_num}")
+            _xr.event("transport_retry", used=_transport_retries, limit=_UNATTENDED_TRANSPORT_RETRIES,
+                      round_num=round_num)
             _rounds_budget += 1  # waiting out the server must not eat the step budget
             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -15259,6 +15263,7 @@ async def _stream_agent_loop_body(
                 _fenced_names = sorted(set(_fenced_names))
                 if not _fenced_api_recovery_used:
                     _fenced_api_recovery_used = True
+                    _xr.event("fenced_tool_retry", used=1, limit=1, round_num=round_num)
                     messages.append({
                         "role": "system",
                         "content": _lang_note(
@@ -16243,7 +16248,7 @@ async def _stream_agent_loop_body(
             )
             if (
                 _relay_tool
-                and _relay_nudges < _UNATTENDED_RELAY_NUDGE_LIMIT
+                and _xr.permits("undelivered_message", _relay_nudges, _UNATTENDED_RELAY_NUDGE_LIMIT)
                 and round_num < _rounds_budget
             ):
                 _relay_nudges += 1
@@ -16269,6 +16274,8 @@ async def _stream_agent_loop_body(
                         "type": "harness_check", "status": "no_action", "round": round_num,
                         "attempt": _relay_nudges, "max_attempts": _UNATTENDED_RELAY_NUDGE_LIMIT,
                         "reason": "undelivered_message", "tool": _relay_tool,
+                        **_xr.event("undelivered_message", used=_relay_nudges,
+                                    limit=_UNATTENDED_RELAY_NUDGE_LIMIT, round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response = _full_response_before_round
@@ -16326,6 +16333,7 @@ async def _stream_agent_loop_body(
                 _audit_event = {
                     "type": "harness_check", "status": "auto_continue", "round": round_num,
                     "reason": "completion_audit", "attempt": 1, "max_attempts": 1,
+                    **_xr.event("completion_audit", used=1, limit=1, round_num=round_num),
                 }
                 if _cc_open_now:
                     _audit_event["criteria"] = len(_cc_open_now)
@@ -17142,6 +17150,7 @@ async def _stream_agent_loop_body(
                             and (event or {}).get("exit_code") == 0
                             for event in tool_events)):
                 _editorial_review_started = True
+                _xr.event("editorial_review", used=1, limit=1, round_num=round_num)
                 _editorial_draft = full_response
                 messages.append({"role": "assistant", "content": round_response})
                 messages.append({
