@@ -61,3 +61,31 @@ def test_additional_items_follow_a_tuple():
 def test_values_that_look_like_schemas_are_left_alone():
     schema = {"type": "object", "properties": {"x": {"type": "array", "default": [{"items": [1, 2]}], "examples": [{"items": [3]}]}}}
     assert llm_safe_tool_schema(schema) == schema
+
+
+def test_discovered_tools_keep_one_schema_everywhere():
+    """The catalogue, the step snapshot and the tool search all read the stored
+    schema: it is normalised once, where the tool is discovered, so they agree."""
+    import asyncio
+    import mcp.types as types
+    from src import mcp_tool_cache
+    from src.mcp_manager import McpManager
+
+    class Session:
+        async def list_tools(self, cursor=None):
+            return types.ListToolsResult(
+                tools=[types.Tool(name="media_download", description="d", inputSchema=TUPLE_SCHEMA)], nextCursor=None)
+
+    async def go():
+        mgr = McpManager()
+        tools, _ = await mgr._discover_tools_paginated(Session(), "tuple-app", "1.0.0")
+        return tools
+
+    mcp_tool_cache.clear()
+    try:
+        tools = asyncio.run(go())
+    finally:
+        mcp_tool_cache.clear()
+    stored = tools[0]["input_schema"]
+    assert "prefixItems" in stored["properties"]["sections"]["items"]
+    assert stored == llm_safe_tool_schema(TUPLE_SCHEMA)

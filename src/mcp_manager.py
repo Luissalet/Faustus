@@ -1718,7 +1718,7 @@ class McpManager:
             {
                 "name": tool.name,
                 "description": tool.description or "",
-                "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+                "input_schema": llm_safe_tool_schema(tool.inputSchema) if hasattr(tool, "inputSchema") else {},
                 # MCP tool annotations (readOnlyHint / destructiveHint) drive
                 # plan-mode read-only gating. Absent on many servers, so we
                 # fall back to a name heuristic in mcp_tool_is_readonly().
@@ -2617,7 +2617,7 @@ class McpManager:
             {
                 "name": tool.name,
                 "description": tool.description or "",
-                "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+                "input_schema": llm_safe_tool_schema(tool.inputSchema) if hasattr(tool, "inputSchema") else {},
                 "x-timeout-s": getattr(tool, "x-timeout-s", None),
             }
             for tool in result.tools
