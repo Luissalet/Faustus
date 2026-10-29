@@ -69,6 +69,10 @@ class ProjectUpdateRequest(BaseModel):
     run_tests: Optional[bool] = None
     test_command: Optional[str] = Field(None, max_length=400)
     review_model: Optional[str] = Field(None, max_length=200)
+    # Design check of UI edits (src/design_hook): on/off and the exceptions,
+    # each {rule, reason} with a reason of at least 24 characters.
+    design_hook: Optional[bool] = None
+    design_waivers: Optional[List[Dict[str, str]]] = None
     # CONTRATO_CONECTORES F2.2: this project's connector allowlist
     # (`McpServer.id` values). Omitted = leave unchanged. `[]` = "this
     # project allows zero MCP connectors" (kept as-is, never upgraded to

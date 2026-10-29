@@ -114,13 +114,15 @@ LINK_PATCHABLE_FIELDS = (
 #   run_tests      — run the project's tests after a turn with changes
 #   test_command   — explicit test command (empty = auto-detect)
 #   review_model   — auto-review reviewer ("", "same" or a model name)
+#   design_hook    — check UI edits with the design workshop's rules (src/design_hook);
+#                    its exceptions, each with a reason, are `design_waivers` (a list)
 AGENT_OPTION_FIELDS: Dict[str, type] = {
     "trusted": bool, "trusted_agents": bool, "review_mode": bool, "checkpoints": bool,
-    "run_tests": bool, "test_command": str, "review_model": str,
+    "run_tests": bool, "test_command": str, "review_model": str, "design_hook": bool,
 }
 AGENT_OPTION_DEFAULTS: Dict[str, Any] = {
     "trusted": False, "trusted_agents": False, "review_mode": False, "checkpoints": True,
-    "run_tests": True, "test_command": "", "review_model": "",
+    "run_tests": True, "test_command": "", "review_model": "", "design_hook": False,
 }
 
 
@@ -577,6 +579,12 @@ class ProjectStore:
                     new_row["connectors"] = (
                         None if _raw_connectors is None else _sanitize_connector_ids(_raw_connectors)
                     )
+                if "design_waivers" in updates:
+                    from src.design_hook import sanitize_waivers
+                    try:
+                        new_row["design_waivers"] = sanitize_waivers(updates["design_waivers"])
+                    except ValueError as exc:
+                        raise ProjectError(str(exc)) from exc
                 if "enabled" in updates:
                     new_row["enabled"] = bool(updates["enabled"])
                 if "archived" in updates:

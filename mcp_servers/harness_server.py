@@ -50,6 +50,12 @@ running a turn:
   Owner-scoped: ODYSSEUS_MCP_HARNESS_OWNER (or the context/brain owner), or
   the only owner the database has.
 
+* ``design_hook_status`` / ``design_hook_start`` / ``design_hook_run`` - the design check of UI edits
+  (src/design_hook): whether the design rules can be asked (workshop running and its design module on)
+  and the last closing pass of a chat; turning the design module on; and an on-demand run of the rules
+  over .tsx/.jsx/.css/.html/.vue files (static: Floor rules without a browser; full: with a render).
+  Only ``design_hook_start`` changes anything, and it never starts the workshop app itself.
+
 * ``cookbook_job_log`` - the command, exit code and output (stdout/stderr) of a
   Cookbook download or serve job.
 
@@ -453,6 +459,55 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="design_hook_status",
+            description=(
+                "Whether the design workshop (the design-rules Hoard) answers, where, and what the last closing "
+                "design pass of a chat found. The design check of UI edits runs only when the workshop is already "
+                "started and the project has it switched on; this tool never starts it. With session_id it adds "
+                "that chat's last pass (files, findings, gate). Estado del control de diseno. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Chat session whose last closing pass to show."},
+                },
+            },
+        ),
+        Tool(
+            name="design_hook_start",
+            description=(
+                "Turn on the design module of the design workshop, which holds the rules and the page renderer. "
+                "It is off until someone asks: the design check of UI edits stays silent while it is off. The "
+                "workshop app itself must already be running (start it from the Hub); this only enables its design "
+                "module and reports the state. Enciende el modulo de diseno del taller. Changes the module state."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="design_hook_run",
+            description=(
+                "Run the design workshop's rules over UI files (.tsx .jsx .css .html .vue) now, the same check the "
+                "agent gets after its edits. level=static (default): the unambiguous Floor rules read from the file "
+                "alone, no browser. level=full: every static rule plus a render and the browser rules of each page. "
+                "paths are relative to workspace. waivers is a list of {rule, reason} (reason of 24+ characters; "
+                "Floor and Finish rules cannot be waived). Returns the findings, the critique gate and the counts; "
+                "when the workshop is stopped it says so and starts nothing. Revisa el diseno de los ficheros de "
+                "interfaz con las reglas del taller. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workspace": {"type": "string", "description": "Project folder holding the files."},
+                    "paths": {"type": "array", "items": {"type": "string"}, "maxItems": 40,
+                              "description": "UI files to check, relative to workspace."},
+                    "level": {"type": "string", "enum": ["static", "full"]},
+                    "waivers": {"type": "array", "items": {"type": "object"},
+                                "description": "Accepted exceptions: [{rule, reason}]."},
+                },
+                "required": ["workspace", "paths"],
+            },
+        ),
     ]
 
 
@@ -825,6 +880,37 @@ def _injection_eval_report(args: dict) -> dict:
     return slim
 
 
+def _design_hook_status(args: dict) -> dict:
+    from src import design_hook
+
+    return design_hook.status(str(args.get("session_id") or ""))
+
+
+def _design_hook_start(args: dict) -> dict:
+    from src import design_hook
+
+    return design_hook.start_module()
+
+
+def _design_hook_run(args: dict) -> dict:
+    from src import design_hook
+
+    workspace = str(args.get("workspace") or "").strip()
+    if not workspace or not os.path.isdir(workspace):
+        return {"error": "workspace must be an existing folder"}
+    paths = [str(p) for p in (args.get("paths") or []) if str(p).strip()][:40]
+    if not paths:
+        return {"error": "give the UI files to check in paths"}
+    level = str(args.get("level") or "static")
+    if level not in ("static", "full"):
+        return {"error": "level is static or full"}
+    try:
+        waivers = design_hook.sanitize_waivers(args.get("waivers") or [])
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return design_hook.check(workspace, paths, level=level, waivers=waivers)
+
+
 _TOOLS = {
     "degradation_status": _degradation_status,
     "injection_eval_run": _injection_eval_run,
@@ -842,6 +928,9 @@ _TOOLS = {
     "harness_lessons": _harness_lessons,
     "voice_turn_timeline": _voice_turn_timeline,
     "cookbook_job_log": _cookbook_job_log,
+    "design_hook_status": _design_hook_status,
+    "design_hook_start": _design_hook_start,
+    "design_hook_run": _design_hook_run,
     "think_mode_calibration": _think_mode_calibration,
 }
 

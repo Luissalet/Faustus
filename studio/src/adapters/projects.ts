@@ -35,6 +35,10 @@ export interface Project {
   run_tests?: boolean;
   test_command?: string | null;
   review_model?: string | null;
+  /** Check the UI files the agent edits with the design workshop's rules (src/design_hook). */
+  design_hook?: boolean;
+  /** Accepted exceptions to those rules: a rule id and why it is fine here. */
+  design_waivers?: DesignWaiver[];
   context_items?: ContextItem[];
   /** CONTRATO_CONECTORES F2.2: which connectors (`McpServer.id`) a chat in
    *  this project may use; `null`/absent means "every enabled connector"
@@ -145,13 +149,22 @@ export const OBJECTIVE_STATUSES: { value: string; label: string }[] = [
   { value: 'done', label: 'done' },
 ];
 
+export interface DesignWaiver {
+  rule: string;
+  reason: string;
+}
+
+/** Shortest reason the design workshop accepts for an exception. */
+export const DESIGN_WAIVER_MIN_REASON = 24;
+
 /** The agent's manners inside the folder — same keys, labels and defaults as projects.js. */
-export const AGENT_FLAGS: { key: 'trusted' | 'trusted_agents' | 'review_mode' | 'checkpoints' | 'run_tests'; label: string; help: string; def: boolean }[] = [
+export const AGENT_FLAGS: { key: 'trusted' | 'trusted_agents' | 'review_mode' | 'checkpoints' | 'run_tests' | 'design_hook'; label: string; help: string; def: boolean }[] = [
   { key: 'trusted', label: 'Trusted folder', help: 'File writes inside the folder skip the approval gate (shell and deletions still ask).', def: false },
   { key: 'trusted_agents', label: 'Trusted sub-agents', help: 'Delegating to sub-agents does not ask either.', def: false },
   { key: 'review_mode', label: 'Review mode', help: 'Edits stay pending until you accept them file by file.', def: false },
   { key: 'checkpoints', label: 'Checkpoints', help: 'A snapshot before the first change of every turn, so you can restore without git.', def: true },
   { key: 'run_tests', label: 'Run tests', help: "The project's tests run after every turn that changes files.", def: true },
+  { key: 'design_hook', label: 'Design check', help: 'After editing a screen (.tsx, .jsx, .css, .html, .vue) the agent gets the design rules that apply, and the turn closes with a full pass.', def: false },
 ];
 
 export function flagOn(project: Project, key: (typeof AGENT_FLAGS)[number]['key']): boolean {
@@ -215,6 +228,8 @@ export interface ProjectInput {
   run_tests?: boolean;
   test_command?: string;
   review_model?: string;
+  design_hook?: boolean;
+  design_waivers?: DesignWaiver[];
   execution_defaults?: ExecutionDefaultsPatch;
   execution_defaults_expected_revision?: number;
   connector_ids?: string[] | null;
@@ -803,4 +818,25 @@ export function countLinks(
     broken: links.filter((l) => linkIsBroken(statuses[l.id] ?? persistedLinkStatus(l))).length,
     off: links.filter((l) => !l.enabled || l.retrievalPolicy === 'disabled').length,
   };
+}
+
+/** Whether the design workshop answers (it is started from the Hub, never by this check). */
+export interface DesignHookStatus {
+  workshop_url: string;
+  /** The rules can be asked now: the workshop answers and its design module is on. */
+  running: boolean;
+  workshop_running: boolean;
+  /** State of the workshop's design module: on, off, starting, stopping, error; null when the workshop is stopped. */
+  design_module: string | null;
+  extensions: string[];
+}
+
+export function getDesignHookStatus(signal?: AbortSignal): Promise<DesignHookStatus> {
+  return getJson<DesignHookStatus>('/api/design-hook/status', signal);
+}
+
+/** Turns the workshop's design module on: an explicit action, nothing else starts it. */
+export async function startDesignModule(): Promise<DesignHookStatus & { started: boolean; error?: string }> {
+  const r = await ok(await fetch('/api/design-hook/start', jsonInit('POST', {})), 'design-hook/start');
+  return (await r.json()) as DesignHookStatus & { started: boolean; error?: string };
 }

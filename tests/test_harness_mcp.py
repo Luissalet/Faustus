@@ -28,7 +28,8 @@ def test_server_identity_and_tool_surface():
                                        "tool_footprint", "turn_tools", "mcp_config_audit", "harness_proposals", "harness_probes",
                                        "harness_lessons", "doc_lint",
                                        "spend_cap_status", "injection_eval_run", "injection_eval_report",
-                                       "voice_turn_timeline", "think_mode_calibration", "cookbook_job_log"]
+                                       "voice_turn_timeline", "think_mode_calibration", "cookbook_job_log",
+                                       "design_hook_status", "design_hook_start", "design_hook_run"]
     for t in tools:
         assert len(t.description) > 60
         for required in t.inputSchema.get("required", []):

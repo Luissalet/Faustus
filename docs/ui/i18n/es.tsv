@@ -159,6 +159,7 @@ A reason is required: this edits the only record of what was decided.	Hace falta
 A recipe injects a fixed procedure for this turn instead of the default strategy.	Una receta inyecta un procedimiento fijo para este turno en vez de la estrategia por defecto.
 A role says what is expected. What the seat may reach is recomputed on the server and can only go down.	Un rol dice qué se espera. Lo que ese asiento alcanza se recalcula en el servidor y solo puede bajar.
 A room without limits is a bill. Zero means «no more of this», and it is a real answer.	Una sala sin límites es una factura. Cero significa «nada más de esto», y es una respuesta legítima.
+A rule the project accepts breaking, with the reason. Floor rules cannot be excepted.	Una regla que el proyecto acepta incumplir, con su motivo. Las reglas Floor no admiten excepción.
 A rule with this id already exists.	Ya existe una regla con este id.
 A rule, a path, a session…	Una regla, una ruta, una sesión…
 A second run starts in parallel and both write their results.	Arranca una segunda ejecución en paralelo y las dos escriben su resultado.
@@ -265,6 +266,7 @@ Add an endpoint in Settings → Models and the models appear here.	Añade un end
 Add an endpoint in Settings → Models first.	Añade antes un endpoint en Ajustes → Modelos.
 Add an endpoint whose base URL is openrouter.ai under Models, then come back here.	Añade en Modelos un endpoint cuya URL base sea openrouter.ai y vuelve aquí.
 Add an event in your own words…	Añade un evento en tus palabras…
+Add an exception	Añadir excepción
 Add an instruction it picks up before its next step.	Añade una instrucción que aplicará antes de su próximo paso.
 Add an objective…	Añadir un objetivo…
 Add app	Añadir app
@@ -326,6 +328,7 @@ Advance	Avanzar
 Advanced	Avanzado
 After	Después
 After a task, the assistant can suggest the smallest change to its own working state: project instructions, a skill, a memory or a subagent spec. The base system prompt is never touched. A change is first tried on a repeat of the task; the one that wins is applied by itself, or waits for you if you turn that off. Every applied change can be undone.	Tras una tarea, el asistente puede proponer el cambio más pequeño en su propio estado de trabajo: instrucciones del proyecto, una habilidad, una memoria o una especificación de subagente. El prompt base del sistema nunca se toca. Cada cambio se prueba antes en una repetición de la tarea; el que gana se aplica solo, o espera tu aprobación si lo desactivas. Todo cambio aplicado se puede deshacer.
+After editing a screen (.tsx, .jsx, .css, .html, .vue) the agent gets the design rules that apply, and the turn closes with a full pass.	Tras editar una pantalla (.tsx, .jsx, .css, .html, .vue) el agente recibe las reglas de diseño que incumple, y el turno se cierra con una pasada completa.
 After generating	Después de generar
 Against {kind} {id} · {status}	Contra {kind} {id} · {status}
 Against: {no}. A decision does not erase the dissent it was taken over.	En contra: {no}. Una decisión no borra el disenso sobre el que se tomó.
@@ -1731,6 +1734,8 @@ Description (optional)	Descripción (opcional)
 Deselect	Deseleccionar
 Design	Diseño
 Design a plan, simulate it structurally, then authorize a real run — the same definition throughout.	Diseña un plan, simúlalo estructuralmente y después autoriza una ejecución real — la misma definición en todo momento.
+Design check	Control de diseño
+Design exceptions	Excepciones de diseño
 Desktop	Escritorio
 Desktop program (no readiness check)	Programa de escritorio (sin comprobación de disponibilidad)
 Detail	Detalle
@@ -2030,6 +2035,7 @@ Every command, by group. With a name, just that one.	Todos los comandos, por gru
 Every configured check passed.	Todas las comprobaciones configuradas se cumplieron.
 Every day	Cada día
 Every day at {time}	Cada día a las {time}
+Every design exception needs a rule id	Cada excepción de diseño necesita el id de una regla
 Every document and version: drafts, exports, the library.	Todos los documentos y versiones: borradores, exportaciones, la biblioteca.
 Every enabled connector.	Todos los conectores habilitados.
 Every event and every calendar (CalDAV ones too; resync to restore).	Todos los eventos y calendarios (también los CalDAV; resincroniza para recuperarlos).
@@ -3092,6 +3098,7 @@ Logs	Registro
 Long	Larga
 Look again	Mirar otra vez
 Look up	Buscar
+Looking for the design workshop…	Buscando el taller de diseño…
 Looking up…	Buscando…
 Looks like spam	Parece spam
 Looping	En bucle
@@ -3781,8 +3788,17 @@ Nothing blocked waiting for you. Pick up where you left off or start something.	
 Nothing cached here yet	Aún no hay nada en caché aquí
 Nothing came back; the detail above is the current answer.	No ha vuelto nada; el detalle de arriba es la respuesta de ahora.
 Preparing the final answer	Preparando la respuesta final
+Remove exception	Quitar excepción
 Still failing: {names}.	Siguen fallando: {names}.
+The design module did not start: {reason}	El módulo de diseño no ha arrancado: {reason}
+The design workshop answers at {url}.	El taller de diseño responde en {url}.
+The design workshop is running but its design module is off: the check stays silent until it is turned on.	El taller de diseño está en marcha pero su módulo de diseño está apagado: el control no hace nada hasta que lo enciendas.
+The design workshop is stopped: start it from the Hub and the check applies from the next edit.	El taller de diseño está parado: arráncalo desde el Hub y el control se aplica desde la siguiente edición.
+The exception for {rule} needs a reason of {n} characters or more	La excepción de {rule} necesita un motivo de {n} caracteres o más
+The reason needs {n} characters or more.	El motivo necesita {n} caracteres o más.
+Turn on the design module	Encender el módulo de diseño
 Waiting for the models	Esperando a los modelos
+Why it is fine in this project	Por qué es correcto en este proyecto
 document RAG	RAG de documentos
 vector memory	memoria vectorial
 Nothing came out worth saving.	No ha salido nada que valga la pena guardar.

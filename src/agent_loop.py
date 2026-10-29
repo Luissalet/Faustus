@@ -8898,6 +8898,9 @@ async def _stream_agent_loop_body(
         # Empty-search language hint and counter (idempotent registration; see src/search_language.py).
         from src import search_language as _search_language_boot
         _search_language_boot.install()
+        # Design check of UI edits (idempotent; the listener is silent unless the project turned it on).
+        from src import design_hook as _design_hook_boot
+        _design_hook_boot.install()
         _hook_results = []
         for _hev in _hook_events:
             _hook_results.extend(await _hooks.run_async(_hev, _hooks_ctx))
@@ -16753,6 +16756,52 @@ async def _stream_agent_loop_body(
                         full_response += "\n\n"
                         yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                         continue
+                    # ── (3a') Design check (src/design_hook): when the project turned it
+                    # on, the full pass over the UI files this turn changed -- every
+                    # static rule of the design workshop plus a render of the pages --
+                    # once per set of contents, with at most one fix round. Silent when
+                    # the workshop is stopped.
+                    if _ledger.mutations and workspace and _hopts.get("design_hook"):
+                        from src import design_hook as _design_hook
+                        _dh_files = [p for p in _ledger.mutated_paths() if _design_hook.is_design_file(p)]
+                        _dh = {}
+                        if _dh_files:
+                            try:
+                                _dh = await asyncio.to_thread(
+                                    _design_hook.closing_pass, str(session_id or ""), workspace, _dh_files,
+                                    waivers=_hopts.get("design_waivers") or [],
+                                )
+                            except Exception as _dh_err:
+                                logger.debug("[design-hook] closing pass failed: %s", _dh_err)
+                        if _dh.get("ran"):
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "harness_check", "status": "design_pass", "round": round_num,
+                                    "gate": _dh.get("gate"), "counts": _dh.get("counts"),
+                                    "pages": len(_dh.get("pages") or []), "ms": _dh.get("ms"),
+                                    "files": _dh_files[:12],
+                                }) + "\n\n"
+                            )
+                        if _dh.get("message") and _xr.permits("design_fix", _design_hook.fix_rounds(str(session_id or "")), 1):
+                            _design_hook.note_fix_round(str(session_id or ""))
+                            _ledger.notes.append("design_check:" + ",".join(
+                                sorted({str(f.get("rule")) for f in _dh.get("findings") or []})[:6]))
+                            if round_response.strip():
+                                messages.append({"role": "assistant", "content": round_response})
+                            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_dh["message"])})
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "harness_check", "status": "design_check", "round": round_num,
+                                    "counts": _dh.get("counts"), "attempt": 1, "max_attempts": 1,
+                                    "findings": [{"file": f.get("file"), "rule": f.get("rule"), "tier": f.get("tier")}
+                                                 for f in (_dh.get("findings") or [])[:8]],
+                                    **_xr.event("design_fix", used=_design_hook.fix_rounds(str(session_id or "")),
+                                                limit=1, round_num=round_num),
+                                }) + "\n\n"
+                            )
+                            full_response += "\n\n"
+                            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                            continue
                     # ── (3b) UI smoke (src/ui_smoke.py, H1): start the
                     # project's own server and check pages/assets the way a
                     # browser would — status AND Content-Type, not just "the
@@ -18236,6 +18285,10 @@ async def _stream_agent_loop_body(
                         "owner": owner,
                         "project_id": _hopts.get("project_id"),
                         "incognito": bool(_hopts.get("incognito")),
+                        # The project's design-check switch and exceptions, as this turn resolved them
+                        # (src/design_hook reads these instead of looking the project up again).
+                        "design_hook": bool(_hopts.get("design_hook")),
+                        "design_waivers": list(_hopts.get("design_waivers") or []),
                     })
                 _all_hook_results = list(_pre_hook_results) + list(_post_hook_results)
                 if _all_hook_results and isinstance(result, dict):

@@ -90,6 +90,7 @@ CAUSES: Mapping[str, Cause] = {
     "syntax_fix": Cause("verification", "the changed files do not parse"),
     "ui_smoke_fix": Cause("verification", "the smoke crawl of the changed page failed"),
     "static_fix": Cause("verification", "static analysis of the changed files found errors"),
+    "design_fix": Cause("verification", "the design rules found blocking issues in the changed UI files"),
     "tests_fix": Cause("verification", "the project's tests failed after the change"),
     "review_fix": Cause("verification", "the automatic review found blocking issues"),
     # completion

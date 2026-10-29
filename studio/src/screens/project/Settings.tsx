@@ -2,10 +2,11 @@ import { FolderOpen, Save, Sparkles, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components';
 import { pickNative } from '../../adapters/composer';
-import { AGENT_FLAGS, createProject, draftAgentsMd, flagOn, setProjectConnectors, updateProject, type Project } from '../../adapters/projects';
+import { AGENT_FLAGS, DESIGN_WAIVER_MIN_REASON, createProject, draftAgentsMd, flagOn, setProjectConnectors, updateProject, type DesignWaiver, type Project } from '../../adapters/projects';
 import { getSummary, isValidBoardKey, setBoardKey as setBoardKeyApi } from '../../adapters/board';
 import { getLang, t } from '../../i18n';
 import { ConnectorPicker } from '../connectors/ConnectorPicker';
+import { DesignExceptions } from './DesignExceptions';
 
 /**
  * The project's settings: name, folders, instructions and the agent's
@@ -19,6 +20,7 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
   const [flags, setFlags] = useState<Record<string, boolean>>(() => Object.fromEntries(AGENT_FLAGS.map((f) => [f.key, project ? flagOn(project, f.key) : f.def])));
   const [testCommand, setTestCommand] = useState(project?.test_command ?? '');
   const [reviewModel, setReviewModel] = useState(project?.review_model ?? '');
+  const [designWaivers, setDesignWaivers] = useState<DesignWaiver[]>(() => (project?.design_waivers ?? []).map((w) => ({ ...w })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -82,9 +84,13 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
   const save = async () => {
     const clean = name.trim();
     if (!clean) return setError(t('The project needs a name'));
+    // An exception is a rule and a reason; a half-written row is not saved by guessing.
+    const waivers = designWaivers.map((w) => ({ rule: w.rule.trim(), reason: w.reason.trim() })).filter((w) => w.rule || w.reason);
+    const bad = waivers.find((w) => !w.rule || w.reason.length < DESIGN_WAIVER_MIN_REASON);
+    if (bad) return setError(bad.rule ? t('The exception for {rule} needs a reason of {n} characters or more', { rule: bad.rule, n: String(DESIGN_WAIVER_MIN_REASON) }) : t('Every design exception needs a rule id'));
     setSaving(true);
     setError(null);
-    const agent = { ...flags, test_command: testCommand.trim(), review_model: reviewModel.trim() };
+    const agent = { ...flags, test_command: testCommand.trim(), review_model: reviewModel.trim(), design_waivers: waivers };
     try {
       // The folder dialog runs in its own process, so «Create» can be pressed
       // while it is still open or closing. Seen live (14-10-2026): the project
@@ -206,6 +212,7 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
           </span>
           <input className="fs-field" value={reviewModel} onChange={(e) => setReviewModel(e.target.value)} placeholder="same" spellCheck={false} maxLength={200} />
         </label>
+        {flags.design_hook && <DesignExceptions waivers={designWaivers} onChange={setDesignWaivers} />}
         <div className="fs-pj__row">
           <Button variant="ghost" size="sm" icon={Sparkles} label={t('Write an AGENTS.md from the folder')} title={t('From what the runtime detects: language, test runner, layout')} onClick={() => void draft()} />
           {note && <small className="fs-pj__note">{note}</small>}

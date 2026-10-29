@@ -858,6 +858,9 @@ app.include_router(setup_instruction_portability_routes(skills_manager, session_
 # are human-only (require_human).
 from routes.harness_proposals_routes import setup_harness_proposals_routes
 app.include_router(setup_harness_proposals_routes(memory_vector=memory_vector))
+# Design check of UI edits with the design workshop's rules (src/design_hook).
+from routes.design_hook_routes import setup_design_hook_routes
+app.include_router(setup_design_hook_routes())
 # A25: git-backed skill sources (pinned revision, verified update, rollback).
 from routes.skill_source_routes import setup_skill_source_routes
 app.include_router(setup_skill_source_routes())

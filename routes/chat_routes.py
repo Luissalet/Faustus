@@ -1184,6 +1184,9 @@ def _project_harness_options(request, session_id, workspace: str) -> Dict[str, A
             out["test_command"] = opts["test_command"]
         if opts.get("review_model"):
             out["review_model"] = opts["review_model"]
+        if opts.get("design_hook"):
+            out["design_hook"] = True
+            out["design_waivers"] = list((project or {}).get("design_waivers") or [])
         # The trusted folder is the project's vetted workspace, and only when
         # this turn actually runs inside it.
         if opts.get("trusted") and workspace and (project or {}).get("workspace"):

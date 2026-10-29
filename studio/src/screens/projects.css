@@ -1278,3 +1278,49 @@
   justify-content: space-between;
   gap: var(--fs-space-2);
 }
+
+/* Design check: the workshop's state and the project's exceptions. */
+.fs-pj__design {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-start: var(--fs-space-2);
+}
+
+.fs-pj__design-state {
+  color: var(--fs-text-3);
+}
+
+.fs-pj__design-state[data-state='on'] {
+  color: var(--fs-success, var(--fs-text-2));
+}
+
+.fs-pj__design-title {
+  display: grid;
+  gap: 2px;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  font-weight: 500;
+}
+
+.fs-pj__design-title small,
+.fs-pj__waiver-hint {
+  color: var(--fs-text-3);
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+
+.fs-pj__waiver {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-pj__waiver-rule {
+  inline-size: 11rem;
+  max-inline-size: 100%;
+}
+
+.fs-pj__waiver-hint {
+  flex-basis: 100%;
+}

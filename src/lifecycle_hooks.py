@@ -585,14 +585,19 @@ _LISTENERS: Dict[str, List[Dict[str, Any]]] = {}
 _LISTENERS_LOCK = threading.Lock()
 
 
-def register_listener(event: str, fn: Any, *, listener_id: str, name: str = "") -> None:
+def register_listener(event: str, fn: Any, *, listener_id: str, name: str = "", threaded: bool = False) -> None:
     """Attach `fn(ctx) -> Optional[str]` to `event`. Idempotent: a second
     registration with the same `listener_id` for the same event replaces the
-    first. Raises HookError for an unknown event or a non-callable."""
+    first. Raises HookError for an unknown event or a non-callable.
+
+    `threaded=True` is for a listener that must wait on something (a network
+    call, a file read): `run_async` runs it in a worker thread, so the event
+    loop keeps serving while it waits. An unthreaded listener runs inline and
+    must only queue or read."""
     _require(event in EVENTS, f"unknown lifecycle event: {event!r}")
     _require(callable(fn), "listener must be callable")
     _require(bool(listener_id), "listener_id is required")
-    entry = {"id": str(listener_id), "name": name or str(listener_id), "fn": fn}
+    entry = {"id": str(listener_id), "name": name or str(listener_id), "fn": fn, "threaded": bool(threaded)}
     with _LISTENERS_LOCK:
         entries = [e for e in _LISTENERS.get(event, []) if e["id"] != entry["id"]]
         entries.append(entry)
@@ -610,9 +615,9 @@ def unregister_listener(listener_id: str) -> int:
     return removed
 
 
-def _run_listeners(event: str, ctx: Dict[str, Any]) -> List[HookResult]:
+def _run_listeners(event: str, ctx: Dict[str, Any], threaded: bool = False) -> List[HookResult]:
     with _LISTENERS_LOCK:
-        entries = list(_LISTENERS.get(event, ()))
+        entries = [e for e in _LISTENERS.get(event, ()) if bool(e.get("threaded")) == threaded]
     results: List[HookResult] = []
     for entry in entries:
         started = time.monotonic()
@@ -640,6 +645,11 @@ async def run_async(
     ctx = dict(ctx or {})
     ctx.setdefault("event", event)
     listener_results = _run_listeners(event, ctx)
+    with _LISTENERS_LOCK:
+        has_threaded = any(e.get("threaded") for e in _LISTENERS.get(event, ()))
+    if has_threaded:
+        # Off the event loop: these may wait on the network or the disk.
+        listener_results += await asyncio.to_thread(_run_listeners, event, ctx, True)
     return list(await _run_configured_async(event, ctx, emit=emit)) + listener_results
 
 
