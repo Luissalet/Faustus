@@ -796,3 +796,9 @@ oportunidades con evidencia, oferta de una página, plan editorial y resumen
 semanal. Previsualizar/aplicar cambia el borrador y conserva sus enlaces; solo
 Guardar lo confirma. API/MCP devuelven el mismo catálogo sin arrancar ejecución,
 programación o envío. [Plantillas de encargos](docs/api/objective-templates.md).
+
+## Consulta directa de fuentes guardadas —29-10-2026
+
+read_artifact admite text_pointer RFC6901 para consultar una cadena fuente literal como /full_text, con query/occurrence/context_chars o rangos. Offsets y líneas pertenecen a esa cadena y conserva CRLF/Unicode; las formas previas, la selección JSON y la propiedad del artefacto mantienen su contrato. Pistas del catálogo y recuperación orientan a contexto directo. Fuente5c169ea7 aprobadaCAS1, 14contratos externos Main,73pytest+17subtests Root; revisión13métodos propios,14externos y51pytest+17subtests.
+
+Ensayo nativo1760: Ruta203 de Platino US, ordinales247/248/249 correctos desde un artefacto existente, primera consulta trae las tres líneas. Cinco lecturas,10herramientas/8rondas,215,88sCLI y147,09sruntime; sin descargas. Corrigidos en Ágora el autorrecuento erróneo de cuatro lecturas y una frase adicional sobre el centinela. Tarea más estrecha que1755: no comparación global ni ahorro de facturación. Ayuda supervisada útil; eficiencia todavía insatisfactoria. El harness fuerza progreso y auditoría redundantes y confunde una referencia de fuente con un archivo supuestamente modificado; queda trabajo causal de corrección. UI muestra tabla correcta y UNVERIFIED por ese falso aviso, consola vacía. Coordinación ecosystem restaurada revisión10, vigilante reanudado, state/outcomes exactos y seis leases liberados; modelo global intacto. HoardDex Main29246d7e/version360 sigue entregado; Ruta203 producto1762 en curso, sin cerrar paridad global.
