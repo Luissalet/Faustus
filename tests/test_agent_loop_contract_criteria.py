@@ -368,3 +368,86 @@ def test_a_continue_turn_resumes_the_book_but_proven_must_be_earned_again(loop):
     assert len(start) == 1 and start[0]["resumed"] and start[0]["open"] == start[0]["count"]
     crit = _summary(events)["criteria"]
     assert crit["ids"]["proven"] == [] and "C04" in crit["ids"]["pending"]
+
+
+@pytest.mark.parametrize("browser_alias", [
+    "mcp__browser_session__browser_session", "mcp__823416aa__browser_session",
+])
+def test_remote_browser_progress_is_not_a_repository_deliverable(browser_alias, tmp_path):
+    from src.agent_harness import TurnLedger
+    from tests.test_contract_criteria import _R4_OPERATIONAL_1797
+
+    ledger = TurnLedger(str(tmp_path), "Observa el navegador y devuelve el contador; sin archivos.")
+    packet = _R4_OPERATIONAL_1797[0]
+    event = ledger.record(browser_alias, packet["content"],
+                          {"output": packet["output"], "exit_code": 0}, 1)
+    progress = ledger.record_progress([{"content": "Leer contador", "status": "completed"}], 2)
+    assert event["ok"] and event["kind"] == "read"
+    assert progress[0]["verified"] is True
+    assert ledger.mutations == [] and ledger.effects == []
+    # Existing valid controls before the new remote-progress assertion.
+    assert al._workspace_completion_work({"workspace_work": True}, [], ledger) is True
+    assert al._workspace_completion_work({"workspace_work": False}, ["report.txt"], ledger) is True
+    changed = TurnLedger(str(tmp_path), "Escribe report.txt.")
+    changed.record("edit_file", '{"path":"report.txt"}',
+                   {"output": "Edited report.txt", "exit_code": 0}, 3)
+    assert al._workspace_completion_work({"workspace_work": False}, [], changed) is True
+    assert al._workspace_completion_work({"workspace_work": False}, [], ledger) is False
+
+
+def test_failed_browser_read_remains_a_failure_and_does_not_accredit_progress(tmp_path):
+    from src.agent_harness import TurnLedger
+
+    ledger = TurnLedger(str(tmp_path), "Observa el navegador.")
+    ledger.record("mcp__browser_session__browser_session", '{"action":"snapshot"}',
+                  {"error": "document_changed", "exit_code": 1}, 1)
+    progress = ledger.record_progress([{"content": "Leer contador", "status": "completed"}], 2)
+    assert progress[0]["verified"] is False
+    assert ledger.summary()["failed_calls"] == 1
+    assert ledger.failed[0]["error"] == "document_changed"
+
+
+def test_local_audit_and_gap_keep_history_but_replace_the_final_answer(loop, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    import httpx
+    import requests
+    from src import model_context, run_model_pin
+
+    attempted_http = []
+
+    def no_http(*args, **kwargs):
+        attempted_http.append(True)
+        raise AssertionError("CPU fixture must not perform HTTP")
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", no_http)
+    monkeypatch.setattr(httpx.Client, "send", no_http)
+    monkeypatch.setattr(requests.Session, "request", no_http)
+    monkeypatch.setattr(model_context, "_query_context_length", lambda *a, **k: (131072, True))
+    monkeypatch.setattr(run_model_pin, "restore_keep_alive", lambda *a, **k: None)
+
+    drafts = ("First archive observation.", "Revised archive observation.", "Final archive observation.")
+    seen, events = loop([
+        _tool("glob", json.dumps({"pattern": "src/**/*.py"})),
+        _text(drafts[0]), _text(drafts[1]), _text(drafts[2]),
+    ])
+    assert len(seen) == 4
+    assert len([e for e in events if e.get("reason") == "completion_audit"]) == 1
+    assert len([e for e in events if e.get("reason") == "contract_gap"]) == 1
+    assert _summary(events)["criteria"]["pending"] > 0
+    # Test the incumbent CLI accumulator too; no server, CLI main or model runs.
+    path = Path(al.__file__).resolve().parents[1] / "scripts" / "faustus_run.py"
+    spec = importlib.util.spec_from_file_location("faustus_run1797", path)
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    turn = cli.Turn()
+    for event in events:
+        turn.feed(event)
+    assert drafts[2] in turn.text
+    assert drafts[0] not in turn.text and drafts[1] not in turn.text
+    replacements = [e for e in events if e.get("type") == "response_replace"]
+    assert len(replacements) >= 2
+    metrics = next(e["data"] for e in events if e.get("type") == "metrics")
+    history = "\n".join(metrics["round_texts"])
+    assert all(draft in history for draft in drafts)
+    assert attempted_http == []

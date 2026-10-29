@@ -2851,8 +2851,10 @@ def _workspace_completion_work(intent, deliverable_files, ledger) -> bool:
             and _saved_source_answer_request(_harness.user_authored_text(ledger.user_text))):
         # A completed progress list or an Agora post is not workspace work.
         return False
+    # Progress describes the task; it does not make remote observation a
+    # repository deliverable. Positive local intent and actual work still do.
     return bool(
-        intent.get("workspace_work") or deliverable_files or ledger.effects or ledger.progress
+        intent.get("workspace_work") or deliverable_files or ledger.effects
         or any(ToolEffect.READ_WORKSPACE in capabilities_for_tool(event.get("tool", "")).effects
                for event in ledger.events)
     )
@@ -16369,7 +16371,9 @@ async def _stream_agent_loop_body(
                 if _cc_open_now:
                     _audit_event["criteria"] = len(_cc_open_now)
                 yield "data: " + json.dumps(_audit_event) + "\n\n"
-                full_response += "\n\n"
+                # Keep the draft in messages/round_texts, not in the final answer.
+                full_response = _full_response_before_round
+                yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
 
@@ -16418,7 +16422,9 @@ async def _stream_agent_loop_body(
                                     round_num=round_num),
                     }) + "\n\n"
                 )
-                full_response += "\n\n"
+                # Keep the draft in messages/round_texts, not in the final answer.
+                full_response = _full_response_before_round
+                yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
 
@@ -18392,7 +18398,40 @@ async def _stream_agent_loop_body(
                     except Exception as _cc_rec_err:  # noqa: BLE001 - bookkeeping never breaks a turn
                         logger.debug("[harness] contract criteria call record skipped: %s", _cc_rec_err)
                 if block.tool_type == "todowrite" and isinstance(result, dict) and isinstance(result.get("todos"), list) and not result.get("error"):
+                    _progress_window = _ledger.events[
+                        len(_ledger.events) - _ledger.tools_since_progress():]
                     _annotated_todos = _ledger.record_progress(result["todos"], round_num)
+                    if _plan_tracker is not None:
+                        try:
+                            from src import plan_tracker as _pt_progress
+                            from src.contract_criteria import _REFERENCE_BOOKKEEPING
+                            _progress_tracker = _pt_progress.load(
+                                _plan_scope, str(_plan_tracker.get("hash") or "")) or _plan_tracker
+                            _progress_operational = any(
+                                ev.get("ok") and ev.get("tool") not in _REFERENCE_BOOKKEEPING
+                                for ev in _progress_window)
+                            _progress_auto = _pt_progress.reconcile(
+                                _plan_scope, _progress_tracker,
+                                todos=[t for t in _annotated_todos if t.get("verified") is True],
+                                mutated_paths=_ledger.mutated_paths(), workspace=workspace,
+                                turn=_context_turn_id) if _progress_operational else []
+                            if _progress_auto:
+                                _plan_tracker = _progress_tracker
+                                _progress_counts = _pt_progress.progress(_plan_tracker)
+                                _ledger.plan_all_done_with_evidence = bool(_progress_counts["total"]) and (
+                                    _progress_counts["done"] == _progress_counts["total"])
+                                _ledger.notes.append("plan_tracker:auto_done=" + ",".join(_progress_auto))
+                                result["plan_tracker"] = _progress_counts
+                                result["output"] = str(result.get("output") or "") + (
+                                    f"\nPlan tracker: {_progress_counts['done']}/{_progress_counts['total']} done "
+                                    "(updated from completed todo evidence).")
+                                yield "data: " + json.dumps({
+                                    "type": "plan_tracker", "hash": _plan_tracker.get("hash"),
+                                    "title": _plan_tracker.get("title"), **_progress_counts,
+                                    "current": (_pt_progress.current_task(_plan_tracker) or {}).get("id"),
+                                }) + "\n\n"
+                        except Exception as _progress_plan_err:
+                            logger.debug("[harness] progress reconcile skipped: %s", _progress_plan_err)
                     try:
                         _maybe_persist_project_todos(
                             session_id, str(_hopts.get("project_id") or ""), _annotated_todos

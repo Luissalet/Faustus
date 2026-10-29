@@ -429,3 +429,152 @@ def test_json_shapes_are_matched_by_their_keys_and_unsafe_regexes_are_refused():
     assert not cc.matcher_shown(m, output='{"accepted": 2}', command="")
     assert cc._literal_matcher("(a+)+b") is None or "re" not in cc._literal_matcher("(a+)+b")
     assert cc._literal_matcher("<command>") is None
+
+
+# Retained Native Writer R4 receipts as data, never a live browser replay.
+# NDJSON SHA256 0e985af223d8a69ac1d162ddc62e2c5d18d1b39cdda50c2a35d7ab8c5faa1cc6.
+import json as _json1797
+
+_R4_OPERATIONAL_1797 = _json1797.loads(r'''[
+  {
+    "call_id": "call_57e318dd1b104eb7834d55a6",
+    "tool": "mcp__browser_session__browser_session",
+    "content": "{\"action\": \"snapshot\", \"tab_id\": 1069627216, \"view\": {\"query\": \"visibles\", \"roles\": [\"StaticText\"], \"context\": true}}",
+    "output": "{\"ok\": true, \"phase\": \"readback_complete\", \"result\": {\"tab\": {\"id\": 1069627216, \"url\": \"http://127.0.0.1:63395/project/proj_mvl51nyx_tl1a8w/overview\", \"title\": \"Writers Hoard\", \"active\": false, \"window_id\": 1069627210}, \"generation\": 8, \"document\": {\"frame_id\": \"26D1015792F3E88CDCC524B743EB3818\", \"loader_id\": \"3955742E939E231CBACE86162C34DE6B\", \"url\": \"http://127.0.0.1:63395/project/proj_mvl51nyx_tl1a8w/overview\"}, \"scope\": \"main_frame\", \"nodes\": [{\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:87\", \"role\": \"StaticText\", \"name\": \"visibles\", \"value\": \"\", \"properties\": {}, \"ignored\": false}], \"selection\": {\"kind\": \"flat\", \"total\": 1053, \"matches\": 1, \"offset\": 0, \"next_offset\": null}, \"context_nodes\": [{\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:58\", \"role\": \"paragraph\", \"name\": \"\", \"value\": \"\", \"properties\": {\"live\": \"polite\", \"atomic\": false, \"relevant\": \"additions text\"}, \"ignored\": false, \"child_refs\": [\"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:85\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:86\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:87\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:88\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:89\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:90\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:91\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:92\", \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:93\"]}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:85\", \"role\": \"StaticText\", \"name\": \"36\", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:86\", \"role\": \"StaticText\", \"name\": \" \", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:87\", \"role\": \"StaticText\", \"name\": \"visibles\", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:88\", \"role\": \"StaticText\", \"name\": \" \", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:89\", \"role\": \"StaticText\", \"name\": \"de\", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:90\", \"role\": \"StaticText\", \"name\": \" \", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:91\", \"role\": \"StaticText\", \"name\": \"36\", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:92\", \"role\": \"StaticText\", \"name\": \" · \", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}, {\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:8:93\", \"role\": \"StaticText\", \"name\": \"Todos los documentos\", \"value\": \"\", \"properties\": {}, \"ignored\": false, \"child_refs\": []}]}}"
+  },
+  {
+    "call_id": "call_9818d7a133954cefa86dc094",
+    "tool": "mcp__browser_session__browser_session",
+    "content": "{\"action\": \"snapshot\", \"tab_id\": 1069627216, \"view\": {\"query\": \"Cerrar\", \"roles\": [\"button\"]}}",
+    "output": "{\"ok\": true, \"phase\": \"readback_complete\", \"result\": {\"tab\": {\"id\": 1069627216, \"url\": \"http://127.0.0.1:63395/project/proj_mvl51nyx_tl1a8w/overview\", \"title\": \"Writers Hoard\", \"active\": false, \"window_id\": 1069627210}, \"generation\": 9, \"document\": {\"frame_id\": \"26D1015792F3E88CDCC524B743EB3818\", \"loader_id\": \"3955742E939E231CBACE86162C34DE6B\", \"url\": \"http://127.0.0.1:63395/project/proj_mvl51nyx_tl1a8w/overview\"}, \"scope\": \"main_frame\", \"nodes\": [{\"ref\": \"r:39ecbc01-c314-4b01-aa6a-a00189a0ab39:1069627216:9:36\", \"role\": \"button\", \"name\": \"Cerrar\", \"value\": \"\", \"properties\": {\"invalid\": \"false\", \"focusable\": true, \"focused\": true}, \"ignored\": false}], \"selection\": {\"kind\": \"flat\", \"total\": 1053, \"matches\": 1, \"offset\": 0, \"next_offset\": null}}}"
+  },
+  {
+    "call_id": "call_9312703e145a40d8b17067de",
+    "tool": "mcp__browser_session__browser_session",
+    "content": "{\"action\": \"release\", \"tab_id\": 1069627216}",
+    "output": "{\"ok\": true, \"phase\": \"action_confirmed\", \"result\": {\"tab\": {\"id\": 1069627216, \"url\": \"http://127.0.0.1:63395/\", \"title\": \"Writers Hoard\", \"active\": false, \"window_id\": 1069627210}, \"released\": true}}"
+  }
+]''')
+_R4_PROGRESS_1797 = _json1797.loads(r'''[
+  {
+    "call_id": "call_1cfbd3cda99e402683bb0745",
+    "tool": "todowrite",
+    "content": "{\"todos\": [{\"content\": \"t01 \\u2014 action tabs: pesta\\u00f1a QA http://127.0.0.1:63395/ (id 1069627216) identificada; IDs/activeIDs iniciales registrados\", \"priority\": \"high\", \"status\": \"completed\"}, {\"content\": \"t02 \\u2014 Inicio: bot\\u00f3n 'QA compacto Writer1095' abierto por ref; 'Biblioteca' le\\u00eddo y abierto\", \"priority\": \"high\", \"status\": \"completed\"}, {\"content\": \"t03 \\u2014 Contador literal: '36 visibles de 36 \\u00b7 Todos los documentos' con fragmentos por child_refs\", \"priority\": \"high\", \"status\": \"completed\"}, {\"content\": \"t04 \\u2014 Biblioteca cerrada con bot\\u00f3n 'Cerrar'; vuelta a Inicio y 5 proyectos en headings\", \"priority\": \"high\", \"status\": \"completed\"}, {\"content\": \"t05 \\u2014 tabs final id\\u00e9ntico al inicial y release de la pesta\\u00f1a QA confirmado\", \"priority\": \"high\", \"status\": \"completed\"}]}",
+    "output": "Updated todo list:\n[x] t01 — action tabs: pestaña QA http://127.0.0.1:63395/ (id 1069627216) identificada; IDs/activeIDs iniciales registrados (high)\n[x] t02 — Inicio: botón 'QA compacto Writer1095' abierto por ref; 'Biblioteca' leído y abierto (high)\n[x] t03 — Contador literal: '36 visibles de 36 · Todos los documentos' con fragmentos por child_refs (high)\n[x] t04 — Biblioteca cerrada con botón 'Cerrar'; vuelta a Inicio y 5 proyectos en headings (high)\n[x] t05 — tabs final idéntico al inicial y release de la pestaña QA confirmado (high)"
+  },
+  {
+    "call_id": "call_baa4ee1e6d624b70a26535ca",
+    "tool": "plan_done",
+    "content": "{\"id\": \"t01\", \"evidence\": \"action tabs mostr\\u00f3 13 pesta\\u00f1as; la \\u00fanica con URL http://127.0.0.1:63395/ era id 1069627216 (\\\"Writers Hoard\\\", active:false); las dem\\u00e1s eran GitHub/Keep/Drive/Gmail/8899/docs/AVerMedia/58980/58981 (esta \\u00faltima active:true).\"}",
+    "output": "t01 t01 marked done"
+  },
+  {
+    "call_id": "call_9f96490cbc8d4fa4b76c089c",
+    "tool": "plan_done",
+    "content": "{\"id\": \"t02\", \"evidence\": \"snapshot view query 'QA compacto Writer1095' roles ['button'] devolvi\\u00f3 1 match (ref ...:2:243); click abri\\u00f3 proj_mvl51nyx_tl1a8w y el snapshot posterior con roles ['button'] query 'Biblioteca' devolvi\\u00f3 el bot\\u00f3n Biblioteca (...:6:27).\"}",
+    "output": "t02 t02 marked done"
+  },
+  {
+    "call_id": "call_535d85b78e674d5c8ea4890b",
+    "tool": "plan_done",
+    "content": "{\"evidence\": \"snapshot view {query:'visibles',roles:['StaticText'],context:true} devolvi\\u00f3 context_nodes: paragraph con child_refs 8:85..8:93 = \\\"36\\\",\\\" \\\",\\\"visibles\\\",\\\" \\\",\\\"de\\\",\\\" \\\",\\\"36\\\",\\\" \\u00b7 \\\",\\\"Todos los documentos\\\".\", \"id\": \"t03\"}",
+    "output": "t03 t03 marked done"
+  },
+  {
+    "call_id": "call_b289b7b053794ff29568a259",
+    "tool": "plan_done",
+    "content": "{\"evidence\": \"view {query:'Cerrar',roles:['button']} \\u2192 1 match (...:9:36); click cerr\\u00f3 el di\\u00e1logo (vuelve el contenido de proyecto). view {query:'Inicio',roles:['link']} \\u2192 1 match (...:11:35); click naveg\\u00f3 a http://127.0.0.1:63395/. views headings: Proyectos, Inicio + 5 proyectos level 3.\", \"id\": \"t04\"}",
+    "output": "t04 t04 marked done"
+  },
+  {
+    "call_id": "call_45fc23eaf5ac47a7ac478b71",
+    "tool": "plan_done",
+    "content": "{\"evidence\": \"tabs final: 13 pesta\\u00f1as con los mismos ids (1069627211\\u20261069627338) y el mismo active:true (1069627338); 1069627216 segu\\u00eda en http://127.0.0.1:63395/. release sobre tab_id 1069627216 devolvi\\u00f3 {\\\"released\\\": true, \\\"phase\\\": \\\"action_confirmed\\\"}; ninguna pesta\\u00f1a cerrada.\", \"id\": \"t05\"}",
+    "output": "t05 t05 marked done"
+  }
+]''')
+
+
+def _r4_reference_book1797(alias=None):
+    book = cc.CriteriaBook.from_message(
+        "The output must include `visibles`.", min_chars=0, min_criteria=1)
+    assert book is not None and len(book.criteria) == 1
+    book.persist = False
+    for packet in _R4_OPERATIONAL_1797 + _R4_PROGRESS_1797:
+        tool = alias if alias and packet["tool"].endswith("__browser_session") else packet["tool"]
+        book.record_call(packet["call_id"], tool, packet["content"],
+                         {"output": packet["output"], "exit_code": 0}, kind="read", ok=True)
+    # Existing valid entry before testing any improved locator.
+    healthy = book.find_call(call_id="call_9818d7a133954cefa86dc094")
+    assert healthy is not None and '\"name\": \"Cerrar\"' in healthy["output"]
+    return book
+
+
+@pytest.mark.parametrize("locator", [
+    '"query":"Cerrar"', '"query": "Cerrar"', "Cerrar",
+])
+def test_r4_command_reference_finds_the_button_not_a_progress_note(locator):
+    book = _r4_reference_book1797()
+    call = book.find_call(command=locator)
+    assert call is not None
+    assert call["call_id"] == "call_9818d7a133954cefa86dc094"
+    assert '"name": "Cerrar"' in call["output"]
+    assert call["tool"] == "mcp__browser_session__browser_session"
+    assert book.find_call(test="Cerrar")["call_id"] == call["call_id"]
+
+
+@pytest.mark.parametrize("alias", [
+    "mcp__browser_session__browser_session", "mcp__823416aa__browser_session",
+])
+def test_r4_tool_alias_and_full_name_locate_the_same_operational_receipt(alias):
+    book = _r4_reference_book1797(alias)
+    for locator in (alias, "browser_session"):
+        call = book.find_call(command=locator)
+        assert call is not None and call["call_id"] == "call_9312703e145a40d8b17067de"
+        assert _json1797.loads(call["output"])["result"]["released"] is True
+
+
+def test_r4_context_json_spacing_and_operational_hints_preserve_old_receipts():
+    book = _r4_reference_book1797()
+    call = book.find_call(command='context":true')
+    assert call is not None and call["call_id"] == "call_57e318dd1b104eb7834d55a6"
+    assert '"StaticText"' in call["output"] and '"child_refs"' in call["output"]
+    hints = book.recent_calls()
+    assert any("call_57e318dd1b104eb7834d55a6" in hint for hint in hints)
+    assert any("call_9818d7a133954cefa86dc094" in hint for hint in hints)
+    assert not any(" plan_done:" in hint or " todowrite:" in hint for hint in hints)
+    # Filtering suggestions must not delete the book or invalidate explicit IDs.
+    assert len(book.calls) == 9
+    note = _R4_PROGRESS_1797[-1]
+    assert book.find_call(call_id=note["call_id"])["tool"] == "plan_done"
+
+
+def test_r4_locator_improvement_does_not_make_observed_text_or_stale_calls_proof():
+    book = _r4_reference_book1797()
+    criterion = book.criteria[0]["id"]
+    for link in ({"id": criterion, "observed": "visibles"},
+                 {"id": criterion, "call_id": "not-a-call", "observed": "visibles"}):
+        row = book.apply_links([link])[0]
+        assert row["state"] == "pending" and row["accepted"] is False
+    stale = _r4_reference_book1797()
+    stale.record_call("actual-edit", "edit_file", '{"path":"result.py"}',
+                      {"output": "Edited result.py", "exit_code": 0}, kind="mutation", ok=True)
+    row = stale.apply_links([{
+        "id": stale.criteria[0]["id"], "call_id": "call_57e318dd1b104eb7834d55a6",
+    }])[0]
+    assert row["state"] == "pending" and "stale" in row["detail"]
+
+    failed = _r4_reference_book1797()
+    failed.record_call("failed-read", "mcp__browser_session__browser_session",
+                       '{"action":"snapshot"}', {"output": "document_changed",
+                       "error": "document_changed", "exit_code": 1}, kind="read", ok=False)
+    row = failed.apply_links([{
+        "id": failed.criteria[0]["id"], "call_id": "failed-read", "observed": "visibles",
+    }])[0]
+    assert row["state"] == "pending" and row["accepted"] is False
+
+    row = book.apply_links([{
+        "id": criterion, "command": 'context":true', "observed": "untrusted note",
+    }])[0]
+    assert row["state"] == "proven"
+    assert book.criteria[0]["evidence_refs"] == ["call_57e318dd1b104eb7834d55a6"]

@@ -76,6 +76,10 @@ NA_MASS_GUIDANCE = (
 BOOK_MAX_AGE_S = 30 * 24 * 3600
 #: Calls kept per turn for linking (oldest dropped first).
 CALLS_MAX = 400
+# These calls describe progress, not the operation their notes may mention.
+_REFERENCE_BOOKKEEPING = frozenset({
+    "criteria_check", "todowrite", "plan_status", "plan_task", "plan_done", "plan_skip", "plan_next",
+})
 _CALL_TEXT_HEAD = 3000
 _CALL_TEXT_TAIL = 3000
 #: A sentence longer than this whose comma-separated parts carry their own
@@ -2012,9 +2016,11 @@ class CriteriaBook:
         return self.auto_commit(plans)
 
     def find_call(self, *, call_id: str = "", command: str = "", test: str = "") -> Optional[Dict[str, Any]]:
-        """A call of this turn by its id, else the LATEST call whose command
-        contains `command`, else the latest whose command or output names
-        `test`. (Locating only: what counts as evidence is the output.)"""
+        """An explicit id, else the latest operational command/tool alias or test.
+
+        JSON formatting is not identity. Progress notes never displace the
+        operation they mention. Locating only: the verifier still judges output.
+        """
         cid = str(call_id or "").strip()
         if cid:
             for c in reversed(self.calls):
@@ -2023,14 +2029,34 @@ class CriteriaBook:
             return None
         cmd = _norm(command)
         if cmd:
+            # Also match compact JSON fragments such as context":true against
+            # the same arguments rendered with spaces. Do not strip whitespace
+            # from inside JSON strings or from ordinary shell commands.
+            try:
+                cmd_json = _norm(json.dumps(json.loads(command), ensure_ascii=False, separators=(",", ":")))
+            except (ValueError, TypeError):
+                cmd_json = cmd
             for c in reversed(self.calls):
+                if c["tool"] in _REFERENCE_BOOKKEEPING:
+                    continue
+                if cmd in {_norm(c["tool"]), _norm(c["tool"].rsplit("__", 1)[-1])}:
+                    return c
                 if cmd in _norm(c["command"]):
+                    return c
+                try:
+                    compact = _norm(json.dumps(json.loads(c["command"]), ensure_ascii=False,
+                                               separators=(",", ":")))
+                except (ValueError, TypeError):
+                    continue
+                if cmd_json in compact:
                     return c
             return None
         t = str(test or "").strip().lower()
         if t:
             leaf = t.split("::")[-1]
             for c in reversed(self.calls):
+                if c["tool"] in _REFERENCE_BOOKKEEPING:
+                    continue
                 hay = (c["command"] + "\n" + c["output"]).lower()
                 if t in hay or (leaf and leaf in hay):
                     return c
@@ -2038,7 +2064,8 @@ class CriteriaBook:
 
     def recent_calls(self, n: int = 8, chars: int = 90) -> List[str]:
         out = []
-        for c in self.calls[-n:]:
+        operational = [c for c in self.calls if c["tool"] not in _REFERENCE_BOOKKEEPING]
+        for c in operational[-n:]:
             cmd = re.sub(r"\s+", " ", c["command"]).strip()
             out.append(f"{c['call_id']} {c['tool']}: {cmd[:chars]}")
         return out
