@@ -245,6 +245,22 @@ async def test_a_background_pass_does_not_retry_a_blocked_connector_at_once(db, 
     assert len(calls) == 2
 
 
+async def test_a_quick_pass_never_looks_for_the_app_and_leaves_such_rows_for_the_full_pass(db, preset, app_dir):
+    server, entry = _make(db, command=OLD_COMMAND, args=OLD_ARGS, env={"K": "v"}, values={})
+    connector_migration._blocked_at.clear()
+
+    async def exploding_finder(preset, *, current_url=""):
+        raise AssertionError("a quick pass must not search the machine")
+
+    assert await connector_migration.migrate_connectors(
+        _Manager(), finder=exploding_finder, retry_blocked=False, quick=True) == []
+    assert _row(db, server) == (OLD_COMMAND, OLD_ARGS, {"K": "v"})
+    # Not stamped as blocked, so the full pass that follows does try.
+    full = await connector_migration.migrate_connectors(
+        _Manager(), finder=_finder_for(app_dir), retry_blocked=False)
+    assert [r["status"] for r in full] == ["migrated"]
+
+
 async def test_a_connected_server_is_disconnected_so_it_restarts_on_the_new_definition(db, preset, app_dir):
     server, _ = _make(db, command=OLD_COMMAND, args=OLD_ARGS, env={}, values={"APP_DIR": app_dir})
     manager = _Manager(status="connected")

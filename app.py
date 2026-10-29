@@ -2503,16 +2503,14 @@ async def _startup_event():
             # manifest that changed since they were created must not leave the
             # old bridge starting (src/connector_migration.py).
             from src import connector_migration
-            _migration = asyncio.ensure_future(connector_migration.migrate_connectors(mcp_manager))
-            app.state.connector_migration_task = _migration   # keeps it alive if it outlasts the wait
-            await asyncio.wait({_migration}, timeout=25)
-            if _migration.done():
-                _moved = _migration.result()
-                if _moved:
-                    logger.info("[connectors] startup migration: %s",
-                                ", ".join(f"{m['preset_id']}:{m['status']}" for m in _moved))
-            else:
-                logger.warning("[connectors] startup migration still running; connecting the servers meanwhile")
+            # Quick pass first (no search of the machine): a row on an older
+            # bridge is fixed before it connects. The pass that has to look
+            # for apps runs after the servers are connecting.
+            _moved = await asyncio.wait_for(
+                connector_migration.migrate_connectors(mcp_manager, quick=True), timeout=25)
+            if _moved:
+                logger.info("[connectors] startup migration: %s",
+                            ", ".join(f"{m['preset_id']}:{m['status']}" for m in _moved))
         except Exception as e:  # noqa: BLE001 - a failed migration never blocks the connections
             logger.warning(f"Connector migration skipped: {type(e).__name__}: {e}")
         try:
@@ -2521,6 +2519,13 @@ async def _startup_event():
             logger.warning("User MCP startup timed out (non-critical)")
         except BaseException as e:
             logger.warning(f"MCP startup failed (non-critical): {type(e).__name__}: {e}")
+        try:
+            # Connectors that need their app found on the machine (the slow
+            # part) are migrated now, in the background, and reconnected.
+            from src import connector_migration
+            connector_migration.schedule_migration(mcp_manager, retry_blocked=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Connector migration not scheduled: {type(e).__name__}: {e}")
 
     _supervisor.spawn(_startup_mcp_connections(), name="mcp-connect")
 

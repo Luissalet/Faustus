@@ -244,34 +244,44 @@ def _record(entry: Dict[str, Any], before: Dict[str, Any], resolved: Dict[str, A
     return history[-MAX_RECORDED:]
 
 
-def schedule_migration(manager: Any = None) -> bool:
-    """Run a pass in the background unless one is already running (a refresh
-    of the connector list must not wait for it). True when one was started."""
+def schedule_migration(manager: Any = None, *, retry_blocked: bool = False) -> bool:
+    """Run a full pass in the background unless one is already running (a
+    refresh of the connector list must not wait for it). True when one was
+    started."""
     global _running
     if _running is not None and not _running.done():
         return False
-    _running = asyncio.ensure_future(migrate_connectors(manager, retry_blocked=False))
+    _running = asyncio.ensure_future(migrate_connectors(manager, retry_blocked=retry_blocked))
     return True
+
+
+async def _no_discovery(preset: connectors.ConnectorPreset, *, current_url: str = ""):
+    return None
 
 
 async def migrate_connectors(manager: Any = None, *, finder: Optional[Finder] = None,
                              session_factory: Optional[Callable[[], Any]] = None,
-                             retry_blocked: bool = True) -> List[Dict[str, Any]]:
+                             retry_blocked: bool = True, quick: bool = False) -> List[Dict[str, Any]]:
     """Bring every stored connector up to its preset's current definition.
 
     Returns one row per connector that changed or could not be migrated:
     ``{"connector_id", "preset_id", "status": "migrated"|"blocked", ...}``.
     Connectors already in step are not listed. Never raises: a connector that
     fails is reported and the rest carry on.
+
+    `quick` skips looking for the apps on the machine (the slow part): a
+    connector that needs that is left for a full pass instead of being
+    reported as blocked. Startup runs a quick pass before connecting the
+    servers and a full one afterwards.
     """
-    finder = finder or _default_finder_factory()
+    finder = _no_discovery if quick else (finder or _default_finder_factory())
     factory = session_factory or SessionLocal
     sem = asyncio.Semaphore(CONCURRENCY)
 
     async def one(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         async with sem:
             try:
-                return await _migrate_one(entry, manager, finder, factory, retry_blocked)
+                return await _migrate_one(entry, manager, finder, factory, retry_blocked, quick)
             except Exception as exc:  # noqa: BLE001 - one bad row must not stop the others
                 logger.warning("[connector-migration] %s failed: %s", entry.get("id"), exc)
                 return {"connector_id": entry.get("id"), "preset_id": entry.get("preset_id"),
@@ -283,7 +293,8 @@ async def migrate_connectors(manager: Any = None, *, finder: Optional[Finder] = 
 
 
 async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
-                       factory: Callable[[], Any], retry_blocked: bool = True) -> Optional[Dict[str, Any]]:
+                       factory: Callable[[], Any], retry_blocked: bool = True,
+                       quick: bool = False) -> Optional[Dict[str, Any]]:
     preset = connectors.get_preset(entry.get("preset_id") or "")
     if preset is None or preset.transport != "stdio":
         return None
@@ -301,8 +312,8 @@ async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
         values = await _complete_values(preset, values, layout_changed=layout_changed, finder=finder)
     resolved = connectors.resolve_preset_values(preset, values)
     if not resolved["ok"]:
-        if not layout_changed:
-            return None  # nothing the preset changed that we could act on; leave the row alone
+        if not layout_changed or quick:
+            return None  # nothing we could act on yet; a full pass reports what is missing
         reasons = list(resolved.get("reasons") or []) or [
             f"missing value for {{{name}}}" for name in resolved.get("missing") or []]
         logger.warning("[connector-migration] %s (%s) still launches %s but its preset changed; "
