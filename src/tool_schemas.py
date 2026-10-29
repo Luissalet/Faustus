@@ -901,7 +901,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_artifact",
-            "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. For repeated symbols, set occurrence (1-based, default 1) to skip declarations or calls; context_chars sets characters on each side (default 400). Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result. For JSON, select a json_pointer and optionally filter an array by match_pointer + match_value. For a serialized JSON tool body, set json_source to /stdout or /output first.",
+            "description": "Read stored text directly by id and query with surrounding context, or by character range (start/end, 0-based, end exclusive). For a known artifact, query + context_chars retrieves the passage in one call without artifact_search followed by offset reads. Set occurrence (1-based, default 1) to skip declarations/calls. text_pointer selects a literal source string such as /full_text: offsets and returned line numbers then refer to that source, without duplicated preview or JSON escaping. For JSON values, select json_pointer and optionally filter an array by match_pointer + match_value; json_source selects a serialized JSON body such as /stdout first.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -920,6 +920,7 @@ FUNCTION_TOOL_SCHEMAS = [
                         "type": "string",
                         "description": "Case-insensitive substring to locate instead of a range."
                     },
+                    "text_pointer": {"type": "string", "description": "RFC 6901 pointer to a literal source-text string in the stored result, e.g. /full_text. Query/range offsets and returned 1-based line numbers refer to that string. Use with query and context_chars to recover source context in one call; cannot combine with JSON selection."},
                     "occurrence": {"type":"integer","minimum":1,"description":"1-based non-overlapping match to return (default 1). Requires a non-empty query."},
                     "context_chars": {"type":"integer","minimum":0,"description":"Characters before and after the query match (default 400). Requires a non-empty query."},
                     "json_source": {
@@ -954,7 +955,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "artifact_search",
-            "description": "Search inside offloaded tool results for a term instead of paging through `read_artifact` blindly. Scoped to your own artifacts in the current session by default; pass `artifact_id` to search one specific offloaded result only. Each hit gives the artifact id and a `start`/`end` char range — pass those straight to read_artifact(artifact_id=..., start=..., end=...) to read the hit in full.",
+            "description": "Search across offloaded tool results to discover which artifact contains a term. Scoped to your own artifacts in the current session by default; artifact_id restricts discovery to one result. For a known artifact, read_artifact(artifact_id=..., query=..., context_chars=...) retrieves the passage directly in one call; text_pointer selects an original source string such as /full_text. Hits also provide start/end ranges for range reads.",
             "parameters": {
                 "type": "object",
                 "properties": {

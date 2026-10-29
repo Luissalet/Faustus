@@ -206,12 +206,13 @@ def offload_if_oversized(result: Dict[str, Any], *, owner: str, session_id: str 
     }
 
     if artifact_id:
+        source_hint = ', text_pointer="/full_text"' if isinstance(result.get("full_text"), str) else ""
         note = (f"Full result ({len(full_text)} chars, sha256={digest}) was stored "
-                f"as artifact {artifact_id} before this preview was built. Open it "
-                f"with read_artifact(artifact_id=\"{artifact_id}\", start=..., "
-                "end=...) or query=... to read past what is shown above, or use "
-                f"artifact_search(query=..., artifact_id=\"{artifact_id}\") to "
-                "find where a term occurs before reading a range.")
+                f"as artifact {artifact_id} before this preview was built. Retrieve a passage "
+                f"in one call with read_artifact(artifact_id=\"{artifact_id}\", query=\"term\", "
+                f"context_chars=1500{source_hint}); occurrence=2 skips an earlier match. "
+                "Character ranges (start/end) and JSON selections remain available. "
+                "Use artifact_search to discover an artifact when its id is unknown.")
     else:
         note = (f"Result truncated ({len(full_text)} chars total) and NOT durably "
                 f"stored ({storage_error}); the omitted text cannot be recovered.")
@@ -260,6 +261,14 @@ def read_artifact_range(artifact_id: str, *, owner: str, start: int = 0,
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
 
+    return read_text_range(text, artifact_id, start=start, end=end, query=query,
+                           context_chars=context_chars, occurrence=occurrence)
+
+
+def read_text_range(text: str, artifact_id: str, *, start: int = 0,
+                    end: Optional[int] = None, query: Optional[str] = None,
+                    context_chars: int = 400, occurrence: int = 1) -> Dict[str, Any]:
+    """Slice already-authorized text with the same range/query semantics."""
     if type(occurrence) is not int or occurrence < 1:
         raise ValueError("occurrence must be a positive integer")
     if type(context_chars) is not int or context_chars < 0:

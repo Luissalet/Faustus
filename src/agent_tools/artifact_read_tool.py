@@ -24,7 +24,7 @@ TOOL_SCHEMA: Dict[str, Any] = {
     "type": "function",
     "function": {
         "name": "read_artifact",
-        "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. For repeated symbols, set occurrence (1-based, default 1) to skip declarations or calls; context_chars sets characters on each side (default 400). Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result. For JSON, select a json_pointer and optionally filter an array by match_pointer + match_value. For a serialized JSON tool body, set json_source to /stdout or /output first.",
+        "description": "Read stored text directly by id and query with surrounding context, or by character range (start/end, 0-based, end exclusive). For a known artifact, query + context_chars retrieves the passage in one call without artifact_search followed by offset reads. Set occurrence (1-based, default 1) to skip declarations/calls. text_pointer selects a literal source string such as /full_text: offsets and returned line numbers then refer to that source, without duplicated preview or JSON escaping. For JSON values, select json_pointer and optionally filter an array by match_pointer + match_value; json_source selects a serialized JSON body such as /stdout first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -32,6 +32,7 @@ TOOL_SCHEMA: Dict[str, Any] = {
                 "start": {"type": "integer", "description": "0-based start offset (range mode)."},
                 "end": {"type": "integer", "description": "Exclusive end offset (range mode)."},
                 "query": {"type": "string", "description": "Case-insensitive substring to locate instead of a range."},
+                "text_pointer": {"type": "string", "description": "RFC 6901 pointer to a literal source-text string in the stored result, e.g. /full_text. Query/range offsets and returned 1-based line numbers refer to that string. Use with query and context_chars to recover source context in one call; cannot combine with JSON selection."},
                 "occurrence": {"type":"integer","minimum":1,"description":"1-based non-overlapping match to return (default 1). Requires a non-empty query."},
                 "context_chars": {"type":"integer","minimum":0,"description":"Characters before and after the query match (default 400). Requires a non-empty query."},
                 "json_source": {"type": "string", "description": "RFC 6901 pointer to a JSON body inside the stored result, e.g. /stdout. A string body is decoded as JSON once. Default: stored result itself."},
@@ -85,8 +86,8 @@ def _load_json(text: str) -> Any:
 def _json_selection(text: str, args: dict, artifact_id: str) -> dict:
     if 'json_pointer' not in args:
         raise ValueError('json_pointer is required for JSON selection')
-    if any(key in args for key in ('start', 'end', 'query', 'occurrence', 'context_chars')):
-        raise ValueError('JSON selection cannot be combined with start, end, query, occurrence or context_chars')
+    if any(key in args for key in ('start', 'end', 'query', 'occurrence', 'context_chars', 'text_pointer')):
+        raise ValueError('JSON selection cannot be combined with start, end, query, occurrence, context_chars or text_pointer')
     value = _load_json(text)
     source = args.get('json_source', '')
     value = _resolve_pointer(value, _pointer_tokens(source))
@@ -162,13 +163,38 @@ class ReadArtifactTool:
                 except (ValueError, TypeError, KeyError, IndexError) as exc:
                     return {"error": "JSON selection: " + str(exc), "exit_code": 1}
             query_options = {key: args[key] for key in ("occurrence", "context_chars") if key in args}
-            result = read_artifact_range(
-                artifact_id, owner=owner,
-                start=start if query is None else 0,
-                end=end if query is None else None,
-                query=str(query) if query is not None else None,
-                **query_options,
-            )
+            if "text_pointer" in args:
+                stored = read_artifact_range(artifact_id, owner=owner)
+                try:
+                    text = _resolve_pointer(_load_json(stored["text"]),
+                                            _pointer_tokens(args["text_pointer"]))
+                    if not isinstance(text, str):
+                        raise ValueError("text_pointer must select a string")
+                except (ValueError, TypeError, KeyError, IndexError) as exc:
+                    return {"error": "Artifact text: " + str(exc), "exit_code": 1}
+                from src.tool_result_offload import read_text_range
+                result = read_text_range(
+                    text, artifact_id, start=start if query is None else 0,
+                    end=end if query is None else None,
+                    query=str(query) if query is not None else None,
+                    **query_options,
+                )
+                result["text_pointer"] = args["text_pointer"]
+                if "matches" in result:
+                    for match in result["matches"]:
+                        context_start = max(0, match["offset"] - args.get("context_chars", 400))
+                        match["line"] = text.count("\n", 0, match["offset"]) + 1
+                        match["context_start_line"] = text.count("\n", 0, context_start) + 1
+                else:
+                    result["start_line"] = text.count("\n", 0, result["start"]) + 1
+            else:
+                result = read_artifact_range(
+                    artifact_id, owner=owner,
+                    start=start if query is None else 0,
+                    end=end if query is None else None,
+                    query=str(query) if query is not None else None,
+                    **query_options,
+                )
             if query_options and not query:
                 raise ValueError("occurrence and context_chars require a non-empty query")
             return result
@@ -183,15 +209,7 @@ ARTIFACT_SEARCH_TOOL_SCHEMA: Dict[str, Any] = {
     "type": "function",
     "function": {
         "name": "artifact_search",
-        "description": (
-            "Search inside offloaded tool results for a term instead of paging "
-            "through `read_artifact` blindly. Scoped to your own artifacts in the "
-            "current session by default; pass `artifact_id` to search one "
-            "specific offloaded result only. Each hit gives the artifact id and "
-            "a `start`/`end` char range — pass those straight to "
-            "read_artifact(artifact_id=..., start=..., end=...) to read the hit "
-            "in full."
-        ),
+        "description": "Search across offloaded tool results to discover which artifact contains a term. Scoped to your own artifacts in the current session by default; artifact_id restricts discovery to one result. For a known artifact, read_artifact(artifact_id=..., query=..., context_chars=...) retrieves the passage directly in one call; text_pointer selects an original source string such as /full_text. Hits also provide start/end ranges for range reads.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -254,7 +272,7 @@ def render_hits(query: str, hits: list) -> str:
     if not hits:
         return f"artifact_search: no stored result contains {query!r}."
     lines = [f"artifact_search: {len(hits)} hit(s) for {query!r}. "
-             "Open one with read_artifact(artifact_id, start, end)."]
+             "For a known id, read_artifact(artifact_id, query, context_chars) returns context directly; ranges remain available."]
     for n, hit in enumerate(hits, 1):
         snippet = str(hit.get("snippet") or "").strip()
         lines.append(f"\n[{n}] {hit.get('artifact_id')} ({hit.get('tool') or 'tool'}) "
