@@ -41,6 +41,13 @@ MAX_RECORDED = 5
 #: Connectors examined at once (each may probe the loopback ports).
 CONCURRENCY = 8
 
+#: A connector that could not be migrated is not tried again by a background
+#: pass for this long (each try may scan the machine for its app); a startup or
+#: an explicit request always tries.
+BLOCKED_RETRY_S = 300.0
+_blocked_at: Dict[str, float] = {}
+_running: Optional["asyncio.Future"] = None
+
 #: A placeholder that names a file or directory on disk.
 _PATH_SUFFIXES = ("_FILE", "_PATH", "_DIR")
 
@@ -237,8 +244,19 @@ def _record(entry: Dict[str, Any], before: Dict[str, Any], resolved: Dict[str, A
     return history[-MAX_RECORDED:]
 
 
+def schedule_migration(manager: Any = None) -> bool:
+    """Run a pass in the background unless one is already running (a refresh
+    of the connector list must not wait for it). True when one was started."""
+    global _running
+    if _running is not None and not _running.done():
+        return False
+    _running = asyncio.ensure_future(migrate_connectors(manager, retry_blocked=False))
+    return True
+
+
 async def migrate_connectors(manager: Any = None, *, finder: Optional[Finder] = None,
-                             session_factory: Optional[Callable[[], Any]] = None) -> List[Dict[str, Any]]:
+                             session_factory: Optional[Callable[[], Any]] = None,
+                             retry_blocked: bool = True) -> List[Dict[str, Any]]:
     """Bring every stored connector up to its preset's current definition.
 
     Returns one row per connector that changed or could not be migrated:
@@ -253,7 +271,7 @@ async def migrate_connectors(manager: Any = None, *, finder: Optional[Finder] = 
     async def one(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         async with sem:
             try:
-                return await _migrate_one(entry, manager, finder, factory)
+                return await _migrate_one(entry, manager, finder, factory, retry_blocked)
             except Exception as exc:  # noqa: BLE001 - one bad row must not stop the others
                 logger.warning("[connector-migration] %s failed: %s", entry.get("id"), exc)
                 return {"connector_id": entry.get("id"), "preset_id": entry.get("preset_id"),
@@ -265,9 +283,11 @@ async def migrate_connectors(manager: Any = None, *, finder: Optional[Finder] = 
 
 
 async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
-                       factory: Callable[[], Any]) -> Optional[Dict[str, Any]]:
+                       factory: Callable[[], Any], retry_blocked: bool = True) -> Optional[Dict[str, Any]]:
     preset = connectors.get_preset(entry.get("preset_id") or "")
     if preset is None or preset.transport != "stdio":
+        return None
+    if not retry_blocked and time.time() - _blocked_at.get(entry["id"], 0.0) < BLOCKED_RETRY_S:
         return None
     row = await asyncio.to_thread(_read_server, factory, entry.get("server_id"))
     if row is None:
@@ -287,9 +307,11 @@ async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
             f"missing value for {{{name}}}" for name in resolved.get("missing") or []]
         logger.warning("[connector-migration] %s (%s) still launches %s but its preset changed; "
                        "cannot migrate yet: %s", entry.get("id"), preset.id, old_command, "; ".join(reasons))
+        _blocked_at[entry["id"]] = time.time()
         return {"connector_id": entry.get("id"), "preset_id": preset.id, "status": "blocked",
                 "reasons": reasons}
 
+    _blocked_at.pop(entry["id"], None)
     in_step = server_matches(resolved, old_command, old_args, old_env)
     values_changed = sorted(
         k for k in set(values) | set(stored)

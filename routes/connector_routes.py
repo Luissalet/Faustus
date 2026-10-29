@@ -270,8 +270,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         if force_check:
             # A refresh is also when a connector still on an older bridge
             # catches up with its preset (e.g. the app was off at startup).
+            # In the background: the listing does not wait for the pass.
             try:
-                await connector_migration.migrate_connectors(mcp_manager)
+                connector_migration.schedule_migration(mcp_manager)
             except Exception as exc:  # noqa: BLE001 - listing never fails over a migration
                 logger.debug("[connectors] migration on refresh skipped: %s", exc)
         entries = connector_sidecar.list_connectors(redact=True)

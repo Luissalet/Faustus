@@ -227,6 +227,24 @@ async def test_blocked_when_the_directory_is_unknown_and_the_app_is_off(db, pres
     assert _row(db, server) == (OLD_COMMAND, OLD_ARGS, {"K": "v"})   # untouched
 
 
+async def test_a_background_pass_does_not_retry_a_blocked_connector_at_once(db, preset):
+    calls = []
+
+    async def counting_finder(preset, *, current_url=""):
+        calls.append(1)
+        return None
+
+    _make(db, command=OLD_COMMAND, args=OLD_ARGS, env={}, values={})
+    connector_migration._blocked_at.clear()
+    first = await connector_migration.migrate_connectors(_Manager(), finder=counting_finder, retry_blocked=False)
+    again = await connector_migration.migrate_connectors(_Manager(), finder=counting_finder, retry_blocked=False)
+    forced = await connector_migration.migrate_connectors(_Manager(), finder=counting_finder)
+    assert [r["status"] for r in first] == ["blocked"]
+    assert again == []
+    assert [r["status"] for r in forced] == ["blocked"]
+    assert len(calls) == 2
+
+
 async def test_a_connected_server_is_disconnected_so_it_restarts_on_the_new_definition(db, preset, app_dir):
     server, _ = _make(db, command=OLD_COMMAND, args=OLD_ARGS, env={}, values={"APP_DIR": app_dir})
     manager = _Manager(status="connected")
