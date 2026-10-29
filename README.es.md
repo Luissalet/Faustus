@@ -23,6 +23,14 @@ mantienen las reglas de disponibilidad del escritorio.
 
 La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
 
+La sesión de navegador propia usa MCP y una extensión en las pestañas existentes
+de Brave, también en segundo plano. La vista con contexto conserva los fragmentos
+AX originales. El cierre del turno reutiliza progreso respaldado por actividad
+operativa reciente y sustituye borradores al revisar la respuesta final. Hay 94
+pruebas de área y una recuperación independiente comprobadas; la validación
+nativa del cierre actualizado y el runtime portable siguen pendientes.
+[Instalación y límites](src/browser_relay/README.md).
+
 La biblioteca incluye procedimientos locales de desarrollo de juegos, ingeniería inversa, assets
 de Blender, composición de movimiento (un flujo de dirección con fichas de estilo, tratamiento, hitos y comprobaciones de sincronía y lectura cuando están instaladas las herramientas de Montaje de Prospero), revisiones de medios, impacto del código,
 investigación de entidades, evidencia histórica y comparación de voces. La

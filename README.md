@@ -28,10 +28,17 @@ installable extension for existing Chromium tabs. It uses tab-specific browser
 input and returns an accessibility readback after actions. All eight actions
 have been exercised through the installed extension in real Brave by an MCP
 client, including background operation in Writer. Compact readbacks retain
-controls and text, with full detail available. Autonomous Faustus-model use
-and portable runtime support remain pending. It shares the operator's profile
+controls and text, with full detail available. A native Writer check completed
+the browser actions; efficient completion remains under evaluation. Portable
+runtime support remains pending. It shares the operator's profile
 and does not launch another browser or control the desktop.
 [Setup and current limits](src/browser_relay/README.md).
+
+Turn completion can reconcile completed progress from recent operations and
+replace intermediate drafts with the final revision. Status notes do not
+borrow older work to close new steps; references resolve operational tool
+receipts. The updated completion path passes its area tests; its native
+browser check is pending.
 
 Saved conversations can keep an editable objective, context, deliverable and
 native work links. Revisions prevent conflicting edits; runs retain their exact

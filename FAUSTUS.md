@@ -1,5 +1,11 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Cierre del turno y referencias operativas —29-10-2026, #1797
+
+El bucle reconcilia el progreso completado usando operaciones correctas de la misma ventana anterior al último todowrite. Una consulta de estado no toma prestada una operación vieja para cerrar un paso nuevo. El indicador verified sigue siendo una señal gruesa de actividad, no una prueba semántica general. Los objetivos tipados mantienen su comprobación. La prosa de progreso de una tarea de navegador no crea por sí sola un entregable de repositorio; el trabajo local real conserva su auditoría.
+
+Las revisiones de auditoría y criterios sustituyen su borrador en la respuesta final, manteniendo el historial de rondas. Las referencias aceptan alias exactos MCP y diferencias de espaciado JSON; las notas plan_done no desplazan al resultado operativo. Se conservan IDs, errores, caducidad de evidencia y criterios pendientes. 94 pruebas de área pasan; un focal independiente conserva1/2 tras metadata/lectura fallida y permite2/2 sólo con una lectura correcta posterior. Código aprobado e integrado; la activación coordinada y la prueba Native de este cierre siguen pendientes. La prueba anterior de Writer sí completó las acciones reales de Brave, pero mostró fricción al terminar.
+
 ## Investigación de fuentes y evidencia — 29-10-2026, #1739/#1745/#1750/#1755
 
 read_artifact permite seleccionar filas JSON exactas y consultar una aparición concreta con su contexto; mantiene los tipos, el orden y el alcance del propietario. Las operaciones de coordinación que sólo registran actividad conservan la evidencia vigente del workspace. reach_read admite archivos UTF-8 y directorios de GitHub a una ref explícita; conserva el texto recibido para consultarlo como artefacto, en lugar de perder el final al resumirlo. Un listado que alcanza el límite de 1.000 entradas queda marcado como truncado. Son capacidades del producto y del catálogo normal de herramientas.

@@ -1,5 +1,11 @@
 # Objetivos acordados
 
+## Continuación de la sesión de navegador —29-10-2026, #1797/#1717
+
+El contexto AX y las acciones reales de Brave están comprobados. La entrega 1797 corrige el cierre a partir del progreso reciente, la localización de resultados y la composición de una sola respuesta final; 94 casos y una recuperación independiente pasan. Falta activar el código aprobado cuando el servidor normal quede libre y contrastar el mismo flujo con el modelo global antes de cerrar 1797. El turno ajeno activo se conserva; no se detienen modelos.
+
+Después, continuar la ayuda real para Writer 1796 y la paridad 1095. La migración de la extensión a su carpeta canónica sigue pendiente por el bloqueo de Computer Use sobre la URL interna de extensiones; el permiso de Luis ya existe y no se vuelve a pedir. El worktree cargado sigue necesario. Runtime portable y foco global del sistema no están acreditados.
+
 ## Continuación tras la investigación de fuentes — 29-10-2026
 
 Las selecciones JSON, las apariciones con contexto, la conservación de evidencia al coordinar y la lectura de fuentes GitHub ya están implementadas y revisadas. El contraste acotado de intercambios y zonas1737 terminó; su condición149 era una condición del encuentro, no una especie. Sigue pendiente conseguir ayuda eficiente y fiable en investigaciones nuevas: medir el resultado completo, sus llamadas reales y la unión entre guion, constructor, tabla y aprendizaje, sin convertir una inferencia en un dato del juego. Los ensayos anteriores no prueban una mejora global ni ahorro de facturación.
