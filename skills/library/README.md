@@ -37,6 +37,18 @@ Prospero's retained pixel boxes, exact text, reference images, schematic
 preview and existing image-generation route. It distinguishes installed
 capability, compilation, demo transport and actual image-model adherence.
 
+## Web product delivery
+
+legacy-web-app-onboarding receives an inherited prototype: static audit,
+reproducible start, a feature inventory that becomes the no-regression
+contract, baselines and a short question list. web-3d-asset-pipeline
+turns meshes into checked metrics, a layer-based fabrication estimate for
+quoting and compressed GLB levels of detail, with viewer and toolpath rules;
+its scenario holds a hand-checked cylinder. product-ui-visual-direction
+decides where a product UI may be striking and keeps work screens quiet,
+with motion rules and a bounded verification pass through Vitruvius and the
+design detector.
+
 ## Format
 
 Every skill here uses the exact dialect `services/memory/skill_format.py`

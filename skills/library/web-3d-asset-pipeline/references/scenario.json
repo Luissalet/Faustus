@@ -1,0 +1,30 @@
+{
+  "name": "hollow-wall column estimate",
+  "input": {
+    "shape": "cylinder",
+    "radius_mm": 200,
+    "height_mm": 1000,
+    "sections": 128,
+    "units": "mm",
+    "layer_height_mm": 10,
+    "bead_width_mm": 30,
+    "walls": 1,
+    "print_speed_mm_s": 100,
+    "density_kg_m3": 2200,
+    "mix_price_per_m3": 450,
+    "machine_rate_per_h": 120,
+    "waste_factor": 0.10
+  },
+  "expected": {
+    "layers": 100,
+    "toolpath_length_m": 125.66,
+    "mortar_volume_m3": 0.0377,
+    "mortar_mass_kg": 82.9,
+    "print_time_h": 0.35,
+    "shortest_layer_time_s": 12.6,
+    "solid_volume_m3": 0.1257,
+    "cost": { "mortar": 18.66, "machine_time": 41.88, "total": 60.54 },
+    "warning": "shortest layer below a 30 s minimum layer time"
+  },
+  "notes": "Mesh solid volume (0.1257 m3) is more than three times the wall material (0.0377 m3): quoting from closed-mesh volume would overprice a wall-printed part."
+}
