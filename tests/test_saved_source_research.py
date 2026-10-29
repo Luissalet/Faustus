@@ -64,3 +64,13 @@ def test_published_response_reference_does_not_claim_file_edits(article):
     assert h.find_claimed_paths(f"Incluido en {article} respuesta: el índice pertenece a generated/trainers.txt.")==[]
     assert h.find_claimed_paths(f"Incluido en {article} respuesta: el índice pertenece a generated/trainers.txt; he modificado module.py.")==["module.py"]
     assert h.find_claimed_paths("He incluido la función en post.md.")==["post.md"]
+
+@pytest.mark.parametrize("tools",[("mcp__85276bea__hub_agora_post",),("mcp__85276bea__hub_agora_thread","mcp__85276bea__hub_agora_post")])
+def test_generic_mcp_coordination_is_not_observed_workspace_execution(tmp_path,tools):
+    ledger=read_ledger(tmp_path)
+    for tool in tools:
+        ledger.record(tool,json.dumps({"thread_id":1890,"body":"original source ordinals"}),{"output":"ok","exit_code":0})
+    caps=al.capabilities_for_tool(tools[-1])
+    assert not caps.known
+    assert al.ToolEffect.EXECUTE_CODE in caps.effects
+    assert not al._workspace_completion_work({"workspace_work":True},[],ledger)

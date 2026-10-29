@@ -2831,8 +2831,10 @@ def _saved_source_answer_request(text: str) -> bool:
 
 def _workspace_completion_work(intent, deliverable_files, ledger) -> bool:
     """Positive work evidence, independent of a merely bound workspace."""
+    # Unknown worst-case capabilities govern authorization, not proof of local work.
     workspace_actions = any(
-        capabilities_for_tool(event.get("tool", "")).effects
+        capabilities_for_tool(event.get("tool", "")).known
+        and capabilities_for_tool(event.get("tool", "")).effects
         & {ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE, ToolEffect.EXECUTE_CODE}
         for event in ledger.events
     )
