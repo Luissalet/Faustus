@@ -303,10 +303,9 @@ def match_preset(health: Optional[Dict[str, Any]], title: str) -> Optional[str]:
 
 
 def _dir_placeholder(preset: ConnectorPreset) -> Optional[str]:
-    for name in preset.placeholders:
-        if name.endswith("_DIR"):
-            return name
-    return None
+    from src.connectors import _dir_placeholder as _install_dir_placeholder
+
+    return _install_dir_placeholder(preset)
 
 
 def _looks_like_app_dir(preset: ConnectorPreset, path: str) -> bool:

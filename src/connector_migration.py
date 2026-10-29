@@ -149,6 +149,21 @@ def _repair_values(preset: connectors.ConnectorPreset, values: Dict[str, Any],
     return out
 
 
+def _leftover_paths(preset: connectors.ConnectorPreset, values: Dict[str, Any]) -> List[str]:
+    """Stored path values that no template of the preset uses and that no
+    longer exist on disk: what is left of a layout the preset moved away from."""
+    used = connectors.referenced_placeholders(preset)
+    out = []
+    for key, value in (values or {}).items():
+        if _blank(value) or not key.upper().endswith(_PATH_SUFFIXES):
+            continue
+        if key in used or key in preset.optional_extra_env:
+            continue
+        if not os.path.exists(os.path.expandvars(str(value))):
+            out.append(key)
+    return out
+
+
 def _dirs_from_server(preset: connectors.ConnectorPreset, values: Dict[str, Any],
                       old_args: List[Any]) -> Dict[str, str]:
     """Install directories the stored server row already knows.
@@ -346,6 +361,12 @@ async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
     stored = dict(entry.get("values") or {})
     layout_changed = _layout_changed(preset, old_command, old_args)
     values = _repair_values(preset, stored, layout_changed=layout_changed)
+    leftovers = _leftover_paths(preset, values)
+    if leftovers:
+        # A folder or file of the old layout that is gone and that nothing in
+        # the preset uses: the values (and the port beside them) are the old
+        # app's, even though the row may already run the new bridge.
+        layout_changed = True
     if not connectors.resolve_preset_values(preset, values)["ok"]:
         adopted = _dirs_from_server(preset, values, old_args)
         if adopted:
@@ -355,7 +376,7 @@ async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
             layout_changed = True
     if layout_changed:
         values = {k: v for k, v in values.items()
-                  if k in preset.placeholders or k in preset.optional_extra_env}
+                  if (k in preset.placeholders or k in preset.optional_extra_env) and k not in leftovers}
     if layout_changed or not connectors.resolve_preset_values(preset, values)["ok"]:
         values = await _complete_values(preset, values, layout_changed=layout_changed, finder=finder)
     resolved = connectors.resolve_preset_values(preset, values)

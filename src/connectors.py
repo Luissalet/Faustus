@@ -183,11 +183,28 @@ def adopt_declared_app(app_dir: str, expected_id: str) -> Dict[str, Any]:
     return {"ok": True, "id": expected_id, "installed": True, "path": out.get("path")}
 
 
+def referenced_placeholders(preset: ConnectorPreset) -> set:
+    """The declared placeholders some template of the preset actually uses
+    (command, arguments, environment, defaults, URLs, launch hint). A
+    manifest can keep declaring a placeholder nothing uses any more, such as
+    the install folder of an app that was folded into another one."""
+    import json
+
+    text = json.dumps([preset.command, preset.args, preset.env, list(preset.defaults.values()),
+                       preset.app_url_default, preset.ui_url_default, preset.launch_profile_hint],
+                      default=str)
+    return {name for name in preset.placeholders if "{" + name + "}" in text}
+
+
 def _dir_placeholder(preset: ConnectorPreset) -> Optional[str]:
-    for name in preset.placeholders:
-        if name.endswith("_DIR"):
+    """The install folder of the app: the first `*_DIR` placeholder that a
+    template uses (else the first declared, as before)."""
+    dirs = [name for name in preset.placeholders if name.endswith("_DIR")]
+    used = referenced_placeholders(preset)
+    for name in dirs:
+        if name in used:
             return name
-    return None
+    return dirs[0] if dirs else None
 
 
 def _substitute(template: str, merged: Dict[str, str]) -> str:
@@ -221,7 +238,10 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
     # mcp-token"); resolve those against the user's values first.
     merged = {k: _substitute(v, merged) for k, v in merged.items()}
 
-    missing = [p for p in preset.placeholders if not merged.get(p)]
+    unused_dirs = {p for p in preset.placeholders
+                   if p.endswith("_DIR") and p not in referenced_placeholders(preset)}
+    # A folder nothing uses (a leftover declaration) can stay empty.
+    missing = [p for p in preset.placeholders if not merged.get(p) and p not in unused_dirs]
     if missing:
         return {
             "ok": False,

@@ -378,3 +378,30 @@ def test_absorbed_hoards_ship_the_owners_bridge():
         assert preset.env["HOARD_COMPAT_ID"] == pid
         assert preset.app_url_default == f"http://127.0.0.1:5221/{module}"
         assert "HERMES_DIR" not in preset.defaults
+
+
+async def test_a_declared_folder_nothing_uses_does_not_block_and_its_old_port_goes(db, preset, app_dir, monkeypatch):
+    """The installed manifest of a folded-in Hoard still declared the old
+    app's folder (`OLD_DIR`) though no template uses it: the connector stayed
+    blocked on a folder that is not needed. An unused `*_DIR` never counts as
+    missing, and the gone folder and the port beside it are dropped."""
+    import dataclasses
+    hybrid = dataclasses.replace(
+        preset, placeholders=["OLD_DIR", "APP_DIR", "APP_URL", "TOKEN_FILE"],
+        defaults={**preset.defaults, "APP_DIR": app_dir})
+    monkeypatch.setitem(connectors.PRESETS, "linkslike", hybrid)
+    assert connectors.referenced_placeholders(hybrid) == {"APP_DIR", "APP_URL", "TOKEN_FILE"}
+    assert connectors.resolve_preset_values(hybrid, {})["ok"] is True
+    assert connectors._dir_placeholder(hybrid) == "APP_DIR"
+
+    server, entry = _make(
+        db, command="node", args=[f"{app_dir}/server/mcp.js"],
+        env={"APP_URL_ENV": "http://127.0.0.1:5199", "APP_TOKEN_FILE": f"{app_dir}/data/mcp-token"},
+        values={"OLD_DIR": "C:/Apps/Retired Hoard", "APP_URL": "http://127.0.0.1:5199"})
+    report = await connector_migration.migrate_connectors(_Manager(), finder=_no_finder)
+
+    assert [r["status"] for r in report] == ["migrated"], report
+    saved = connector_sidecar.get_connector(entry["id"], redact=False)
+    assert "OLD_DIR" not in saved["values"] and "APP_URL" not in saved["values"]
+    assert saved["app_url"] == "http://127.0.0.1:5181"
+    assert _row(db, server)[2]["APP_URL_ENV"] == "http://127.0.0.1:5181"
