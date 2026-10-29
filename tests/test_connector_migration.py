@@ -179,6 +179,34 @@ async def test_a_custom_token_file_is_kept_when_only_the_script_moved(db, preset
     assert env["APP_TOKEN_FILE"] == custom_token
 
 
+async def test_the_same_paths_written_differently_are_not_a_migration(db, preset, app_dir):
+    # Backslashes, another letter case and a blank value are not differences.
+    win = lambda p: p.replace("/", "\\")  # noqa: E731
+    server, entry = _make(db, command="NODE", args=[win(app_dir + "/server/mcp.js").upper()],
+                          env={"APP_URL_ENV": "http://127.0.0.1:5181",
+                               "APP_TOKEN_FILE": win(app_dir + "/data/mcp-token")},
+                          values={"APP_DIR": app_dir, "TOKEN_FILE": ""})
+    before = connector_sidecar.get_connector(entry["id"], redact=False)
+    assert await connector_migration.migrate_connectors(_Manager(), finder=_no_finder) == []
+    assert connector_sidecar.get_connector(entry["id"], redact=False) == before
+
+
+async def test_a_command_template_with_placeholders_is_compared_by_program(db, tmp_path, monkeypatch):
+    d = tmp_path / "py"
+    (d / "bin").mkdir(parents=True)
+    (d / "bin" / "python.exe").write_text("")
+    (d / "bridge.py").write_text("")
+    p = connectors.ConnectorPreset(
+        id="pylike", name="Py", purpose="", capabilities=[], transport="stdio",
+        command="{APP_DIR}/bin/python.exe", args=["-I", "{APP_DIR}/bridge.py"], env={},
+        app_url_default="http://127.0.0.1:5999", health_path="/", health_expect={}, ui_url_default=None,
+        placeholders=["APP_DIR"], launch_profile_hint={})
+    monkeypatch.setitem(connectors.PRESETS, "pylike", p)
+    server, _ = _make(db, command=str(d / "bin" / "python.exe"), args=["-I", str(d / "bridge.py")], env={},
+                      values={"APP_DIR": str(d)}, preset_id="pylike")
+    assert await connector_migration.migrate_connectors(_Manager(), finder=_no_finder) == []
+
+
 async def test_a_row_already_in_step_is_left_alone(db, preset, app_dir):
     server, entry = _make(db, command="node", args=[f"{app_dir}/server/mcp.js"],
                           env={"APP_URL_ENV": "http://127.0.0.1:5181",

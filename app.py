@@ -2503,10 +2503,16 @@ async def _startup_event():
             # manifest that changed since they were created must not leave the
             # old bridge starting (src/connector_migration.py).
             from src import connector_migration
-            _moved = await connector_migration.migrate_connectors(mcp_manager)
-            if _moved:
-                logger.info("[connectors] startup migration: %s",
-                            ", ".join(f"{m['preset_id']}:{m['status']}" for m in _moved))
+            _migration = asyncio.ensure_future(connector_migration.migrate_connectors(mcp_manager))
+            app.state.connector_migration_task = _migration   # keeps it alive if it outlasts the wait
+            await asyncio.wait({_migration}, timeout=25)
+            if _migration.done():
+                _moved = _migration.result()
+                if _moved:
+                    logger.info("[connectors] startup migration: %s",
+                                ", ".join(f"{m['preset_id']}:{m['status']}" for m in _moved))
+            else:
+                logger.warning("[connectors] startup migration still running; connecting the servers meanwhile")
         except Exception as e:  # noqa: BLE001 - a failed migration never blocks the connections
             logger.warning(f"Connector migration skipped: {type(e).__name__}: {e}")
         try:
