@@ -175,3 +175,31 @@ def test_remote_read_does_not_hide_a_recorded_mutation(tmp_path):
     l.record('mcp__fixture__reader', json.dumps({'url': 'https://example.com/a'}), {'output': json.dumps({'ok': True, 'status': 200, 'url': 'https://example.com/a', 'content': 'source'}), 'exit_code': 0})
     l.events.append({'tool': 'fixture-worker', 'ok': True, 'kind': 'mutation', 'paths': ['changed.py']})
     assert al._workspace_completion_work({'workspace_work': True}, [], l)
+
+
+NEGATION_REQUEST="Consulta de lectura de tres fuentes públicas para HoardDex. Usa las herramientas lectoras remotas del producto: descubre web_fetch con lookup_tools; si no se ofrece, busca hub_web_fetch en el catálogo y lee esas URL mediante ese MCP. Mantén las fuentes en la respuesta, sin descargarlas ni crear archivos locales. La coordinación nativa ya está comprobada por la API normal, conector Hoard Hub85276bea conectado y ámbito Silver, hilo1890 autorizado.\nLee https://raw.githubusercontent.com/pret/pokeplatinum/be36a9db3d2390a5009adc087c7aef550ce335e7/res/trainers/data/rival_survival_area_2_piplup.json ; https://raw.githubusercontent.com/pret/pokeplatinum/be36a9db3d2390a5009adc087c7aef550ce335e7/res/trainers/data/rival_survival_area_2_turtwig.json ; https://raw.githubusercontent.com/pret/pokeplatinum/be36a9db3d2390a5009adc087c7aef550ce335e7/res/trainers/data/rival_survival_area_2_chimchar.json . Enumera los tres equipos en orden, especie, nivel, cuatro movimientos y objeto equipado; distingue los objetos del entrenador (items) de los equipados (party.item). El sufijo es el inicial del jugador según la selección por guion ya contrastada por Root; las tablas por sí solas no prueban calendario ni acceso. Publica una sola ampliación factual con las tres URL en hilo1890 usando coordination_post. Termina con resumen breve y no reclames ni cierres tareas. Root incorpora el producto y contrasta los hechos por separado."
+NEGATION_BASE='Read the public sources at https://example.org/source.json and report the facts in your answer.'
+NEGATION_PROMPTS=[NEGATION_REQUEST,NEGATION_BASE+' Do not create files; do not download a report; do not export it.',NEGATION_BASE+' Sin crear archivos ni descargar tablas ni editar ficheros.',NEGATION_BASE+' No implementes cambios; no ejecutes pruebas.',NEGATION_BASE+' Do not change the repository; report the source facts.']
+def negation_ledger(tmp_path,prompt):
+ l=h.TurnLedger(str(tmp_path),prompt)
+ url='https://example.org/source.json'
+ l.record('mcp__hub__web_reader',json.dumps({'url':url}),{'output':json.dumps({'url':url,'ok':True,'status':200,'content':'original facts'}),'exit_code':0})
+ l.record('coordination_post','{}',{'output':'published','exit_code':0})
+ return l
+@pytest.mark.parametrize('prompt',NEGATION_PROMPTS)
+def test_negation_explicit_no_local_work_is_not_requested_work(tmp_path,prompt):
+ assert not al._workspace_completion_work({'workspace_work':True},[],negation_ledger(tmp_path,prompt))
+@pytest.mark.parametrize('prompt',[NEGATION_REQUEST+' Save result.md.',NEGATION_BASE+' Sin crear archivos. Descarga las tablas.',NEGATION_BASE+' Do not create files, but edit cart.py.',NEGATION_BASE+' Do not only read: implement cart.py.'])
+def test_negation_positive_action_survives_a_nearby_negative(tmp_path,prompt):
+ assert al._workspace_completion_work({'workspace_work':True},[],negation_ledger(tmp_path,prompt))
+@pytest.mark.parametrize('tool,args',[('read_file',{'path':'cart.py'}),('write_file',{'path':'cart.py','content':'x=1'}),('bash',{'command':'ls'})])
+def test_negation_actual_local_action_survives_negative_instruction(tmp_path,tool,args):
+ l=negation_ledger(tmp_path,NEGATION_REQUEST);l.record(tool,json.dumps(args),{'output':'ok','exit_code':0})
+ assert al._workspace_completion_work({'workspace_work':True},[],l)
+def test_negation_actual_mutation_survives_negative_instruction(tmp_path):
+ l=negation_ledger(tmp_path,NEGATION_REQUEST);l.events.append({'tool':'fixture-worker','ok':True,'kind':'mutation','paths':['cart.py']})
+ assert al._workspace_completion_work({'workspace_work':True},[],l)
+def test_negation_real_deliverable_survives_negative_instruction(tmp_path):
+ assert al._workspace_completion_work({'workspace_work':True},['answer.md'],negation_ledger(tmp_path,NEGATION_REQUEST))
+def test_negation_no_observed_read_remains_workspace_work(tmp_path):
+ assert al._workspace_completion_work({'workspace_work':True},[],h.TurnLedger(str(tmp_path),NEGATION_REQUEST))

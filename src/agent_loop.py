@@ -2821,6 +2821,12 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
 def _saved_source_answer_request(text: str) -> bool:
     """A request to read referenced sources and report their contents, not edit files."""
     text = str(text or "")
+    # Negative local-work instructions are not requests to perform those actions.
+    text = re.sub(r"\b(?:do not|don't|without|nor|never|no|sin|ni)\s+(?:"
+                  + _PROGRAMMING_ACTION_SIGNAL_RE.pattern
+                  + r"|(?:save|download|export|guarda(?:r)?|descarga(?:r)?|exporta(?:r)?)\b)"
+                  + r"(?:\s+(?:any\s+)?(?:changes|cambios)\b)?",
+                  "", text, flags=re.IGNORECASE)
     return bool(
         re.search(r"\b(?:read_artifact|artifacts?|artefactos?|web|github|urls?)\b|https?://"
                   r"|\b(?:public\s+sources?|fuentes?\s+p[uú]blicas?)\b", text, re.IGNORECASE)
