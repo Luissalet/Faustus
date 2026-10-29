@@ -10267,3 +10267,8 @@ written	escrita
 {n} model calls	{n} llamadas al modelo
 {n} repeat of the unmodified setup	{n} repetición de la configuración sin cambios
 {n} repeats of the unmodified setup	{n} repeticiones de la configuración sin cambios
+Last saved checklist	Última lista guardada
+This checklist is shared by the conversation and may come from an earlier turn.	Esta lista pertenece a la conversación y puede ser de un turno anterior.
+Latest recorded plan	Último plan registrado
+Latest recorded changes	Últimos cambios registrados
+Plans and changes remain here until a later turn replaces them.	Los planes y los cambios permanecen aquí hasta que otro turno los sustituye.

@@ -670,11 +670,12 @@ function ProgressTab({ state, turns }: { state: PanelState; turns: Turn[] }) {
   return (
     <div className="fs-panel__body fs-panel__progress">
       {state.todos.length > 0 ? (
-        <section aria-label={t('Progress')}>
+        <section aria-label={t('Last saved checklist')}>
           <h3>
-            {t('Progress')}
+            {t('Last saved checklist')}
             <span className="fs-sa__muted"> {t('{done} of {total}', { done, total: state.todos.length })}</span>
           </h3>
+          <p className="fs-studio__hint">{t('This checklist is shared by the conversation and may come from an earlier turn.')}</p>
           <ProgressList todos={state.todos} />
         </section>
       ) : (
@@ -698,9 +699,10 @@ function PlanAndChanges({ turns }: { turns: Turn[] }) {
   if (!planTurn && changes.length === 0) return null;
   return (
     <div className="fs-panel__plan-changes">
+      <p className="fs-studio__hint">{t('Plans and changes remain here until a later turn replaces them.')}</p>
       {planTurn?.planSteps && (
-        <section aria-label={t('Plan')}>
-          <h3>{t('Plan')}</h3>
+        <section aria-label={t('Latest recorded plan')}>
+          <h3>{t('Latest recorded plan')}</h3>
           <ol className="fs-panel__plan-list">
             {planTurn.planSteps.map((step) => (
               <li key={step.id} data-status={step.status}>
@@ -715,8 +717,8 @@ function PlanAndChanges({ turns }: { turns: Turn[] }) {
         </section>
       )}
       {changes.length > 0 && (
-        <section aria-label={t('Changes')}>
-          <h3>{t('Changes')}</h3>
+        <section aria-label={t('Latest recorded changes')}>
+          <h3>{t('Latest recorded changes')}</h3>
           <ul className="fs-panel__changes-list">
             {changes.map((row) => (
               <li key={row.file}>
