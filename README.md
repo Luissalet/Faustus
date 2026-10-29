@@ -1443,3 +1443,10 @@ A valid explicit chat coordination binding takes precedence over the project tem
 ## Public source research
 
 Faustus can read web/GitHub sources and answer or publish without inventing local editing work, a progress plan or a local completion audit. Observed remote MCP source receipts and explicitly negated local actions are distinguished from positive requests, actual local effects and deliverables. Approved source 1782 passes 46 external contracts on Main and 427 source regression checks. The useful R5 trial ends with five tools and four rounds without shell or local audit; a second post corrects a species token typo. Factual research still requires independent checks; this does not establish general autonomy or latency gains. [Scope and contracts](docs/SAVED-SOURCE-RESEARCH.md).
+
+
+## Verified trainer guide release
+
+HoardDex release 368 (b46ed6e5) adds fifteen remaining direct rival teams for US Platinum, bringing Platinum to 55 teams and the global guide to 512 teams across 20 editions. Starter and rematch threshold appear first in the selector; linked Pokémon, moves, items and sources retain their navigation context. Other Platinum editions and allied battles remain open.
+
+Main passes 718 TS checks, 23 CJS checks, type checking, 37 MCP tools/1277 calls and the web build. Final web smoke and the exact installed x86_64 APK were verified; Android covers twelve ES/EN labels, representative level 85/65 teams, links/Back and empty/recovery states. The visible emulator collection and preferences were restored. Both ABI packages and JSON receipts are published locally; ARM64 has no physical-device test. Previous JSON receipts remain exact. No push or global parity claim.

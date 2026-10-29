@@ -816,3 +816,10 @@ Un enlace explícito de coordinación válido del chat tiene prioridad sobre la 
 ## Consultas de fuentes públicas
 
 Faustus puede leer fuentes web/GitHub y responder o publicar sin añadir un plan ni una auditoría de cambios locales cuando no hay trabajo local ni entregable. Reconoce recibos remotos MCP y la negación explícita de acciones locales, conservando acciones positivas y efectos reales. La fuente 1782 aprobada en revisión 4 pasa 46 contratos en Main y 427 regresiones. R5 termina con cinco herramientas y cuatro rondas, sin shell ni auditoría local, pero necesita una segunda publicación para corregir una errata. La ayuda factual requiere contraste independiente; no acredita autonomía ni eficiencia global. [Alcance y contratos](docs/SAVED-SOURCE-RESEARCH.md).
+
+
+## Entrega comprobada de la guía de entrenadores
+
+HoardDex 368 (b46ed6e5) añade quince equipos directos restantes del rival de Platino estadounidense. Platino alcanza 55 equipos y el catálogo global 512 en 20 ediciones. El inicial y el umbral de revancha aparecen primero en el selector; los enlaces a Pokémon, movimientos, objetos y fuentes conservan el contexto. Otras ediciones de Platino y los combates aliados siguen pendientes.
+
+Main pasa 718 pruebas TS, 23 CJS, tipos sin errores, MCP 37 herramientas/1277 llamadas y build web. Se comprobó la web final y se instaló el APK x86_64 exacto: doce etiquetas ES/EN, equipos representativos de nivel máximo 85/65, enlaces y vuelta, búsqueda vacía y recuperación. La colección y preferencias del emulador visible quedaron restauradas. Ambos APK y sus JSON están publicados localmente; ARM64 carece de prueba física. Se conservan exactos los JSON anteriores. Sin push ni afirmación de paridad global.

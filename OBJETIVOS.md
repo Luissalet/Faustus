@@ -2422,3 +2422,8 @@ La precedencia del enlace explícito de coordinación ya está corregida y proba
 ## Investigación asistida de HoardDex — actualización 1782
 
 Corregida la continuación local ficticia para consultas de fuentes públicas y recibos MCP. Las instrucciones negativas locales ya no se interpretan como peticiones positivas en el vocabulario cubierto. R5 acredita investigación acotada útil con revisión, sin auditoría local impuesta. Mantener contraste factual antes de publicar, resolver erratas en una sola entrega y estudiar el grant no disponible al primer turno tras un reinicio, cuya causa aún no está demostrada. La heurística no cubre toda la lengua y no se atribuyen mejoras globales de latencia o facturación. HoardDex 365 está entregado; 1784 añade quince equipos en QA y revisión. Continuar la paridad útil, incluidos combates aliados y otras ediciones, con fuentes propias y pruebas en web y Android visible.
+
+
+## HoardDex tras la entrega 368
+
+Entregados los quince equipos directos restantes del rival de Platino estadounidense y la legibilidad del inicial/umbral en el selector, con revisión cruzada, pruebas de main y APK final x86_64 instalado y probado en Android Studio visible. Los dos paquetes y sus JSON sustituyen solo los APK anteriores verificados; el historial de informes se conserva. Continúan los combates aliados de Platino, las demás ediciones y la cobertura útil pendiente de los juegos. La prueba física ARM64 sigue sin estar disponible. No se considera alcanzada la paridad global.
