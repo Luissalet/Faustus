@@ -561,8 +561,12 @@ async def _run_pass(deps: Deps, slot_date: str, started: datetime) -> Dict[str, 
     result["considered"] = len(skills)
 
     def _select():
+        # The cooldown counts from the scheduler's own clock (`deps.now`, which
+        # is `datetime.now` outside tests), not from the wall clock: with a
+        # pass dated by an injected clock, proposals made "last night" fell
+        # out of the 7-day window as soon as the real date moved on.
         return select_candidates(skills, deps.evidence, sleep_optimize.load_proposals(),
-                                 now_ts=time.time())
+                                 now_ts=started.timestamp())
 
     # Evidence is a database scan per skill: keep it off the event loop.
     candidates = await asyncio.to_thread(_select) if deps.in_thread else _select()
