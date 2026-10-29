@@ -1,6 +1,13 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
+Los resultados guardados permiten filtrar filas JSON y consultar una aparición
+con su contexto. El lector de GitHub acepta archivos y carpetas a una ref
+explícita y conserva el texto completo recibido antes de resumirlo; indica los
+límites de origen. La coordinación conserva la evidencia cuando no cambia el
+workspace. La eficacia completa del modelo sigue bajo evaluación.
+[Lectura de fuentes](docs/GITHUB-SOURCE-READER.md) · [Artefactos](docs/ARTIFACT-JSON-SELECTION.md).
+
 Los turnos de terminal aceptan --input-token-budget (4096–200000), o
 FAUSTUS_RUN_INPUT_TOKEN_BUDGET, como presupuesto estimado de contexto por turno.
 Una conversación de proyecto puede elegir con --workspace una subcarpeta

@@ -1,5 +1,11 @@
 # Objetivos acordados
 
+## Continuación tras la investigación de fuentes — 29-10-2026
+
+Las selecciones JSON, las apariciones con contexto, la conservación de evidencia al coordinar y la lectura de fuentes GitHub ya están implementadas y revisadas. El contraste acotado de intercambios y zonas1737 terminó; su condición149 era una condición del encuentro, no una especie. Sigue pendiente conseguir ayuda eficiente y fiable en investigaciones nuevas: medir el resultado completo, sus llamadas reales y la unión entre guion, constructor, tabla y aprendizaje, sin convertir una inferencia en un dato del juego. Los ensayos anteriores no prueban una mejora global ni ahorro de facturación.
+
+HoardDex1749 está entregado como360, con las tres variantes del primer rival de Platino y QA web/Android. Continuar1747 con otros rivales y entrenadores por edición, además de localizaciones y formas modernas, textos españoles con procedencia, iconos sin identificar, galería y tamaño del APK. Conservar edición y condiciones; la ausencia de datos sigue siendo desconocida. ARM64 físico continúa sin comprobar porque no hay teléfono disponible.
+
 ## Continuación tras las tareas técnicas — 28-10-2026, #1716/#1728/#1733
 
 Se ha aislado y corregido una causa concreta de las pausas del bucle: leer los

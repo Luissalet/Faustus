@@ -1,6 +1,13 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
+Stored results support exact JSON-row selection and occurrence queries with
+context. The GitHub reader accepts source files and directories at an explicit
+ref, retaining received text before summarizing and reporting upstream limits.
+Coordination preserves evidence when the workspace is unchanged. End-to-end
+model efficiency remains under evaluation.
+[Source reading](docs/GITHUB-SOURCE-READER.md) · [Artifacts](docs/ARTIFACT-JSON-SELECTION.md).
+
 Terminal turns accept --input-token-budget (4096–200000), or
 FAUSTUS_RUN_INPUT_TOKEN_BUDGET, for an estimated per-turn context budget.
 A project chat can select a vetted task subdirectory with --workspace for

@@ -1,5 +1,15 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Investigación de fuentes y evidencia — 29-10-2026, #1739/#1745/#1750/#1755
+
+read_artifact permite seleccionar filas JSON exactas y consultar una aparición concreta con su contexto; mantiene los tipos, el orden y el alcance del propietario. Las operaciones de coordinación que sólo registran actividad conservan la evidencia vigente del workspace. reach_read admite archivos UTF-8 y directorios de GitHub a una ref explícita; conserva el texto recibido para consultarlo como artefacto, en lugar de perder el final al resumirlo. Un listado que alcanza el límite de 1.000 entradas queda marcado como truncado. Son capacidades del producto y del catálogo normal de herramientas.
+
+[Selección JSON](docs/ARTIFACT-JSON-SELECTION.md), [apariciones y contexto](docs/ARTIFACT-QUERY-OCCURRENCE.md), [evidencia y coordinación](docs/CONTRACT-COORDINATION-EVIDENCE.md) y [fuentes GitHub](docs/GITHUB-SOURCE-READER.md) detallan su contrato y límites. Las capacidades pasan sus pruebas y tienen revisión independiente. El ensayo 1745 empleó 295,75 s y 12 herramientas; el 1750, 577,37 s y 46. El backend 1755 encontró el conversor real en dos peticiones y 1,562 s, una medida distinta del turno del modelo.
+
+El ensayo nativo 1755 sobre Ruta 203 produjo tres tablas útiles y distinguió sus movimientos explícitos de los generados; Root contrastó las seis filas con las fuentes. Tardó 774,05 s de CLI, con 57 herramientas y 40 rondas. Publicó una confusión entre dos miembros y combate doble, corregida después en el Ágora; los ordinales numéricos de los entrenadores siguen pendientes. Se acepta el informe corregido como apoyo supervisado. La eficiencia y fiabilidad completas siguen sin satisfacer el objetivo: no se atribuye un factor global ni ahorro de facturación.
+
+HoardDex 360 entrega las tres variantes por inicial del primer rival de Platino US, con movimientos generados, huecos y objetos propios. Web Main, 685 pruebas TS y 23 CJS y 37 herramientas con 1.236 llamadas MCP pasan; APK x86 final instalado y probado en Android Studio visible. ARM64 está compilado, sin teléfono físico. Guía global: 491 equipos, 893 contextos y 972 fuentes; otros entrenadores y la paridad siguen pendientes. Entrega cerrada en Silver 1749; investigación 1747 continúa.
+
 ## Control de diseño, bloqueos del bucle de eventos y presets — 29-10-2026, #1695/#1725/#1723/#1741
 
 **Control de diseño en dos niveles (#1695).** Con «Control de diseño» activado en Ajustes del proyecto
