@@ -2499,6 +2499,17 @@ async def _startup_event():
         except BaseException as e:
             logger.warning(f"Built-in MCP registration failed (non-critical): {type(e).__name__}: {e}")
         try:
+            # Connectors made from a preset follow it before they connect: a
+            # manifest that changed since they were created must not leave the
+            # old bridge starting (src/connector_migration.py).
+            from src import connector_migration
+            _moved = await connector_migration.migrate_connectors(mcp_manager)
+            if _moved:
+                logger.info("[connectors] startup migration: %s",
+                            ", ".join(f"{m['preset_id']}:{m['status']}" for m in _moved))
+        except Exception as e:  # noqa: BLE001 - a failed migration never blocks the connections
+            logger.warning(f"Connector migration skipped: {type(e).__name__}: {e}")
+        try:
             await mcp_manager.connect_all_enabled()
         except asyncio.TimeoutError:
             logger.warning("User MCP startup timed out (non-critical)")

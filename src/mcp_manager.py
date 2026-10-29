@@ -84,6 +84,8 @@ def _tool_timeout_s(tool: Optional[Dict]) -> Optional[float]:
 
 # How long disconnect waits for the owner task to tear a server down.
 _MCP_CLOSE_TIMEOUT_S = 15.0
+#: Second, longer attempt at a local server that timed out when Faustus started.
+_STARTUP_RETRY_TIMEOUT_S = 60.0
 
 # Browser tool results that carry the page's accessibility snapshot. Their
 # text is bounded by the `browser_snapshot_max_chars` setting (issue: a full
@@ -1620,7 +1622,7 @@ class McpManager:
             servers = db.query(McpServer).filter(McpServer.is_enabled == True).all()
 
             tasks = [
-                asyncio.create_task(self._connect_with_timeout(srv))
+                asyncio.create_task(self._connect_at_startup(srv))
                 for srv in servers
             ]
 
@@ -1629,7 +1631,23 @@ class McpManager:
             db.close()
 
 
-    async def _connect_with_timeout(self, srv, *, _oauth_provider: Any = None):
+    async def _connect_at_startup(self, srv):
+        """First connection of a server when Faustus starts.
+
+        A local (stdio) server that is slow only because the machine is busy
+        starting everything at once (a cold `node`, antivirus scanning the
+        script) used to be given up on after 20 seconds and stay off until
+        somebody noticed. It gets one more, longer attempt: the first one has
+        warmed the file cache, so the second usually connects. Remote
+        servers keep the single short attempt.
+        """
+        await self._connect_with_timeout(srv)
+        conn = self._connections.get(srv.id)
+        if srv.transport == "stdio" and isinstance(conn, dict) and conn.get("status") == "timeout":
+            logger.info("Retrying %s after a slow start (%ss)", srv.name, _STARTUP_RETRY_TIMEOUT_S)
+            await self._connect_with_timeout(srv, timeout=_STARTUP_RETRY_TIMEOUT_S)
+
+    async def _connect_with_timeout(self, srv, *, _oauth_provider: Any = None, timeout: float = 20):
         args = json.loads(srv.args) if srv.args else []
         env = json.loads(srv.env) if srv.env else {}
 
@@ -1646,13 +1664,13 @@ class McpManager:
                     inherit_env=server_inherits_env(srv),
                     **({"_oauth_provider": _oauth_provider} if _oauth_provider is not None else {}),
                 ),
-                timeout=20,
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             logger.warning("Timed out connecting to %s", srv.name)
             self._connections[srv.id] = {
                 "status": "timeout",
-                "error": f"Timed out after 20 seconds",
+                "error": f"Timed out after {timeout:g} seconds",
                 "name": srv.name,
             }
 

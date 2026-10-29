@@ -32,7 +32,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 
 from core.database import McpServer, SessionLocal
 from core.middleware import require_admin, require_human
-from src import connector_discovery, connector_sidecar, connector_status, connectors, launch_profiles
+from src import (connector_discovery, connector_migration, connector_sidecar, connector_status,
+                 connectors, launch_profiles)
 from src.mcp_manager import McpManager, server_inherits_env
 from routes.mcp.mcp_routes import setup_mcp_routes
 
@@ -185,6 +186,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             "server": _server_summary(server, mcp_manager) if server else None,
             "status": status,
             "relocated_from": entry.get("relocated_from"),
+            "migrations": entry.get("migrations") or [],
         }
 
     @router.get("/api/app-connectors/discover")
@@ -247,6 +249,15 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             "name": body.get("name"), "launch_profile_id": body.get("launch_profile_id"),
         })
 
+    @router.post("/api/app-connectors/migrate")
+    async def migrate_route(request: Request):
+        """Bring every connector up to its preset's current definition (the
+        same pass that runs at startup): a server row that still launches an
+        older bridge is rewritten, the user's values are kept, and each change
+        is recorded on the connector. `blocked` rows say what is missing."""
+        require_admin(request)
+        return {"migrated": await connector_migration.migrate_connectors(mcp_manager)}
+
     @router.get("/api/app-connectors/presets")
     def get_presets(request: Request):
         require_admin(request)
@@ -256,6 +267,13 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
     async def list_connectors_route(request: Request, check: int = 0):
         require_admin(request)
         force_check = bool(check)
+        if force_check:
+            # A refresh is also when a connector still on an older bridge
+            # catches up with its preset (e.g. the app was off at startup).
+            try:
+                await connector_migration.migrate_connectors(mcp_manager)
+            except Exception as exc:  # noqa: BLE001 - listing never fails over a migration
+                logger.debug("[connectors] migration on refresh skipped: %s", exc)
         entries = connector_sidecar.list_connectors(redact=True)
         db = SessionLocal()
         try:
