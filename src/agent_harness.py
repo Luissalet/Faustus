@@ -1207,7 +1207,7 @@ _REFERENCE_CUE_RE = re.compile(
     r"partiendo\s+de\s+(?:(?:los\s+)?datos|(?:el\s+)?(?:fichero|archivo)|"
     r"(?:la\s+)?(?:gu[ií]a|fuente)|[`*_\"']*[\w@./\\-]+\.\w)|"
     r"from\s+(?:the\s+)?(?:real\s+)?(?:data|datos)(?:\s+(?:in|de|of))?|"
-    r"(?:en|in)\s+(?:el|un|the|a)\s+(?:post|mensaje|comentario|message|comment|respuesta|answer)(?=\s*:)|"
+    r"(?:en|in)\s+(?:el|un|la|una|the|a)\s+(?:post|mensaje|comentario|message|comment|respuesta|answer)(?=\s*:)|"
     r"using|based\s+on|according\s+to|defined\s+in|declared\s+in|located\s+in|"
     r"imported\s+from|"
     r"which\s+(?:uses|imports|calls|reads|is|lives|contains|depends)|"

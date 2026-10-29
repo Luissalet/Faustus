@@ -58,3 +58,9 @@ def test_published_content_references_and_real_edits_are_distinct():
     assert h.find_claimed_paths("Incluido en el post: el índice de generated/trainers.txt; he modificado cart.py.")==["cart.py"]
     assert h.find_claimed_paths("Added in the message: results from source.txt. I updated result.py.")==["result.py"]
     assert h.find_claimed_paths("He incluido la función en post.md.")==["post.md"]
+
+@pytest.mark.parametrize("article",["la","una"])
+def test_published_response_reference_does_not_claim_file_edits(article):
+    assert h.find_claimed_paths(f"Incluido en {article} respuesta: el índice pertenece a generated/trainers.txt.")==[]
+    assert h.find_claimed_paths(f"Incluido en {article} respuesta: el índice pertenece a generated/trainers.txt; he modificado module.py.")==["module.py"]
+    assert h.find_claimed_paths("He incluido la función en post.md.")==["post.md"]
