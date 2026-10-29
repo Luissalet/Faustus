@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "id": "tantalus",
-  "name": "Tantalus's Hoard",
-  "purpose": "A local product watcher: restocks, price drops, pre-orders and new SKUs at retailers (typed events with a confidence score, revalidation and cooldown), shop-by-shop stock (chains such as Carrefour included) and release days of trading-card products from public stock aggregators, second-hand finds on Wallapop and Facebook Marketplace scored by explainable packs, material news from official pages, feeds and searches, and the sale mails of game stores and book retailers read (read-only) from the Faustus mailbox and matched to wishlists and watchers, plus a mail noise report, with a dashboard of what is new and notifications by Windows toast, the family bus, ntfy, Telegram or email.",
+  "name": "Tantalus's Hoard · Hermes",
+  "purpose": "Absorbed by Hermes's Hoard. Compatibility identity only; no standalone server. A local product watcher: restocks, price drops, pre-orders and new SKUs at retailers (typed events with a confidence score, revalidation and cooldown), shop-by-shop stock (chains such as Carrefour included) and release days of trading-card products from public stock aggregators, second-hand finds on Wallapop and Facebook Marketplace scored by explainable packs, material news from official pages, feeds and searches, and the sale mails of game stores and book retailers read (read-only) from the Faustus mailbox and matched to wishlists and watchers, plus a mail noise report, with a dashboard of what is new and notifications by Windows toast, the family bus, ntfy, Telegram or email.",
   "capabilities": [
     "restock-watch",
     "price-tracking",
@@ -54,23 +54,24 @@
     "budget-in-alerts"
   ],
   "placeholders": [
-    "TANTALUS_DIR",
+    "HERMES_DIR",
     "APP_URL",
     "TOKEN_FILE",
     "PYTHON"
   ],
   "defaults": {
-    "APP_URL": "http://127.0.0.1:5197",
-    "TOKEN_FILE": "{TANTALUS_DIR}/data/mcp-token",
-    "PYTHON": "{TANTALUS_DIR}/venv/Scripts/python.exe"
+    "APP_URL": "http://127.0.0.1:5221/products",
+    "TOKEN_FILE": "{HERMES_DIR}/data/native/products/data/mcp-token",
+    "PYTHON": "{HERMES_DIR}/.venv/Scripts/python.exe",
+    "DATA_DIR": "{HERMES_DIR}/data/native/products/data"
   },
   "app": {
-    "url_default": "http://127.0.0.1:5197",
-    "ui_url": "{APP_URL}",
+    "url_default": "http://127.0.0.1:5221/products",
+    "ui_url": "http://127.0.0.1:5221/",
     "health": {
       "path": "/api/health",
       "expect": {
-        "service": "tantalus-hoard"
+        "service": "absorbed-tantalus"
       }
     },
     "identify": {
@@ -81,42 +82,38 @@
         "tantalus's hoard",
         "vigilante de productos"
       ]
-    },
-    "launch_hint": {
-      "kind": "process",
-      "executable": "{PYTHON}",
-      "argv": [
-        "-m",
-        "tantalus_hoard"
-      ],
-      "cwd": "{TANTALUS_DIR}",
-      "env": {
-        "PORT_STRICT": "1",
-        "TANTALUS_PORT": "5197"
-      },
-      "readiness": {
-        "url": "{APP_URL}/api/health",
-        "timeout_s": 30
-      }
     }
   },
   "mcp": {
     "transport": "stdio",
     "command": "{PYTHON}",
     "args": [
-      "{TANTALUS_DIR}/mcp_server.py"
+      "{HERMES_DIR}/compatibility/mcp_server.py"
     ],
     "env": {
-      "TANTALUS_URL": "{APP_URL}",
-      "TANTALUS_TOKEN_FILE": "{TOKEN_FILE}"
+      "HOARD_COMPAT_ID": "tantalus",
+      "HOARD_COMPAT_URL": "http://127.0.0.1:5221"
     },
-    "optional_env": [
-      "TANTALUS_BRIDGE_AUTOSTART",
-      "TANTALUS_DATA_DIR"
-    ]
+    "optional_env": []
   },
-  "notes": "Keep the app running (python -m tantalus_hoard): its scheduler does the checks and sends the notifications; the MCP bridge proxies every call to the local server, never opens the database, and starts the app when it is not answering. Page text from retailers is untrusted data. Sites behind CAPTCHA or login are reported as needs_human and never bypassed. mail_deals, mail_deals_scan and mail_noise_report read the Faustus mailbox through a read-only reader that runs under Faustus's Python (nothing is sent, moved, flagged, unsubscribed or deleted; mail links are never opened; the first scan is quiet); watcher_create/update, target_add/update, candidate_accept, mail_deal_set, settings_set and secret_set write to the local store; deletes need confirm:true and only when the user asks. Through the family hub: alerts go out as one hub notification (notify.via), sale mails can be read from the hub's mail gateway (mail.source; the noise report keeps its own read-only reader), release days answer GET /api/family/agenda, watchers_match_purchase / watcher_mark_bought / watcher_add serve purchases and gift ideas, and a watcher's budget_category adds Ledger's remaining budget to its alerts.",
+  "notes": "Native compatibility identity owned by Hermes's Hoard. Data, tokens and all runtime files belong to the merged application. No retired repository is required. Start the owner explicitly and enable its module.",
   "x-family": {
-    "agenda": true
+    "copilot": {
+      "contract_version": "1.0",
+      "info": "/api/copilot/info",
+      "panel": "/api/copilot/panel.js",
+      "proxy": "/api/copilot/proxy"
+    },
+    "fleet": true,
+    "agenda": true,
+    "absorbed_by": {
+      "id": "hermes",
+      "repository": "https://github.com/Luissalet/HermesHoard",
+      "module": "products",
+      "standalone": false
+    },
+    "standalone": false,
+    "compatibility": true,
+    "source_data": "Moved into the merged application; no dependency on the retired repository."
   }
 }

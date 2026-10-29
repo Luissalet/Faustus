@@ -796,3 +796,116 @@ async def test_generic_server_refresh_route(routes, db, manager, bridge_dir):
     manager._connections[sid] = {"status": "connected", "name": "x", "tool_count": 0}
     result = await route(server_id=sid, request=FakeRequest())
     assert result["ok"] and result["added"] == ["a"]
+
+
+# ── 29-10: the connector list must answer in seconds ─────────────────────────
+
+async def _two_unreachable_connectors(routes, bridge_dir):
+    ids = []
+    for port in (1, 2):   # nothing listens on :1 or :2
+        body = {"preset_id": "jobhunter",
+                "values": {"JOBHUNT_DIR": bridge_dir, "APP_URL": f"http://127.0.0.1:{port}"}}
+        ids.append((await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body)))["id"])
+    return ids
+
+
+async def test_forced_refresh_does_not_look_for_the_app_of_a_disabled_connector(routes, db, bridge_dir, monkeypatch):
+    """Seen live: 36 connectors, almost all switched off, and `?check=1` took
+    55 s (504): every off connector probed its app and then scanned the whole
+    machine for it. A disabled connector reports "disabled" whatever its app
+    does, so it neither probes nor follows."""
+    from src import connector_discovery
+    first, second = await _two_unreachable_connectors(routes, bridge_dir)
+    await routes[("PATCH", "/api/app-connectors/{connector_id}")](
+        connector_id=second, request=FakeRequest(body={"is_enabled": False}))
+    searched = []
+
+    async def fake_find_app(preset, *, current_url="", ports=None):
+        searched.append(current_url)
+        return None
+
+    monkeypatch.setattr(connector_discovery, "find_app", fake_find_app)
+    out = await routes[("GET", "/api/app-connectors")](request=FakeRequest(), check=1)
+    by_id = {row["id"]: row for row in out if row["id"]}
+    assert by_id[second]["status"]["state"] == "disabled"
+    assert by_id[first]["status"]["state"] == "app_off"
+    assert searched == ["http://127.0.0.1:1"], searched
+
+
+async def test_forced_refresh_answers_within_its_budget_while_the_search_goes_on(routes, db, bridge_dir, monkeypatch):
+    """A search for moved apps that is slow (a loaded machine) must not hold
+    the listing past the server's 45 s: it answers with what it has, and the
+    search carries on in the background."""
+    import time
+    from src import connector_discovery
+    await _two_unreachable_connectors(routes, bridge_dir)
+    monkeypatch.setattr(connector_routes, "FOLLOW_BUDGET_S", 0.3)
+    release = asyncio.Event()
+    started = []
+
+    async def slow_find_app(preset, *, current_url="", ports=None):
+        started.append(current_url)
+        await release.wait()
+        return None
+
+    monkeypatch.setattr(connector_discovery, "find_app", slow_find_app)
+    t0 = time.monotonic()
+    out = await routes[("GET", "/api/app-connectors")](request=FakeRequest(), check=1)
+    assert time.monotonic() - t0 < 3.0
+    assert sorted(row["status"]["state"] for row in out if row["id"]) == ["app_off", "app_off"]
+    assert len(started) == 2
+    # A second refresh while the search runs joins it instead of starting another.
+    await routes[("GET", "/api/app-connectors")](request=FakeRequest(), check=1)
+    assert len(started) == 2
+    release.set()
+    await asyncio.sleep(0.1)
+
+
+async def test_find_app_shares_one_reading_of_the_listening_ports(monkeypatch):
+    """Each switched-off connector used to read every listener's working
+    directory on its own (2-3 s each on Windows)."""
+    from src import connector_discovery as cd
+    reads = []
+
+    def fake_listening_ports():
+        reads.append(1)
+        return [cd.ListeningPort(port=41001)]
+
+    monkeypatch.setattr(cd, "listening_ports", fake_listening_ports)
+    cd._listing_cache.clear()
+    cd._listing_inflight.clear()
+    a, b, c = await asyncio.gather(cd.shared_listening_ports(), cd.shared_listening_ports(),
+                                   cd.shared_listening_ports())
+    assert [lp.port for lp in a] == [lp.port for lp in b] == [lp.port for lp in c] == [41001]
+    assert len(reads) == 1
+    await cd.shared_listening_ports()
+    assert len(reads) == 1, "within the TTL the reading is reused"
+    cd._listing_cache.clear()
+    await cd.shared_listening_ports()
+    assert len(reads) == 2
+    cd._listing_cache.clear()
+
+
+async def test_a_caller_that_stops_waiting_does_not_lose_the_scan(monkeypatch):
+    """The scan runs as a task of its own: a request that gave up (deadline)
+    leaves its answers in the shared probes for the next caller."""
+    from src import connector_discovery as cd
+    cd._shared_probes.clear()
+    cd._shared_inflight.clear()
+    ports = [cd.ListeningPort(port=41011)]
+    calls = []
+
+    async def slow_discover(*, ports=None, exclude=None):
+        calls.append([lp.port for lp in ports])
+        await asyncio.sleep(0.2)
+        return [cd.Candidate(port=41011, url="http://127.0.0.1:41011", pid=None, process="", cwd="",
+                             title="", health={"service": "x"}, preset_id="jobhunter",
+                             preset_name="Jobhunter", latency_ms=1, values={})]
+
+    monkeypatch.setattr(cd, "discover", slow_discover)
+    job = connectors.get_preset("jobhunter")
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(cd.find_app(job, ports=ports), timeout=0.05)
+    await asyncio.sleep(0.4)
+    assert (await cd.find_app(job, ports=ports)).port == 41011
+    assert calls == [[41011]], "the abandoned scan was reused, not repeated"

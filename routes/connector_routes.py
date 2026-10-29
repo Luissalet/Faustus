@@ -88,6 +88,12 @@ async def _plain_server_status(server: McpServer, manager: McpManager) -> Dict[s
     return {"state": "error" if reasons else "unknown", "app": app, "adapter": adapter, "reasons": reasons}
 
 
+#: How long a forced refresh of the connector list waits for apps to be found
+#: at their new port before it answers with what it has (the search goes on in
+#: the background). Far below the 45 s the server allows a request.
+FOLLOW_BUDGET_S = 8.0
+
+
 def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
     # One flat router, no `include_router` nesting: this FastAPI build wraps
     # an included sub-router's routes as an opaque `_IncludedRouter` (its own
@@ -172,6 +178,41 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         updated = dict(updated)
         updated["relocated_from"] = resolved["app_url"]
         return updated
+
+    # connector id -> the follow that is running for it. A follow outlives the
+    # request that started it (see `_follow_within`), so a second refresh joins
+    # it instead of starting another scan of the machine.
+    _following: Dict[str, "asyncio.Future"] = {}
+
+    async def _follow_within(entry: Dict[str, Any], deadline: float) -> Dict[str, Any]:
+        """`_follow_app` for one connector, but never past `deadline` (a
+        monotonic time shared by the whole listing). When the deadline passes
+        the follow carries on in the background and the listing answers with
+        what it has: the connector is moved by the time of the next refresh.
+        Failures are logged, never raised: the listing does not depend on it."""
+        loop = asyncio.get_running_loop()
+        task = _following.get(entry["id"])
+        if task is None or task.done():
+            task = asyncio.ensure_future(_follow_app(entry))
+            _following[entry["id"]] = task
+
+            def _finished(t: "asyncio.Future", cid: str = entry["id"]) -> None:
+                if _following.get(cid) is t:
+                    _following.pop(cid, None)
+                if not t.cancelled() and t.exception() is not None:
+                    logger.debug("[connectors] follow of %s failed: %s", cid, t.exception())
+
+            task.add_done_callback(_finished)
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            return entry
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=remaining)
+        except asyncio.TimeoutError:
+            return entry
+        except Exception as exc:  # noqa: BLE001 - discovery is best effort
+            logger.debug("[connectors] follow of %s failed: %s", entry["id"], exc)
+            return entry
 
     def _entry_view(entry: Dict[str, Any], server: Optional[McpServer], status: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -283,12 +324,18 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             db.close()
         covered = {entry["server_id"] for entry in entries}
 
+        follow_deadline = asyncio.get_running_loop().time() + FOLLOW_BUDGET_S
+
         async def _one(entry: Dict[str, Any]) -> Dict[str, Any]:
-            if force_check:
+            srv0 = servers_by_id.get(entry["server_id"])
+            if force_check and srv0 is not None and srv0.is_enabled:
                 # A forced refresh is also when a moved app is followed
-                # (redact=False: _follow_app needs the real values).
+                # (redact=False: _follow_app needs the real values). A
+                # disabled connector reports "disabled" whatever its app is
+                # doing, so it neither probes nor looks for the app: with 36
+                # connectors, most of them off, that was the whole minute.
                 raw = connector_sidecar.get_connector(entry["id"], redact=False) or entry
-                followed = await _follow_app(raw)
+                followed = await _follow_within(raw, follow_deadline)
                 if followed.get("relocated_from"):
                     entry = {**(connector_sidecar.get_connector(entry["id"], redact=True) or entry),
                              "relocated_from": followed["relocated_from"]}

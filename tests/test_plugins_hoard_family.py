@@ -29,8 +29,6 @@ FAMILY = {
     "vitruvius": ("vitruvius-hoard", 5191, "vitruvius"),
     "midas": ("midas-hoard", 5192, "midas"),
     "cicero": ("cicero-hoard", 5194, "cicero"),
-    "tantalus": ("tantalus-hoard", 5197, "tantalus"),
-    "phileas": ("phileas-hoard", 5199, "phileas"),
     "lumiere": ("lumiere-hoard", 5198, "lumiere"),
     "kafka": ("kafka-hoard", 5200, "kafka"),
     "galton": ("galton-hoard", 5201, "galton"),
@@ -41,10 +39,21 @@ FAMILY = {
 }
 
 
+#: Hoards folded into another app. Their plugin is the owner's compatibility
+#: identity (same id, so existing connectors and names keep working): it
+#: starts the owner's bridge, lives under the owner's address and has no
+#: server of its own to launch.
+ABSORBED = {
+    # id: (service in /api/health, owner's address, first word a person would say)
+    "tantalus": ("tantalus-hoard", "http://127.0.0.1:5221/products", "tantalus"),
+    "phileas": ("phileas-hoard", "http://127.0.0.1:5221/shipments", "phileas"),
+}
+
+
 def test_the_family_ships_and_loads_clean():
     loaded = plugins.load_all()
     assert loaded.errors == [], loaded.errors
-    assert set(FAMILY) <= set(loaded.plugins)
+    assert set(FAMILY) | set(ABSORBED) <= set(loaded.plugins)
     assert "scribe" not in loaded.plugins
 
 
@@ -61,6 +70,21 @@ def test_each_member_is_recognisable_startable_and_bridged(pid):
     assert plugin.purpose, "plugins_list shows the purpose; an empty one leaves the model guessing"
 
 
+@pytest.mark.parametrize("pid", sorted(ABSORBED))
+def test_an_absorbed_member_is_recognisable_and_bridged_through_its_owner(pid):
+    service, url, _word = ABSORBED[pid]
+    plugin = plugins.get(pid)
+    assert plugin is not None
+    assert service in plugin.identify.get("service", []), plugin.identify
+    assert plugin.defaults.get("APP_URL") == url
+    assert plugin.placeholders[0] == "HERMES_DIR"
+    assert "HERMES_DIR" not in plugin.defaults, "the owner's folder is a value, never a guess"
+    assert plugin.args == ["{HERMES_DIR}/compatibility/mcp_server.py"]
+    assert plugin.env["HOARD_COMPAT_ID"] == pid
+    assert not plugin.launch_hint, "an absorbed Hoard has no server of its own to start"
+    assert plugin.purpose
+
+
 def test_the_family_ports_do_not_collide_with_each_other_or_with_the_older_plugins():
     urls = {}
     for pid, plugin in plugins.load_plugins().items():
@@ -70,9 +94,9 @@ def test_the_family_ports_do_not_collide_with_each_other_or_with_the_older_plugi
             urls[url] = pid
 
 
-@pytest.mark.parametrize("pid", sorted(FAMILY))
+@pytest.mark.parametrize("pid", sorted(set(FAMILY) | set(ABSORBED)))
 def test_a_person_can_name_each_member(pid):
-    _service, _port, word = FAMILY[pid]
+    word = (FAMILY.get(pid) or ABSORBED[pid])[2]
     named = {p.id for p in plugins.named_in(f"abre {word} y dime si responde")}
     assert pid in named
 

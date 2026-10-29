@@ -327,3 +327,54 @@ async def test_startup_does_not_retry_what_connected_or_what_is_remote(monkeypat
     await manager._connect_at_startup(SimpleNamespace(id="ok", name="a", transport="stdio"))
     await manager._connect_at_startup(SimpleNamespace(id="remote", name="b", transport="http"))
     assert calls == ["ok", "remote"]
+
+
+async def test_a_connector_whose_app_was_folded_into_another_follows_the_row(db, preset, app_dir):
+    """Seen live (29-10): two connectors whose apps were absorbed by another
+    Hoard kept values naming the deleted folder and the old port, so their
+    migration stayed blocked ("missing value for {X_DIR}") although the stored
+    server row already launched the new owner's bridge. The install folder is
+    read from that row; the old port falls back to the preset's default."""
+    gone = "C:/Apps/Retired Hoard"
+    server, entry = _make(
+        db, command="node", args=[f"{app_dir}/server/mcp.js"],
+        env={"OLD_URL": "http://127.0.0.1:5199"},
+        values={"APP_DIR": gone, "OLD_DIR": gone, "APP_URL": "http://127.0.0.1:5199"})
+    report = await connector_migration.migrate_connectors(_Manager(), finder=_no_finder)
+
+    assert [r["status"] for r in report] == ["migrated"], report
+    saved = connector_sidecar.get_connector(entry["id"], redact=False)
+    assert saved["values"] == {"APP_DIR": app_dir}      # old keys gone, old port back to the default
+    assert saved["app_url"] == "http://127.0.0.1:5181"
+    _, args, env = _row(db, server)
+    assert args == [f"{app_dir}/server/mcp.js"]
+    assert env["APP_URL_ENV"] == "http://127.0.0.1:5181"
+
+
+async def test_a_row_that_does_not_run_a_bridge_of_this_app_stays_blocked(db, preset, app_dir):
+    """The folder is only taken from a row whose script path really ends like
+    the preset's bridge: another program's arguments say nothing."""
+    server, entry = _make(db, command=OLD_COMMAND, args=OLD_ARGS, env={},
+                          values={"APP_DIR": "C:/Apps/Retired Hoard"})
+    report = await connector_migration.migrate_connectors(_Manager(), finder=_no_finder)
+    assert [r["status"] for r in report] == ["blocked"]
+    assert "APP_DIR" in " ".join(report[0]["reasons"])
+
+
+def test_a_templated_command_is_not_a_change_of_layout(preset):
+    import dataclasses
+    templated = dataclasses.replace(preset, command="{PYTHON}", defaults={**preset.defaults, "PYTHON": "x/python.exe"})
+    assert connector_migration._layout_changed(templated, "C:/venv/Scripts/python.exe", ["D:/x/server/mcp.js"]) is False
+    assert connector_migration._layout_changed(preset, "python.exe", ["D:/x/server/mcp.js"]) is True
+
+
+def test_absorbed_hoards_ship_the_owners_bridge():
+    """Phileas and Tantalus live inside Hermes's Hoard now: their presets
+    start Hermes's compatibility bridge, not a folder that no longer exists."""
+    for pid, module in (("phileas", "shipments"), ("tantalus", "products")):
+        preset = connectors.get_preset(pid)
+        assert preset.placeholders[0] == "HERMES_DIR", preset.placeholders
+        assert preset.args == ["{HERMES_DIR}/compatibility/mcp_server.py"]
+        assert preset.env["HOARD_COMPAT_ID"] == pid
+        assert preset.app_url_default == f"http://127.0.0.1:5221/{module}"
+        assert "HERMES_DIR" not in preset.defaults

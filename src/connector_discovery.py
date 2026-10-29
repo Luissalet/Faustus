@@ -408,7 +408,7 @@ async def find_app(preset: ConnectorPreset, *, current_url: str = "",
     Tries the ports nearest the preset's default first (that is where a
     "first free port from N" app lands), then everything else listening.
     Returns None when nothing on this machine fingerprints as that app."""
-    listing = ports if ports is not None else await _listening_ports_off_loop()
+    listing = ports if ports is not None else await shared_listening_ports()
     try:
         from urllib.parse import urlsplit
         base = int(urlsplit(preset.app_url_default).port or 0)
@@ -423,6 +423,39 @@ async def find_app(preset: ConnectorPreset, *, current_url: str = "",
             if cand.preset_id == preset.id:
                 return cand
     return None
+
+
+#: How long one reading of the listening ports answers every caller that asks
+#: for it. Reading every listener's working directory takes seconds on Windows
+#: and each switched-off connector used to do it on its own.
+_LISTING_TTL_S = 10.0
+_listing_cache: Dict[Any, "tuple[float, List[ListeningPort]]"] = {}
+_listing_inflight: Dict[Any, "asyncio.Future"] = {}
+
+
+async def shared_listening_ports() -> List[ListeningPort]:
+    """`listening_ports()` on a worker thread, shared: concurrent callers wait
+    for one reading and callers within `_LISTING_TTL_S` reuse it. The reading
+    runs as a task of its own, so a caller that gives up waiting (a request
+    with a deadline) does not throw the work away."""
+    loop = asyncio.get_running_loop()
+    key = (id(loop), id(listening_ports))
+    hit = _listing_cache.get(key)
+    if hit is not None and time.monotonic() - hit[0] < _LISTING_TTL_S:
+        return list(hit[1])
+    fut = _listing_inflight.get(key)
+    if fut is None or fut.done():
+        async def _read() -> List[ListeningPort]:
+            try:
+                got = await _listening_ports_off_loop()
+                _listing_cache[key] = (time.monotonic(), got)
+                return got
+            finally:
+                _listing_inflight.pop(key, None)
+
+        fut = asyncio.ensure_future(_read())
+        _listing_inflight[key] = fut
+    return list(await asyncio.shield(fut))
 
 
 #: How long one port's probe answers every `find_app` that asks. A forced
@@ -460,22 +493,34 @@ async def _shared_discover(group: List[ListeningPort]) -> List[Candidate]:
         fut = loop.create_future()
         _shared_inflight[(loop_key, lp.port)] = fut
         mine[lp.port] = fut
-    try:
-        fresh = await discover(ports=todo) if todo else []
-    except BaseException:
+
+    async def _scan() -> List[Candidate]:
+        try:
+            got = await discover(ports=todo)
+        except BaseException:
+            for port, fut in mine.items():
+                _shared_inflight.pop((loop_key, port), None)
+                if not fut.done():
+                    fut.set_result(None)
+            raise
+        by_port = {c.port: c for c in got}
+        stamp = time.monotonic()
         for port, fut in mine.items():
+            cand = by_port.get(port)
+            _shared_probes[port] = (stamp, cand)
             _shared_inflight.pop((loop_key, port), None)
             if not fut.done():
-                fut.set_result(None)
-        raise
-    by_port = {c.port: c for c in fresh}
-    stamp = time.monotonic()
-    for port, fut in mine.items():
-        cand = by_port.get(port)
-        _shared_probes[port] = (stamp, cand)
-        _shared_inflight.pop((loop_key, port), None)
-        if not fut.done():
-            fut.set_result(cand)
+                fut.set_result(cand)
+        return got
+
+    fresh: List[Candidate] = []
+    if todo:
+        # A task of its own: a caller that stops waiting (a request with a
+        # deadline) leaves the scan running, and its answers still land in
+        # the shared probes for the next caller.
+        scan = asyncio.ensure_future(_scan())
+        scan.add_done_callback(lambda t: t.cancelled() or t.exception())
+        fresh = await asyncio.shield(scan)
     found.extend(fresh)
     for fut in waits:
         cand = await fut

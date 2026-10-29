@@ -108,7 +108,10 @@ def _layout_changed(preset: connectors.ConnectorPreset, command: Any, args: List
     folder is not a change of layout: the user's values still describe the
     same app. Names are compared without their folders because the template
     still holds placeholders."""
-    if _program(command) != _program(preset.command):
+    # A command that is itself a placeholder ("{PYTHON}") resolves to whatever
+    # interpreter the app has: comparing its name to the stored program would
+    # call every such row stale.
+    if "{" not in str(preset.command) and _program(command) != _program(preset.command):
         return True
     have = {os.path.basename(str(a).replace("\\", "/")).lower() for a in args}
     for arg in preset.args:
@@ -143,6 +146,37 @@ def _repair_values(preset: connectors.ConnectorPreset, values: Dict[str, Any],
             if upper.endswith("_DIR") and not os.path.isdir(os.path.expandvars(text)):
                 continue
         out[key] = value
+    return out
+
+
+def _dirs_from_server(preset: connectors.ConnectorPreset, values: Dict[str, Any],
+                      old_args: List[Any]) -> Dict[str, str]:
+    """Install directories the stored server row already knows.
+
+    A preset's bridge is ``{X_DIR}/some/script``. When the row launches a
+    script whose path ends the same way and the folder in front of it exists,
+    that folder is `X_DIR`, whether or not the app is running. It is how a
+    connector whose app was folded into another one (the row already starts
+    the new owner's bridge, but the stored values still name the old,
+    deleted folder) finds the folder of the app that took over without
+    asking anybody. Only placeholders that are still missing are filled."""
+    out: Dict[str, str] = {}
+    key = connectors._dir_placeholder(preset)
+    if not key or not _blank(values.get(key)) and os.path.isdir(os.path.expandvars(str(values.get(key)))):
+        return out
+    for index, template in enumerate(preset.args):
+        template = str(template)
+        marker = "{" + key + "}"
+        if marker not in template or index >= len(old_args):
+            continue
+        rel = template.replace(marker, "").replace("\\", "/").lstrip("/")
+        have = str(old_args[index]).replace("\\", "/")
+        if not rel or not have.lower().endswith("/" + rel.lower()):
+            continue
+        folder = str(old_args[index])[: len(have) - len(rel) - 1].rstrip("/\\")
+        if folder and os.path.isdir(folder):
+            out[key] = folder
+            break
     return out
 
 
@@ -195,6 +229,10 @@ async def _complete_values(preset: connectors.ConnectorPreset, values: Dict[str,
         logger.debug("[connector-migration] discovery failed for %s: %s", preset.id, exc)
         found = None
     if found is None:
+        if needs_url:
+            # Nothing answers as this app and the stored URL belonged to the
+            # old layout: the preset's own default is the better guess.
+            return {k: v for k, v in values.items() if k != "APP_URL"}
         return values
     merged = dict(values)
     for key, value in (getattr(found, "values", None) or {}).items():
@@ -308,6 +346,16 @@ async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
     stored = dict(entry.get("values") or {})
     layout_changed = _layout_changed(preset, old_command, old_args)
     values = _repair_values(preset, stored, layout_changed=layout_changed)
+    if not connectors.resolve_preset_values(preset, values)["ok"]:
+        adopted = _dirs_from_server(preset, values, old_args)
+        if adopted:
+            values = {**values, **adopted}
+            # The row runs another folder's bridge than the values say: what
+            # else the values hold (a port, a data folder) is from the old app.
+            layout_changed = True
+    if layout_changed:
+        values = {k: v for k, v in values.items()
+                  if k in preset.placeholders or k in preset.optional_extra_env}
     if layout_changed or not connectors.resolve_preset_values(preset, values)["ok"]:
         values = await _complete_values(preset, values, layout_changed=layout_changed, finder=finder)
     resolved = connectors.resolve_preset_values(preset, values)
