@@ -36,6 +36,8 @@ that run's own X-Odysseus-Run-Id, and the summary's `cancel` record repeats
 what the app answered: `stopped` is true only when it confirmed. With no run
 identity known, no stop is requested and `reason` says `run_id_unknown`; the
 CLI never claims a run it did not see stopped.
+Cancellation has a separate, bounded two-second cleanup allowance. A setup
+request already sent at expiry may have an unknown outcome; it is not retried.
 
 Exit codes: 0 answered, 1 error, 2 stopped on an approval, 3 timed out.
 
@@ -49,6 +51,7 @@ from __future__ import annotations
 import argparse
 import http.cookiejar
 import json
+import math
 import os
 import queue
 import re
@@ -59,7 +62,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 EXIT_OK, EXIT_ERROR, EXIT_APPROVAL, EXIT_TIMEOUT = 0, 1, 2, 3
 
@@ -71,6 +74,41 @@ TOOL_EVENTS = {"tool_start", "tool_output", "tool_progress", "ask_user", "harnes
 
 class DeadlineExceeded(TimeoutError):
     """The run's whole budget ran out while its stream was still open."""
+
+
+def _within_deadline(call: Callable[[], Any], deadline: float,
+                     close_late: Optional[Callable[[Any], None]] = None) -> Any:
+    """Bound an HTTP operation even if its peer keeps trickling bytes.
+
+    Socket timeouts are idle limits. Daemon readers do not hold CLI exit open;
+    a late stream response is closed, never retried or mistaken for a run we
+    observed. A request already sent can have an unknown server-side outcome.
+    """
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise DeadlineExceeded("the run deadline expired")
+    results: "queue.Queue" = queue.Queue(maxsize=1)
+
+    def read() -> None:
+        try:
+            results.put((True, call()))
+        except BaseException as exc:
+            results.put((False, exc))
+
+    threading.Thread(target=read, name="faustus-run-http", daemon=True).start()
+    try:
+        ok, value = results.get(timeout=max(0, deadline - time.monotonic()))
+    except queue.Empty:
+        if close_late:
+            def discard() -> None:
+                ok, value = results.get()
+                if ok:
+                    close_late(value)
+            threading.Thread(target=discard, name="faustus-run-late-response", daemon=True).start()
+        raise DeadlineExceeded("the run deadline expired; an in-flight request may have completed") from None
+    if not ok:
+        raise value
+    return value
 
 
 class TurnStream:
@@ -86,6 +124,7 @@ class TurnStream:
         self._response = response
         self._deadline = deadline
         self._events: "queue.Queue" = queue.Queue()
+        self._closed = threading.Event()
         #: the run this response streams, as the app named it; the fencing
         #: token a stop for this leg must carry.
         self.run_id: Optional[str] = response.headers.get("X-Odysseus-Run-Id") or None
@@ -94,6 +133,8 @@ class TurnStream:
     def _pump(self) -> None:
         try:
             for raw in self._response:
+                if self._closed.is_set():
+                    return
                 line = raw.decode("utf-8", "replace").strip()
                 if not line.startswith("data:"):
                     continue
@@ -109,6 +150,8 @@ class TurnStream:
             self._events.put(("end", None))
         except BaseException as exc:  # noqa: BLE001 - the caller decides what it means
             self._events.put(("error", exc))
+        finally:
+            self._response.close()
 
     def events(self) -> Iterable[Dict[str, Any]]:
         while True:
@@ -129,16 +172,22 @@ class TurnStream:
     def close(self) -> None:
         """Let go of the response. The app detaches a run from its stream, so
         this alone stops nothing: `cancel_run` is what asks for that."""
-        try:
-            self._response.close()
-        except Exception:  # noqa: BLE001 - the reader thread may be inside it
-            pass
+        self._closed.set()
+        # HTTPResponse.close takes the reader's lock. A partial line that keeps
+        # trickling can otherwise block cancellation indefinitely on that lock.
+        def release() -> None:
+            try:
+                self._response.close()
+            except Exception:
+                pass
+        threading.Thread(target=release, name="faustus-run-close", daemon=True).start()
 
 
 class Client:
     def __init__(self, base: str, user: Optional[str] = None, password: Optional[str] = None,
-                 token: Optional[str] = None):
+                 token: Optional[str] = None, deadline: Optional[float] = None):
         self.base = base.rstrip("/")
+        self.deadline = deadline
         self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         if token:
             # An API token with the `sessions` scope (Settings › API tokens):
@@ -148,15 +197,20 @@ class Client:
             self.post_json("/api/auth/login", {"username": user, "password": password or ""})
 
     def post_json(self, path: str, body: Dict[str, Any], timeout: float = 30,
-                  headers: Optional[Dict[str, str]] = None) -> Any:
+                  headers: Optional[Dict[str, str]] = None, deadline: Optional[float] = None) -> Any:
         req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(), method="POST",
                                      headers={"Content-Type": "application/json", **(headers or {})})
-        with self._opener.open(req, timeout=timeout) as r:
-            return _json_or_raw(r.read())
+        return self._request_json(req, timeout, deadline)
+
+    def _request_json(self, req: Any, timeout: float, deadline: Optional[float] = None) -> Any:
+        end = deadline if deadline is not None else self.deadline
+        def read() -> Any:
+            with self._opener.open(req, timeout=timeout) as response:
+                return _json_or_raw(response.read())
+        return read() if end is None else _within_deadline(read, end)
 
     def get_json(self, path: str, timeout: float = 30) -> Any:
-        with self._opener.open(urllib.request.Request(self.base + path), timeout=timeout) as r:
-            return _json_or_raw(r.read())
+        return self._request_json(urllib.request.Request(self.base + path), timeout)
 
     def default_route(self) -> Dict[str, str]:
         """The app's default chat model as the composer would send it: a new
@@ -175,28 +229,29 @@ class Client:
                 if model in [str(m) for m in (item.get("models") or [])] and (
                         not wanted or str(item.get("endpoint_id") or "") == wanted):
                     return {"model": model, "endpoint_url": str(item.get("url") or "")}
+        except DeadlineExceeded:
+            raise
         except Exception:  # noqa: BLE001 - the server then says what is missing
             return {}
         return {}
 
     def post_form(self, path: str, form: Dict[str, Any], timeout: float = 30) -> Any:
         body = urllib.parse.urlencode({k: v for k, v in form.items() if v is not None}).encode()
-        with self._opener.open(urllib.request.Request(self.base + path, data=body, method="POST"),
-                               timeout=timeout) as r:
-            return _json_or_raw(r.read())
+        return self._request_json(urllib.request.Request(self.base + path, data=body, method="POST"), timeout)
 
     def put_json(self, path: str, body: Dict[str, Any], timeout: float = 30) -> Any:
         req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(), method="PUT",
                                      headers={"Content-Type": "application/json"})
-        with self._opener.open(req, timeout=timeout) as r:
-            return _json_or_raw(r.read())
+        return self._request_json(req, timeout)
 
     def open_stream(self, form: Dict[str, Any], timeout: float, deadline: float) -> TurnStream:
         """Start one leg; `timeout` bounds opening it, `deadline` (monotonic)
         bounds reading it."""
         body = urllib.parse.urlencode({k: v for k, v in form.items() if v is not None}).encode()
         req = urllib.request.Request(self.base + "/api/chat_stream", data=body, method="POST")
-        return TurnStream(self._opener.open(req, timeout=timeout), deadline)
+        response = _within_deadline(lambda: self._opener.open(req, timeout=timeout), deadline,
+                                    close_late=lambda late: late.close())
+        return TurnStream(response, deadline)
 
 
 def _json_or_raw(raw: bytes) -> Any:
@@ -446,6 +501,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--events", choices=("all", "tools", "none"), default="all",
                     help="with --json: which events to print")
     args = ap.parse_args(argv)
+    if not math.isfinite(args.timeout) or args.timeout < 0:
+        ap.error("--timeout must be a finite, non-negative number")
     args.project_warnings = []
     args.resolved_project = None
 
@@ -458,10 +515,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     # The budget is the whole run's wall clock (setup included); monotonic so a
     # clock change cannot stretch it.
     started_monotonic = time.monotonic()
+    deadline = started_monotonic + max(0.0, args.timeout)
     session = args.session
     try:
         client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
-                        os.environ.get("FAUSTUS_API_TOKEN"))
+                        os.environ.get("FAUSTUS_API_TOKEN"), deadline=deadline)
         project = select_project(client, args)
         args.resolved_project = project
         if args.agent_id and (not project or not re.fullmatch(r"faustus(?:[-_][a-z0-9][a-z0-9_-]{0,38})?", args.agent_id)):
@@ -488,8 +546,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         for warning in args.project_warnings:
             print(warning, file=sys.stderr)
         message = read_prompt(args.prompt)
+    except DeadlineExceeded as exc:
+        _emit_summary(out, args, session, Turn(), started, "timeout", str(exc),
+                      {"requested": None, "stopped": False, "reason": "run_id_unknown"})
+        return EXIT_TIMEOUT
     except (urllib.error.URLError, OSError, RuntimeError, ValueError) as exc:
-        _emit_summary(out, args, session, Turn(), started, "error", _error_text(exc))
+        _emit_summary(out, args, session, Turn(), started, "error", _error_text(exc, deadline))
         return EXIT_ERROR
 
     def base_form() -> Dict[str, Any]:
@@ -532,7 +594,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     stop = "answered"
     cancel: Optional[Dict[str, Any]] = None
     observed_run_id: Optional[str] = None
-    deadline = started_monotonic + max(0.0, args.timeout)
     try:
         for _leg in range(max(1, args.max_legs)):
             turn.approval = None
@@ -540,9 +601,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             if left <= 0:
                 stop = "timeout"
                 break
+            observed_run_id = None
             streamed = client.open_stream(form, timeout=left, deadline=deadline)
             try:
-                observed_run_id = streamed.run_id or observed_run_id
+                observed_run_id = streamed.run_id
                 for ev in streamed.events():
                     turn.feed(ev)
                     if args.json and args.events != "none":
@@ -568,7 +630,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (socket.timeout, TimeoutError):
         stop = "timeout"
     except (urllib.error.URLError, OSError) as exc:
-        turn.error = _error_text(exc)
+        turn.error = _error_text(exc, deadline)
     if turn.error and stop == "answered":
         stop = "error"
     if turn.cancelled and stop == "answered":
@@ -593,24 +655,30 @@ def cancel_run(client: "Client", session: str, run_id: Optional[str]) -> Dict[st
     """
     if not run_id:
         return {"requested": None, "stopped": False, "reason": "run_id_unknown"}
+    cleanup_deadline = time.monotonic() + 2
     try:
+        # Cancellation has its own bounded two-second cleanup allowance after
+        # the work budget. Even a busy response cannot extend that allowance.
         answer = client.post_json("/api/chat/stop/" + urllib.parse.quote(session, safe=""), {},
-                                  timeout=10, headers={"X-Odysseus-Run-Id": run_id})
+                                  timeout=2, deadline=cleanup_deadline,
+                                  headers={"X-Odysseus-Run-Id": run_id})
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        return {"requested": run_id, "stopped": False, "reason": "request_failed", "error": _error_text(exc)}
+        return {"requested": run_id, "stopped": False, "reason": "request_failed",
+                "error": _error_text(exc, cleanup_deadline)}
     if not isinstance(answer, dict):
         return {"requested": run_id, "stopped": False, "reason": "unexpected_answer"}
     return {"requested": run_id, "stopped": answer.get("stopped") is True,
             "reason": str(answer.get("reason") or ("cancelled" if answer.get("stopped") is True else "not_stopped"))}
 
 
-def _error_text(exc: BaseException) -> str:
+def _error_text(exc: BaseException, deadline: Optional[float] = None) -> str:
     """An HTTP error with the server's own sentence: "HTTP Error 400: Bad
     Request" alone does not say which parameter it refused."""
     text = str(exc)
     if isinstance(exc, urllib.error.HTTPError):
         try:
-            body = exc.read().decode("utf-8", "replace")[:800]
+            raw = exc.read() if deadline is None else _within_deadline(exc.read, deadline)
+            body = raw.decode("utf-8", "replace")[:800]
         except Exception:
             body = ""
         detail = body

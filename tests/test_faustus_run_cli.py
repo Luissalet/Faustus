@@ -1,6 +1,8 @@
 """scripts/faustus_run.py: a headless turn against a stand-in server."""
 import io
 import json
+import os
+import subprocess
 import sys
 import threading
 import time
@@ -445,6 +447,8 @@ class _Live(BaseHTTPRequestHandler):
     stops = []
     forms = []
     streams = 0
+    setup_delay = 0.0
+    stop_delay = 0.0
     closed = threading.Event()
 
     def log_message(self, *a):
@@ -460,6 +464,7 @@ class _Live(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         # No project/coordination catalogue here: the CLI continues without
         # inheriting one, which is the "owned chat, no project" shape.
+        _Live.closed.wait(_Live.setup_delay)
         self._answer(404, b'{"detail": "not found"}')
 
     def do_POST(self):  # noqa: N802
@@ -468,6 +473,7 @@ class _Live(BaseHTTPRequestHandler):
         if self.path.startswith("/api/chat/stop/"):
             _Live.stops.append({"path": self.path, "run_id": self.headers.get("X-Odysseus-Run-Id"),
                                "body": body})
+            _Live.closed.wait(_Live.stop_delay)
             self._answer(200, json.dumps(_Live.stop_response).encode())
             return
         if self.path == "/api/session":
@@ -485,13 +491,16 @@ class _Live(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         try:
-            if frames is not None:
+            if isinstance(frames, list):
                 self.wfile.write(_sse(frames).encode())
                 self.wfile.flush()
                 return
             until = time.monotonic() + _Live.busy_seconds
             while not _Live.closed.is_set() and time.monotonic() < until:
-                self.wfile.write(b'data: {"delta": "."}\n\n')
+                if frames == "silent":
+                    _Live.closed.wait(_Live.interval)
+                    continue
+                self.wfile.write(b'x' if frames == "drip" else b'data: {"delta": "."}\n\n')
                 self.wfile.flush()
                 time.sleep(_Live.interval)
             self.wfile.write(b"data: [DONE]\n\n")
@@ -503,6 +512,8 @@ class _Live(BaseHTTPRequestHandler):
 def _serve_live(script, run_ids=("run-live",), stop_response=None):
     _Live.script, _Live.run_ids, _Live.stop_response = list(script), list(run_ids), stop_response or {"stopped": True}
     _Live.stops, _Live.forms, _Live.streams = [], [], 0
+    _Live.setup_delay = 0.0
+    _Live.stop_delay = 0.0
     _Live.closed = threading.Event()
     srv = ThreadingHTTPServer(("127.0.0.1", 0), _Live)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -539,7 +550,7 @@ def test_a_busy_stream_cannot_outlive_the_run_budget_and_cancels_its_own_run(cap
 
 
 def test_a_silent_stream_is_also_bounded_and_cancels_the_observed_run(capsys):
-    srv, url = _serve_live([None], run_ids=["run-silent"], stop_response={"stopped": True})
+    srv, url = _serve_live(["silent"], run_ids=["run-silent"], stop_response={"stopped": True})
     started = time.monotonic()
     try:
         code = fr.main(["-p", "wait", "--url", url, "--session", "owned", "--model", "fixture",
@@ -609,3 +620,76 @@ def test_an_approval_resume_leg_is_cancelled_by_its_own_run_id(capsys):
     assert summary["session"] == "owned" and summary["stop"] == "timeout"
     assert [stop["run_id"] for stop in _Live.stops] == ["run-leg2"]
     assert summary["cancel"] == {"requested": "run-leg2", "stopped": True, "reason": "cancelled"}
+
+
+def test_partial_line_trickle_cannot_block_cleanup_or_the_exact_stop(capsys):
+    srv, url = _serve_live(["drip"], run_ids=["run-drip"])
+    try:
+        started = time.monotonic()
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.3"])
+        elapsed = time.monotonic() - started
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT and elapsed < 1.5
+    assert [s["run_id"] for s in _Live.stops] == ["run-drip"]
+    assert _summary(capsys)["cancel"]["stopped"] is True
+
+
+def test_missing_identity_on_resumed_leg_never_reuses_the_previous_leg(capsys):
+    srv, url = _serve_live([[CARD], None], run_ids=["run-first", ""])
+    try:
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--approve", "--timeout", "0.4"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT and len(_Live.forms) == 2
+    assert _Live.stops == []
+    assert _summary(capsys)["cancel"]["reason"] == "run_id_unknown"
+
+
+def test_setup_requests_are_inside_the_whole_run_budget(capsys):
+    srv, url = _serve_live([])
+    _Live.setup_delay = 1.3
+    try:
+        started = time.monotonic()
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.2"])
+        elapsed = time.monotonic() - started
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT and elapsed < 0.9
+    assert _Live.streams == 0 and _Live.stops == []
+    assert _summary(capsys)["stop"] == "timeout"
+
+
+def test_cancel_acknowledgement_timeout_remains_uncertain_and_bounded(capsys):
+    srv, url = _serve_live([None], run_ids=["run-no-ack"])
+    _Live.stop_delay = 4.0
+    try:
+        started = time.monotonic()
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.2"])
+        elapsed = time.monotonic() - started
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT and elapsed < 3.0
+    summary = _summary(capsys)
+    assert summary["cancel"]["requested"] == "run-no-ack"
+    assert summary["cancel"]["stopped"] is False
+    assert summary["cancel"]["reason"] == "request_failed"
+
+
+def test_real_cli_process_exits_on_partial_line_trickle():
+    srv, url = _serve_live(["drip"], run_ids=["run-process"])
+    env = {k: v for k, v in os.environ.items() if not k.startswith("FAUSTUS_")}
+    try:
+        result = subprocess.run([sys.executable, str(Path(fr.__file__)), "-p", "work", "--url", url,
+                                 "--session", "owned", "--model", "fixture", "--json", "--timeout", "0.3"],
+                                capture_output=True, text=True, env=env, timeout=3)
+    finally:
+        _close_live(srv)
+    assert result.returncode == fr.EXIT_TIMEOUT
+    summary = json.loads(result.stdout.strip().splitlines()[-1])
+    assert summary["elapsed_s"] < 1.5
+    assert summary["cancel"] == {"requested": "run-process", "stopped": True, "reason": "cancelled"}
