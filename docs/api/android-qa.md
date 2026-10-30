@@ -17,3 +17,11 @@ Readback evidence: D:/LocalAI/research-inbox/faustus-android-coach/PILOT1836-AUD
 ## Acceptance for the next run
 
 Install and retrieve the procedure, use the existing server, claim the real task and device successfully, read actual initial state, execute the requested route with sequential action/readback batching where supported, and record an honest final-state comparison. Measure total rounds and time against the baseline; a shorter answer or fewer screenshots is insufficient. Android Studio stays visible; no storage reset, installation or settings change belongs to this navigation pilot.
+
+## Second live round and retained learning
+
+On APK377 the second turn successfully claimed1836 and completed it with a verified native harness outcome, zero failed tools, and unchanged Arceus/save/1/1025/226. It used29tools and22rounds rather than35/29, but308.84seconds rather than285.48: fewer rounds did not make this run faster. Eleven UI inputs included an avoidable keyboard detour. Version1.0.1 therefore makes submit/dismiss/readback explicit and avoids the unnecessary full skills catalogue lookup.
+
+Global installation was effective: the native prompt audit selected android-emulator-qa1.0.0 atlevel1, fragment61e2fa7a5da007894c2133a06bde89732b1d6b694b6703cf7f3fe4bc380d64c2; the public skill API reportsuses1. The empty project-local list did not mean the global procedure was unavailable. No project copy or approval bypass is needed. Receipts: SKILL1835-PROMPT-RECEIPT.json and SKILL1835-AFTER-PHASE2.json.
+
+The legacy ADB uiautomator dump command returned137 twice on this emulator while the app remained healthy and the existing Android MCP element driver worked. Preserve the error and use the connected driver; do not reboot or keep retrying the legacy dumper. Raw ADB package inspection and PNG capture still worked.
