@@ -419,6 +419,13 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_checkpoint_max_file_mb", "Checkpoint file cap (MB)",
                  "Files larger than this are left out of the snapshot.",
                  1, 1000),
+            _int("agent_checkpoint_retention_days", "Checkpoint retention (days)",
+                 "Snapshots of a folder unused for this long are deleted (checked at start and daily). "
+                 "Snapshots of deleted or moved folders go at once. 0 keeps them.",
+                 0, 3650),
+            _int("agent_checkpoint_total_mb", "Checkpoint total cap (MB)",
+                 "When all snapshots together pass this, the least recently used go first. 0 = no cap.",
+                 0, 1_000_000),
         ],
     ),
     _group(

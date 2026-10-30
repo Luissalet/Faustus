@@ -756,6 +756,11 @@ DEFAULT_SETTINGS = {
     "agent_checkpoints": True,
     "agent_checkpoint_max_repo_mb": 2048,
     "agent_checkpoint_max_file_mb": 8,
+    # Retention (workspace_checkpoints.prune, at start and daily): a shadow repo
+    # whose folder is gone goes at once, one unused for N days goes, and the
+    # oldest go while data/checkpoints is over the total cap. 0 = rule off.
+    "agent_checkpoint_retention_days": 14,
+    "agent_checkpoint_total_mb": 4096,
     # Run the project's own tests after a turn that changed files
     # (src/project_tests.py): pytest / npm test / cargo / go / make, detected;
     # "related" runs only the test files that name a changed module (pytest),

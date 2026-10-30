@@ -2477,6 +2477,14 @@ async def _startup_event():
         _supervisor.spawn(run_auto_backups(), name="auto-backups")
     except Exception as _e:
         logger.warning("Failed to start automatic backups: %s", _e)
+    # Workspace checkpoints are shadow git repos under data/checkpoints; without a
+    # retention pass they only ever grow (src/workspace_checkpoints.py prune()).
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            from src.workspace_checkpoints import run_retention_loop
+            _supervisor.spawn(run_retention_loop(), name="checkpoint-retention")
+        except Exception as _e:
+            logger.warning("Failed to start checkpoint retention: %s", _e)
     # Studio image jobs the previous process submitted and never collected:
     # poll each owned receipt once more and publish what finished. Nothing is
     # resubmitted (src/prospero_images.py).

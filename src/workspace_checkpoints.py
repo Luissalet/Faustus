@@ -697,6 +697,136 @@ def reset(workspace: str) -> bool:
         return _reset_locked(root)
 
 
+# ---------------------------------------------------------------------------
+# Retention
+# ---------------------------------------------------------------------------
+
+# A shadow repo used this recently is never removed, whatever its age, size or
+# folder: a turn may be writing it right now.
+RETENTION_GRACE_S = 3600.0
+
+
+def _workspace_of(gd: str) -> Optional[str]:
+    """The workspace a shadow repo belongs to, from the marker `_ensure_repo` writes."""
+    try:
+        with open(os.path.join(gd, "ODYSSEUS_WORKSPACE"), encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def _last_used(gd: str) -> float:
+    """When a shadow repo was last written: its ref, index or log, else the folder itself."""
+    stamps = []
+    for rel in ("refs/heads/checkpoints", "index", "logs/HEAD", "HEAD", ""):
+        try:
+            stamps.append(os.path.getmtime(os.path.join(gd, rel) if rel else gd))
+        except OSError:
+            pass
+    return max(stamps) if stamps else 0.0
+
+
+def _retention_setting(key: str, default: float) -> float:
+    try:
+        return max(0.0, float(_setting(key, default) or 0))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def prune(*, now: Optional[float] = None, retention_days: Optional[float] = None,
+          total_mb: Optional[float] = None) -> Dict[str, Any]:
+    """Remove shadow repos nobody can use any more, then the oldest while the folder is over its cap.
+
+    * a repo whose workspace folder no longer exists (deleted, moved or renamed) goes at once;
+    * a repo not written for ``agent_checkpoint_retention_days`` (default 14) goes;
+    * while ``data/checkpoints`` holds more than ``agent_checkpoint_total_mb`` (default 4096),
+      the least recently used repos go first.
+
+    A repo written in the last hour, or whose workspace is busy in this process, is kept.
+    0 disables the age or the size rule. Returns what was removed and what is left.
+    """
+    base = os.path.join(_data_dir(), "checkpoints")
+    now = time.time() if now is None else float(now)
+    days = _retention_setting("agent_checkpoint_retention_days", 14) if retention_days is None else max(0.0, float(retention_days))
+    cap = _retention_setting("agent_checkpoint_total_mb", 4096) if total_mb is None else max(0.0, float(total_mb))
+    out: Dict[str, Any] = {"removed": 0, "freed_mb": 0.0, "kept": 0, "kept_mb": 0.0, "reasons": {}}
+    if not os.path.isdir(base):
+        return out
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return out
+
+    def _drop(gd: str, ws: Optional[str], size: float, reason: str) -> bool:
+        lock = _lock_for(_norm_root(ws)) if ws else None
+        if lock is not None and not lock.acquire(blocking=False):
+            return False
+        try:
+            _EXCLUDE_CACHE.pop(gd, None)
+            _INCLUDED_BYTES.pop(gd, None)
+            _rmtree_force(gd)
+        except OSError as e:
+            logger.warning("[checkpoint] retention could not remove %s: %s", gd, e)
+            return False
+        finally:
+            if lock is not None:
+                lock.release()
+        out["removed"] += 1
+        out["freed_mb"] += size
+        out["reasons"][reason] = out["reasons"].get(reason, 0) + 1
+        return True
+
+    kept = []
+    for name in names:
+        gd = os.path.join(base, name)
+        if not os.path.isdir(gd):
+            continue
+        last = _last_used(gd)
+        size = _dir_size_mb(gd)
+        ws = _workspace_of(gd)
+        reason = None
+        if now - last >= RETENTION_GRACE_S:
+            # Only when its parent folder is there: an unplugged drive or share is not a
+            # deleted folder (those repos still expire with age).
+            if ws and not os.path.isdir(ws) and os.path.isdir(os.path.dirname(ws) or ws):
+                reason = "workspace_gone"
+            elif days and now - last > days * 86400:
+                reason = "expired"
+        if reason and _drop(gd, ws, size, reason):
+            continue
+        kept.append((last, gd, ws, size))
+    if cap:
+        total = sum(k[3] for k in kept)
+        for last, gd, ws, size in sorted(kept, key=lambda k: k[0]):
+            if total <= cap:
+                break
+            if now - last < RETENTION_GRACE_S:
+                continue
+            if _drop(gd, ws, size, "over_cap"):
+                total -= size
+                kept.remove((last, gd, ws, size))
+    out["kept"] = len(kept)
+    out["kept_mb"] = round(sum(k[3] for k in kept), 1)
+    out["freed_mb"] = round(out["freed_mb"], 1)
+    if out["removed"]:
+        logger.info("[checkpoint] retention removed %d shadow repos (%.1f MB): %s; %d kept (%.1f MB)",
+                    out["removed"], out["freed_mb"], out["reasons"], out["kept"], out["kept_mb"])
+    return out
+
+
+async def run_retention_loop(first_delay_s: float = 300.0, interval_s: float = 86400.0) -> None:
+    """Background task: a retention pass shortly after start, then once a day."""
+    import asyncio
+
+    await asyncio.sleep(first_delay_s)
+    while True:
+        try:
+            await asyncio.to_thread(prune)
+        except Exception as e:  # noqa: BLE001 - retention must never take the server down
+            logger.warning("[checkpoint] retention pass failed: %s", e)
+        await asyncio.sleep(interval_s)
+
+
 def _rmtree_force(path: str) -> None:
     """rmtree that copes with git's read-only object files (Windows refuses to
     delete them with a plain rmtree: WinError 5)."""
