@@ -33,3 +33,9 @@ Faustus read all three APK377 conditions and saved their PNGs, but its closing t
 Version1.0.2 requires compact text readbacks instead of automatic full JSON trees, a fresh chat for an independent bounded test, and correct screenshot path provenance. It retains histories and revision-checked actor handoffs. Root corrected the repeated regional label in HoardDex378; those377 screenshots deliberately preserve the earlier defect.
 
 Faustus runs the local model on the configured Sparks and has no provider usage quota. Check resource availability and ownership, not usage limits. Quotas of Codex or other connected accounts are separate.
+
+## Invalid final evidence and version1.0.3
+
+The fresh1844 turn answered in35rounds/283.47seconds, but its final PNG showed Qwilfish's Collection detail instead of the evolution modal. Root opened the image and invalidated the claim, reopened thread1997 and preserved QA1844-INVALIDATED.txt. An answered turn, a saved filename and quoted condition text did not establish the final screen. Artifact retrieval also had an outcome_unknown response; it must not be relabelled success. This run does not prove satisfactory autonomous visual verification.
+
+Version1.0.3 requires a fresh final listing with the intended screen title, requested condition and source note simultaneously, plus inspection of the corresponding pixels or an explicit text-only handoff. It prohibits borrowing the expected state from the brief or an earlier observation. Root subsequently checked the real APK378 modal through ADB and restored ES/system/Arceus/Pokedex,1/1025,226. The OS font scale stayed1.0; an automatic approval rejection prevented the proposed200% check, so that native claim remains unverified. The procedure change still requires a new bounded live test; it is not itself proof that the model now follows it.

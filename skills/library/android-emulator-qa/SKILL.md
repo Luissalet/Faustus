@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.2
+version: 1.0.3
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -28,7 +28,7 @@ Use for a short, observable Android journey on an already available emulator or 
 
 7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. Opening a screenshot does not imply the model has inspected its pixels; explicitly separate a textual readback, a saved image and a visual inspection. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
 
-8. Return through observed controls and compare with the baseline. Close the modal and keyboard, follow the required destination, and read the resulting tab and preserved values. A saved item count remaining equal does not prove every filter stayed equal. If the brief intentionally ends at a different tab, describe that difference. Never manufacture the expected state by silently changing captures, favourites, saves or settings.
+8. Before declaring success, get a fresh compact listing after the last navigation. Require the intended screen/modal title, requested condition and uncertainty/source note together now. A species heading on another tab, earlier output or brief is insufficient. Capture this state and inspect its actual pixels; file creation alone proves no content. If pixels are unavailable to the model, mark text-only and checkpoint for visual review. Return via observed controls; close modal/keyboard and read the required destination, game, save, filters and counters. An unchanged count does not prove unchanged filters. State any intended difference from baseline. Never silently edit saved data or settings to manufacture restoration.
 
 9. Release ownership after the final readback and publish one concise receipt in the task's thread: installed build, route, condition actually read, input count, final state and any failures. Complete the task only when its acceptance conditions are met. A terminal model answer and an unverified harness outcome are separate facts. Preserve the failure receipt for the next improvement; avoid an extra terminal audit that merely repeats already sufficient mobile evidence.
 
