@@ -25,3 +25,11 @@ On APK377 the second turn successfully claimed1836 and completed it with a verif
 Global installation was effective: the native prompt audit selected android-emulator-qa1.0.0 atlevel1, fragment61e2fa7a5da007894c2133a06bde89732b1d6b694b6703cf7f3fe4bc380d64c2; the public skill API reportsuses1. The empty project-local list did not mean the global procedure was unavailable. No project copy or approval bypass is needed. Receipts: SKILL1835-PROMPT-RECEIPT.json and SKILL1835-AFTER-PHASE2.json.
 
 The legacy ADB uiautomator dump command returned137 twice on this emulator while the app remained healthy and the existing Android MCP element driver worked. Preserve the error and use the connected driver; do not reboot or keep retrying the legacy dumper. Raw ADB package inspection and PNG capture still worked.
+
+## Three-condition run and version1.0.2
+
+Faustus read all three APK377 conditions and saved their PNGs, but its closing turn failed after38rounds/662.65seconds with context-window overflow. The task had already closed; this is not a clean completed inference turn. Root independently inspected all three images. Save attempts to the research directory and a project temp directory were rejected; relative paths succeeded in the MCP server working directory, D:/LocalAI/Faustus, and Root moved these own outputs to the evidence folder. No foreign files were moved.
+
+Version1.0.2 requires compact text readbacks instead of automatic full JSON trees, a fresh chat for an independent bounded test, and correct screenshot path provenance. It retains histories and revision-checked actor handoffs. Root corrected the repeated regional label in HoardDex378; those377 screenshots deliberately preserve the earlier defect.
+
+Faustus runs the local model on the configured Sparks and has no provider usage quota. Check resource availability and ownership, not usage limits. Quotas of Codex or other connected accounts are separate.
