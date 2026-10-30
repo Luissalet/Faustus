@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import pytest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from http.server import ThreadingHTTPServer
 
@@ -447,6 +448,7 @@ class _Live(BaseHTTPRequestHandler):
     stops = []
     forms = []
     streams = 0
+    session_creations = []
     setup_delay = 0.0
     stop_delay = 0.0
     closed = threading.Event()
@@ -477,6 +479,7 @@ class _Live(BaseHTTPRequestHandler):
             self._answer(200, json.dumps(_Live.stop_response).encode())
             return
         if self.path == "/api/session":
+            _Live.session_creations.append(time.monotonic())
             self._answer(200, b'{"id": "s1"}')
             return
         _Live.forms.append(dict(urllib.parse.parse_qsl(body)))
@@ -512,6 +515,7 @@ class _Live(BaseHTTPRequestHandler):
 def _serve_live(script, run_ids=("run-live",), stop_response=None):
     _Live.script, _Live.run_ids, _Live.stop_response = list(script), list(run_ids), stop_response or {"stopped": True}
     _Live.stops, _Live.forms, _Live.streams = [], [], 0
+    _Live.session_creations = []
     _Live.setup_delay = 0.0
     _Live.stop_delay = 0.0
     _Live.closed = threading.Event()
@@ -693,3 +697,28 @@ def test_real_cli_process_exits_on_partial_line_trickle():
     summary = json.loads(result.stdout.strip().splitlines()[-1])
     assert summary["elapsed_s"] < 1.5
     assert summary["cancel"] == {"requested": "run-process", "stopped": True, "reason": "cancelled"}
+
+
+def test_late_setup_response_cannot_continue_to_create_a_session(capsys):
+    srv, url = _serve_live([])
+    _Live.setup_delay = 0.4
+    try:
+        code = fr.main(["-p", "work", "--url", url, "--workspace", str(Path(__file__).parent),
+                        "--model", "fixture", "--json", "--timeout", "0.08"])
+        # Observe after the slow lookup actually completed, not only at return.
+        time.sleep(0.5)
+        assert _Live.session_creations == [] and _Live.streams == 0
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT
+    assert _summary(capsys)["session"] is None
+
+
+@pytest.mark.parametrize("budget", ["nan", "inf", "-1"])
+def test_invalid_budget_never_constructs_a_client(budget, monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid input must be rejected before any HTTP client exists")
+    monkeypatch.setattr(fr, "Client", forbidden)
+    with pytest.raises(SystemExit) as result:
+        fr.main(["-p", "work", "--timeout", budget])
+    assert result.value.code == 2

@@ -91,6 +91,8 @@ def _within_deadline(call: Callable[[], Any], deadline: float,
 
     def read() -> None:
         try:
+            if time.monotonic() >= deadline:
+                raise DeadlineExceeded("the run deadline expired before dispatch")
             results.put((True, call()))
         except BaseException as exc:
             results.put((False, exc))
