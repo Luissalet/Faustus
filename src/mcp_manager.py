@@ -2041,9 +2041,11 @@ class McpManager:
         # A known catalogue is executable authority. Do not send invented
         # aliases upstream and then misreport their rejection as a lost write.
         # An empty legacy placeholder is not proof of a zero-tool discovery.
-        catalog_known = bool(self._tools.get(server_id)) or (
-            server_id in self._tools
-            and self._connections.get(server_id, {}).get("tool_count") == 0
+        connection = self._connections.get(server_id, {})
+        catalog_known = not connection.get("discovery_truncated") and (
+            bool(self._tools.get(server_id)) or (
+                server_id in self._tools and connection.get("tool_count") == 0
+            )
         )
         if catalog_known and captured_tool is None:
             return {

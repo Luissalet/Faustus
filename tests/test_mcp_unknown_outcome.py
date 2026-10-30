@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import pytest
 from types import SimpleNamespace
 
 from src.mcp_manager import McpManager
@@ -55,6 +56,25 @@ def test_known_empty_catalog_does_not_authorize_an_invented_tool():
     assert calls == []
     assert raw["effect_not_dispatched"] is True
     assert raw["exit_code"] == 1
+
+
+@pytest.mark.parametrize("first_page_empty", [False, True])
+def test_truncated_catalog_does_not_deny_a_valid_later_page_tool(first_page_empty):
+    mgr = _manager(builtin=False, readonly=False)
+    mgr._tools["srv"] = [] if first_page_empty else [{"name": "first_page_only"}]
+    mgr._connections["srv"].update(
+        tool_count=len(mgr._tools["srv"]), discovery_truncated=True,
+    )
+    calls = []
+
+    async def valid_later_page_tool(_session, name, args):
+        calls.append((name, args))
+        return {"output": "valid tool from the pending page", "exit_code": 0}
+
+    mgr._do_call = valid_later_page_tool
+    raw = asyncio.run(mgr.call_tool("mcp__srv__action", {"value": 2}))
+    assert calls == [("action", {"value": 2})]
+    assert raw["exit_code"] == 0
 
 
 def test_advertised_action_is_still_dispatched_once_with_its_arguments():
