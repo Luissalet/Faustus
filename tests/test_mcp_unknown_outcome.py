@@ -24,6 +24,53 @@ def _manager(*, builtin: bool, readonly: bool):
     return mgr
 
 
+def test_unadvertised_mobile_alias_is_denied_before_dispatch():
+    mgr = _manager(builtin=False, readonly=False)
+    calls = []
+
+    async def dispatched(_session, name, _args):
+        calls.append(name)
+        raise ConnectionError("must not send an invented tool")
+
+    mgr._do_call = dispatched
+    raw = asyncio.run(mgr.call_tool("mcp__srv__mobile_tap", {"x": 360, "y": 436}))
+    assert calls == []
+    assert raw["error_code"] == "MCP_TOOL_NOT_ADVERTISED"
+    assert raw["effect_not_dispatched"] is True
+    assert normalize_tool_result(raw).status == "failed"
+
+
+def test_known_empty_catalog_does_not_authorize_an_invented_tool():
+    mgr = _manager(builtin=False, readonly=False)
+    mgr._tools["srv"] = []
+    mgr._connections["srv"]["tool_count"] = 0
+    calls = []
+
+    async def dispatched(_session, name, _args):
+        calls.append(name)
+        return {"output": "incorrect dispatch", "exit_code": 0}
+
+    mgr._do_call = dispatched
+    raw = asyncio.run(mgr.call_tool("mcp__srv__mobile_scroll", {}))
+    assert calls == []
+    assert raw["effect_not_dispatched"] is True
+    assert raw["exit_code"] == 1
+
+
+def test_advertised_action_is_still_dispatched_once_with_its_arguments():
+    mgr = _manager(builtin=False, readonly=False)
+    calls = []
+
+    async def dispatched(_session, name, args):
+        calls.append((name, args))
+        return {"output": "sent", "exit_code": 0}
+
+    mgr._do_call = dispatched
+    raw = asyncio.run(mgr.call_tool("mcp__srv__action", {"ref": "@e42"}))
+    assert calls == [("action", {"ref": "@e42"})]
+    assert raw["exit_code"] == 0
+
+
 def test_third_party_write_lost_reply_is_unknown_and_not_replayed():
     mgr = _manager(builtin=False, readonly=False)
     calls = []

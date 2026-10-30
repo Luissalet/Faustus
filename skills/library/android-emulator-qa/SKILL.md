@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.3
+version: 1.0.4
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -10,7 +10,7 @@ source: imported
 
 ## When to Use
 
-Use for a short, observable Android journey on an already available emulator or connected device. The procedure works with the native Android MCP preset or explicitly authorized ADB. Installing this skill supplies a procedure; it neither installs a bridge nor gives permission to reset a device. Textual accessibility evidence proves labels and navigation, not visual polish.
+Use for a short Android journey on an available emulator/device through native Android MCP or authorized ADB. Installing this skill supplies a procedure, not a bridge or permission to reset a device. Accessibility text proves labels/navigation, not visual polish.
 
 ## Procedure
 
@@ -22,11 +22,11 @@ Use for a short, observable Android journey on an already available emulator or 
 
 4. Record a baseline from the screen actually observed. Include foreground package, active tab, game, save, language, search/filter state and visible collection counters. An expected baseline in a brief is an expectation, not an observation. Different tabs can display different result counts. State which return destination the brief requires and which values must remain unchanged; do not claim a previous tab's filter was restored if it was never read. Save compact evidence rather than repeating the entire device tree in the final answer.
 
-5. Prefer current element references over coordinates. After navigation or any layout change, get a new element listing before choosing the next control. A reference is scoped to that observation. A click followed by an element listing can be a sequential batch when the batch schema supports it; choose the next target only after inspecting that readback. Do not queue multiple navigations using references from one old tree. Record the action and the visible result. For mobile_batch_commands, use listElementsAtEnd=false and an explicit mobile_list_elements_on_screen with format=text; automatic full JSON trees can exhaust the model context. Typing must be followed by reading the field or its filtered results. For search, use the submit option when supported, then confirm that the keyboard no longer covers the intended result. A successful tap sent to a covered row can type into the keyboard instead of opening that row.
+5. Use advertised tools and fresh references; labelled View nodes can be actionable tabs. After navigation or any layout change, get a new element listing before choosing the next control. A reference is scoped to that observation. A click followed by an element listing can be a sequential batch when the batch schema supports it; choose the next target only after inspecting that readback. Do not queue multiple navigations using references from one old tree. Record the action and the visible result. For mobile_batch_commands, use listElementsAtEnd=false and an explicit mobile_list_elements_on_screen with format=text; automatic full JSON trees can exhaust the model context. Typing must be followed by reading the field or its filtered results. For search, use the submit option when supported, then confirm that the keyboard no longer covers the intended result. A successful tap sent to a covered row can type into the keyboard instead of opening that row.
 
 6. Keep a small action budget, normally twelve inputs for a smoke journey. If an action leaves the state unchanged, inspect focus, keyboard, a modal or scroll position before trying again. Two unsuccessful attempts at the same outcome end blind retries. Use an observed text field, a small scroll in its actual container or documented Back when appropriate. If the route remains blocked, report the last confirmed state and stop inputs. Do not reset storage or change unrelated preferences as a shortcut.
 
-7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. Opening a screenshot does not imply the model has inspected its pixels; explicitly separate a textual readback, a saved image and a visual inspection. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
+7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. For resized images, convert image coordinates to device pixels using the reported dimensions. Opening a screenshot does not imply the model has inspected its pixels; explicitly separate a textual readback, a saved image and a visual inspection. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
 
 8. Before declaring success, get a fresh compact listing after the last navigation. Require the intended screen/modal title, requested condition and uncertainty/source note together now. A species heading on another tab, earlier output or brief is insufficient. Capture this state and inspect its actual pixels; file creation alone proves no content. If pixels are unavailable to the model, mark text-only and checkpoint for visual review. Return via observed controls; close modal/keyboard and read the required destination, game, save, filters and counters. An unchanged count does not prove unchanged filters. State any intended difference from baseline. Never silently edit saved data or settings to manufacture restoration.
 
