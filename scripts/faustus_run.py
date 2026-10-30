@@ -29,6 +29,14 @@ and the summary carries the card, so a script can decide and resume it with
 --session S --resume-approval ID. With --approve every card of the run is
 approved for the task (the app's "allow for this task"), up to --max-legs.
 
+Deadline: --timeout is the whole run's wall clock, not an idle limit between
+reads — a stream that keeps sending progress or heartbeats still ends at it.
+On expiry the CLI asks the app to cancel exactly the run it was reading, by
+that run's own X-Odysseus-Run-Id, and the summary's `cancel` record repeats
+what the app answered: `stopped` is true only when it confirmed. With no run
+identity known, no stop is requested and `reason` says `run_id_unknown`; the
+CLI never claims a run it did not see stopped.
+
 Exit codes: 0 answered, 1 error, 2 stopped on an approval, 3 timed out.
 
 Environment: FAUSTUS_URL (default http://127.0.0.1:7000), FAUSTUS_API_TOKEN
@@ -42,9 +50,11 @@ import argparse
 import http.cookiejar
 import json
 import os
+import queue
 import re
 import socket
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -59,6 +69,72 @@ TOOL_EVENTS = {"tool_start", "tool_output", "tool_progress", "ask_user", "harnes
                "error", "cancelled", "metrics", "usage", "subagent", "harness_summary"}
 
 
+class DeadlineExceeded(TimeoutError):
+    """The run's whole budget ran out while its stream was still open."""
+
+
+class TurnStream:
+    """One open `/api/chat_stream` response of a leg.
+
+    Reads on a helper thread and hands the events over a queue: urllib's
+    `timeout` bounds a single socket operation, so a stream that keeps sending
+    data (or heartbeats) resets it for ever. The caller waits here against the
+    run's own absolute deadline instead, which an alive stream cannot extend.
+    """
+
+    def __init__(self, response: Any, deadline: float):
+        self._response = response
+        self._deadline = deadline
+        self._events: "queue.Queue" = queue.Queue()
+        #: the run this response streams, as the app named it; the fencing
+        #: token a stop for this leg must carry.
+        self.run_id: Optional[str] = response.headers.get("X-Odysseus-Run-Id") or None
+        threading.Thread(target=self._pump, name="faustus-run-stream", daemon=True).start()
+
+    def _pump(self) -> None:
+        try:
+            for raw in self._response:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    ev = json.loads(payload)
+                except ValueError:
+                    continue
+                if isinstance(ev, dict):
+                    self._events.put(("event", ev))
+            self._events.put(("end", None))
+        except BaseException as exc:  # noqa: BLE001 - the caller decides what it means
+            self._events.put(("error", exc))
+
+    def events(self) -> Iterable[Dict[str, Any]]:
+        while True:
+            left = self._deadline - time.monotonic()
+            if left <= 0:
+                raise DeadlineExceeded("the run deadline expired with its stream still open")
+            try:
+                kind, payload = self._events.get(timeout=left)
+            except queue.Empty:
+                raise DeadlineExceeded("the run deadline expired with its stream still open") from None
+            if kind == "event":
+                yield payload
+            elif kind == "end":
+                return
+            else:
+                raise payload
+
+    def close(self) -> None:
+        """Let go of the response. The app detaches a run from its stream, so
+        this alone stops nothing: `cancel_run` is what asks for that."""
+        try:
+            self._response.close()
+        except Exception:  # noqa: BLE001 - the reader thread may be inside it
+            pass
+
+
 class Client:
     def __init__(self, base: str, user: Optional[str] = None, password: Optional[str] = None,
                  token: Optional[str] = None):
@@ -71,9 +147,10 @@ class Client:
         elif user:
             self.post_json("/api/auth/login", {"username": user, "password": password or ""})
 
-    def post_json(self, path: str, body: Dict[str, Any], timeout: float = 30) -> Any:
+    def post_json(self, path: str, body: Dict[str, Any], timeout: float = 30,
+                  headers: Optional[Dict[str, str]] = None) -> Any:
         req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(), method="POST",
-                                     headers={"Content-Type": "application/json"})
+                                     headers={"Content-Type": "application/json", **(headers or {})})
         with self._opener.open(req, timeout=timeout) as r:
             return _json_or_raw(r.read())
 
@@ -114,23 +191,12 @@ class Client:
         with self._opener.open(req, timeout=timeout) as r:
             return _json_or_raw(r.read())
 
-    def stream(self, form: Dict[str, Any], timeout: float) -> Iterable[Dict[str, Any]]:
+    def open_stream(self, form: Dict[str, Any], timeout: float, deadline: float) -> TurnStream:
+        """Start one leg; `timeout` bounds opening it, `deadline` (monotonic)
+        bounds reading it."""
         body = urllib.parse.urlencode({k: v for k, v in form.items() if v is not None}).encode()
         req = urllib.request.Request(self.base + "/api/chat_stream", data=body, method="POST")
-        with self._opener.open(req, timeout=timeout) as r:
-            for raw in r:
-                line = raw.decode("utf-8", "replace").strip()
-                if not line.startswith("data:"):
-                    continue
-                payload = line[5:].strip()
-                if payload == "[DONE]":
-                    return
-                try:
-                    ev = json.loads(payload)
-                except ValueError:
-                    continue
-                if isinstance(ev, dict):
-                    yield ev
+        return TurnStream(self._opener.open(req, timeout=timeout), deadline)
 
 
 def _json_or_raw(raw: bytes) -> Any:
@@ -389,6 +455,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if hasattr(out, "reconfigure"):
         out.reconfigure(encoding="utf-8", errors="replace")
     started = time.time()
+    # The budget is the whole run's wall clock (setup included); monotonic so a
+    # clock change cannot stretch it.
+    started_monotonic = time.monotonic()
     session = args.session
     try:
         client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
@@ -461,18 +530,26 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     turn = Turn()
     stop = "answered"
+    cancel: Optional[Dict[str, Any]] = None
+    observed_run_id: Optional[str] = None
+    deadline = started_monotonic + max(0.0, args.timeout)
     try:
         for _leg in range(max(1, args.max_legs)):
             turn.approval = None
-            left = args.timeout - (time.time() - started)
+            left = deadline - time.monotonic()
             if left <= 0:
                 stop = "timeout"
                 break
-            for ev in client.stream(form, timeout=left):
-                turn.feed(ev)
-                if args.json and args.events != "none":
-                    if args.events == "all" or ev.get("type") in TOOL_EVENTS:
-                        _write(out, ev)
+            streamed = client.open_stream(form, timeout=left, deadline=deadline)
+            try:
+                observed_run_id = streamed.run_id or observed_run_id
+                for ev in streamed.events():
+                    turn.feed(ev)
+                    if args.json and args.events != "none":
+                        if args.events == "all" or ev.get("type") in TOOL_EVENTS:
+                            _write(out, ev)
+            finally:
+                streamed.close()
             if turn.approval and turn.approval.get("kind") == "tool_approval":
                 if not args.approve:
                     stop = "approval_required"
@@ -496,8 +573,35 @@ def main(argv: Optional[List[str]] = None) -> int:
         stop = "error"
     if turn.cancelled and stop == "answered":
         stop = "cancelled"
-    _emit_summary(out, args, session, turn, started, stop, turn.error)
+    if stop == "timeout":
+        # Letting go of the stream stops nothing server-side: the run is only
+        # stopped if the app confirms this exact one.
+        cancel = cancel_run(client, session, observed_run_id)
+    _emit_summary(out, args, session, turn, started, stop, turn.error, cancel)
     return {"answered": EXIT_OK, "approval_required": EXIT_APPROVAL, "timeout": EXIT_TIMEOUT}.get(stop, EXIT_ERROR)
+
+
+def cancel_run(client: "Client", session: str, run_id: Optional[str]) -> Dict[str, Any]:
+    """Ask the app to stop exactly the run this CLI was reading.
+
+    The stop endpoint without a broader work scope is fail-closed on
+    `X-Odysseus-Run-Id`: it cancels only while that id is still the session's
+    current run, so a stale CLI cannot stop a newer one. No id known means no
+    request at all — an unaddressed stop could hit another run or another
+    session. The result repeats the app's own answer; `stopped` is never
+    assumed.
+    """
+    if not run_id:
+        return {"requested": None, "stopped": False, "reason": "run_id_unknown"}
+    try:
+        answer = client.post_json("/api/chat/stop/" + urllib.parse.quote(session, safe=""), {},
+                                  timeout=10, headers={"X-Odysseus-Run-Id": run_id})
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return {"requested": run_id, "stopped": False, "reason": "request_failed", "error": _error_text(exc)}
+    if not isinstance(answer, dict):
+        return {"requested": run_id, "stopped": False, "reason": "unexpected_answer"}
+    return {"requested": run_id, "stopped": answer.get("stopped") is True,
+            "reason": str(answer.get("reason") or ("cancelled" if answer.get("stopped") is True else "not_stopped"))}
 
 
 def _error_text(exc: BaseException) -> str:
@@ -526,7 +630,8 @@ def _write(out, obj: Dict[str, Any]) -> None:
     out.flush()
 
 
-def _emit_summary(out, args, session, turn: Turn, started: float, stop: str, error: Optional[str]) -> None:
+def _emit_summary(out, args, session, turn: Turn, started: float, stop: str, error: Optional[str],
+                  cancel: Optional[Dict[str, Any]] = None) -> None:
     elapsed = round(time.time() - started, 2)
     usage = dict(turn.usage)
     for key in ("input_tokens", "output_tokens"):
@@ -539,6 +644,7 @@ def _emit_summary(out, args, session, turn: Turn, started: float, stop: str, err
         "model": turn.metrics.get("model") or args.model, "usage": usage,
         "prompt_cache": pc if isinstance(pc, dict) else None,
         "approval": turn.approval if stop == "approval_required" else None, "error": error,
+        "cancel": cancel,
         "project_id": (args.resolved_project or {}).get("id"), "agent_id": args.agent_id,
         "project_warnings": args.project_warnings,
     }
@@ -550,6 +656,9 @@ def _emit_summary(out, args, session, turn: Turn, started: float, stop: str, err
     sys.stderr.write(f"[faustus] {stop} · {elapsed}s · {len(turn.tools)} tools · {turn.rounds} rounds"
                      f" · session {session}" + (f" · approval {turn.approval.get('approval_id')}"
                                                 if stop == "approval_required" and turn.approval else "")
+                     + (f" · cancel {cancel['reason']} ({cancel['requested']})"
+                        if cancel and cancel.get("stopped") else
+                        f" · run not stopped: {cancel['reason']}" if cancel else "")
                      + (f" · {error}" if error else "") + "\n")
 
 

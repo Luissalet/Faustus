@@ -3,8 +3,10 @@ import io
 import json
 import sys
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import ThreadingHTTPServer
 
 import importlib.util
 from pathlib import Path
@@ -416,3 +418,194 @@ def test_same_batch_duplicate_names_are_checked_before_any_create():
             with pytest.raises(RuntimeError):
                 fr.register_mcp_servers(client,json.dumps([ANDROID_SPEC[0],second]))
             assert client.posts==[]
+
+
+# --------------------------------------------------------------------------- #
+# The run deadline: a live stream (data, heartbeats, or silence) must not keep
+# the CLI alive past --timeout, and expiry must cancel only the run this CLI
+# was actually observing, by its own X-Odysseus-Run-Id.
+#
+# `_Live` answers on a thread per connection (the stop request arrives while
+# the stream handler is still writing) and writes each frame as it is
+# produced: HTTP/1.0 without a Content-Length, so a read returns as soon as a
+# line arrives, exactly like the app's stream.
+# --------------------------------------------------------------------------- #
+class _Live(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+    #: one entry per /api/chat_stream request: a list of frames that then ends
+    #: with [DONE], or None for a stream that keeps sending heartbeats.
+    script = []
+    #: the run id handed to each chat_stream caller, in order ("" = no header).
+    run_ids = ["run-live"]
+    interval = 0.02
+    #: a busy stream ends on its own here even if nothing abandons it, so a
+    #: regression fails an assertion instead of hanging the suite.
+    busy_seconds = 4.0
+    stop_response = {"stopped": True}
+    stops = []
+    forms = []
+    streams = 0
+    closed = threading.Event()
+
+    def log_message(self, *a):
+        pass
+
+    def _answer(self, status, data, ctype="application/json"):
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):  # noqa: N802
+        # No project/coordination catalogue here: the CLI continues without
+        # inheriting one, which is the "owned chat, no project" shape.
+        self._answer(404, b'{"detail": "not found"}')
+
+    def do_POST(self):  # noqa: N802
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length).decode() if length else ""
+        if self.path.startswith("/api/chat/stop/"):
+            _Live.stops.append({"path": self.path, "run_id": self.headers.get("X-Odysseus-Run-Id"),
+                               "body": body})
+            self._answer(200, json.dumps(_Live.stop_response).encode())
+            return
+        if self.path == "/api/session":
+            self._answer(200, b'{"id": "s1"}')
+            return
+        _Live.forms.append(dict(urllib.parse.parse_qsl(body)))
+        index = _Live.streams
+        _Live.streams += 1
+        run_id = _Live.run_ids[min(index, len(_Live.run_ids) - 1)] if _Live.run_ids else ""
+        frames = _Live.script[index] if index < len(_Live.script) else None
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        if run_id:
+            self.send_header("X-Odysseus-Run-Id", run_id)
+        self.end_headers()
+        self.close_connection = True
+        try:
+            if frames is not None:
+                self.wfile.write(_sse(frames).encode())
+                self.wfile.flush()
+                return
+            until = time.monotonic() + _Live.busy_seconds
+            while not _Live.closed.is_set() and time.monotonic() < until:
+                self.wfile.write(b'data: {"delta": "."}\n\n')
+                self.wfile.flush()
+                time.sleep(_Live.interval)
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except OSError:  # the CLI went away first (the expected path)
+            pass
+
+
+def _serve_live(script, run_ids=("run-live",), stop_response=None):
+    _Live.script, _Live.run_ids, _Live.stop_response = list(script), list(run_ids), stop_response or {"stopped": True}
+    _Live.stops, _Live.forms, _Live.streams = [], [], 0
+    _Live.closed = threading.Event()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Live)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_port}"
+
+
+def _close_live(srv):
+    _Live.closed.set()
+    srv.shutdown()
+    srv.server_close()
+
+
+def _summary(capsys):
+    return json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+
+def test_a_busy_stream_cannot_outlive_the_run_budget_and_cancels_its_own_run(capsys):
+    srv, url = _serve_live([None], run_ids=["run-busy"])
+    started = time.monotonic()
+    try:
+        code = fr.main(["-p", "keep working", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.4"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT
+    assert time.monotonic() - started < 3
+    summary = _summary(capsys)
+    assert summary["stop"] == "timeout" and summary["session"] == "owned"
+    assert summary["elapsed_s"] < 3
+    assert [stop["path"] for stop in _Live.stops] == ["/api/chat/stop/owned"]
+    assert _Live.stops[0]["run_id"] == "run-busy"
+    assert "scope" not in (_Live.stops[0]["body"] or "{}")
+    assert summary["cancel"] == {"requested": "run-busy", "stopped": True, "reason": "cancelled"}
+
+
+def test_a_silent_stream_is_also_bounded_and_cancels_the_observed_run(capsys):
+    srv, url = _serve_live([None], run_ids=["run-silent"], stop_response={"stopped": True})
+    started = time.monotonic()
+    try:
+        code = fr.main(["-p", "wait", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.4"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT and time.monotonic() - started < 3
+    summary = _summary(capsys)
+    assert summary["stop"] == "timeout"
+    assert _Live.stops and _Live.stops[0]["run_id"] == "run-silent"
+    assert summary["cancel"]["stopped"] is True
+
+
+def test_no_run_identity_means_no_stop_and_an_uncertain_report(capsys):
+    srv, url = _serve_live([None], run_ids=[""])
+    try:
+        code = fr.main(["-p", "keep working", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.3"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT
+    summary = _summary(capsys)
+    assert summary["stop"] == "timeout"
+    assert _Live.stops == []
+    assert summary["cancel"] == {"requested": None, "stopped": False, "reason": "run_id_unknown"}
+
+
+def test_a_refused_stale_run_id_is_reported_and_never_claimed_stopped(capsys):
+    srv, url = _serve_live([None], run_ids=["run-stale"],
+                           stop_response={"stopped": False, "reason": "run_id_mismatch"})
+    try:
+        code = fr.main(["-p", "keep working", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.3"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT
+    summary = _summary(capsys)
+    assert _Live.stops[0]["run_id"] == "run-stale"
+    assert summary["cancel"] == {"requested": "run-stale", "stopped": False, "reason": "run_id_mismatch"}
+
+
+def test_a_normal_answer_never_asks_for_a_stop(capsys):
+    srv, url = _serve_live([[{"type": "tool_start", "tool": "read_file", "round": 1}, {"delta": "Done."}]],
+                           run_ids=["run-done"])
+    try:
+        code = fr.main(["-p", "read it", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "5"])
+    finally:
+        _close_live(srv)
+    assert code == 0
+    summary = _summary(capsys)
+    assert summary["stop"] == "answered" and summary["text"] == "Done."
+    assert summary["cancel"] is None
+    assert _Live.stops == []
+
+
+def test_an_approval_resume_leg_is_cancelled_by_its_own_run_id(capsys):
+    srv, url = _serve_live([[CARD], None], run_ids=["run-leg1", "run-leg2"])
+    try:
+        code = fr.main(["-p", "fix it", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--approve", "--timeout", "0.6"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT
+    summary = _summary(capsys)
+    assert len(_Live.forms) == 2 and _Live.forms[1]["tool_approval_id"] == "A1"
+    assert summary["session"] == "owned" and summary["stop"] == "timeout"
+    assert [stop["run_id"] for stop in _Live.stops] == ["run-leg2"]
+    assert summary["cancel"] == {"requested": "run-leg2", "stopped": True, "reason": "cancelled"}
