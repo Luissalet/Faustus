@@ -30,6 +30,7 @@
 // Status values: starting | qr | connected | disconnected | logged_out.
 import { createServer } from "node:http";
 import { messagePage } from "./message_pages.mjs";
+import { syncView as viewSync } from "./sync_status.mjs";
 import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,6 +74,10 @@ const CONTACTS_FILE = join(DATA_DIR, "contacts.json");
 
 // ---------------------------------------------------------------- store ---
 const state = { status: "starting", qr: null, me: null, lastError: null, connectedAt: null };
+// What the phone is still sending after a (re)connection, so the screen can show
+// progress instead of a silent, stale chat list. `pending` turns false when
+// WhatsApp says the offline backlog is delivered; history batches carry a percentage.
+const sync = { startedAt: null, pending: false, offlineDone: false, received: 0, history: { batches: 0, added: 0, progress: null, lastAt: null } };
 const contacts = new Map(); // jid -> {name, notify, phone}
 const chats = new Map();    // jid -> {name, is_group, last_ts, last_text, unread}
 const lidMap = new Map();   // "<n>@lid" -> "<phone>@s.whatsapp.net" (WhatsApp now addresses people by an opaque LID)
@@ -359,18 +364,24 @@ async function connect() {
   });
   sock.ev.on("creds.update", saveCreds);
   sock.ev.on("connection.update", async (u) => {
+    // WhatsApp may finish delivering the offline backlog before Baileys reports "open":
+    // remember it, or the screen would say "receiving…" forever.
+    if (u.connection === "connecting") sync.offlineDone = false;
+    if (u.receivedPendingNotifications) { sync.offlineDone = true; sync.pending = false; }
     if (u.qr) {
       state.status = "qr";
       try { state.qr = await QRCode.toDataURL(u.qr, { margin: 1, width: 320 }); } catch { state.qr = null; }
     }
     if (u.connection === "open") {
       state.status = "connected"; state.qr = null; state.connectedAt = Date.now();
+      sync.startedAt = Date.now(); sync.pending = !sync.offlineDone; sync.received = 0;
       const me = sock.user || {};
       state.me = { jid: jidNormalizedUser(me.id || ""), name: me.name || "" };
       if (me.lid) learnLid(me.lid, me.id);
       void learnAllGroups();
     }
     if (u.connection === "close") {
+      sync.pending = false;
       const code = u.lastDisconnect?.error?.output?.statusCode;
       state.lastError = String(u.lastDisconnect?.error?.message || code || "closed");
       if (code === DisconnectReason.loggedOut) {
@@ -383,13 +394,16 @@ async function connect() {
       }
     }
   });
-  sock.ev.on("messaging-history.set", ({ contacts: cs = [], chats: chs = [], messages: ms = [], syncType }) => {
+  sock.ev.on("messaging-history.set", ({ contacts: cs = [], chats: chs = [], messages: ms = [], syncType, progress, isLatest }) => {
     for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); contacts.set(jid, { ...(contacts.get(jid) || {}), name: c.name || c.verifiedName || contacts.get(jid)?.name || "", notify: c.notify || contacts.get(jid)?.notify || "", phone: phoneOf(jid) }); }
     for (const ch of chs) if (ch.id) { if (ch.lidJid && ch.pnJid) learnLid(ch.lidJid, ch.pnJid); const jid = canon(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; cur.name = ch.name || cur.name || ""; cur.unread = Number(ch.unreadCount || cur.unread || 0); if (ch.archived !== undefined) cur.archived = !!ch.archived; if (ch.pinned !== undefined) cur.pinned = !!ch.pinned; if (ch.muteEndTime !== undefined) cur.muted = Number(ch.muteEndTime || 0) * 1000 > Date.now(); chats.set(jid, cur); }
     let added = 0;
     for (const m of ms) if (ingest(m, { unread: false })) added++;
     if (added) { sortMessages(); for (const m of messages) touchChat(m); compactStore(); }
     state.history = { at: Date.now(), added, syncType: String(syncType ?? "") };
+    sync.history.batches++; sync.history.added += added; sync.history.lastAt = Date.now();
+    if (typeof progress === "number") sync.history.progress = Math.max(0, Math.min(100, Math.round(progress)));
+    else if (isLatest) sync.history.progress = 100;
     saveContacts();
   });
   sock.ev.on("groups.upsert", (gs) => { for (const g of gs) if (g.id && g.subject) { const cur = chats.get(g.id) || { jid: g.id, is_group: true, last_ts: 0, last_text: "", unread: 0 }; cur.name = g.subject; chats.set(g.id, cur); groupsAsked.add(g.id); } });
@@ -398,7 +412,7 @@ async function connect() {
   sock.ev.on("contacts.upsert", (cs) => { for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); contacts.set(jid, { ...(contacts.get(jid) || {}), name: c.name || c.verifiedName || contacts.get(jid)?.name || "", notify: c.notify || contacts.get(jid)?.notify || "", phone: phoneOf(jid) }); } saveContacts(); });
   sock.ev.on("contacts.update", (cs) => { for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); const cur = contacts.get(jid) || { phone: phoneOf(jid) }; if (c.name) cur.name = c.name; if (c.notify) cur.notify = c.notify; contacts.set(jid, cur); } saveContacts(); });
   sock.ev.on("chats.upsert", (chs) => { for (const ch of chs) if (ch.id) { if (ch.lidJid && ch.pnJid) learnLid(ch.lidJid, ch.pnJid); const jid = canon(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; if (ch.name) cur.name = ch.name; chats.set(jid, cur); if (isJidGroup(jid)) void learnGroup(jid); } });
-  sock.ev.on("messages.upsert", ({ messages: ms, type }) => { for (const m of ms) ingest(m, { unread: type === "notify" }); });
+  sock.ev.on("messages.upsert", ({ messages: ms, type }) => { for (const m of ms) if (ingest(m, { unread: type === "notify" }) && sync.pending) sync.received++; });
 
   // Receipts (own messages, 1:1), edits and revokes all arrive as `messages.update`.
   sock.ev.on("messages.update", (updates) => {
@@ -513,7 +527,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://127.0.0.1");
   try {
     if (req.method === "GET" && url.pathname === "/status") {
-      return json(res, 200, { ...state, counts: { contacts: contacts.size, chats: chats.size, messages: messages.length } });
+      return json(res, 200, { ...state, sync: viewSync(sync), counts: { contacts: contacts.size, chats: chats.size, messages: messages.length } });
     }
     if (req.method === "GET" && url.pathname === "/chats") {
       const limit = Math.min(Number(url.searchParams.get("limit") || 50), 500);

@@ -946,3 +946,58 @@
 @media (prefers-reduced-motion: reduce) {
   .fs-wa__record[data-recording]::after { animation: none; }
 }
+
+/* Sync banner: the phone is still delivering messages, the list is not current yet. */
+.fs-wa__sync {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2) var(--fs-space-3);
+  margin-block-end: var(--fs-space-3);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-wa__sync-spin {
+  color: var(--fs-brand);
+  animation: fs-spin 0.9s linear infinite;
+}
+
+.fs-wa__sync-bar {
+  position: relative;
+  flex: 1 1 120px;
+  min-inline-size: 120px;
+  block-size: 4px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-highlight);
+  overflow: hidden;
+}
+
+.fs-wa__sync-bar > span {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  border-radius: inherit;
+  background: var(--fs-brand);
+  transition: inline-size var(--fs-duration-normal) var(--fs-ease);
+}
+
+.fs-wa__sync-bar[data-indeterminate] > span {
+  inline-size: 35%;
+  animation: fs-wa-sync-slide 1.2s var(--fs-ease) infinite;
+}
+
+@keyframes fs-wa-sync-slide {
+  from { translate: -100% 0; }
+  to { translate: 300% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-wa__sync-spin,
+  .fs-wa__sync-bar[data-indeterminate] > span { animation: none; }
+}

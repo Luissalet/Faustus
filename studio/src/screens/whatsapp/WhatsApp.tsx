@@ -1,4 +1,4 @@
-import { Archive, ArrowLeft, MessageCircle, Search, Users } from 'lucide-react';
+import { Archive, ArrowLeft, Loader2, MessageCircle, Search, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton, Toast } from '../../components';
 import {
@@ -72,6 +72,27 @@ function StatusPill({ status }: { status: WhatsAppStatus }) {
         </span>
       )}
     </span>
+  );
+}
+
+/** While the phone is still delivering what arrived while the bridge was off (or the history after pairing),
+ *  the chat list is not up to date yet: say so, with a percentage when WhatsApp gives one. */
+function SyncBanner({ status }: { status: WhatsAppStatus }) {
+  const sync = status.sync;
+  if (status.status !== 'connected' || !sync?.active) return null;
+  const pct = sync.progress;
+  const label = sync.phase === 'history'
+    ? (pct != null ? t('Loading the history from the phone… {pct}%', { pct }) : t('Loading the history from the phone…'))
+    : t('Receiving the messages that arrived while it was off…');
+  return (
+    <div className="fs-wa__sync" role="status" aria-live="polite" data-testid="whatsapp-sync">
+      <Loader2 size={14} className="fs-wa__sync-spin" aria-hidden="true" />
+      <span>{label}</span>
+      {sync.received > 0 && <span className="fs-set__help">{t('{n} new so far', { n: sync.received })}</span>}
+      <span className="fs-wa__sync-bar" data-indeterminate={pct == null || sync.phase !== 'history' || undefined}>
+        <span style={pct != null && sync.phase === 'history' ? { inlineSize: `${pct}%` } : undefined} />
+      </span>
+    </div>
   );
 }
 
@@ -540,7 +561,7 @@ export function WhatsAppScreen() {
   // Poll fast while nothing settled yet, slow once it has.
   useEffect(() => {
     if (!status) return;
-    const fast = status.status === 'starting' || status.status === 'qr' || status.status === 'disconnected';
+    const fast = status.status === 'starting' || status.status === 'qr' || status.status === 'disconnected' || Boolean(status.sync?.active);
     const id = window.setInterval(reloadStatus, fast ? 2000 : 15000);
     return () => window.clearInterval(id);
   }, [status, reloadStatus]);
@@ -557,9 +578,10 @@ export function WhatsAppScreen() {
 
   useEffect(() => {
     if (status?.status !== 'connected') return;
-    const id = window.setInterval(reloadChats, 10000);
+    // While the phone is still catching up the list changes quickly: refresh it more often.
+    const id = window.setInterval(reloadChats, status?.sync?.active ? 3000 : 10000);
     return () => window.clearInterval(id);
-  }, [status?.status, reloadChats]);
+  }, [status?.status, status?.sync?.active, reloadChats]);
 
   // Global message search: once the filter is long enough, also look inside
   // every chat's text, not just chat names.
@@ -609,6 +631,7 @@ export function WhatsAppScreen() {
         {status && <StatusPill status={status} />}
         {status && connected && <SetupPanel status={status} onChanged={reloadStatus} say={say} />}
       </header>
+      {status && <SyncBanner status={status} />}
 
       {status === null ? (
         <Skeleton label={t('Loading')} count={2} height="72px" />

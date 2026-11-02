@@ -17331,3 +17331,18 @@ Real Brave file-chooser/Blob acceptance and new Faustus-model acceptance remain 
 ## 02-11-2026 · Páginas de mensajes de WhatsApp reanudables
 
 `GET /api/whatsapp/message-page?chat=&cursor=&limit=` (máx. 200 por página) y la acción `message_page` de `whatsapp_read` devuelven los mensajes que el puente conserva de un chat en orden cronológico, con un cursor opaco para seguir donde se quedó la lectura anterior. Solo lee: no envía, no marca como leído y no pide historial al móvil. La cobertura es la que guarda el puente (60 días, 20k mensajes), no el historial completo del teléfono. Lo usa Darwin's Hoard para sincronizar el chat «Gittrend» de forma incremental sin repetir mensajes. Ficheros: `bridges/whatsapp/message_pages.mjs`, `server.mjs`, `routes/whatsapp_routes.py`, `src/whatsapp_bridge.py`, `src/whatsapp_tools.py`, `tests/test_whatsapp_message_pages.py`. Se activa al reiniciar Faustus y el puente; hasta entonces la ruta responde 404.
+
+## 02-11-2026 · Herramientas personales en la barra lateral, pastillas de GPU y Sparks a la vista, y progreso de WhatsApp
+
+- **Barra lateral.** Bajo los destinos hay un grupo «Personal» con WhatsApp, Notas, Calendario y Correo (`toolsIn('personal')`, `AppShell.tsx`). Antes solo se llegaba por el desplegable «Personal tools» de Studio. En el carril compacto se ven solo los iconos; en el móvil siguen en la paleta.
+- **Cabecera de Studio.** Las pastillas de las GPU del PC y de las DGX Spark vuelven a la cabecera. Desde el 17-10 (c45b0261) estaban dentro del botón de información de la conversación.
+- **WhatsApp: sincronización visible.** El puente expone `sync` en `/status` (`bridges/whatsapp/sync_status.mjs`):
+  - `catching_up`: el móvil entrega lo que llegó mientras el puente estaba apagado; acaba con `receivedPendingNotifications`, con un máximo de 2 min.
+  - `history`: lotes de historial con el porcentaje que da WhatsApp; se da por terminado tras 15 s sin lotes.
+  - `idle`.
+  
+  La pantalla muestra un aviso con icono girando y barra (con porcentaje cuando lo hay, indeterminada si no), además de cuántos mensajes nuevos han llegado. Mientras dura, el estado se consulta cada 2 s y la lista de chats cada 3 s.
+  
+  Trampa: WhatsApp puede terminar de entregar lo pendiente antes de que Baileys emita `open`. El puente lo recuerda (`offlineDone`) para no quedarse en «recibiendo…» para siempre.
+  
+  El cambio del puente necesita parar y arrancar el puente (la sesión se conserva). Test: `tests/test_whatsapp_message_pages.py::test_real_node_sync_status_phases`.

@@ -51,8 +51,19 @@ export interface WaCounts {
   messages: number;
 }
 
+/** What the phone is still sending after the bridge (re)connects (bridges/whatsapp/sync_status.mjs). */
+export interface WaSync {
+  active: boolean;
+  phase: 'idle' | 'catching_up' | 'history';
+  progress: number | null;
+  received: number;
+  history?: { batches: number; added: number; progress: number | null; lastAt: number | null };
+  startedAt?: number | null;
+}
+
 export interface WhatsAppStatus {
   status: WaStatusKind;
+  sync?: WaSync | null;
   qr?: string | null;
   me?: WaMe | null;
   lastError?: string | null;

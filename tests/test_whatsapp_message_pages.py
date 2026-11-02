@@ -76,3 +76,26 @@ def test_api_and_tool_preserve_cursor_coverage_and_own_messages(monkeypatch):
     monkeypatch.setattr(wa, 'message_page', lambda *a, **kw: (_ for _ in ()).throw(wa.BridgeError('invalid cursor for this chat')))
     with TestClient(app) as client:
         assert client.get('/api/whatsapp/message-page', params={'chat': 'x@g.us'}).status_code == 400
+
+
+def test_real_node_sync_status_phases():
+    module = (ROOT / 'bridges/whatsapp/sync_status.mjs').as_uri()
+    script = '''
+import {syncView} from MODULE;
+import assert from 'node:assert/strict';
+const fresh = () => ({startedAt: null, pending: false, received: 0, history: {batches: 0, added: 0, progress: null, lastAt: null}});
+let s = fresh();
+assert.equal(syncView(s).active, false);
+s.startedAt = 1000; s.pending = true; s.received = 4;
+let v = syncView(s, 2000);
+assert.equal(v.phase, 'catching_up'); assert.equal(v.active, true); assert.equal(v.progress, null); assert.equal(v.received, 4);
+assert.equal(syncView(s, 1000 + 121000).phase, 'idle');
+s.pending = false; s.history.lastAt = 2000; s.history.progress = 40;
+v = syncView(s, 5000); assert.equal(v.phase, 'history'); assert.equal(v.progress, 40);
+v = syncView(s, 2000 + 16000); assert.equal(v.phase, 'idle'); assert.equal(v.active, false);
+s.history.lastAt = 30000; s.history.progress = 100;
+assert.equal(syncView(s, 30001).phase, 'idle');
+console.log('sync-status-pass');
+'''.replace('MODULE', json.dumps(module))
+    result = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
