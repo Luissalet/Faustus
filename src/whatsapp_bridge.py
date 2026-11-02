@@ -362,6 +362,15 @@ def chats(limit: int = 50) -> List[Dict[str, Any]]:
     return _get("/chats", {"limit": limit})
 
 
+def message_page(chat: str, *, cursor: str = "", limit: int = 200) -> Dict[str, Any]:
+    """Read one retained-store page; repeat a pass to detect edits/late rows."""
+    if not isinstance(chat, str) or "@" not in chat:
+        raise BridgeError("chat must be an exact WhatsApp JID")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 2000:
+        raise BridgeError("limit must be between 1 and 2000")
+    return _get("/message-page", {"chat": chat, "cursor": cursor, "limit": limit})
+
+
 def messages(chat: Optional[str] = None, *, since_hours: float = 24, limit: int = 200,
              unread_only: bool = False, until_ts: Optional[float] = None) -> List[Dict[str, Any]]:
     """The newest `limit` messages since `since_hours` ago (of one chat, or of all). `until_ts` (epoch seconds) keeps only messages up to
