@@ -24,3 +24,12 @@ Node tests use a simulated Chrome/CDP/WebSocket environment. Separately, the use
 These actions have prepared transport/controller/file tests; no simulated result establishes Brave or Faustus-agent acceptance. Existing no-replay, target/ref and disconnect semantics remain in force.
 
 The fixed download readers verify that the anchor stays connected to the same current document, resolve its actual base URI, and compare href/download/base/document again after reading. Detached or changed anchors fail without publishing a transfer. Data URL contents are omitted from public source metadata (scheme and omission flag remain); the file bytes stay in the private transfer and local file. Prepared tests include Unicode/binary data URLs, retained detached anchors and relative href with a distinct/changing base on an owned loopback server; no real-browser result is claimed.
+
+
+## Verified file-action status (2026-11-02)
+
+File transfers and dispatched-request cancellation were independently reviewed and integrated locally as 0355148f. The integrated source passes 96 Python and 37 extension tests. Five additional independent stdio/WebSocket/AnyIO controls verify cancellation and replacement-peer cleanup; their extension peer is simulated. The original cancellation probe remains a recorded failure in its client cleanup after its strict connection-close assertion passed.
+
+The managed backend was restarted normally and its live browser_session catalog now lists upload and download alongside the original eight actions. The existing disabled direct Writer and legacy QA MCP registrations remain disabled. No model service was stopped or started.
+
+Real Brave file-chooser/Blob acceptance and new Faustus-model acceptance remain pending: the installed extension still needs a normal reload, and its loaded folder/code version is not established by its ID or handshake. Browser automation rejected the internal extension page; no desktop/CDP workaround was used. The earlier prepared/under-review wording above is historical, not the current review state. Writer parity remains open.

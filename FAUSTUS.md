@@ -17318,3 +17318,12 @@ Faustus puede usar Browser con la extensión instalada en las pestañas existent
 Este resultado supera el pendiente de activación y comprobación nativa de 1797 que figura en las notas anteriores. Acredita ese recorrido real; no es una medida controlada de mejora frente a otros turnos ni certifica autonomía o paridad global. Los ensayos anteriores conservan sus fallos y límites. La instalación en carpeta canónica y la aceptación del runtime portable continúan aparte; el worktree de la extensión cargada sigue siendo necesario. Writer 1095/1796 continúa. [Instalación y contrato Browser](src/browser_relay/README.md).
 
 Nota de la preparación1856: download comprueba conexión/documento del enlace y su baseURI real antes/después de leer; una URL data se omite del recibo público para no exponer bytes inline. Los errores no publican transferencia. Son controles preparados, no aceptación Brave/modelo ni activación.
+
+
+## Verified file-action status (2026-11-02)
+
+File transfers and dispatched-request cancellation were independently reviewed and integrated locally as 0355148f. The integrated source passes 96 Python and 37 extension tests. Five additional independent stdio/WebSocket/AnyIO controls verify cancellation and replacement-peer cleanup; their extension peer is simulated. The original cancellation probe remains a recorded failure in its client cleanup after its strict connection-close assertion passed.
+
+The managed backend was restarted normally and its live browser_session catalog now lists upload and download alongside the original eight actions. The existing disabled direct Writer and legacy QA MCP registrations remain disabled. No model service was stopped or started.
+
+Real Brave file-chooser/Blob acceptance and new Faustus-model acceptance remain pending: the installed extension still needs a normal reload, and its loaded folder/code version is not established by its ID or handshake. Browser automation rejected the internal extension page; no desktop/CDP workaround was used. The earlier prepared/under-review wording above is historical, not the current review state. Writer parity remains open.
