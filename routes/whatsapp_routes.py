@@ -134,6 +134,15 @@ def setup_whatsapp_routes() -> APIRouter:
         except wa.BridgeError as exc:
             raise HTTPException(503, str(exc))
 
+    @router.get("/message-page")
+    async def message_page(request: Request, chat: str, cursor: str = "", limit: int = 200) -> Dict[str, Any]:
+        require_admin(request)
+        try:
+            return await asyncio.to_thread(wa.message_page, chat, cursor=cursor, limit=limit)
+        except wa.BridgeError as exc:
+            status = 400 if str(exc).startswith(("chat must", "limit must", "invalid cursor")) else _code(exc)
+            raise HTTPException(status, str(exc))
+
     @router.get("/messages")
     async def list_messages(request: Request, chat: Optional[str] = None, hours: float = 48,
                             limit: int = 200, unread: int = 0) -> Dict[str, Any]:

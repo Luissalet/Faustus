@@ -29,6 +29,7 @@
 //
 // Status values: starting | qr | connected | disconnected | logged_out.
 import { createServer } from "node:http";
+import { messagePage } from "./message_pages.mjs";
 import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -320,7 +321,7 @@ function ingest(msg, { unread = false } = {}) {
     id: key.id, chat, chat_name: msg.pushName && !key.fromMe && !isJidGroup(chat) ? msg.pushName : nameOf(chat),
     from, from_name: key.fromMe ? "me" : (msg.pushName || nameOf(from)), from_me: !!key.fromMe,
     ts: Number(msg.messageTimestamp?.low ?? msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
-    text: String(text || "").slice(0, 4000), kind, unread: unread && !key.fromMe,
+    text: String(text || ""), kind, unread: unread && !key.fromMe,
     key: { remoteJid: key.remoteJid, fromMe: !!key.fromMe, id: key.id, ...(key.participant ? { participant: key.participant } : {}) },
   };
   const ci = contextInfoOf(msg);
@@ -405,7 +406,7 @@ async function connect() {
       if (!key?.id || !update) continue;
       if (update.messageStubType === proto.WebMessageInfo.StubType.REVOKE) { patchMessage(key.id, { deleted: true }); continue; }
       const editedInner = update.message?.editedMessage?.message;
-      if (editedInner) { const [text] = textOf({ message: editedInner }); patchMessage(key.id, { text: String(text || "").slice(0, 4000), edited: true }); continue; }
+      if (editedInner) { const [text] = textOf({ message: editedInner }); patchMessage(key.id, { text: String(text || ""), edited: true }); continue; }
       if (typeof update.status === "number") { const name = STATUS_NAME[update.status]; if (name) bumpStatus(key.id, name); }
     }
   });
@@ -532,6 +533,11 @@ const server = createServer(async (req, res) => {
         .map((m) => ({ ...m, chat_name: nameOf(m.chat) || m.chat_name || "", from_name: m.from_me ? "me" : (nameOf(m.from) || m.from_name || "") }));
       return json(res, 200, rows);
     }
+    if (req.method === "GET" && url.pathname === "/message-page") {
+      try {
+        return json(res, 200, messagePage(messages, { chat: url.searchParams.get("chat"), cursor: url.searchParams.get("cursor") || "", limit: Number(url.searchParams.get("limit") || 200), retentionLimit: MAX_MESSAGES }));
+      } catch (error) { return json(res, 400, { error: error.message }); }
+    }
     if (req.method === "GET" && url.pathname === "/messages") {
       const chat = url.searchParams.get("chat");
       const since = Number(url.searchParams.get("since") || 0);
@@ -655,7 +661,7 @@ const server = createServer(async (req, res) => {
       if (!row) return json(res, 404, { error: "unknown message id" });
       if (!row.from_me) return json(res, 403, { error: "can only edit your own messages" });
       await sock.sendMessage(row.chat, { text: String(text || ""), edit: row.key });
-      patchMessage(id, { text: String(text || "").slice(0, 4000), edited: true });
+      patchMessage(id, { text: String(text || ""), edited: true });
       return json(res, 200, { ok: true });
     }
     if (req.method === "POST" && url.pathname === "/typing") {

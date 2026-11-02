@@ -524,7 +524,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["messages", "chats", "contacts", "status", "search"], "description": "messages (default) | chats | contacts | status | search (needs query; optional chat)"},
+                    "action": {"type": "string", "enum": ["messages", "chats", "contacts", "status", "search", "message_page"], "description": "messages (default) | chats | contacts | status | search | message_page (exact chat JID; raw retained-store page including own messages; coverage is not whole phone history)"},
+                    "cursor": {"type": "string", "description": "Opaque next_cursor for message_page; omit to begin a new pass. Repeat passes to discover edits and late messages."},
                     "chat": {"type": "string", "description": "A contact/group name, a phone number or a jid; omit for all chats"},
                     "hours": {"type": "number", "description": "How far back to read (default 24)"},
                     "limit": {"type": "integer", "description": "Max messages (default 100)"},
