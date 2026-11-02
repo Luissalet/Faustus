@@ -14,6 +14,7 @@ import { NotificationTray } from './notifications-tray';
 import { SphereChip } from '../screens/studio/SphereChip';
 import { DESTINATIONS, MOBILE_DESTINATIONS } from './routes';
 import { ContextualTools } from './contextualTools';
+import { toolsIn } from './toolPlacement';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
 import { usePlatform } from './platform';
@@ -179,6 +180,21 @@ function Rail() {
       {platform === 'mobile' && <button type="button" className="fs-nav__item" onClick={() => setPaletteOpen(true)} data-testid="nav-more" aria-label={t('Search and navigate')}>
         <span className="fs-nav__node"><Search size={14} aria-hidden="true" /></span><span className="fs-nav__label">{t('More')}</span>
       </button>}
+
+      {platform !== 'mobile' && (
+        // Personal tools (messages, mail, calendar, notes) are used daily, so
+        // they sit in the sidebar instead of only behind Studio's menu.
+        <div className="fs-nav__tools" data-testid="nav-personal">
+          <div className="fs-nav__tools-head">{t('Personal')}</div>
+          {toolsIn('personal').map((tool) => (
+            <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" title={t(tool.label)}
+              data-testid={`nav-tool-${tool.path.slice(1)}`}>
+              <tool.icon size={13} aria-hidden="true" />
+              <span>{t(tool.label)}</span>
+            </NavLink>
+          ))}
+        </div>
+      )}
 
       <div className="fs-nav__spacer" />
 

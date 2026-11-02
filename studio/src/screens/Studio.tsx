@@ -3890,8 +3890,6 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           </Link>}
           <Popover align="end" className="fs-chat-information" testId="chat-information" trigger={<IconButton icon={Info} label={t('Conversation information')} size="sm" testId="chat-information-trigger" />}>
             <section className="fs-chat-information__content" aria-label={t('Conversation information')}>
-          <Vitals busy={busy} />
-          <SparkVitals />
           {/* CMP-01-layout (W2-A2): three arrangements of the same
               conversation+panel — pure presentation, see `layout` above. */}
           <div className="fs-studio__layout-switch" role="radiogroup" aria-label={t('Layout')} data-testid="studio-layout-switch">
@@ -3911,6 +3909,10 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           </div>
             </section>
           </Popover>
+          {/* The PC's GPUs and the Sparks stay in sight: which machine answers and how loaded it is
+              is read at a glance, not behind the information button. */}
+          <Vitals busy={busy} />
+          <SparkVitals />
           {/* #235: messages other agents left for this chat (the transcript shows the delivered ones). */}
           <AgentInbox sessionId={sessionId} busy={busy} onNew={reloadAfterAgentMail} />
           <div className="fs-studio__head-actions">
