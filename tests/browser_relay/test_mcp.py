@@ -121,3 +121,51 @@ async def test_real_stdio_catalog_validation_actions_image_and_eof():
             await process.wait()
         if drain is not None:
             await drain
+
+
+
+@pytest.mark.asyncio
+async def test_file_catalog_stdio_materialization_and_upload_inputs(tmp_path):
+    """Actual stdio/WS and disk, simulated extension only; no Brave claim."""
+    env = dict(os.environ, PYTHONPATH=str(ROOT), PYTHONIOENCODING="utf-8")
+    process = await asyncio.create_subprocess_exec(sys.executable, str(ROOT / "src/browser_relay/server.py"), "--port", "0",
+        cwd=ROOT, env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    client = StdioClient(process);peer = None;drain = None
+    async def stderr_tail():
+        while line := await process.stderr.readline():client.stderr.append(line.decode().rstrip())
+    try:
+        listening = (await asyncio.wait_for(process.stderr.readline(), 10)).decode().strip()
+        assert listening.startswith("browser_relay_listening=127.0.0.1:")
+        drain = asyncio.create_task(stderr_tail())
+        await client.rpc("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "files-simulated-peer", "version": "1"}})
+        process.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n');await process.stdin.drain()
+        catalog = await client.rpc("tools/list")
+        assert {"upload", "download"}.issubset(catalog["tools"][0]["inputSchema"]["properties"]["action"]["enum"])
+        peer = await connect(listening.replace("browser_relay_listening=", "ws://"), origin=ORIGIN)
+        await peer.send(json.dumps({"type": "hello", "protocol": 1, "extensionId": EXTENSION_ID}))
+        assert json.loads(await peer.recv())["type"] == "ready"
+        data = "Élodie你🙂".encode() + bytes(range(256))
+        destination = tmp_path / "descarga-你.json"
+        pending = asyncio.create_task(client.call({"action": "download", "tab_id": 2, "ref": "r", "output_path": str(destination)}))
+        command = json.loads(await peer.recv());assert command["arguments"]["action"] == "download"
+        await peer.send(json.dumps({"type": "result", "id": command["id"], "ok": True, "phase": "readback_complete", "result": {"tab": {"id": 2}, "download": {"name": "source.json", "mime": "application/json", "bytes": len(data), "parts": [base64.b64encode(data[:1]).decode(), base64.b64encode(data[1:]).decode()]}}}))
+        result = await pending
+        assert not result["isError"] and destination.read_bytes() == data
+        assert result["structuredContent"]["result"]["file"]["complete"] is True
+        assert '"parts"' not in result["content"][0]["text"]
+        pending = asyncio.create_task(client.call({"action": "upload", "tab_id": 2, "ref": "fresh", "files": [str(destination)]}))
+        command = json.loads(await peer.recv());assert command["arguments"]["files"] == [str(destination)]
+        await peer.send(json.dumps({"type": "result", "id": command["id"], "ok": True, "phase": "readback_complete", "result": {"tab": {"id": 2}, "upload": {"selected": 1}}}))
+        result = await pending
+        receipt = result["structuredContent"]["result"]["selected_files"][0]
+        assert receipt["path"] == str(destination) and receipt["bytes"] == len(data)
+        blocked = await client.call({"action": "download", "tab_id": 2, "ref": "r", "output_path": str(destination)})
+        assert blocked["isError"] and blocked["structuredContent"]["phase"] == "not_dispatched"
+        assert destination.read_bytes() == data
+    finally:
+        if peer is not None:await peer.close()
+        if process.stdin:process.stdin.close()
+        try:await asyncio.wait_for(process.wait(), 10)
+        except asyncio.TimeoutError:process.kill();await process.wait();raise
+        if drain is not None:await drain
+    assert process.returncode == 0 and not any(line.startswith("Traceback") for line in client.stderr)

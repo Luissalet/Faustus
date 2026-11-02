@@ -6,6 +6,8 @@ import asyncio
 import base64
 import binascii
 import json
+import hashlib
+from pathlib import Path
 import sys
 
 from mcp.server import Server
@@ -40,6 +42,81 @@ def mcp_result(payload: dict, detail: str = "compact", view: dict | None = None)
                           content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False)), *images])
 
 
+
+def upload_inputs(files: list[str]) -> list[dict]:
+    """Observe the real local inputs, without copying them or claiming app acceptance."""
+    result = []
+    for filename in files:
+        path = Path(filename)
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError("upload requires existing absolute file paths")
+        digest, size = hashlib.sha256(), 0
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+                size += len(chunk)
+        result.append({"path": str(path), "name": path.name, "bytes": size, "sha256": digest.hexdigest()})
+    return result
+
+
+def download_target(filename: str) -> Path:
+    path = Path(filename)
+    if not path.is_absolute() or not path.parent.is_dir():
+        raise ValueError("download requires an absolute output file in an existing directory")
+    if path.exists():
+        raise FileExistsError("download target already exists; choose a new file")
+    return path
+
+
+def save_download(payload: dict, filename: str) -> dict:
+    """Consume the private wire bytes. Only the actual disk receipt reaches MCP."""
+    if not payload.get("ok"):
+        return payload
+    phase = "action_confirmed"
+    try:
+        result = dict(payload["result"])
+        transfer = result.pop("download")
+        # Data URLs embed the file itself; never publish them in an MCP receipt,
+        # including a transfer from an older extension peer.
+        source = result.get("source")
+        if isinstance(source, dict) and isinstance(source.get("url"), str) and source["url"].lower().startswith("data:"):
+            result["source"] = {**{key: value for key, value in source.items() if key != "url"},
+                                "scheme": "data:", "url_omitted": True}
+        if (not isinstance(transfer, dict) or not isinstance(transfer.get("name"), str)
+                or not isinstance(transfer.get("mime"), str) or type(transfer.get("bytes")) is not int
+                or transfer["bytes"] < 0 or not isinstance(transfer.get("parts"), list)):
+            raise ValueError("invalid download metadata")
+        # Validate every part and the complete byte count BEFORE creating any file.
+        chunks = [base64.b64decode(part, validate=True) for part in transfer["parts"]
+                  if isinstance(part, str)]
+        if len(chunks) != len(transfer["parts"]) or sum(map(len, chunks)) != transfer["bytes"]:
+            raise ValueError("incomplete download parts")
+    except (KeyError, TypeError, ValueError, binascii.Error):
+        return failure("invalid_download", "Browser returned incomplete or invalid file bytes", phase)
+    try:
+        path = download_target(filename)
+        digest = hashlib.sha256()
+        # Exclusive creation also protects an existing file appearing after preflight.
+        # If disk writing fails, retain the incomplete owned file and report failure;
+        # never delete a path another process could have replaced in the meantime.
+        with path.open("xb") as handle:
+            for chunk in chunks:
+                handle.write(chunk)
+                digest.update(chunk)
+        actual, size = hashlib.sha256(), 0
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                actual.update(chunk)
+                size += len(chunk)
+        if size != transfer["bytes"] or actual.digest() != digest.digest():
+            raise OSError("written file does not match the complete transfer")
+        result["file"] = {"path": str(path), "name": transfer["name"], "mime": transfer["mime"],
+                          "bytes": transfer["bytes"], "sha256": digest.hexdigest(), "complete": True}
+        return {**payload, "result": result}
+    except (OSError, ValueError) as exc:
+        return failure("download_write_failed", "File was not completed at " + filename + "; inspect it before retrying: " + str(exc), phase)
+
+
 def create_server(relay: BrowserRelay) -> Server:
     server = Server("browser_session")
 
@@ -50,6 +127,11 @@ def create_server(relay: BrowserRelay) -> Server:
             "all other actions require an explicit tab_id. Use refs from the latest snapshot for click/type; "
             "press optionally focuses ref. type inserts Unicode text. Mutations return automatic readback. "
             "release detaches this tool without closing the tab. Main-frame snapshots only. "
+            "upload clicks a current ref with an intercepted file chooser and selects absolute local files; "
+            "its receipt confirms selection, not application import. download reads the current anchor href "
+            "(including blob) into a new absolute output_path and returns path/bytes/SHA without inline file data. "
+            "Only download runs fixed page JavaScript to read the resource; caller scripts are never accepted. "
+            "Ephemeral button-only downloads and POST are outside this link-read contract. "
             "detail defaults to compact (original refs and useful text/controls); full returns the complete AX graph. "
             "For snapshot or mutation readback, optional view selects flat original AX rows: query is a literal "
             "case-insensitive name/value substring; roles are case-sensitive, e.g. StaticText or button, and combine with query. "
@@ -70,7 +152,24 @@ def create_server(relay: BrowserRelay) -> Server:
             return mcp_result(failure("invalid_arguments", str(exc)))
         detail = args.pop("detail", "compact")
         view = args.pop("view", None)
-        return mcp_result(await relay.call(args), detail, view)
+        try:
+            inputs = upload_inputs(args["files"]) if args["action"] == "upload" else None
+            if args["action"] == "download":
+                download_target(args["output_path"])
+        except (OSError, ValueError) as exc:
+            return mcp_result(failure("invalid_file_path", str(exc)))
+        payload = await relay.call(args)
+        if args["action"] == "download":
+            payload = save_download(payload, args["output_path"])
+        elif payload.get("ok") and inputs is not None:
+            try:
+                if upload_inputs(args["files"]) != inputs:
+                    raise ValueError("local input changed during selection")
+            except (OSError, ValueError) as exc:
+                payload = failure("upload_input_changed", str(exc), "action_confirmed")
+            else:
+                payload = {**payload, "result": {**payload["result"], "selected_files": inputs}}
+        return mcp_result(payload, detail, view)
 
     return server
 

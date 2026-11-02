@@ -250,3 +250,236 @@ test('click refuses a missing hit or a hit in a different frame before mouse inp
     }
   } finally { await f.controller.disconnect(); }
 });
+
+
+/** Explicit simulated CDP for file transport. Fixed production readers execute on real Node Blobs. */
+function fileFixture(data = Buffer.from('Élodie你🙂'), mode = 'download') {
+  const f = fixture(), original = f.chrome.debugger.sendCommand.bind(f.chrome.debugger), intercept = new Map(), objects = new Map();
+  const blobURL = URL.createObjectURL(new Blob([data], {type: 'application/octet-stream'}));
+  const state = {mode, selected: [], count: 0, chooser: 'selectSingle', chooserFrame: 'frame-2', chooserBackend: true, disabled: false, emitChooser: true, href: blobURL, baseURI: null, releases: 0, mutateAfterMeta: false, detachAfterMeta: false, foreignDocumentAfterMeta: false, baseAfterMeta: null};
+  const document = {get URL() { return f.pages.get(2).url; }, get baseURI() { return state.baseURI ?? this.URL; }};
+  const anchor = {localName: 'a', isConnected: true, ownerDocument: document,
+    get href() { return new URL(state.href, this.baseURI).href; },
+    get baseURI() { return this.ownerDocument.baseURI; },
+    getAttribute(name) { return name === 'href' ? state.href : name === 'download' ? 'cambios-你.bin' : null; }};
+  f.chrome.debugger.sendCommand = async ({tabId}, method, params = {}) => {
+    const page = f.pages.get(tabId), input = f.backend(page, 10);
+    if (['Page.setInterceptFileChooserDialog', 'DOM.setFileInputFiles', 'DOM.resolveNode', 'Runtime.callFunctionOn', 'Runtime.releaseObjectGroup'].includes(method)
+        || method === 'DOM.describeNode' && params.backendNodeId === input) {
+      f.calls.push({api:'cdp', tabId, method, params:structuredClone(params)});
+      if (!f.attached.has(tabId)) throw Error('Not attached');
+      if (f.gates.has(method)) await f.gates.get(method).promise;
+      if (f.errors.has(method)) throw Error(f.errors.get(method));
+      if (method === 'Page.setInterceptFileChooserDialog') { intercept.set(tabId, params.enabled);return {}; }
+      if (method === 'DOM.describeNode') return {node:{backendNodeId:input,localName:'input',attributes:['type','file',...(state.disabled?['disabled','']:[])]}};
+      if (method === 'DOM.setFileInputFiles') { state.selected = [...params.files];state.count++;return {}; }
+      if (method === 'DOM.resolveNode') { objects.set('anchor', anchor);return {object:{objectId:'anchor'}}; }
+      if (method === 'Runtime.releaseObjectGroup') { state.releases++;objects.clear();return {}; }
+      try {
+        const fn = Function('document', 'return (' + params.functionDeclaration + ')')(document);
+        const result = await fn.apply(objects.get(params.objectId), (params.arguments ?? []).map(arg => arg.value));
+        if (params.returnByValue) {
+          if (result && Number.isSafeInteger(result.bytes)) {
+            if (state.mutateAfterMeta) state.href = 'blob:https://writer.test/replaced';
+            if (state.detachAfterMeta) anchor.isConnected = false;
+            if (state.foreignDocumentAfterMeta) anchor.ownerDocument = {URL: document.URL, baseURI: document.baseURI};
+            if (state.baseAfterMeta !== null) state.baseURI = state.baseAfterMeta;
+          }
+          return {result:{value:result}};
+        }
+        objects.set('blob', result);return {result:{objectId:'blob'}};
+      } catch (error) { return {exceptionDetails:{text:String(error.message ?? error)}}; }
+    }
+    const result = await original({tabId}, method, params);
+    if (method === 'DOM.describeNode' && params.backendNodeId === f.backend(page, 2)) {
+      Object.assign(result.node, {localName:state.mode === 'download' ? 'a' : 'button',attributes:state.mode === 'download' ? ['href',state.href,'download','cambios-你.bin'] : []});
+    }
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased' && intercept.get(tabId) && state.emitChooser) {
+      // Event arrives BEFORE the click CDP promise resolves: subscribing later loses it.
+      f.onEvent.emit({tabId}, 'Page.fileChooserOpened', {...(state.chooserBackend?{backendNodeId:input}:{}),frameId:state.chooserFrame,mode:state.chooser});
+    }
+    return result;
+  };
+  const close = async () => { URL.revokeObjectURL(blobURL);await f.controller.disconnect(); };
+  return {...f, file:state, anchor, document, intercept, objects, close};
+}
+
+test('upload uses the immediate chooser event, target tab and normal readback without Runtime', async () => {
+  const f = start(fileFixture(Buffer.alloc(0), 'upload'));
+  try {
+    const snap = await f.snapshot(2), files = ['C:/qa/paquete-你.json'];
+    const result = await f.controller.run({action:'upload',tab_id:2,ref:ref(snap,'button'),files});
+    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.phase,'readback_complete');
+    assert.deepEqual(f.file.selected,files);assert.equal(f.file.count,1);assert.equal(result.result.upload.selected,1);
+    assert.equal(f.intercept.get(2),false);assert.equal(f.pages.get(1).active,true);assert.equal(f.pages.get(2).active,false);
+    assert(!f.calls.some(call=>call.method?.startsWith('Runtime.')));
+    assert(f.calls.filter(call=>call.method==='DOM.setFileInputFiles').every(call=>call.tabId===2));
+  } finally { await f.close(); }
+});
+
+test('upload refuses foreign chooser frames and single-file mismatch, and restores interception', async () => {
+  const f = start(fileFixture(Buffer.alloc(0),'upload'));
+  try {
+    f.file.chooserFrame = 'foreign';let snap=await f.snapshot(2);
+    let result=await f.controller.run({action:'upload',tab_id:2,ref:ref(snap,'button'),files:['C:/one']});
+    assert.equal(result.ok,false);assert.equal(result.error.code,'unsupported_file_chooser');assert.equal(f.file.count,0);assert.equal(f.intercept.get(2),false);
+    f.file.chooserFrame='frame-2';snap=await f.snapshot(2);
+    result=await f.controller.run({action:'upload',tab_id:2,ref:ref(snap,'button'),files:['C:/one','C:/two']});
+    assert.equal(result.error.code,'invalid_file_selection');assert.equal(f.file.count,0);assert.equal(f.intercept.get(2),false);
+    f.file.chooser='selectMultiple';snap=await f.snapshot(2);
+    result=await f.controller.run({action:'upload',tab_id:2,ref:ref(snap,'button'),files:['C:/one','C:/two']});
+    assert.equal(result.ok,true);assert.deepEqual(f.file.selected,['C:/one','C:/two']);
+  } finally { await f.close(); }
+});
+
+test('lost chooser action is not replayed and an old ref cannot select files in the next session', async () => {
+  const f = start(fileFixture(Buffer.alloc(0),'upload'));
+  try {
+    f.file.emitChooser=false;const snap=await f.snapshot(2), previous=ref(snap,'button');
+    const pending=f.controller.run({action:'upload',tab_id:2,ref:previous,files:['C:/one']});
+    await tick();await f.controller.disconnect();const result=await pending;
+    assert.equal(result.ok,false);assert.equal(f.file.count,0);assert.equal(f.pages.get(2).clicks,1);
+    assert(f.calls.some(call=>call.method==='Page.setInterceptFileChooserDialog'&&call.params.enabled===false));
+    f.controller.openSession(SESSION2);
+    const stale=await f.controller.run({action:'upload',tab_id:2,ref:previous,files:['C:/one']});
+    assert.equal(stale.error.code,'stale_ref');assert.equal(f.pages.get(2).clicks,1);assert.equal(f.file.count,0);
+  } finally { await f.close(); }
+});
+
+for (const data of [Buffer.alloc(0),Buffer.from('á你🙂é\n'),Buffer.concat([Buffer.from(Array.from({length:256},(_,i)=>i)),Buffer.alloc(140000,255),Buffer.from('X')])]) {
+  test('download fixed readers preserve complete Blob bytes, including padding/Unicode/zero: '+data.length, async()=>{
+    const f=start(fileFixture(data));
+    try {
+      const snap=await f.snapshot(2),result=await f.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/qa/new.bin'});
+      assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.phase,'readback_complete');
+      const transfer=result.result.download;
+      assert.deepEqual(Buffer.concat(transfer.parts.map(part=>Buffer.from(part,'base64'))),data);
+      assert.equal(transfer.bytes,data.length);assert.equal(transfer.name,'cambios-你.bin');assert.equal(f.file.releases,1);assert.equal(f.objects.size,0);
+      assert.equal(f.pages.get(2).clicks,0);assert.equal(f.pages.get(1).active,true);
+      assert(f.calls.filter(call=>call.method?.startsWith('Runtime.')).every(call=>call.tabId===2));
+    } finally { await f.close(); }
+  });
+}
+
+test('revoked Blob and changed link return no transfer, release handles and never replay',async()=>{
+  const f=start(fileFixture(Buffer.from('original')));
+  try {
+    let snap=await f.snapshot(2);URL.revokeObjectURL(f.file.href);
+    let result=await f.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/new'});
+    assert.equal(result.error.code,'download_read_failed');assert.equal(result.phase,'outcome_unknown');assert.equal(result.result,undefined);assert.equal(f.objects.size,0);
+  } finally { await f.close(); }
+  const changed=start(fileFixture(Buffer.from('original')));
+  try {
+    changed.file.mutateAfterMeta=true;const snap=await changed.snapshot(2);
+    const result=await changed.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/new'});
+    assert.equal(result.error.code,'download_link_changed');assert.equal(result.result,undefined);assert.equal(changed.objects.size,0);assert.equal(changed.file.releases,1);
+  } finally { await changed.close(); }
+});
+
+test('document replacement during a Blob read invalidates the observed link before publishing',async()=>{
+  const f=start(fileFixture(Buffer.alloc(70000,1))),gate=deferred();
+  try {
+    const snap=await f.snapshot(2);f.gates.set('Runtime.callFunctionOn',gate);
+    const pending=f.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/new'});
+    await tick();f.pages.get(2).serial++;f.onUpdated.emit(2,{status:'loading'});gate.resolve();
+    const result=await pending;assert.equal(result.ok,false);assert.equal(result.error.code,'stale_ref');assert.equal(result.result,undefined);assert.equal(f.objects.size,0);
+  } finally {gate.resolve();await f.close();}
+});
+
+
+test('missing input backend, disabled input and document replacement select no file',async()=>{
+  const f=start(fileFixture(Buffer.alloc(0),'upload'));
+  try {
+    for(const condition of ['backend','disabled']){
+      f.file.chooserBackend=condition!=='backend';f.file.disabled=condition==='disabled';
+      const snap=await f.snapshot(2),result=await f.controller.run({action:'upload',tab_id:2,ref:ref(snap,'button'),files:['C:/one']});
+      assert.equal(result.error.code,'unsupported_file_chooser');assert.equal(f.file.count,0);assert.equal(f.intercept.get(2),false);
+    }
+    f.file.disabled=false;f.file.chooserBackend=true;f.file.emitChooser=false;
+    const snap=await f.snapshot(2),pending=f.controller.run({action:'upload',tab_id:2,ref:ref(snap,'button'),files:['C:/one']});
+    await tick();f.onUpdated.emit(2,{status:'loading'});
+    const result=await pending;assert.equal(result.error.code,'stale_ref');assert.equal(f.file.count,0);assert.equal(f.intercept.get(2),false);
+  } finally {await f.close();}
+});
+
+test('file-input dispatch error restores the chooser without retrying',async()=>{
+  const f=start(fileFixture(Buffer.alloc(0),'upload'));
+  try {
+    const snap=await f.snapshot(2);f.errors.set('DOM.setFileInputFiles','lost file ACK');
+    const result=await f.controller.run({action:'upload',tab_id:2,ref:ref(snap,'button'),files:['C:/one']});
+    assert.equal(result.ok,false);assert.equal(result.phase,'outcome_unknown');assert.equal(f.intercept.get(2),false);
+    assert.equal(f.calls.filter(c=>c.method==='DOM.setFileInputFiles').length,1);
+  } finally {await f.close();}
+});
+
+
+for (const [name, data, uri] of [
+  ['Unicode', Buffer.from('payload privado Élodie你🙂\n'), 'data:text/plain;charset=utf-8,' + encodeURIComponent('payload privado Élodie你🙂\n')],
+  ['binary', Buffer.from(Array.from({length:256},(_,i)=>i)), 'data:application/octet-stream;base64,' + Buffer.from(Array.from({length:256},(_,i)=>i)).toString('base64')],
+]) {
+  test('data link fixed readers retain bytes but omit the URL from public source: '+name, async()=>{
+    const f=start(fileFixture(data));f.file.href=uri;
+    try {
+      const snap=await f.snapshot(2),result=await f.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/new'});
+      assert.equal(result.ok,true,JSON.stringify(result));
+      assert.deepEqual(Buffer.concat(result.result.download.parts.map(part=>Buffer.from(part,'base64'))),data);
+      assert.deepEqual(result.result.source,{scheme:'data:',url_omitted:true,document:{...f.controller.state(2).refs.get(ref(snap,'button')).document}});
+      assert.equal(Object.hasOwn(result.result.source,'url'),false);assert(!JSON.stringify(result.result.source).includes(uri.split(',')[1]));
+      assert.equal(f.file.releases,1);assert.equal(f.objects.size,0);
+    } finally {await f.close();}
+  });
+}
+
+for (const condition of ['detached-before','detached-after','foreign-document-after']) {
+  test('retained anchor with unchanged main document fails when '+condition,async()=>{
+    const f=start(fileFixture(Buffer.alloc(70000,2)));
+    try {
+      const snap=await f.snapshot(2),serial=f.pages.get(2).serial,generation=f.controller.state(2).generation;
+      if(condition==='detached-before')f.anchor.isConnected=false;
+      else if(condition==='detached-after')f.file.detachAfterMeta=true;
+      else f.file.foreignDocumentAfterMeta=true;
+      const result=await f.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/new'});
+      assert.equal(result.ok,false);assert.equal(result.error.code,'download_read_failed');assert.equal(result.result,undefined);
+      assert.equal(f.pages.get(2).serial,serial);assert.equal(f.controller.state(2).generation,generation);
+      assert.equal(f.pages.get(2).url,snap.document.url);assert.equal(f.objects.size,0);assert.equal(f.file.releases,1);
+      assert.equal(f.calls.filter(c=>c.method==='DOM.resolveNode').length,1);
+      assert.equal(f.effects().length,0);
+    } finally {await f.close();}
+  });
+}
+
+async function withOwnedDownloadServer(data, run) {
+  const {createServer}=await import('node:http'),requests=[];
+  const server=createServer((request,response)=>{requests.push(request.url);if(request.url!=='/assets/download.bin'){response.writeHead(404);response.end();return;}response.writeHead(200,{'Content-Type':'application/octet-stream'});response.end(data);});
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  try{return await run('http://127.0.0.1:'+server.address().port,requests);}
+  finally{server.closeIdleConnections();await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
+}
+
+test('relative href uses the actual base URI instead of the main frame URL',async()=>{
+  const data=Buffer.from('base correcto Élodie你🙂');
+  await withOwnedDownloadServer(data,async(origin,requests)=>{
+    const f=start(fileFixture(data));f.pages.get(2).url=origin+'/page/index.html';f.file.baseURI=origin+'/assets/';f.file.href='download.bin';
+    try {
+      const snap=await f.snapshot(2),result=await f.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/new'});
+      assert.equal(result.ok,true,JSON.stringify(result));assert.deepEqual(requests,['/assets/download.bin']);
+      assert.deepEqual(Buffer.concat(result.result.download.parts.map(part=>Buffer.from(part,'base64'))),data);
+      assert.equal(result.result.source.url,origin+'/assets/download.bin');assert.equal(result.result.source.scheme,'http:');
+      assert.equal(f.file.releases,1);assert.equal(f.objects.size,0);
+    } finally {await f.close();}
+  });
+});
+
+test('base URI replacement during the read fails without publishing bytes',async()=>{
+  const data=Buffer.alloc(70000,7);
+  await withOwnedDownloadServer(data,async(origin,requests)=>{
+    const f=start(fileFixture(data));f.pages.get(2).url=origin+'/page/index.html';f.file.baseURI=origin+'/assets/';f.file.href='download.bin';f.file.baseAfterMeta=origin+'/different/';
+    try {
+      const snap=await f.snapshot(2),serial=f.pages.get(2).serial,generation=f.controller.state(2).generation;
+      const result=await f.controller.run({action:'download',tab_id:2,ref:ref(snap,'button'),output_path:'C:/new'});
+      assert.equal(result.ok,false);assert.equal(result.error.code,'download_link_changed');assert.equal(result.result,undefined);
+      assert.deepEqual(requests,['/assets/download.bin']);assert.equal(f.pages.get(2).serial,serial);assert.equal(f.controller.state(2).generation,generation);
+      assert.equal(f.file.href,'download.bin');assert.equal(f.objects.size,0);assert.equal(f.file.releases,1);
+    } finally {await f.close();}
+  });
+});

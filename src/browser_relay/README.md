@@ -136,3 +136,14 @@ not add the equivalent structured representation. All 67/280 null-ref nodes,
 useful controls, text, values and original references are preserved. Full
 matches the original recordings. This is an offline size result, not a new
 Brave run, model-token measurement or reduction in AX acquisition time.
+
+
+## Local file transfers (under review; no real-browser acceptance yet)
+
+The same `browser_session` schema adds `upload` (`tab_id`, current `ref`, absolute `files`) and `download` (`tab_id`, current anchor `ref`, new absolute `output_path`). The eight original actions remain unchanged. Upload intercepts the target chooser and uses DOM.setFileInputFiles, then returns AX readback plus local input hashes; selection is distinct from application acceptance. Download alone uses fixed page-JavaScript readers of the observed link/Blob; no caller script or private app callback is accepted. It preserves binary slices and keeps transfer parts out of MCP text/structuredContent. The backend publishes only an exclusive real file receipt with bytes/SHA/complete and verifies the disk bytes; existing files are preserved. An incomplete write is an error and any partial owned file remains for inspection.
+
+No new extension ID, key, permissions, port, download-history dependency or server is introduced. Blob revocation/document change/read errors fail without replay. HTTP fetch keeps its actual origin/CORS/CSP behavior. Ephemeral links created only inside a button callback and POST downloads are outside this first link-read contract. Activation and real MCP/Brave/model acceptance are separate and pending; no old blocked extension migration is retried by this code.
+
+The fixed download readers verify that the anchor stays connected to the same current document, resolve its actual base URI, and compare href/download/base/document again after reading. Detached or changed anchors fail without publishing a transfer. Data URL contents are omitted from public source metadata (scheme and omission flag remain); the file bytes stay in the private transfer and local file. Prepared tests include Unicode/binary data URLs, retained detached anchors and relative href with a distinct/changing base on an owned loopback server; no real-browser result is claimed.
+
+Cancellation before dispatch sends no command. Cancelling an already-dispatched MCP request retires its original extension connection, so existing disconnect cleanup aborts pending input/reads and releases that queue. Cleanup is shielded from the MCP AnyIO cancel scope and awaited by the cancelling owner; no background cleanup or command replay is scheduled. A replacement peer is not retired by the old request. Cancellation is propagated to MCP rather than announced as a completed action.

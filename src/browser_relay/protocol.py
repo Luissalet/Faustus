@@ -6,7 +6,7 @@ from copy import deepcopy
 EXTENSION_ID = "cneonpjikbdhbaddfpmmdjemfdphlppa"
 ORIGIN = "chrome-extension://" + EXTENSION_ID
 READ_ACTIONS = frozenset({"tabs", "snapshot", "screenshot"})
-ACTIONS = (*sorted(READ_ACTIONS), "click", "type", "press", "navigate", "release")
+ACTIONS = (*sorted(READ_ACTIONS), "click", "type", "press", "navigate", "release", "upload", "download")
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -14,6 +14,8 @@ SCHEMA = {
         "tab_id": {"type": "integer", "minimum": 0},
         "ref": {"type": "string", "minLength": 1},
         "text": {"type": "string"},
+        "files": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "output_path": {"type": "string", "minLength": 1},
         "key": {"type": "string", "minLength": 1},
         "url": {"type": "string", "minLength": 1},
         "detail": {"type": "string", "enum": ["compact", "full"], "default": "compact"},
@@ -41,9 +43,14 @@ SCHEMA = {
             ("click", ["tab_id", "ref"]), ("type", ["tab_id", "ref", "text"]),
             ("press", ["tab_id", "key"]), ("navigate", ["tab_id", "url"]),
             ("release", ["tab_id"]),
+            ("upload", ["tab_id", "ref", "files"]),
+            ("download", ["tab_id", "ref", "output_path"]),
         ]
     ] + [{"if": {"required": ["view"]},
-          "then": {"properties": {"action": {"enum": ["snapshot", "click", "type", "press", "navigate"]}}}}],
+          "then": {"properties": {"action": {"enum": ["snapshot", "click", "type", "press", "navigate", "upload"]}}}},
+        {"if": {"required": ["files"]}, "then": {"properties": {"action": {"const": "upload"}}}},
+        {"if": {"required": ["output_path"]}, "then": {"properties": {"action": {"const": "download"}}}},
+    ],
 }
 
 

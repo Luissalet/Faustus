@@ -1,5 +1,11 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Archivos en la sesión real del navegador — preparación #1856
+
+La ampliación en revisión de browser_session añade upload por ref/selector de archivo de la pestaña elegida y download del enlace observado, incluidos Blob. El backend devuelve archivo local nuevo, bytes/SHA y recibo completo, sin Base64 en la respuesta al modelo. Las ocho acciones anteriores, identidad/permisos de extensión y no replay se conservan. Sólo download usa JavaScript fijo para leer el recurso; no hay evaluación libre ni acceso a callbacks privados de la aplicación. La selección no demuestra importación; descargas efímeras de botón/POST y los errores reales de fetch no se ocultan.
+
+Código/pruebas preparados para revisión, todavía sin activación ni aceptación Brave/modelo acreditadas. No se reintenta la migración antigua de extensión bloqueada ni se usa escritorio. Un fallo al escribir no se anuncia como archivo completo; el archivo parcial propio queda identificado para inspección. Este estado no cierra Writer1095/1796 ni Faustus1856.
+
 ## Cierre del turno y referencias operativas —29-10-2026, #1797
 
 El bucle reconcilia el progreso completado usando operaciones correctas de la misma ventana anterior al último todowrite. Una consulta de estado no toma prestada una operación vieja para cerrar un paso nuevo. El indicador verified sigue siendo una señal gruesa de actividad, no una prueba semántica general. Los objetivos tipados mantienen su comprobación. La prosa de progreso de una tarea de navegador no crea por sí sola un entregable de repositorio; el trabajo local real conserva su auditoría.
@@ -17310,3 +17316,5 @@ La entrega 536848fe está aprobada en revisión 2, integrada y activa en el back
 Faustus puede usar Browser con la extensión instalada en las pestañas existentes de Brave. En el ensayo nativo R7, con el modelo global configurado, leyó el contador literal «36 visibles de 36 · Todos los documentos» a partir de los child_refs originales, volvió a Inicio y comprobó seis proyectos. Conservó las diez pestañas y su activa y liberó sólo la pestaña de QA. La CLI normal terminó con exit 0/EOF: 12 llamadas Browser correctas, 13 rondas y 71,7 s, sin otras herramientas ni ninguna llamada después de release. El resultado se entregó en una respuesta final.
 
 Este resultado supera el pendiente de activación y comprobación nativa de 1797 que figura en las notas anteriores. Acredita ese recorrido real; no es una medida controlada de mejora frente a otros turnos ni certifica autonomía o paridad global. Los ensayos anteriores conservan sus fallos y límites. La instalación en carpeta canónica y la aceptación del runtime portable continúan aparte; el worktree de la extensión cargada sigue siendo necesario. Writer 1095/1796 continúa. [Instalación y contrato Browser](src/browser_relay/README.md).
+
+Nota de la preparación1856: download comprueba conexión/documento del enlace y su baseURI real antes/después de leer; una URL data se omite del recibo público para no exponer bytes inline. Los errores no publican transferencia. Son controles preparados, no aceptación Brave/modelo ni activación.

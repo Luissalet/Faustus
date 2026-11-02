@@ -5,6 +5,9 @@ import asyncio
 import json
 import uuid
 
+import anyio
+from anyio.lowlevel import checkpoint
+
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
@@ -77,6 +80,18 @@ class BrowserRelay:
                     if not future.done():
                         future.set_result(self._lost(action, "extension_disconnected", "Extension disconnected; no command was replayed"))
 
+    async def _retire(self, peer, reason: str):
+        # Retire the captured peer only, even if a replacement becomes ready.
+        if self._peer is peer:
+            self._ready = False
+        # MCP cancellation is an AnyIO cancel scope: an unshielded close await
+        # would be cancelled again. Finish the existing cleanup in this owner.
+        with anyio.CancelScope(shield=True):
+            try:
+                await peer.close(1011, reason)
+            except ConnectionClosed:
+                pass
+
     async def call(self, arguments: object) -> dict:
         try:
             args = validate_arguments(arguments)
@@ -86,6 +101,8 @@ class BrowserRelay:
         if peer is None:
             return failure("extension_unavailable", "Connect the browser session extension; no browser was launched")
         async with self._serial:
+            # Observe cancellation before creating/sending a command task.
+            await checkpoint()
             if self._peer is not peer or not self._ready:
                 return failure("extension_disconnected", "The original extension connection ended before dispatch")
             request_id = str(uuid.uuid4())
@@ -95,14 +112,12 @@ class BrowserRelay:
                 # A send failure can be partial: mutations are conservatively unknown.
                 await asyncio.wait_for(peer.send(json.dumps({"type": "command", "id": request_id, "arguments": args}, ensure_ascii=False)), self.timeout)
                 return await asyncio.wait_for(asyncio.shield(future), self.timeout)
+            except asyncio.CancelledError:
+                await self._retire(peer, "browser_relay_command_cancelled")
+                raise
             except asyncio.TimeoutError:
                 # The extension may still await CDP: retire its serialized queue before another call.
-                if self._peer is peer:
-                    self._ready = False
-                try:
-                    await peer.close(1011, "browser_relay_command_timeout")
-                except ConnectionClosed:
-                    pass
+                await self._retire(peer, "browser_relay_command_timeout")
                 return self._lost(args["action"], "command_timeout", "No response before timeout; the expired connection was closed; no command was replayed")
             except ConnectionClosed:
                 return self._lost(args["action"], "extension_disconnected", "Extension disconnected during dispatch; no command was replayed")

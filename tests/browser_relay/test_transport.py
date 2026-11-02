@@ -151,3 +151,29 @@ async def test_port_collision_is_explicit_and_leaves_owner_alive():
         with pytest.raises(RuntimeError, match="browser_relay_port_unavailable"):
             await BrowserRelay(port=port).start()
         assert owner.getsockname()[1] == port
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("arguments", [
+    {"action": "upload", "tab_id": 2, "ref": "r", "files": ["C:/qa/package.json"]},
+    {"action": "download", "tab_id": 2, "ref": "r", "output_path": "C:/qa/new.json"},
+])
+async def test_file_timeout_retires_original_peer_without_replay(arguments):
+    async with running_relay(timeout=.05) as relay:
+        peer = await hello(relay)
+        pending = asyncio.create_task(relay.call(arguments))
+        first = json.loads(await peer.recv())
+        assert first["arguments"] == arguments
+        result = await pending
+        assert not result["ok"] and result["phase"] == "outcome_unknown"
+        assert result["error"]["code"] == "command_timeout"
+        with pytest.raises(ConnectionClosed):await peer.recv()
+        fresh = await hello(relay)
+        try:
+            next_call = asyncio.create_task(relay.call({"action": "tabs"}))
+            command = json.loads(await fresh.recv())
+            assert command["arguments"] == {"action": "tabs"} and command["id"] != first["id"]
+            await reply(fresh, command)
+            assert (await next_call)["ok"]
+        finally:await fresh.close()
