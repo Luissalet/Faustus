@@ -328,22 +328,25 @@ def _walk_repos(root: str, *, max_depth: int = MAX_DEPTH, budget: int = MAX_REPO
             found.append(path)
         if depth >= max_depth:
             return
+        # scandir, not listdir + islink/isdir: on Windows the directory
+        # listing already carries each entry's type, so files cost no stat
+        # (seen live: a 40-repo tree with large data folders took ~14 s).
         try:
-            names = sorted(os.listdir(path))
+            with os.scandir(path) as it:
+                entries = sorted(it, key=lambda e: e.name)
         except OSError:
             return
-        for name in names:
+        for entry in entries:
             if len(found) >= budget:
                 return
-            full = os.path.join(path, name)
-            if _excluded(full, name):
-                continue
             try:
-                if os.path.islink(full) or not os.path.isdir(full):
+                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
                     continue
             except OSError:
                 continue
-            _walk(full, depth + 1)
+            if _excluded(entry.path, entry.name):
+                continue
+            _walk(entry.path, depth + 1)
 
     _walk(root, 0)
     return found
