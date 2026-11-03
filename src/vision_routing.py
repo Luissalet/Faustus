@@ -394,6 +394,13 @@ def _pick_on_endpoints(endpoints: List[Dict[str, Any]], owner: Optional[str],
     negatives: Dict[str, set] = {}
     local = [ep for ep in endpoints if ep.get("local")]
     remote = [ep for ep in endpoints if not ep.get("local")]
+    # The default chat endpoint is probed first: when its model sees, it is the
+    # route that needs no second model, and endpoints whose server is gone
+    # (seen live: two llama.cpp entries on deleted model files took ~5.5 s each)
+    # must not spend the whole probe budget before it is reached.
+    preferred = str(_user_pref("default_endpoint_id", owner) or _global_setting("default_endpoint_id", "") or "")
+    if preferred:
+        local.sort(key=lambda ep: 0 if ep.get("id") == preferred else 1)
     for ep in local:
         capable, negative = _probe_endpoint(ep["url"], ep.get("models") or [], deadline)
         negatives[ep["url"]] = negative

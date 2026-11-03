@@ -55,6 +55,27 @@ def test_auto_asks_a_lan_openai_compatible_server_with_an_image_probe(monkeypatc
     assert (route["model"], route["endpoint_id"]) == ("deepseek-v4.1-flash", "sparks")
 
 
+def test_the_default_endpoint_is_probed_before_the_others(monkeypatch):
+    endpoints = [_ep("old-llamacpp", "http://127.0.0.1:8081/v1/chat/completions", ["old-27b"]),
+                 _ep("sparks", "http://192.168.0.185:8888/v1/chat/completions", ["deepseek-v4.1-flash"])]
+    monkeypatch.setattr(vr, "list_vision_endpoints", lambda owner: endpoints)
+    monkeypatch.setattr(vr, "_gate_allows", lambda url, owner: True)
+    monkeypatch.setattr(vr, "_global_setting", lambda key, default="": {
+        "vision_enabled": True, "default_endpoint_id": "sparks"}.get(key, default))
+    asked = []
+
+    def probe(url, model):
+        asked.append(model)
+        return True
+
+    _no_probes(monkeypatch)
+    monkeypatch.setattr(ch, "openai_compat_supports_vision", probe)
+
+    route = vr.resolve_vision_route("erin-vr")
+    assert (route["model"], route["endpoint_id"]) == ("deepseek-v4.1-flash", "sparks")
+    assert asked == ["deepseek-v4.1-flash"]
+
+
 def test_image_probe_saying_no_leaves_the_route_empty(monkeypatch):
     endpoints = [_ep("sparks", "http://192.168.0.185:8888/v1/chat/completions", ["text-only-model"])]
     monkeypatch.setattr(vr, "list_vision_endpoints", lambda owner: endpoints)
