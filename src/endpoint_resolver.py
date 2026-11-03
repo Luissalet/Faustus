@@ -457,6 +457,16 @@ def resolve_endpoint(
         else:
             ep = ep.first()
         if not ep:
+            # The role points at an endpoint that has since been disabled or
+            # removed (seen live: utility/task/dispatch left on a GLM endpoint
+            # after the cluster moved to another model). With no caller
+            # fallback the role would get nothing at all; follow the default
+            # chat model instead, as an unset role does. The saved choice is
+            # kept, so re-enabling that endpoint brings the role back to it.
+            if setting_prefix != "default" and not (fallback_url and fallback_model):
+                logger.warning("[resolve_endpoint] %s endpoint %s is disabled or missing; using the default model",
+                               setting_prefix, ep_id)
+                return resolve_endpoint("default", fallback_url, fallback_model, fallback_headers, owner=owner)
             return fallback_url, fallback_model, fallback_headers
 
         try:

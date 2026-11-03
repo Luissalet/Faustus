@@ -99,6 +99,38 @@ def test_utility_uses_default_when_utility_endpoint_unset(monkeypatch):
     assert headers == {"Authorization": "Bearer key-default"}
 
 
+def test_disabled_utility_endpoint_follows_the_default(monkeypatch):
+    # Utility saved on an endpoint that was later disabled: with no caller
+    # fallback the role used to resolve to nothing at all.
+    disabled = _endpoint("old", "old-chat")
+    disabled.is_enabled = False
+    settings = {
+        "utility_endpoint_id": "old",
+        "utility_model": "old-chat",
+        "default_endpoint_id": "default",
+        "default_model": "default-chat",
+    }
+    _install_resolver_fakes(monkeypatch, settings, [disabled, _endpoint("default", "default-chat")])
+
+    url, model, headers = resolve_endpoint("utility")
+
+    assert url == "https://default.example/v1/chat/completions"
+    assert model == "default-chat"
+    assert settings["utility_endpoint_id"] == "old"  # the saved choice is kept
+
+
+def test_disabled_task_endpoint_keeps_the_callers_fallback(monkeypatch):
+    disabled = _endpoint("old", "old-chat")
+    disabled.is_enabled = False
+    settings = {"task_endpoint_id": "old", "task_model": "old-chat",
+                "default_endpoint_id": "default", "default_model": "default-chat"}
+    _install_resolver_fakes(monkeypatch, settings, [disabled, _endpoint("default", "default-chat")])
+
+    url, model, _ = resolve_endpoint("task", "https://session.example/v1/chat/completions", "session-chat")
+
+    assert (url, model) == ("https://session.example/v1/chat/completions", "session-chat")
+
+
 def test_task_uses_utility_when_task_endpoint_unset(monkeypatch):
     settings = {
         "task_endpoint_id": "",
