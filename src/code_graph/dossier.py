@@ -87,8 +87,8 @@ def _fact(key: str, fact: str, evidence: str, certainty: str, **extra: Any) -> D
 
 def _git(root: str, *args: str) -> Optional[str]:
     try:
-        proc = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
-                              timeout=20)
+        proc = subprocess.run(["git", *args], cwd=root, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
     return proc.stdout if proc.returncode == 0 else None

@@ -280,7 +280,7 @@ def detect_changes(root: str = "", *, base_ref: str = "HEAD", project_id: str = 
     try:
         proc = subprocess.run(
             [git, "diff", "--unified=0", "--no-color", str(base_ref or "HEAD")],
-            cwd=resolved, capture_output=True, text=True, timeout=30, shell=False)
+            cwd=resolved, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, shell=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"error": f"git diff failed: {exc}", "exit_code": 1, "changed_symbols": []}
     if proc.returncode not in (0, 1):
