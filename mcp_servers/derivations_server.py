@@ -13,8 +13,11 @@ HTTP routes (`/api/recipes/learn*`, `/api/derivations/*`) and this server.
   DATA_DIR/derivations/<owner>). `ODYSSEUS_MCP_DERIVATIONS_OWNER` says whose;
   without it every call is refused rather than written into nobody's store.
 * **paths are confined** to the active workspace like `read_file`'s.
-* **nothing here executes a transformation.** `derivation_graph rebuild` hands
-  back the next stale node for the caller to run with its own approved tools.
+* **nothing runs unless asked.** `derivation_graph rebuild` hands back the next
+  stale node for the caller to run with its own approved tools. Only
+  `recipe_learn action=execute` (or `try` with `mode=execute`) runs a recipe's
+  steps, through the normal tool dispatcher as the configured owner, in the
+  `workspace` given, with the same policy gates as any other call.
 """
 
 import asyncio
@@ -78,8 +81,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     args = arguments if isinstance(arguments, dict) else {}
     try:
         from src import derivation_ops
-        fn = {"recipe_learn": derivation_ops.run_recipe, "derivation_graph": derivation_ops.run_graph,
-              "decision_map": derivation_ops.run_map}[name]
+        if name == "recipe_learn":
+            return _text(await derivation_ops.run_recipe_async(owner, args))
+        fn = {"derivation_graph": derivation_ops.run_graph, "decision_map": derivation_ops.run_map}[name]
         return _text(await asyncio.to_thread(fn, owner, args))
     except Exception as exc:  # noqa: BLE001
         return _text(f"Error in {name}: {type(exc).__name__}: {exc}")

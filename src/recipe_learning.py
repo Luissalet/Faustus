@@ -723,6 +723,8 @@ def try_recipe(recipe_id: str, owner: str, params: Mapping[str, Any], *,
     ok = (not problems and resolved == len(step_reports) and not leaks and not untested)
     result = {
         "recipe_id": recipe.id, "version": recipe.version, "fingerprint": _fingerprint(recipe),
+        "mode": "dry_run", "kind": "structural_dry_run" if executor is None else "callback_run",
+        "verified": False,
         "executed": executor is not None, "params": values, "unknown_params": unknown,
         "problems": problems,
         "steps": step_reports, "resolved": resolved, "total": len(step_reports),
@@ -738,7 +740,8 @@ def try_recipe(recipe_id: str, owner: str, params: Mapping[str, Any], *,
     if record:
         recipe.tries.append({"at": time.time(), "fingerprint": result["fingerprint"], "params": values,
                              "resolved": resolved, "total": len(step_reports), "leaks": len(leaks),
-                             "untested": untested, "promotable": ok, "executed": executor is not None})
+                             "untested": untested, "promotable": ok, "executed": executor is not None,
+                             "kind": result["kind"]})
         recipe.tries = recipe.tries[-10:]
         recipes_store.save_recipe(owner, recipe)
     return result
@@ -768,12 +771,16 @@ def promote(recipe_id: str, owner: str) -> Dict[str, Any]:
                                   "the last second-case run left unresolved steps, leaked literals or reused values")
     if last.get("fingerprint") != _fingerprint(recipe):
         raise RecipeLearningError("recipes.changed_since_try", "the recipe changed after the last try; try it again")
+    from src.recipe_execution import latest_fresh_verification
+    verified = latest_fresh_verification(recipe)
     recipe.status = "published"
     recipe.version = "1.0.0"
-    recipe.source = {**(recipe.source or {}), "promoted_at": time.time()}
+    recipe.source = {**(recipe.source or {}), "promoted_at": time.time(),
+                     "promoted_from": "verified_execution" if verified else str(last.get("kind") or "structural_dry_run")}
     recipes_store.save_recipe(owner, recipe)
     skill = _add_to_skill_library(recipe, owner)
-    return {"recipe": recipe.to_dict(), "skill": skill}
+    return {"recipe": recipe.to_dict(), "skill": skill, "verified_execution": verified,
+            "promoted_from": recipe.source["promoted_from"]}
 
 
 def _add_to_skill_library(recipe: Recipe, owner: str) -> Dict[str, Any]:
@@ -781,6 +788,11 @@ def _add_to_skill_library(recipe: Recipe, owner: str) -> Dict[str, Any]:
         from src.skill_library import _skills_manager
         mgr = _skills_manager()
         procedure = [f"{i}. {s}" for i, s in enumerate(recipe.steps, 1)]
+        procedure.append(
+            f"To run it on a new case: recipe_learn action=execute recipe_id={recipe.id} "
+            "params={" + ", ".join(f"{p['name']}: ..." for p in recipe.params) + "} "
+            "(the steps run for real in the workspace and the recipe's exit criteria are checked; "
+            "action=try only renders them).")
         record = mgr.add_skill(
             name=f"recipe-{_slug(recipe.title)}", title=recipe.title,
             description=f"Learned recipe: {recipe.title}. Parameters: "

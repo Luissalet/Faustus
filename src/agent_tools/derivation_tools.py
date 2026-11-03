@@ -30,6 +30,13 @@ async def _run(fn: Callable[..., Dict[str, Any]], content: str, ctx: dict, name:
 
 class RecipeLearnTool:
     async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content)
+        if args and derivation_ops._wants_execution(args):
+            # A real execution: the steps go through the normal dispatcher with
+            # this turn's owner, session, security context and tool policy.
+            out = await derivation_ops.run_recipe_async(str((ctx or {}).get("owner") or ""), args, ctx=ctx)
+            out.setdefault("exit_code", 0)
+            return out
         return await _run(derivation_ops.run_recipe, content, ctx, "recipe_learn")
 
 

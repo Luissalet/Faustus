@@ -2495,4 +2495,6 @@ Implementado en `src/recipe_learning.py`, `src/derivation_graph.py` y `src/deriv
 
 1. Probar `recipe_learn` con trazas reales de un turno de Faustus y medir cuántos literales de la petición se quedan sin detectar; añadir patrones solo con casos reales.
 2. Conectar `derivation_graph` a los nodos `artifact_store` de los workflows para que cada artefacto guardado cree su nodo sin declararlo a mano.
-3. Permitir que `recipe_try` ejecute pasos de solo lectura con un ejecutor aprobado, para comprobar salidas y no solo resolución de plantillas.
+3. ~~Ejecutar de verdad una receta en un caso nuevo y comprobar la salida~~ — hecho (#2050): `recipe_learn action=execute` / `POST /api/recipes/{id}/execute`, ver FAUSTUS.md 03-11-2026 «Ejecución real de recetas».
+4. Botón «Ejecutar de verdad» en la interfaz cuando exista una lista de recetas aprendidas en Studio (hoy solo hay API, MCP, chat y la skill promovida que indica la llamada).
+5. Esperar también trabajos asíncronos de otras herramientas que devuelven id (`image_job`, `fanout_run`, `trigger_research`) a través de sus propias consultas de estado; hoy cuentan como `queued`, no como terminados.

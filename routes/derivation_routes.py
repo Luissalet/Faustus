@@ -5,7 +5,11 @@ use. `require_admin` on every endpoint (the graph hashes files and can register
 results in Atlas); data is scoped to the signed-in owner.
 
 POST /api/recipes/learn                 {run_id | session_id | workflow_run_id | request+steps, title?, params_hint?, turn?}
-POST /api/recipes/{recipe_id}/try       {params}   dry run on a second case, nothing executed
+POST /api/recipes/{recipe_id}/try       {params, mode?}   mode=dry_run (default): structural dry run, nothing executed;
+                                        mode=execute: same as /execute
+POST /api/recipes/{recipe_id}/execute   {params, workspace, criteria?, inputs?, job_timeout?, rerun?}  real execution
+                                        through the normal tool dispatcher, exit criteria checked on the delivered files
+GET  /api/recipes/{recipe_id}/verification   stored verifications and whether each is still fresh
 POST /api/recipes/{recipe_id}/promote   only after a clean try
 GET  /api/recipes/search                ?query=&limit=
 GET  /api/derivations                   graphs of the owner
@@ -62,12 +66,27 @@ def setup_derivation_routes() -> APIRouter:
         owner = owner_of(request)
         return _reply(derivation_ops.run_recipe(owner, {"action": "search", "query": query, "limit": limit}))
 
+    _EXEC_KEYS = ("params", "mode", "workspace", "criteria", "inputs", "job_timeout", "rerun")
+
     @router.post("/api/recipes/{recipe_id}/try")
     async def try_recipe(request: Request, recipe_id: str):
         owner = owner_of(request)
         body = await _body(request)
-        return _reply(derivation_ops.run_recipe(owner, {"action": "try", "recipe_id": recipe_id,
-                                                        "params": body.get("params")}))
+        args = {k: body[k] for k in _EXEC_KEYS if k in body}
+        return _reply(await derivation_ops.run_recipe_async(owner, {**args, "action": "try", "recipe_id": recipe_id}))
+
+    @router.post("/api/recipes/{recipe_id}/execute")
+    async def execute_recipe(request: Request, recipe_id: str):
+        owner = owner_of(request)
+        body = await _body(request)
+        args = {k: body[k] for k in _EXEC_KEYS if k in body}
+        args.update(action="execute", recipe_id=recipe_id, mode="execute")
+        return _reply(await derivation_ops.run_recipe_async(owner, args))
+
+    @router.get("/api/recipes/{recipe_id}/verification")
+    async def recipe_verification(request: Request, recipe_id: str):
+        owner = owner_of(request)
+        return _reply(derivation_ops.run_recipe(owner, {"action": "verification", "recipe_id": recipe_id}))
 
     @router.post("/api/recipes/{recipe_id}/promote")
     async def promote_recipe(request: Request, recipe_id: str):

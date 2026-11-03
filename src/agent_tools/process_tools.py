@@ -48,6 +48,9 @@ def _failed(tool: str, result: Dict[str, Any]) -> Dict[str, Any]:
 def _ok(result: Dict[str, Any], text: str) -> Dict[str, Any]:
     out = dict(result)
     out.pop("ok", None)
+    if "exit_code" in result:
+        # `exit_code` below is the tool's own; the process's stays readable.
+        out["process_exit_code"] = result.get("exit_code")
     out["exit_code"] = 0
     out["output"] = text
     return out

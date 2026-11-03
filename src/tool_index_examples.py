@@ -1242,6 +1242,7 @@ EXAMPLES: Dict[str, List[str]] = {
         "convierte lo que acabamos de hacer en una receta reutilizable",
         "turn this finished job into a recipe with the file names as parameters",
         "try the recipe on another customer before saving it",
+        "aplica de verdad la receta a otra tabla y comprueba el informe entregado",
     ],
     "derivation_graph": [
         "qué hay que recalcular porque ha cambiado este fichero de entrada",

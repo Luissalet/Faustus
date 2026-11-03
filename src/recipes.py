@@ -68,6 +68,10 @@ class Recipe:
     limits: List[str] = field(default_factory=list)
     tries: List[Dict[str, Any]] = field(default_factory=list)
     version: str = ""
+    # Real executions (src/recipe_execution.py): the exit criteria declared for
+    # this recipe and the last runs with what they verified.
+    exit_criteria: List[Dict[str, Any]] = field(default_factory=list)
+    executions: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         out = self._base_dict()
@@ -83,6 +87,10 @@ class Recipe:
             out["tries"] = [dict(x) for x in self.tries]
         if self.version:
             out["version"] = self.version
+        if self.exit_criteria:
+            out["exit_criteria"] = [dict(x) for x in self.exit_criteria]
+        if self.executions:
+            out["executions"] = [dict(x) for x in self.executions]
         return out
 
     def _base_dict(self) -> Dict[str, Any]:
@@ -118,6 +126,8 @@ class Recipe:
             limits=[str(x) for x in (data.get("limits") or [])],
             tries=_dict_list(data.get("tries")),
             version=str(data.get("version") or ""),
+            exit_criteria=_dict_list(data.get("exit_criteria")),
+            executions=_dict_list(data.get("executions")),
         )
 
 

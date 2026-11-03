@@ -3258,11 +3258,11 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "recipe_learn",
-            "description": "Recipes learned from finished work. propose: from run_id, session_id (a conversation's stored tool calls, turn defaults to the last), workflow_run_id or explicit request+steps [{tool, args}], builds a draft recipe whose request literals (paths, names, ids, URLs, numbers) are named parameters; step order, tools and argument templates are kept, with provenance, the first case as example and limits. try: dry-run on a second case (params {name: value}, every value different from the first case) without running tools: reports resolved steps, leaked literals of the first case and the rendered calls. promote: publishes to the recipe and skill library, only after a clean try. search/show/list. Only when the user asks to keep a procedure; never for every conversation.",
+            "description": "Recipes learned from finished work. propose: from run_id, session_id (a conversation's stored tool calls, turn defaults to the last), workflow_run_id or explicit request+steps [{tool, args}], builds a draft recipe whose request literals (paths, names, ids, URLs, numbers) are named parameters; step order, tools and argument templates are kept, with provenance, the first case as example and limits. try: structural dry run on a second case (params {name: value}, every value different from the first case) without running tools: reports resolved steps, leaked literals of the first case and the rendered calls. execute (or try with mode=execute): runs the steps for real through the normal tool dispatcher in the workspace, waits for started processes, records each step's status (ok/error/queued/exception, later steps skipped), then checks the declared exit criteria on the delivered files; verified only if every step finished and every criterion passed. verification: whether stored verifications are still fresh (recipe, criteria, inputs and delivered files unchanged). promote: publishes to the recipe and skill library, only after a clean try. search/show/list. Only when the user asks to keep a procedure; never for every conversation.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["propose", "try", "promote", "search", "show", "list"]},
+                    "action": {"type": "string", "enum": ["propose", "try", "execute", "verification", "promote", "search", "show", "list"]},
                     "run_id": {"type": "string"}, "session_id": {"type": "string"}, "workflow_run_id": {"type": "string"},
                     "turn": {"type": "integer", "description": "Which turn with tool calls of the conversation (default -1, the last)"},
                     "request": {"type": "string", "description": "With steps: the request the steps answered"},
@@ -3270,7 +3270,13 @@ FUNCTION_TOOL_SCHEMAS = [
                     "title": {"type": "string"},
                     "params_hint": {"type": "object", "description": "Values to treat as parameters: {name: first-case value}"},
                     "recipe_id": {"type": "string"},
-                    "params": {"type": "object", "description": "try: the second case's values by parameter name"},
+                    "params": {"type": "object", "description": "try/execute: the second case's values by parameter name"},
+                    "mode": {"type": "string", "enum": ["dry_run", "execute"], "description": "try: dry_run (default, nothing runs) or execute (run the steps for real)"},
+                    "workspace": {"type": "string", "description": "execute: folder the steps run in (default: the active workspace)"},
+                    "criteria": {"type": "array", "items": {"type": "object"}, "description": "execute: exit criteria stored on the recipe, paths may use {{param}}: {kind: file_exists|contains|regex|row_count|columns|number, path, text, pattern, min_count, equals, min, max, includes, tolerance}; equals may be {csv_sum: {path, column}}, {rows_of: path} or {columns_of: path}, computed from that file"},
+                    "inputs": {"type": "array", "items": {"type": "string"}, "description": "execute: input files of the case (default: parameter values that are existing files)"},
+                    "job_timeout": {"type": "integer", "description": "execute: seconds to wait for a started process (default 120, max 1800)"},
+                    "rerun": {"type": "boolean", "description": "execute: run every step again instead of resuming"},
                     "query": {"type": "string"}
                 },
                 "required": ["action"]

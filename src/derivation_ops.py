@@ -14,12 +14,13 @@ import os
 from typing import Any, Callable, Dict, Mapping, Optional
 
 from src import derivation_graph as dg
+from src import recipe_execution as rex
 from src import recipe_learning as rl
 from src import recipes as recipes_store
 
 logger = logging.getLogger(__name__)
 
-RECIPE_ACTIONS = ("propose", "try", "promote", "search", "show", "list")
+RECIPE_ACTIONS = ("propose", "try", "execute", "verification", "promote", "search", "show", "list")
 GRAPH_ACTIONS = ("define", "remove", "show", "list", "plan", "rebuild", "complete", "base_dir", "atlas")
 MAP_ACTIONS = ("add", "link", "unlink", "remove", "show", "affected_by")
 
@@ -51,7 +52,46 @@ def _s(args: Mapping[str, Any], key: str) -> str:
 
 # ---------------------------------------------------------------------------
 
-def run_recipe(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
+def _wants_execution(args: Mapping[str, Any]) -> bool:
+    return _s(args, "action") == "execute" or (_s(args, "action") == "try" and _s(args, "mode") == rex.MODE_EXECUTE)
+
+
+def _workspace_for(args: Mapping[str, Any]) -> str:
+    from src.tool_execution import get_active_workspace, vet_workspace
+    raw = _s(args, "workspace")
+    if raw:
+        ws = vet_workspace(raw)
+        if not ws:
+            raise ValueError(f"workspace {raw!r} is not a usable folder")
+        active = get_active_workspace()
+        if active and not rex._inside(ws, active):
+            raise PermissionError("workspace must be the active workspace or a folder inside it")
+        return ws
+    return get_active_workspace() or ""
+
+
+async def run_recipe_async(owner: str, args: Mapping[str, Any], *, ctx: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """``run_recipe`` for callers on the server's event loop (chat tool, HTTP,
+    MCP). A real execution gets an executor over the normal dispatcher with
+    the caller's session, security context and tool policy; the steps are
+    scheduled back on this loop from the worker thread the rebuild runs in."""
+    import asyncio
+    if not _wants_execution(args):
+        return await asyncio.to_thread(run_recipe, owner, args)
+    try:
+        workspace = _workspace_for(args)
+    except (ValueError, PermissionError) as exc:
+        return _err("recipes.bad_workspace", str(exc))
+    if not workspace:
+        return _err("recipes.no_workspace", "a real execution needs a workspace: open a project folder or pass workspace")
+    c = ctx or {}
+    executor = rex.make_dispatch_executor(
+        owner, workspace=workspace, session_id=c.get("session_id"), security_context=c.get("security_context"),
+        tool_policy=c.get("tool_policy"), disabled_tools=c.get("disabled_tools"), loop=asyncio.get_running_loop())
+    return await asyncio.to_thread(run_recipe, owner, {**dict(args), "workspace": workspace}, executor=executor)
+
+
+def run_recipe(owner: str, args: Mapping[str, Any], *, executor: Optional[rex.Executor] = None) -> Dict[str, Any]:
     action = _s(args, "action") or ("propose" if (args.get("run_id") or args.get("session_id") or args.get("steps")
                                                   or args.get("workflow_run_id")) else "list")
     if action not in RECIPE_ACTIONS:
@@ -68,11 +108,30 @@ def run_recipe(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             return {"recipe": recipe.to_dict(),
                     "next": "Run recipe_learn action=try with the parameters of a second, different case; "
                             "promotion needs a try with every step resolved and no literal of the first case left."}
-        if action == "try":
+        if action in ("try", "execute"):
             params = args.get("params")
             if not isinstance(params, dict):
                 return _err("recipes.bad_params", "params must be an object {name: value} for the second case")
-            return rl.try_recipe(_s(args, "recipe_id"), owner, params)
+            mode = _s(args, "mode") or (rex.MODE_EXECUTE if action == "execute" else rex.MODE_DRY_RUN)
+            if mode not in rex.MODES:
+                return _err("recipes.bad_mode", f"mode must be one of {', '.join(rex.MODES)}")
+            if mode == rex.MODE_DRY_RUN:
+                return rl.try_recipe(_s(args, "recipe_id"), owner, params)
+            workspace = _s(args, "workspace")
+            if not workspace:
+                from src.tool_execution import get_active_workspace
+                workspace = get_active_workspace() or ""
+            run_with = executor
+            if run_with is None:
+                if not workspace:
+                    return _err("recipes.no_workspace", "a real execution needs a workspace")
+                run_with = rex.make_dispatch_executor(owner, workspace=workspace)
+            return rex.execute(_s(args, "recipe_id"), owner, params, executor=run_with, workspace=workspace,
+                               criteria=args.get("criteria"),
+                               inputs=args.get("inputs") if isinstance(args.get("inputs"), list) else None,
+                               job_timeout=args.get("job_timeout"), rerun=bool(args.get("rerun")))
+        if action == "verification":
+            return rex.verification_status(_s(args, "recipe_id"), owner)
         if action == "promote":
             return rl.promote(_s(args, "recipe_id"), owner)
         if action == "search":
