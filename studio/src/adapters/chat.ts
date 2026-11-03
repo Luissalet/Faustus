@@ -808,6 +808,7 @@ export type ChatEvent =
   | { type: 'vram'; phase: string; message: string; blocked?: VramBlocked }
   | { type: 'image'; url: string }
   | { type: 'fallback'; answeredBy: string; selected: string }
+  | { type: 'hedge'; winner: string; outcome: string; afterS: number; endpoint: string; model: string }
   | {
       type: 'terminal';
       failed: boolean;
@@ -2051,6 +2052,12 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
       return raw.url ? { type: 'image', url: str(raw.url) } : null;
     case 'fallback':
       return { type: 'fallback', answeredBy: str(raw.answered_by), selected: str(raw.selected_model) };
+    case 'hedge':
+      return {
+        type: 'hedge', winner: str(raw.winner), outcome: str(raw.outcome),
+        afterS: typeof raw.after_s === 'number' ? raw.after_s : Number(raw.after_s) || 0,
+        endpoint: str(raw.answered_by_endpoint_label), model: str(raw.answered_by),
+      };
     case 'agent_terminal': {
       const failure = (data.failure && typeof data.failure === 'object' ? data.failure : {}) as Record<
         string,

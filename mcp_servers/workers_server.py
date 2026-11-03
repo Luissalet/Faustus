@@ -19,7 +19,7 @@ tokens go to planning and review:
     }
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
-session_usage / turn_review / answer_versions / session_events (what a chat or a worker's chat used and what
+session_usage / turn_review / model_hedge (hedged first token settings and races) / answer_versions / session_events (what a chat or a worker's chat used and what
 its last turns did, with findings), run_report (effects that left the machine and whether they landed, a turn
 replayed call by call, where a turn's time and tokens went, orphaned workers),
 workers_wait (block until done, then the compact result), workers_wait_for
@@ -1291,6 +1291,24 @@ TOOLS: List[Tool] = [
         }, "required": ["run_id"]},
     ),
     Tool(
+        name="model_hedge",
+        description=(
+            "Hedged first token of the Faustus chat model: when a streamed request has released no first "
+            "token after a delay, the same request also goes to a hedge target (same model on another "
+            "endpoint, the first fallback, or a named endpoint_id::model) and the stream that answers first "
+            "is used. action=status: settings, the hedge the default model gets, selectable targets, recent "
+            "races (who answered, after how many seconds). action=set: enabled, delay_s, target, delay_overrides."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["status", "set"], "default": "status"},
+            "enabled": {"type": "boolean"},
+            "delay_s": {"type": "number", "description": "1-600 seconds without a first token"},
+            "target": {"type": "string", "description": "auto, same_model, fallback, off, <endpoint_id> or <endpoint_id>::<model>"},
+            "delay_overrides": {"type": "object", "description": "{model: seconds}"},
+            "limit": {"type": "integer", "default": 20},
+        }},
+    ),
+    Tool(
         name="turn_review",
         description=(
             "What the last turns of a Faustus chat actually did, from what they saved: tools, failures with "
@@ -1857,6 +1875,17 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 return _text("Error: give the run_id")
             data = await asyncio.to_thread(_request, "GET", f"/api/runs/{rid}/spend")
             return _text(render_run_spend(data))
+        if name == "model_hedge":
+            action = str(args.get("action") or "status").strip().lower()
+            if action == "set":
+                body = {k: args[k] for k in ("enabled", "delay_s", "target", "delay_overrides") if k in args}
+                data = await asyncio.to_thread(_request, "PATCH", "/api/model-hedge", body)
+            else:
+                limit = max(1, min(int(args.get("limit") or 20), 200))
+                data = await asyncio.to_thread(_request, "GET", f"/api/model-hedge?limit={limit}")
+            data = dict(data or {})
+            data["targets"] = (data.get("targets") or [])[:40]
+            return _text(json.dumps(data, ensure_ascii=False, indent=1))
         if name == "turn_review":
             sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
             if not sid:

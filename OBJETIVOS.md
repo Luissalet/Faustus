@@ -1,5 +1,12 @@
 # Objetivos acordados
 
+## Primer token con cobertura — 03-11-2026
+
+Integrado: si el modelo del chat no suelta primer token en `agent_hedge_delay_s` (20 s), la misma petición va también a un destino de cobertura (mismo modelo en otro endpoint, primer respaldo o `endpoint_id::modelo`) y gana el primer flujo que responda; el otro se cierra (src/model_hedge.py, Ajustes > Modelos, `/api/model-hedge`, herramienta `model_hedge` de agente y MCP). Probado en vivo con un servidor local que se queda callado y DeepSeek V4.1 Flash de las Sparks como cobertura: respondió la cobertura a los 5 s y el principal quedó desconectado.
+
+- Hoy el modelo por defecto (DeepSeek V4.1 Flash en las 4 Sparks) no tiene destino automático: no hay otro servidor con DeepSeek ni modelos de respaldo configurados. Hace falta elegir uno en Ajustes > Modelos (por ejemplo Qwen3.8 Flash Next de la Spark 4) o añadir un respaldo.
+- Fuera de una ejecución del agente, una cobertura hacia un servidor local del propio PC espera la ranura de generación local que ocupa el principal; contra servidores remotos o dentro de una ejecución no espera.
+
 ## Radar GitTrend 03-11-2026: skills, plano del código y búsqueda a fecha
 
 Integrado: 17 skills nuevas en `skills/library` (GSAP, FFmpeg, diseño de páginas, repaso de interfaces, motion graphics en navegador y producción de juegos para Unity), fijadas a commit y con avisos; `code_floorplan` (plano en lenguaje llano con caché por hash, rutas y peticiones, HTML autocontenido, blueprint con juicio del modelo) en Proyecto → Resumen; filtros `after`/`before` («a fecha de») en la búsqueda de transcripciones, sus herramientas y la paleta.

@@ -593,6 +593,8 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             "hard max": "agent_input_token_hard_max",
             "token budget cap": "agent_input_token_hard_max",
             "input budget cap": "agent_input_token_hard_max",
+            "hedge": "agent_hedge_enabled", "hedged first token": "agent_hedge_enabled",
+            "hedge delay": "agent_hedge_delay_s", "hedge target": "agent_hedge_target",
         }
         def _resolve(k):
             k2 = (k or "").strip().lower()

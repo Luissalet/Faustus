@@ -2067,6 +2067,15 @@ DEFAULT_SETTINGS = {
     "agent_observations_model": "",
     # Observations older than this many days are deleted. 0 = keep them all.
     "agent_observations_retention_days": 90,
+    # Hedged first token (src/model_hedge.py): a streamed request with no
+    # first token after agent_hedge_delay_s is sent again to the hedge target
+    # and the stream that answers first wins; the other is closed.
+    "agent_hedge_enabled": True,
+    "agent_hedge_delay_s": 20.0,
+    # auto | same_model | fallback | off | <endpoint_id> | <endpoint_id>::<model>
+    "agent_hedge_target": "auto",
+    # JSON object {model: seconds} overriding the delay per model.
+    "agent_hedge_delay_overrides": "{}",
     # Lot I: instincts (src/instincts.py) -- small learned per-project
     # behaviours mined from real sessions in the background. Master switch:
     # when False, render_block/injection is skipped entirely (read at call

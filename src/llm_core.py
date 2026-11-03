@@ -8854,6 +8854,63 @@ async def _stream_sparks_service(url, model, messages, **kwargs):
         await _wait_for_sparks_service(attempt)
 
 
+def _hedged_primary_stream(primary_stream, *, url, model, messages, kwargs, request_messages,
+                           request_kwargs, candidates, route_descriptors,
+                           candidate_request_factory, hedge):
+    """Race the primary against ``hedge`` until one releases a first token
+    (src/model_hedge.py). The hedge request reuses the primary's prepared
+    request when it is the same model; another model of the chain gets its
+    own request from ``candidate_request_factory``."""
+    from src import model_hedge
+
+    index = hedge.get("candidate_index")
+    other_model = model_hedge._model_key(hedge["model"]) != model_hedge._model_key(model)
+
+    async def start_hedge():
+        h_url, h_model, h_headers = hedge["url"], hedge["model"], hedge.get("headers") or {}
+        h_messages, h_kwargs = request_messages, request_kwargs
+        if other_model and index and candidate_request_factory is not None:
+            request = candidate_request_factory(index, h_url, h_model, h_headers) or {}
+            if hasattr(request, "__await__"):
+                request = await request
+            h_messages = request.get("messages", messages)
+            h_kwargs = {**kwargs, **(request.get("kwargs") or {})}
+        h_messages = await _vision_filter_for_route(h_url, h_model, h_messages)
+        logger.info("[hedge] %s at %s has no first token after %.0fs; also asking %s at %s",
+                    model, _host_key(url), hedge["delay_s"], h_model, _host_key(h_url))
+        factory = _stream_sparks_service if is_sparks_url(h_url) else stream_llm
+        return factory(h_url, h_model, h_messages, headers=h_headers,
+                       **{**h_kwargs, "availability_only_transport": True})
+
+    def on_decided(info):
+        primary_route = route_descriptors[0] if route_descriptors else {}
+        entry = model_hedge.record(info, hedge, primary_url=url, primary_model=model,
+                                   primary_route=primary_route, session_id=kwargs.get("session_id"))
+        frames = [model_hedge.notice_chunk(entry)]
+        if (info.get("winner") == "hedge" and other_model and isinstance(index, int)
+                and 0 < index < len(candidates)):
+            # Another model answers this round: the caller adapts to it the
+            # same way it does for a fallback of the chain.
+            descriptor = route_descriptors[index] if index < len(route_descriptors) else {}
+            frames.append('data: ' + json.dumps({
+                "type": "fallback", "hedge": True,
+                "selected_model": model, "answered_by": hedge["model"],
+                "selected_endpoint_id": primary_route.get("endpoint_id"),
+                "selected_endpoint_label": primary_route.get("endpoint_label"),
+                "selected_endpoint_cost_tracked": primary_route.get("endpoint_cost_tracked"),
+                "answered_by_endpoint_id": descriptor.get("endpoint_id"),
+                "answered_by_endpoint_label": descriptor.get("endpoint_label"),
+                "answered_by_endpoint_cost_tracked": descriptor.get("endpoint_cost_tracked"),
+                "candidate_index": index,
+                "reason": f"no first token after {hedge['delay_s']:.0f} s",
+                "failures": [],
+            }) + '\n\n')
+        return frames
+
+    return model_hedge.race_first_token(primary_stream, start_hedge, hedge["delay_s"],
+                                        on_decided=on_decided)
+
+
 async def stream_llm_with_fallback(candidates, messages, **kwargs):
     """Wrap stream_llm with an ordered fallback chain.
 
@@ -8875,6 +8932,11 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
     candidate_request_factory = kwargs.pop("candidate_request_factory", None)
     candidate_route_descriptors = kwargs.pop("candidate_route_descriptors", None)
     abort_when = kwargs.pop("abort_when", None)
+    # Hedged first token (src/model_hedge.py): on by default for foreground
+    # chat; background work does not double its load on a slow server.
+    hedge_allowed = kwargs.pop("hedge", None)
+    if hedge_allowed is None:
+        hedge_allowed = str(kwargs.get("workload") or "foreground") == "foreground"
     eligible_statuses = None if fallback_statuses is None else frozenset(fallback_statuses)
 
     raw_candidates = list(candidates or [])
@@ -8949,6 +9011,20 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
                 "availability_only_transport": True,
             },
         )
+        if i == 0 and hedge_allowed:
+            try:
+                from src import model_hedge
+                hedge = model_hedge.plan(url, model, headers, cands, route_descriptors)
+            except Exception as hedge_error:  # noqa: BLE001 - never costs the request
+                logger.debug("[hedge] planning skipped: %s", hedge_error)
+                hedge = None
+            if hedge is not None:
+                candidate_stream = _hedged_primary_stream(
+                    candidate_stream, url=url, model=model, messages=messages, kwargs=kwargs,
+                    request_messages=candidate_messages, request_kwargs=candidate_kwargs,
+                    candidates=cands, route_descriptors=route_descriptors,
+                    candidate_request_factory=candidate_request_factory, hedge=hedge,
+                )
         if managed_sparks:
             from src.first_token_budget import effective
             explicit_deadline = effective(None)

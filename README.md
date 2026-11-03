@@ -913,6 +913,27 @@ card and saved concept distinguish met, partially met, unmet and unverified
 requirements, with evidence. A scripted-model check proves the complete flow;
 it does not establish an autonomous quality score for the selected model.
 
+### Hedged first token
+
+A streamed chat request whose model has released no first token (text,
+reasoning or a tool-call delta) after `agent_hedge_delay_s` seconds (20 by
+default, per-model overrides in `agent_hedge_delay_overrides`) is also sent to a
+hedge target, and whichever stream releases its first token first answers. The
+other stream's task closes its HTTP response, so a vLLM or SGLang server sees the
+client go away and aborts the request. Hedging only happens before anything has
+been streamed, so no token or tool call is produced twice; once a first token has
+arrived nothing else is started. The target (`agent_hedge_target`) is `auto` (the
+same model on another enabled endpoint when one lists it, else the first fallback
+model of the chain, else none), `same_model`, `fallback`, `off`, an endpoint id,
+or `endpoint_id::model` for a named model. A different model of the fallback chain
+that wins is pinned for the run the same way a fallback is. Background work is not
+hedged. Each race is recorded with its run (`data/model_hedges.jsonl`, the turn's
+metrics under `hedges`) and the chat shows "Answered by hedge (endpoint) after N s".
+Controls in Settings > Models (toggle, delay, target list, per-model delays, the
+hedge the default model gets now and the recent races) and in Settings > Agent;
+`GET/PATCH /api/model-hedge`, the `model_hedge` agent tool and the `model_hedge`
+tool of the workers MCP server (src/model_hedge.py).
+
 ### A hard daily cap on paid providers
 
 Spend with paid remote providers is capped per local day, on by default

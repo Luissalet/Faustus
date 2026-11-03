@@ -7769,6 +7769,14 @@ def _compute_final_metrics(
         metrics["round_models"] = list(round_models or [])
         metrics["round_endpoint_ids"] = list(round_endpoint_ids or [])
         metrics["round_endpoint_labels"] = list(round_endpoint_labels or [])
+    try:  # hedged first token races of this run (src/model_hedge.py)
+        from src import model_hedge as _model_hedge
+        from src.llm_trace import current_run_id as _current_run_id
+        _hedges = _model_hedge.for_run(_current_run_id())
+        if _hedges:
+            metrics["hedges"] = _hedges
+    except Exception:  # noqa: BLE001 - metrics never cost the turn
+        pass
     if provider_round_texts:
         metrics["provider_round_texts"] = list(provider_round_texts)
     # INF-03: the "why did it take this long" breakdown, built from the
@@ -14864,6 +14872,17 @@ async def _stream_agent_loop_body(
                         data["round"] = round_num
                         logger.warning(f"[agent] round {round_num} fell back: "
                                        f"{data.get('selected_model')} -> {data.get('answered_by')}")
+                        yield f"data: {json.dumps(data)}\n\n"
+                    elif data.get("type") == "hedge":
+                        # Hedged first token (src/model_hedge.py): which
+                        # stream answered this round and after how long.
+                        if data.get("winner") == "hedge" and data.get("outcome") == "first_token":
+                            _round_actual_endpoint_label = (
+                                data.get("hedge_endpoint_label") or _round_actual_endpoint_label
+                            )
+                            if data.get("hedge_endpoint_id"):
+                                _round_actual_endpoint_id = data.get("hedge_endpoint_id")
+                        data["round"] = round_num
                         yield f"data: {json.dumps(data)}\n\n"
                     elif data.get("type") == "model_actual":
                         if _apply_candidate_compaction(

@@ -1248,6 +1248,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "reply to the agent that asked me about the schema",
         "check whether my message to the other chat was delivered",
     ],
+    "model_hedge": [
+        "the model sometimes takes two minutes before it says anything",
+        "si el modelo no empieza a contestar en 15 segundos, pregunta también a la otra Spark",
+        "which answers came from the hedge and after how long",
+        "desactiva la petición de reserva del primer token",
+    ],
     "turn_review": [
         "why did your last answer take so long",
         "¿por qué falló el último turno?",

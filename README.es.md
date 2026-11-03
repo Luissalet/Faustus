@@ -571,6 +571,30 @@ compara la precisión de la regla, la decisión y la combinación, con calibraci
 tiempos de caché. [API de decisiones tipadas](docs/api/typed_decision.md),
 [evaluación](docs/evals/typed-decisions.md).
 
+### Primer token con cobertura
+
+Si el modelo de una petición de chat en streaming no ha soltado ningún primer
+token (texto, razonamiento o un delta de llamada a herramienta) tras
+`agent_hedge_delay_s` segundos (20 por defecto, con esperas por modelo en
+`agent_hedge_delay_overrides`), la misma petición se envía también a un destino de
+cobertura y responde el flujo que suelte antes su primer token. La tarea del otro
+flujo cierra su respuesta HTTP, así que un servidor vLLM o SGLang ve que el
+cliente se ha ido y aborta la petición. Solo se cubre antes de haber enviado nada,
+de modo que ningún token ni llamada a herramienta se produce dos veces; una vez
+llega el primer token no se lanza nada más. El destino (`agent_hedge_target`) es
+`auto` (el mismo modelo en otro endpoint activo que lo ofrezca; si no, el primer
+modelo de respaldo de la cadena; si no, ninguno), `same_model`, `fallback`, `off`,
+un id de endpoint o `endpoint_id::modelo` para un modelo concreto. Si gana otro
+modelo de la cadena de respaldo, queda fijado para la ejecución igual que un
+respaldo. El trabajo en segundo plano no se cubre. Cada carrera queda registrada
+con su ejecución (`data/model_hedges.jsonl` y las métricas del turno en `hedges`) y
+el chat muestra «Respondió la cobertura (endpoint) tras N s». Controles en
+Ajustes > Modelos (interruptor, espera, lista de destinos, esperas por modelo, la
+cobertura que recibe ahora el modelo por defecto y las últimas carreras) y en
+Ajustes > Agente; `GET/PATCH /api/model-hedge`, la herramienta de agente
+`model_hedge` y la herramienta `model_hedge` del servidor MCP de workers
+(src/model_hedge.py).
+
 ### Qué funciona degradado y cómo reconectar
 
 Un único registro dice con qué está funcionando Faustus ahora mismo sin algo (almacén vectorial, búsqueda web, notificaciones, correo, endpoints de modelos, Sparks, servidores MCP): estado `ok/degraded/down/unconfigured`, la clase de error real, desde cuándo, la latencia, cómo arreglarlo en español e inglés y qué funciones se resienten. Las comprobaciones tienen tiempo límite y caché, y no bloquean nada: `GET /api/diagnostics/degradation` (`?refresh=1`), la herramienta `degradation_status` del servidor MCP `harness` y Studio › Vitals › «Funcionando degradado» ([docs/api/degradation.md](docs/api/degradation.md)). Vitals › Servicios › Reconectar restablece en el sitio los almacenes de ChromaDB (sin reiniciar Faustus), dice cuáles han vuelto o siguen fallando y refresca el informe; un ChromaDB que se para a mitad de sesión aparece como caído, no como sano.

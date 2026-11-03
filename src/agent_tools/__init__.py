@@ -110,6 +110,7 @@ from .process_tools import (
 )
 from .sandbox_probe_tool import SandboxProbeTool
 from .turn_review_tool import TurnReviewTool
+from .model_hedge_tool import ModelHedgeTool
 from .run_report_tool import RunReportTool
 from .agent_message_tool import AgentMessageTool
 from .pdf_ops_tool import PdfOpsTool
@@ -446,6 +447,7 @@ from .research_podcast_tools import ResearchPodcastTool  # noqa: E402
 
 TOOL_HANDLERS["research_podcast"] = ResearchPodcastTool().execute
 TOOL_HANDLERS["turn_review"] = TurnReviewTool().execute
+TOOL_HANDLERS["model_hedge"] = ModelHedgeTool().execute
 TOOL_HANDLERS["run_report"] = RunReportTool().execute
 TOOL_HANDLERS["agent_message"] = AgentMessageTool().execute
 
@@ -589,6 +591,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "sandbox_probe",
              # Review of a chat's recent turns -- src/agent_tools/turn_review_tool.py.
              "turn_review",
+             # Hedged first token settings and races -- src/agent_tools/model_hedge_tool.py.
+             "model_hedge",
              # Durable run records (effects, ledger, cost, steering, orphans) -- src/agent_tools/run_report_tool.py.
              "run_report",
              # Mailbox between agents (urgent wakes, hop and wake caps) -- src/agent_tools/agent_message_tool.py.

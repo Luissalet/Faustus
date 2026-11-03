@@ -856,6 +856,14 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # model_hedge (src/model_hedge.py) reads and changes the owner's own
+    # hedged-first-token settings; endpoint names in its result are
+    # user-configured text.
+    {"model_hedge"},
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # doc_lint (src/doc_lint.py) only reads Markdown files confined to the
     # workspace and checks relative link / path existence under the repo root;
     # it never writes. Its findings quote document text, so the result is

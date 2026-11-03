@@ -1102,6 +1102,12 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'image':
       return generatedImageUrl(event.url) && !turn.images.includes(event.url)
         ? { ...turn, images: [...turn.images, event.url] } : turn;
+    case 'hedge':
+      // Hedged first token (src/model_hedge.py): only a hedge that answered
+      // changes who wrote this turn, so only that is worth a note.
+      return event.winner === 'hedge' && event.outcome === 'first_token'
+        ? { ...turn, note: t('Answered by hedge ({endpoint}) after {s} s.', { endpoint: event.endpoint || event.model, s: Math.round(event.afterS) }) }
+        : turn;
     case 'fallback':
       return {
         ...turn,

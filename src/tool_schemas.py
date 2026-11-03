@@ -3344,6 +3344,25 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "model_hedge",
+            "description": "Hedged first token for the chat model: when a streamed request has released no first token (text, reasoning or a tool call) after a delay, the same request also goes to a hedge target (the same model on another endpoint, the first fallback model, or a named model) and whichever stream answers first is used while the other is closed. action=status shows whether it is on, the delay, the target, the hedge the default model would get, the selectable targets and the recent races (who answered and after how many seconds); action=set changes enabled, delay_s, target or delay_overrides. Use for 'the model takes ages to start answering', 'hedge to the other Spark after 15 seconds', 'qué pasó con la respuesta de reserva', 'activa la cobertura del primer token'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["status", "set"], "description": "status (default) or set"},
+                    "enabled": {"type": "boolean", "description": "For set: hedge a slow first token or not"},
+                    "delay_s": {"type": "number", "description": "For set: seconds without a first token before the hedge starts (1-600)"},
+                    "target": {"type": "string", "description": "For set: auto, same_model, fallback, off, an endpoint id (same model there) or endpoint_id::model"},
+                    "delay_overrides": {"type": "object", "description": "For set: {model: seconds} replacing the delay for those models; {} clears them"},
+                    "limit": {"type": "integer", "description": "For status: how many recent races to list (default 20)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "turn_review",
             "description": "What the last turns of this chat actually did, read from what they saved: tools called, failures with exit codes and output excerpts, rounds, time, writes, slowest calls and prompt-cache reuse, plus findings (the same failure twice, a loop over one tool, many rounds without writing, a lost prompt cache). Use when a turn went wrong or was slow, before retrying the same approach, or when the user asks why.",
             "parameters": {

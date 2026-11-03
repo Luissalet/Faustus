@@ -1452,6 +1452,29 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "hedging", "Hedged first token",
+        "When the chat model has released no first token (text, reasoning or a tool call) after the "
+        "delay below, the same request is also sent to a hedge target and the stream that answers "
+        "first is used; the other is closed so its server stops generating. It only happens before "
+        "anything was streamed, so no token or tool call is produced twice (src/model_hedge.py). "
+        "Settings > Models has the same controls with the list of targets and the recent races.",
+        [
+            _bool("agent_hedge_enabled", "Hedge a slow first token",
+                  "Off: a request waits for its own model as before."),
+            _float("agent_hedge_delay_s", "Hedge after (seconds without a first token)",
+                   "Seconds the primary stream may stay silent before the hedge request starts.",
+                   1, 600, 1),
+            _text("agent_hedge_target", "Hedge target",
+                  "auto: the same model on another endpoint, else the first fallback of the chain; "
+                  "same_model; fallback; off; an endpoint id (same model there); or "
+                  "endpoint_id::model for a named model.",
+                  placeholder="auto"),
+            _text("agent_hedge_delay_overrides", "Hedge delay per model",
+                  "JSON object {model: seconds} that replaces the delay for those models.",
+                  placeholder='{"deepseek-v4.1-flash": 15}'),
+        ],
+    ),
+    _group(
         "chat_bridges", "Chat bridges: Telegram",
         "Talk to your Faustus agent from a Telegram chat (src/chat_bridges/). Faustus polls the bot's "
         "updates itself, so no public address is needed. Only the chats you list may talk to it, every "
