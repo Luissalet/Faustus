@@ -66,7 +66,7 @@ def _run(cmd: Sequence[str] | str, cwd: str, env: Dict[str, str], timeout: float
     """(exit code, combined output, seconds, timed_out)."""
     t0 = time.time()
     try:
-        proc = subprocess.Popen(cmd, cwd=cwd, env=env, shell=shell, stdout=subprocess.PIPE,
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, shell=shell, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, errors="replace",
                                 start_new_session=(os.name != "nt"))
     except OSError as exc:
@@ -464,7 +464,7 @@ def _exec_run(step: Dict[str, Any], ctx: _Ctx, install_failed: bool) -> None:
         probe_port = step["port"]
     t0 = time.time()
     try:
-        proc = subprocess.Popen(cmd, cwd=ctx.work, env=env, shell=True, stdout=subprocess.PIPE,
+        proc = subprocess.Popen(cmd, cwd=ctx.work, env=env, shell=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, errors="replace",
                                 start_new_session=(os.name != "nt"))
     except OSError as exc:
