@@ -89,7 +89,24 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return _text(f"Error in {name}: {type(exc).__name__}: {exc}")
 
 
+def _preload() -> None:
+    """Import the heavy modules before the stdio transport starts.
+
+    On Windows a pipe handle serialises synchronous I/O: once the transport's
+    reader thread is blocked reading stdin, any import that touches the same
+    handle (a ``isatty``/``fstat`` check in a library) waits for that read, so
+    ``tools/list`` never answered. Importing first avoids the contention.
+    """
+    try:
+        _schemas()
+        from src import derivation_ops  # noqa: F401
+        from src import recipe_execution  # noqa: F401
+    except Exception:  # noqa: BLE001 - the server still starts; the call reports the error
+        pass
+
+
 async def run():
+    _preload()
     async with stdio_server() as (read_stream, write_stream):
         with stdout_guard():
             await server.run(read_stream, write_stream, server.create_initialization_options())
