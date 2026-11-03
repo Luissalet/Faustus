@@ -34,3 +34,36 @@ API is needed. Refreshing does not alter source files.
 Methodological source inspected: Graphify-Labs/graphify,
 86c57be8204673c2a1b9849a3292a7dd3ab373d8. The implementation extends the native
 index and existing impact traversal; it does not execute an external graph CLI.
+
+## Intake dossier, locate and context pack
+
+Three more read-only code graph surfaces, composed from the existing index,
+communities, flows and impact (no second indexer):
+
+- `code_graph_dossier` (`GET /api/code-graph/dossier`, `GET /api/code-graph/dossier/diff`):
+  a per-git-revision intake dossier with sections `structure`, `entry_points`,
+  `build_run`, `test`, `data`, `integrations`, `screens`, `main_flows` and
+  `uncertainties`. Every fact has `evidence` (`path:line`) and a `certainty`
+  of `code` (read from source), `config` (read from package.json, pyproject,
+  Makefile, Dockerfile, README) or `inferred`. Commands are quoted from the
+  file, never composed. A dirty working tree gets its own revision id.
+  The dossier is stored in the code graph store (`code_graph_dossiers`);
+  `action=diff` (or `/dossier/diff?from_revision=&to_revision=`) lists facts
+  added, removed and changed between two stored revisions.
+- `code_graph_locate` (`GET /api/code-graph/locate?question=`): candidate
+  symbols for "where do I change X" from lexical search per keyword plus the
+  semantic lane when an embedder is available, each with the flows and tests
+  that touch it. The result is labelled as candidates.
+- `code_graph_context_pack` (`POST /api/code-graph/context-pack`, body
+  `{symbols, root, budget_lines, base_ref, known_hashes}`): target source,
+  contracts (decorators, signature, docstring, pydantic models), direct
+  consumers with the exact call lines, tests with their assertion lines and
+  flows, ordered by relevance and trimmed to `budget_lines`. What does not fit
+  is listed under `left_out` with a `more` handle (tool plus arguments). The
+  result's `hashes` ({path: file hash}) passed back as `known_hashes` turns
+  unchanged files into "unchanged since <hash>".
+
+All three are available as chat tools and as tools of the `code_graph` MCP server.
+Limits: Python is analysed with `ast`, other languages with line patterns;
+dynamic imports, programmatic route registration and plugin discovery are
+reported as uncertainties, not followed.

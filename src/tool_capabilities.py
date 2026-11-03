@@ -815,7 +815,8 @@ _register(
     {"code_graph_index", "code_graph_search", "code_graph_trace",
      "code_graph_changes", "code_graph_impact", "code_graph_architecture",
      "code_graph_snippet", "code_graph_cochanges", "code_graph_risk",
-     "code_graph_communities", "code_graph_flows", "code_graph_drift"},
+     "code_graph_communities", "code_graph_flows", "code_graph_drift",
+     "code_graph_dossier", "code_graph_locate", "code_graph_context_pack"},
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )

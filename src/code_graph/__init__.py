@@ -36,6 +36,13 @@ call with an unchanged index is a cache read. `impact` gains an additive
 `affected_flows` key computed from the same seeds it already has; it can be
 an empty list when nothing matched, but the key is absent entirely if
 computing it failed (logged at debug), never presented as a false empty.
+
+Intake (this lot): `dossier` composes the above plus line-anchored reads of
+the repo's own config/docs into a per-revision intake dossier (every fact with
+file:line evidence and a code/config/inferred label, plus explicit
+uncertainties); `dossier_diff` compares two revisions; `locate` answers "where
+do I change X" with labelled candidates; `context_pack` returns the budgeted
+source/consumers/tests/flows a planned change needs.
 """
 from .query import (
     index,
@@ -54,6 +61,8 @@ from .risk import change_risk
 from .communities import communities, community, community_of
 from .flows import flows, flow, affected_flows
 from .drift import snapshot, drift, list_baselines
+from .dossier import dossier, dossier_diff, locate
+from .context_pack import context_pack
 
 __all__ = [
     "index", "search_graph", "trace_path", "callers", "callees",
@@ -62,4 +71,5 @@ __all__ = [
     "communities", "community", "community_of",
     "flows", "flow", "affected_flows",
     "snapshot", "drift", "list_baselines",
+    "dossier", "dossier_diff", "locate", "context_pack",
 ]

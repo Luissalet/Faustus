@@ -1200,6 +1200,22 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué módulos se han movido o acoplado nuevo desde entonces",
         "check whether this change introduced a new dependency cycle",
     ],
+    "code_graph_dossier": [
+        "acabo de recibir este repositorio, dame el panorama general",
+        "how do I build, run and test this repo, with evidence",
+        "qué integraciones y variables de entorno usa este proyecto",
+        "what changed in the repo overview since the last revision",
+    ],
+    "code_graph_locate": [
+        "dónde tengo que tocar para cambiar cómo se comprueba el stock",
+        "which file handles login in this project",
+        "where would I add a new field to the order form",
+    ],
+    "code_graph_context_pack": [
+        "dame el contexto necesario antes de cambiar esta función",
+        "what do I need to read before touching place_order",
+        "show the callers, contracts and tests around this symbol within 80 lines",
+    ],
     "run_report": [
         "where did the time of that last turn go",
         "¿dónde se fue el coste del último turno?",

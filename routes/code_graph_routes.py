@@ -17,6 +17,10 @@ GET  /api/code-graph/communities/{id}  ?root=  (id: community id, name substring
 GET  /api/code-graph/flows          ?entry=&limit=&sort=&refresh=&root=
 GET  /api/code-graph/flows/{id}     ?root=  (id: flow id, or an entry point's name)
 GET  /api/code-graph/affected-flows ?symbol=&base_ref=&limit=&root=
+GET  /api/code-graph/dossier        ?refresh=&top_flows=&root=&project_id=
+GET  /api/code-graph/dossier/diff   ?from_revision=&to_revision=&root=&project_id=
+GET  /api/code-graph/locate         ?question=&limit=&root=&project_id=
+POST /api/code-graph/context-pack   {symbols, root?, budget_lines?, base_ref?, known_hashes?}
 POST /api/code-graph/drift/snapshot {root?, project_id?, label?}
 GET  /api/code-graph/drift          ?baseline_id=&refresh=&root=&project_id=
 GET  /api/code-graph/drift/baselines ?limit=&root=&project_id=
@@ -42,6 +46,15 @@ class DriftSnapshotBody(BaseModel):
     root: str = ""
     project_id: str = ""
     label: str = ""
+
+
+class ContextPackBody(BaseModel):
+    symbols: list = []
+    root: str = ""
+    project_id: str = ""
+    budget_lines: int = 120
+    base_ref: str = ""
+    known_hashes: dict = {}
 
 
 def _guarded(fn, *a, **kw):
@@ -138,6 +151,33 @@ def setup_code_graph_routes():
         require_admin(request)
         return _guarded(code_graph.affected_flows, symbol, workspace=root,
                         project_id=project_id, base_ref=base_ref, limit=limit)
+
+    @router.get("/dossier")
+    def dossier(request: Request, root: str = "", project_id: str = "", refresh: bool = False,
+                top_flows: int = 8):
+        require_admin(request)
+        return _guarded(code_graph.dossier, root, project_id=project_id, refresh=refresh,
+                        top_flows=top_flows)
+
+    @router.get("/dossier/diff")
+    def dossier_diff(request: Request, root: str = "", project_id: str = "",
+                     from_revision: str = "", to_revision: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.dossier_diff, root, project_id=project_id,
+                        from_revision=from_revision, to_revision=to_revision)
+
+    @router.get("/locate")
+    def locate(request: Request, question: str = Query(...), limit: int = 8, root: str = "",
+               project_id: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.locate, root, question, project_id=project_id, limit=limit)
+
+    @router.post("/context-pack")
+    def context_pack(body: ContextPackBody, request: Request):
+        require_admin(request)
+        return _guarded(code_graph.context_pack, body.symbols, body.root,
+                        project_id=body.project_id, budget_lines=body.budget_lines,
+                        base_ref=body.base_ref, known_hashes=body.known_hashes)
 
     @router.post("/drift/snapshot")
     def drift_snapshot(body: DriftSnapshotBody, request: Request):

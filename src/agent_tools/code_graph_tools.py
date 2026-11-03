@@ -284,3 +284,63 @@ class CodeGraphSnippetTool:
             project_id=str(args.get("project_id") or ""),
             tool="code_graph_snippet",
         )
+
+
+class CodeGraphDossierTool:
+    """`code_graph_dossier` {action?, refresh?, from_revision?, to_revision?}: the
+    repository intake dossier at the current git revision; `action="diff"`
+    compares two stored revisions."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="action")
+        root_arg = str(args.get("root") or args.get("workspace") or "")
+        project_id = str(args.get("project_id") or "")
+        if str(args.get("action") or "").strip().lower() == "diff":
+            return _catch(
+                code_graph.dossier_diff, root_arg, project_id=project_id,
+                from_revision=str(args.get("from_revision") or ""),
+                to_revision=str(args.get("to_revision") or ""), tool="code_graph_dossier",
+            )
+        return _catch(
+            code_graph.dossier, root_arg, project_id=project_id,
+            refresh=bool(args.get("refresh")), tool="code_graph_dossier",
+        )
+
+
+class CodeGraphLocateTool:
+    """`code_graph_locate` {question, limit?}: candidate symbols for "where do I
+    change X", with their flows and tests, labelled as candidates."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="question")
+        question = str(args.get("question") or args.get("query") or "").strip()
+        if not question:
+            return {"error": "code_graph_locate: question is required", "exit_code": 1}
+        return _catch(
+            code_graph.locate, str(args.get("root") or args.get("workspace") or ""), question,
+            project_id=str(args.get("project_id") or ""), limit=int(args.get("limit") or 8),
+            tool="code_graph_locate",
+        )
+
+
+class CodeGraphContextPackTool:
+    """`code_graph_context_pack` {symbols, budget_lines?, base_ref?, known_hashes?}:
+    the budgeted source/contracts/consumers/tests/flows a planned change needs."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="symbols")
+        syms = args.get("symbols") or args.get("symbol") or args.get("paths") or ""
+        if not isinstance(syms, (list, str)):
+            syms = ""
+        if isinstance(syms, str) and syms.startswith("["):
+            try:
+                syms = json.loads(syms)
+            except ValueError:
+                pass
+        return _catch(
+            code_graph.context_pack, syms, str(args.get("root") or args.get("workspace") or ""),
+            project_id=str(args.get("project_id") or ""),
+            budget_lines=int(args.get("budget_lines") or 120),
+            base_ref=str(args.get("base_ref") or ""), known_hashes=args.get("known_hashes"),
+            tool="code_graph_context_pack",
+        )

@@ -236,6 +236,64 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="code_graph_dossier",
+            description=(
+                "Repository intake dossier at the current git revision: structure, entry points, "
+                "how to build/run and test (quoted with file:line), data, integrations (outbound "
+                "hosts, env vars, SDKs), screens, main flows and an explicit list of uncertainties; "
+                "every fact has evidence and a code/config/inferred label. action=diff compares two "
+                "stored revisions. Dossier de entrada de un repositorio recibido. Read-only "
+                "(writes only its own dossier record)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["dossier", "diff"]},
+                    "refresh": {"type": "boolean"},
+                    "from_revision": {"type": "string"}, "to_revision": {"type": "string"},
+                    **_ROOT_PROP,
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="code_graph_locate",
+            description=(
+                "Where do I change X: candidate symbols for a plain-language question (lexical plus "
+                "semantic when available), each with the flows and tests that touch it, labelled as "
+                "candidates. Dónde tengo que tocar para cambiar esto. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {"question": {"type": "string"},
+                               "limit": {"type": "integer", "minimum": 1, "maximum": 25}, **_ROOT_PROP},
+                "required": ["question"],
+            },
+        ),
+        Tool(
+            name="code_graph_context_pack",
+            description=(
+                "Budgeted context for a planned change: target source, contracts (signature, "
+                "decorators, docstring, pydantic models), direct consumers with exact call lines, "
+                "tests with assertion lines and flows, ordered by relevance and trimmed to "
+                "budget_lines; left-out pieces carry `more` handles. Pass the previous result's "
+                "`hashes` as known_hashes to get 'unchanged since <hash>' instead of repeats. "
+                "Paquete de contexto para un cambio. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "array", "items": {"type": "string"},
+                                "description": "Symbol names and/or file paths. Empty with base_ref uses the git diff."},
+                    "budget_lines": {"type": "integer", "minimum": 5, "maximum": 2000},
+                    "base_ref": {"type": "string"},
+                    "known_hashes": {"type": "object", "additionalProperties": {"type": "string"}},
+                    **_ROOT_PROP,
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="code_graph_change_risk",
             description=(
                 "Deterministic 0-100 change-risk score for paths/symbols or the current diff. "
@@ -350,6 +408,32 @@ def _tool_change_risk(args: dict) -> list[TextContent]:
     return _json_result(out)
 
 
+def _tool_dossier(args: dict) -> list[TextContent]:
+    cg = _engine["code_graph"]
+    root = str(args.get("root") or "")
+    if str(args.get("action") or "dossier").lower() == "diff":
+        return _json_result(cg.dossier_diff(root, from_revision=str(args.get("from_revision") or ""),
+                                            to_revision=str(args.get("to_revision") or "")))
+    return _json_result(cg.dossier(root, refresh=bool(args.get("refresh"))))
+
+
+def _tool_locate(args: dict) -> list[TextContent]:
+    cg = _engine["code_graph"]
+    return _json_result(cg.locate(str(args.get("root") or ""), str(args.get("question") or ""),
+                                  limit=_limit(args.get("limit"), 8, 25)))
+
+
+def _tool_context_pack(args: dict) -> list[TextContent]:
+    cg = _engine["code_graph"]
+    syms = args.get("symbols")
+    if not isinstance(syms, (list, str)):
+        syms = ""
+    return _json_result(cg.context_pack(syms, str(args.get("root") or ""),
+                                        budget_lines=_limit(args.get("budget_lines"), 120, 2000),
+                                        base_ref=str(args.get("base_ref") or ""),
+                                        known_hashes=args.get("known_hashes")))
+
+
 _HANDLERS = {
     "code_graph_search": _tool_search,
     "code_graph_trace": _tool_trace,
@@ -361,6 +445,9 @@ _HANDLERS = {
     "code_graph_snippet": _tool_snippet,
     "code_graph_drift": _tool_drift,
     "code_graph_change_risk": _tool_change_risk,
+    "code_graph_dossier": _tool_dossier,
+    "code_graph_locate": _tool_locate,
+    "code_graph_context_pack": _tool_context_pack,
 }
 
 

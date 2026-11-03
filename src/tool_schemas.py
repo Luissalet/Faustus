@@ -3171,6 +3171,58 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_graph_dossier",
+            "description": "Intake dossier of a repo at its current git revision: structure, entry points, build/run and test commands quoted with file:line, data, integrations (hosts, env vars, SDKs), screens, main flows and explicit uncertainties; each fact has evidence and a code/config/inferred label. action='diff' compares two stored revisions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "'dossier' (default) or 'diff' (what changed between two revisions)"},
+                    "refresh": {"type": "boolean", "description": "Recompute instead of reading the stored dossier for this revision (default false)"},
+                    "from_revision": {"type": "string", "description": "Diff: older revision (prefix ok); default the latest other stored one"},
+                    "to_revision": {"type": "string", "description": "Diff: newer revision; default the current one"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_locate",
+            "description": "Where do I change X: candidate symbols for a plain-language question, each with the flows and tests touching it. Candidates only, not a verified answer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "What you want to change, in plain language"},
+                    "limit": {"type": "integer", "description": "Max candidates (default 8)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": ["question"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_context_pack",
+            "description": "Budgeted context for a planned change: target source, contracts, direct consumers with exact call lines, tests with assertion lines and flows, trimmed to budget_lines; left-out pieces carry `more` handles; pass the previous `hashes` as known_hashes to skip unchanged files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "array", "items": {"type": "string"}, "description": "Symbol names and/or file paths. Empty with base_ref uses the git diff."},
+                    "budget_lines": {"type": "integer", "description": "Max content lines (default 120)"},
+                    "base_ref": {"type": "string", "description": "Git ref to diff against when symbols is empty"},
+                    "known_hashes": {"type": "object", "description": "{path: hash} from a previous pack's `hashes`; matching files are reported as unchanged"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "structural_search",
             "description": "Search code by AST SHAPE, not text, via ast-grep -- finds things grep can't: 'every except Exception: whose body never logs', 'every call to foo() with a None second argument', regardless of whitespace/formatting. Write patterns like the code you're matching, using $NAME to capture exactly one node (e.g. foo($ARG)) or $$$NAME to capture zero-or-more (e.g. a whole statement body). Workflow: try the pattern on ONE file or a small folder first, check the hits and metaVariables look right, THEN widen path to search the whole workspace -- a pattern that looks right can still match more or less than intended.",
             "parameters": {
