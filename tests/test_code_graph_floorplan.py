@@ -270,3 +270,113 @@ def test_served_export_marks_its_inline_scripts_with_the_nonce():
     page = fp.export_html({"root": "/r", "parts": [], "stats": {}}, nonce="n0nce")
     assert page.count('nonce="n0nce"') == 2
     assert "nonce" not in fp.export_html({"root": "/r", "parts": [], "stats": {}})
+
+
+# ── a blueprint describes one revision of the code, never a previous one ──
+
+ORDERS_ONLY_PY = '''"""Orders API: create and list orders."""
+
+
+def create_order(payload):
+    return {"order": payload}
+'''
+
+WEATHER_PY = '''"""Weather forecast for a city."""
+
+
+def forecast(city):
+    return {"city": city, "sky": "clear"}
+'''
+
+
+@pytest.fixture()
+def swap_repo(tmp_path, monkeypatch):
+    root = tmp_path / "swap"
+    root.mkdir()
+    _write(str(root), "orders.py", ORDERS_ONLY_PY)
+    ce_store.use_path(str(tmp_path / "ce.db"))
+    monkeypatch.setattr(fp, "CACHE_DIR", str(tmp_path / "floorplan-cache"))
+    ws = te._active_workspace.set(str(root))
+    roots = te._active_workspace_roots.set((str(root),))
+    try:
+        yield str(root)
+    finally:
+        te._active_workspace.reset(ws)
+        te._active_workspace_roots.reset(roots)
+        ce_store.use_path(None)
+
+
+def _swap_orders_for_weather(root):
+    os.remove(os.path.join(root, "orders.py"))
+    _write(root, "weather.py", WEATHER_PY)
+
+
+def _bp_files(bp):
+    return {f for m in bp["parts"] for x in m["matches"] for f in x["files"]}
+
+
+def test_regenerate_marks_the_stored_blueprint_again_against_the_new_code(swap_repo):
+    fp.generate(swap_repo, labels="off")
+    first = fp.blueprint(swap_repo, "- Orders API", labels="off")["blueprint"]
+    assert first["parts"][0]["status"] == "exists"
+    assert "orders.py" in _bp_files(first)
+
+    _swap_orders_for_weather(swap_repo)
+    plan = fp.generate(swap_repo, labels="off")["plan"]
+    assert set(_files(plan)) == {"weather.py"}
+    bp = plan["blueprint"]
+    assert bp["parts"][0]["status"] == "missing"
+    assert "orders.py" not in _bp_files(bp)
+    assert bp["plan_revision"] == plan["revision"] and bp["current"] is True
+    assert bp["previous_summary"] == {"exists": 1, "partial": 0, "missing": 0}
+    assert bp["rechecked_at"]
+
+    opened = fp.open_plan(swap_repo)
+    assert opened["plan"]["blueprint"]["parts"][0]["status"] == "missing"
+    html_text = fp.export(swap_repo)["html"]
+    assert "orders.py" not in html_text
+    data = json.loads(html_text.split('<script id="data" type="application/json">', 1)[1].split("</script>", 1)[0])
+    assert data["blueprint"]["summary"] == {"exists": 0, "partial": 0, "missing": 1}
+    assert data["blueprint"]["current"] is True
+
+
+def test_blueprint_checks_the_current_source_not_a_stale_cached_plan(swap_repo):
+    fp.generate(swap_repo, labels="off")
+    _swap_orders_for_weather(swap_repo)  # no regenerate: the cached plan still lists orders.py
+    res = fp.blueprint(swap_repo, "- Orders API", labels="off")
+    bp = res["blueprint"]
+    assert bp["refreshed_plan"] is True
+    assert bp["source_changes"]["removed"] == ["orders.py"]
+    assert bp["source_changes"]["added"] == ["weather.py"]
+    assert bp["parts"][0]["status"] == "missing"
+    assert "orders.py" not in _bp_files(bp)
+    assert set(_files(fp.open_plan(swap_repo)["plan"])) == {"weather.py"}
+    assert "refreshed from the current source" in res["output"]
+
+    again = fp.blueprint(swap_repo, "- Orders API", labels="off")["blueprint"]
+    assert again["refreshed_plan"] is False  # nothing changed since: no refresh
+
+
+def test_unchanged_code_keeps_the_blueprint_as_is(swap_repo):
+    fp.generate(swap_repo, labels="off")
+    bp = fp.blueprint(swap_repo, "- Orders API", labels="off")["blueprint"]
+    plan = fp.generate(swap_repo, labels="off")["plan"]
+    assert plan["blueprint"]["created_at"] == bp["created_at"]
+    assert "rechecked_at" not in plan["blueprint"]
+    assert plan["blueprint"]["current"] is True
+
+
+def test_a_blueprint_from_another_revision_is_shown_as_a_snapshot(swap_repo):
+    plan = fp.generate(swap_repo, labels="off")["plan"]
+    fp.blueprint(swap_repo, "- Orders API", labels="off")
+    legacy = json.loads(json.dumps(fp.open_plan(swap_repo)["plan"]))
+    legacy["blueprint"].pop("plan_revision")  # written before revisions existed
+    legacy["blueprint"].pop("current", None)
+    legacy["blueprint"].pop("basis", None)
+    assert fp.blueprint_is_current(legacy) is False
+    assert "earlier version of the code" in fp.render_text(legacy)
+    html_text = fp.export_html(legacy)
+    data = json.loads(html_text.split('<script id="data" type="application/json">', 1)[1].split("</script>", 1)[0])
+    assert data["blueprint"]["current"] is False
+    assert "(old?'was ':'')" in html_text and "earlier version of the code" in data["blueprint"]["basis"]
+    assert plan["revision"] and fp.plan_revision(plan) == plan["revision"]

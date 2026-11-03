@@ -23,13 +23,21 @@ export interface BlueprintPart {
 }
 export interface Blueprint {
   goal: string; source: string; summary: Record<string, number>; parts: BlueprintPart[];
+  /** Floorplan revision the marks were made against, and when it was generated. */
+  plan_revision?: string; plan_generated_at?: string; created_at?: string;
+  /** Set when a regenerated floorplan marked the stored parts again. */
+  rechecked_at?: string; previous_summary?: Record<string, number>;
+  /** The check refreshed a floorplan whose source had changed. */
+  refreshed_plan?: boolean;
+  /** False when the marks describe an earlier version of the code. */
+  current?: boolean; basis?: string;
 }
 export interface FloorplanStats {
   parts: number; files: number; routes: number; requests: number;
   labelled_now: number; reused_labels: number; pending_labels: number;
 }
 export interface Floorplan {
-  root: string; generated_at: string; model: string; label_note: string;
+  root: string; generated_at: string; model: string; label_note: string; revision?: string;
   stats: FloorplanStats; parts: FloorplanPart[]; blueprint?: Blueprint;
 }
 

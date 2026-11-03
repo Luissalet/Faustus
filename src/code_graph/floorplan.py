@@ -480,6 +480,71 @@ def _part_signature(files: Sequence[Dict[str, Any]]) -> str:
     return hashlib.sha1(joined.encode("utf-8")).hexdigest()
 
 
+def plan_revision(plan: Dict[str, Any]) -> str:
+    """Content revision of a floorplan: every part, every file it describes
+    with its hash, and the plain-language lines the blueprint matches on. A
+    blueprint records the revision it was marked against."""
+    rows = sorted(
+        f"{p.get('id', '')}|{p.get('label', '')}|{f.get('path', '')}:{f.get('hash', '')}|{f.get('label', '')}"
+        for p in plan.get("parts") or [] for f in p.get("files") or [])
+    if not rows:
+        return ""
+    return hashlib.sha1("\n".join(rows).encode("utf-8")).hexdigest()[:16]
+
+
+def _hash_on_disk(root: str, rel: str) -> Optional[str]:
+    path = os.path.join(root, *rel.replace("\\", "/").split("/"))
+    try:
+        with open(path, "rb") as fh:
+            return file_hash(fh.read(MAX_FILE_BYTES + 1)[:MAX_FILE_BYTES])
+    except OSError:
+        return None
+
+
+def plan_freshness(plan: Dict[str, Any], root: str = "") -> Dict[str, Any]:
+    """Compare a cached floorplan with the source on disk now: files whose
+    content changed, files that are gone, and code files it does not know."""
+    root = root or str(plan.get("root") or "")
+    known = {f["path"]: f.get("hash") for p in plan.get("parts") or [] for f in p.get("files") or []}
+    changed, removed = [], []
+    for rel, digest in known.items():
+        now = _hash_on_disk(root, rel)
+        if now is None:
+            removed.append(rel)
+        elif now != digest:
+            changed.append(rel)
+    added: List[str] = []
+    if not plan.get("truncated"):
+        listed, _trunc = list_code_files(root)
+        added = [f for f in listed if f not in known and not is_test_path(f)
+                 and os.path.isfile(os.path.join(root, *f.split("/")))]
+    return {"current": not (changed or removed or added), "changed": changed[:50],
+            "removed": removed[:50], "added": added[:50]}
+
+
+def _recheck_blueprint(old_bp: Dict[str, Any], plan: Dict[str, Any],
+                       labeler: Optional[Labeler]) -> Dict[str, Any]:
+    """Mark a stored blueprint's planned parts again against a regenerated
+    floorplan, so it never reports parts of a previous version as built."""
+    planned = [{"name": str(m.get("name") or ""), "description": str(m.get("description") or ""),
+                "keywords": list(m.get("keywords") or [])}
+               for m in old_bp.get("parts") or [] if m.get("name")]
+    marked = match_blueprint(planned, plan)
+    source = str(old_bp.get("source") or "text").split("+")[0]
+    if labeler is not None and marked:
+        try:
+            if _model_judge(labeler, marked, plan):
+                source += "+model-judge"
+        except Exception as exc:  # noqa: BLE001
+            logger.info("floorplan: blueprint re-judge failed: %s", exc)
+    summary = {k: sum(1 for m in marked if m["status"] == k) for k in ("exists", "partial", "missing")}
+    return {"goal": old_bp.get("goal", ""), "source": source, "summary": summary, "parts": marked,
+            "created_at": old_bp.get("created_at", ""),
+            "rechecked_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "previous_summary": old_bp.get("summary") or {},
+            "plan_revision": plan.get("revision", ""), "plan_generated_at": plan.get("generated_at", "")}
+
+
 def generate(root: str = "", *, project_id: str = "", labels: str = "auto",
              max_labels: int = DEFAULT_MAX_LABELS, labeler: Optional[Labeler] = None,
              resolve: bool = True) -> Dict[str, Any]:
@@ -607,16 +672,25 @@ def generate(root: str = "", *, project_id: str = "", labels: str = "auto",
                   "reused_labels": reused, "pending_labels": pending},
         "parts": out_parts, "routes": routes, "requests": requests,
     }
-    old_bp = (cache.get("plan") or {}).get("blueprint")
+    plan["revision"] = plan_revision(plan)
+    old_plan = cache.get("plan") or {}
+    if not plan["model"] and reused and old_plan.get("model"):
+        plan["model"] = old_plan["model"]  # the reused labels still come from that model
+    old_bp = old_plan.get("blueprint")
     if old_bp:
-        plan["blueprint"] = old_bp
+        # The blueprint is a diagnosis OF a floorplan revision: keep it only
+        # when the code it was marked against is unchanged, else mark it again.
+        if old_bp.get("plan_revision") and old_bp.get("plan_revision") == plan["revision"]:
+            plan["blueprint"] = {**old_bp, "plan_generated_at": plan["generated_at"]}
+        else:
+            plan["blueprint"] = _recheck_blueprint(old_bp, plan, labeler)
     new_files = {rel: {"hash": i["hash"], "text": i["label"], "source": i["label_source"]}
                  for rel, i in infos.items()}
     new_parts = {r["id"]: {"signature": r["signature"], "text": r["label"], "source": r["label_source"]}
                  for r in out_parts}
     _save_cache(resolved, project_id, {"root": resolved, "files": new_files, "parts": new_parts,
                                        "plan": plan})
-    return {"output": render_text(plan), "exit_code": 0, "root": resolved, "plan": plan}
+    return {"output": render_text(plan), "exit_code": 0, "root": resolved, "plan": annotate(plan)}
 
 
 def open_plan(root: str = "", *, project_id: str = "", resolve: bool = True) -> Dict[str, Any]:
@@ -625,7 +699,41 @@ def open_plan(root: str = "", *, project_id: str = "", resolve: bool = True) -> 
     if not plan:
         return {"output": "no floorplan yet for this workspace; generate one first",
                 "exit_code": 1, "root": resolved}
-    return {"output": render_text(plan), "exit_code": 0, "root": resolved, "plan": plan}
+    return {"output": render_text(plan), "exit_code": 0, "root": resolved, "plan": annotate(plan)}
+
+
+def annotate(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill in the revision and, on the blueprint, whether it describes this
+    floorplan (`current`) and the sentence saying which code it describes
+    (`basis`), so the Studio card and the HTML export show the same thing."""
+    if not plan.get("revision"):
+        plan["revision"] = plan_revision(plan)
+    bp = plan.get("blueprint")
+    if isinstance(bp, dict):
+        bp["current"] = blueprint_is_current(plan)
+        bp["basis"] = blueprint_basis(plan)
+    return plan
+
+
+def blueprint_is_current(plan: Dict[str, Any]) -> bool:
+    """True when the plan's blueprint was marked against this very floorplan."""
+    bp = plan.get("blueprint") or {}
+    rev = plan.get("revision") or plan_revision(plan)
+    return bool(bp.get("plan_revision")) and bp.get("plan_revision") == rev
+
+
+def blueprint_basis(plan: Dict[str, Any]) -> str:
+    """One line saying which code the blueprint's marks describe."""
+    bp = plan.get("blueprint") or {}
+    if not blueprint_is_current(plan):
+        return ("snapshot of an earlier version of the code, not of this floorplan; "
+                "run the check again")
+    line = f"checked against the code as of {bp.get('plan_generated_at') or plan.get('generated_at', '')}"
+    if bp.get("rechecked_at"):
+        prev = bp.get("previous_summary") or {}
+        line += (" (marked again after the floorplan was regenerated; before: "
+                 + ", ".join(f"{k} {v}" for k, v in prev.items()) + ")")
+    return line
 
 
 def render_text(plan: Dict[str, Any], limit: int = _OUTPUT_CHARS) -> str:
@@ -648,7 +756,8 @@ def render_text(plan: Dict[str, Any], limit: int = _OUTPUT_CHARS) -> str:
             lines.append(f"- … {len(p['files']) - 6} more files")
     bp = plan.get("blueprint")
     if bp:
-        lines.append("\n## Blueprint: " + ", ".join(f"{k} {v}" for k, v in (bp.get("summary") or {}).items()))
+        lines.append("\n## Blueprint: " + ", ".join(f"{k} {v}" for k, v in (bp.get("summary") or {}).items())
+                     + " — " + blueprint_basis(plan))
     text = "\n".join(lines)
     return text if len(text) <= limit else text[:limit] + f"\n… truncated ({len(text)} chars)"
 
@@ -852,9 +961,17 @@ def blueprint(root: str = "", goal: str = "", *, project_id: str = "", labels: s
     resolved = _resolve_root(root) if resolve else os.path.abspath(root)
     cache = load_cache(resolved, project_id)
     plan = cache.get("plan")
-    if not plan:
+    # Check against the code as it is NOW: a cached floorplan whose files
+    # changed, vanished or gained new neighbours is refreshed first (cached
+    # model lines are kept for unchanged files; no model call is needed).
+    freshness = plan_freshness(plan, resolved) if plan else {"current": False}
+    refreshed = False
+    if not plan or not freshness.get("current"):
         plan = generate(resolved, project_id=project_id, labels="off", resolve=False)["plan"]
         cache = load_cache(resolved, project_id)
+        refreshed = True
+    if not plan.get("revision"):
+        plan["revision"] = plan_revision(plan)
     source = "text"
     if labeler is None:
         labeler, _model, _note = _model_labeler(labels if labels in ("auto", "model", "off") else "auto")
@@ -876,12 +993,19 @@ def blueprint(root: str = "", goal: str = "", *, project_id: str = "", labels: s
             logger.info("floorplan: blueprint judge failed: %s", exc)
     summary = {k: sum(1 for m in marked if m["status"] == k) for k in ("exists", "partial", "missing")}
     bp = {"goal": goal[:4000], "source": source, "summary": summary, "parts": marked,
-          "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+          "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+          "plan_revision": plan.get("revision", ""), "plan_generated_at": plan.get("generated_at", ""),
+          "refreshed_plan": refreshed,
+          "source_changes": {k: freshness.get(k) or [] for k in ("changed", "removed", "added")}}
     plan["blueprint"] = bp
     cache["plan"] = plan
     _save_cache(resolved, project_id, cache)
+    annotate(plan)
     lines = [f"Blueprint ({source}): {summary['exists']} exist, {summary['partial']} partial, "
-             f"{summary['missing']} missing."]
+             f"{summary['missing']} missing. Checked against floorplan revision "
+             f"{bp['plan_revision'] or '?'} of {bp['plan_generated_at']}"
+             + (" (refreshed from the current source first)." if refreshed else
+                " (matches the current source).")]
     for m in marked:
         where = f" → {m['matches'][0]['part']}" if m["matches"] else ""
         lines.append(f"- [{m['status']}] {m['name']}{where}")
@@ -922,7 +1046,8 @@ a.path:hover{text-decoration:underline}.flabel{font-size:14px}
 table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 th,td{text-align:left;padding:8px 10px;border-top:1px solid var(--line);vertical-align:top;font-size:14px}
 th{font-weight:600;color:var(--muted);font-size:13px}
-.st{border-radius:6px;padding:1px 8px;font-size:12px;white-space:nowrap}.st-exists{background:#d9eedf;color:#1f5a35}.st-partial{background:#f5e6c8;color:#6b4710}.st-missing{background:#f3d7d2;color:#7a2a1d}
+.st{border-radius:6px;padding:1px 8px;font-size:12px;white-space:nowrap}.st-exists{background:#d9eedf;color:#1f5a35}.st-partial{background:#f5e6c8;color:#6b4710}.st-missing{background:#f3d7d2;color:#7a2a1d}.st-stale{background:var(--chip);color:var(--muted)}
+.stale{color:var(--del);font-size:13px;margin:0 0 8px}
 .hidden{display:none!important}.empty{color:var(--muted);padding:20px 0}
 </style></head><body>
 <header><h1>Floorplan</h1><div class="meta" id="meta"></div>
@@ -936,10 +1061,10 @@ var plan=JSON.parse(document.getElementById('data').textContent);var base=__BASE
 function el(t,c,txt){var e=document.createElement(t);if(c)e.className=c;if(txt!=null)e.textContent=txt;return e}
 function link(path){var a=el('a','path',path);a.href=base+'/studio?workspace='+encodeURIComponent(plan.root)+'&file='+encodeURIComponent(path);a.target='_blank';a.rel='noopener';a.title='Open in Studio';return a}
 var s=plan.stats||{};document.getElementById('meta').textContent=plan.root+' · '+s.parts+' parts · '+s.files+' files · '+s.routes+' routes · '+s.requests+' outgoing requests · generated '+plan.generated_at+(plan.model?' · labels by '+plan.model:'');
-var bp=plan.blueprint;if(bp&&bp.parts&&bp.parts.length){var sec=document.getElementById('bp');sec.appendChild(el('div','group','Blueprint · '+bp.summary.exists+' exist · '+bp.summary.partial+' partial · '+bp.summary.missing+' missing'));
+var bp=plan.blueprint;if(bp&&bp.parts&&bp.parts.length){var sec=document.getElementById('bp');var old=bp.current===false;sec.appendChild(el('div','group','Blueprint · '+bp.summary.exists+' exist · '+bp.summary.partial+' partial · '+bp.summary.missing+' missing'+(bp.basis?' · '+bp.basis:'')));if(old)sec.appendChild(el('p','stale','These marks describe an earlier version of the code, not the parts below.'));
 var tb=el('table');var hr=el('tr');['Planned part','Status','Where it lives'].forEach(function(h){hr.appendChild(el('th',null,h))});tb.appendChild(hr);
 bp.parts.forEach(function(p){var tr=el('tr');tr.dataset.q=(p.name+' '+p.description+' '+p.keywords.join(' ')).toLowerCase();var a=el('td');a.appendChild(el('div','pname',p.name));a.appendChild(el('div','src',p.description));tr.appendChild(a);
-var b=el('td');b.appendChild(el('span','st st-'+p.status,p.status));tr.appendChild(b);var c=el('td');(p.matches||[]).slice(0,2).forEach(function(m){c.appendChild(el('div',null,m.part+' ('+Math.round(m.score*100)+'%)'));(m.files||[]).slice(0,2).forEach(function(f){c.appendChild(link(f));c.appendChild(el('br'))})});tr.appendChild(c);tb.appendChild(tr)});sec.appendChild(tb)}
+var b=el('td');b.appendChild(el('span','st st-'+(old?'stale':p.status),(old?'was ':'')+p.status));tr.appendChild(b);var c=el('td');(p.matches||[]).slice(0,2).forEach(function(m){c.appendChild(el('div',null,m.part+' ('+Math.round(m.score*100)+'%)'));(m.files||[]).slice(0,2).forEach(function(f){c.appendChild(link(f));c.appendChild(el('br'))})});tr.appendChild(c);tb.appendChild(tr)});sec.appendChild(tb)}
 var root=document.getElementById('parts');var lastGroup=null;var rows=[];
 (plan.parts||[]).forEach(function(p){var g=p.parent_name||'Other parts';if(g!==lastGroup){root.appendChild(el('div','group',g));lastGroup=g}
 var d=el('details','part');var sm=el('summary');sm.appendChild(el('span','pname',p.name));sm.appendChild(el('span','plabel',p.label||''));sm.appendChild(el('span','count',p.files.length+' files'+(p.test_count?' · '+p.test_count+' tests':'')));d.appendChild(sm);
@@ -960,6 +1085,7 @@ def export_html(plan: Dict[str, Any], *, studio_base: str = "", nonce: str = "")
     """One HTML file with the plan embedded; no network, no external assets.
     `nonce` marks the inline scripts when the page is served under a CSP
     that only runs nonced scripts (the app's own server)."""
+    plan = annotate(dict(plan))
     data = json.dumps(plan, ensure_ascii=False).replace("</", "<\\/").replace("<!--", "<\\!--")
     title = os.path.basename(str(plan.get("root") or "").rstrip("/\\")) or "workspace"
     title = re.sub(r"[<>&\"']", "", title)
@@ -992,4 +1118,5 @@ def export(root: str = "", *, project_id: str = "", studio_base: str = "",
 
 __all__ = ["generate", "open_plan", "export", "export_html", "blueprint", "scan_file",
            "extract_routes", "extract_requests", "plan_parts_from_text", "match_blueprint",
-           "heuristic_label", "tokens", "CACHE_DIR"]
+           "heuristic_label", "tokens", "plan_revision", "plan_freshness", "annotate",
+           "blueprint_is_current", "blueprint_basis", "CACHE_DIR"]

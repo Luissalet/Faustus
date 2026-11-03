@@ -41,8 +41,10 @@ export function ProjectFloorplan({ workspace }: { workspace: string }) {
         setPlan(p);
       } else {
         const bp = await floorplanBlueprint(workspace, goal, useModel ? 'model' : 'off');
-        setPlan((p) => (p ? { ...p, blueprint: bp } : p));
-        if (!plan) setPlan(await openFloorplan(workspace));
+        // The check may have refreshed the floorplan from the current source:
+        // show that plan, so the parts and the marks describe the same code.
+        const fresh = await openFloorplan(workspace);
+        setPlan(fresh ? { ...fresh, blueprint: fresh.blueprint ?? bp } : (p) => (p ? { ...p, blueprint: bp } : p));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -125,11 +127,22 @@ export function ProjectFloorplan({ workspace }: { workspace: string }) {
         <p className="fs-pj__muted">{t('Paste a PRD or goal; each planned part is marked as built, partly built or missing.')}</p>
         <textarea className="fs-field" rows={4} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={t('- Orders API\n- Email notifications\n- Admin dashboard')} data-testid="floorplan-goal" />
         <Button variant="secondary" size="sm" icon={ListChecks} label={t('Check against the code')} loading={busy === 'blueprint'} disabled={!!busy || !goal.trim()} onClick={() => void run('blueprint')} testId="floorplan-blueprint" />
-        {plan?.blueprint && (
+        {plan?.blueprint && (() => {
+          const bpv = plan.blueprint;
+          const stale = bpv.current === false;
+          return (
+          <>
+          <p className={stale ? 'fs-floorplan__basis fs-floorplan__error' : 'fs-floorplan__basis fs-pj__muted'} data-testid="floorplan-blueprint-basis" data-current={stale ? 'false' : 'true'}>
+            {stale
+              ? t('These marks describe an earlier version of the code, not this floorplan. Check again to mark it against the current code.')
+              : t('Checked against the code as of {when}', { when: (bpv.plan_generated_at || plan.generated_at || '').replace('T', ' ') })}
+            {!stale && bpv.refreshed_plan ? ` · ${t('the floorplan was refreshed first because the code had changed')}` : ''}
+            {!stale && bpv.rechecked_at ? ` · ${t('marked again after the floorplan was regenerated')}` : ''}
+          </p>
           <ul className="fs-floorplan__bp" data-testid="floorplan-blueprint-result">
-            {plan.blueprint.parts.map((b, i) => (
+            {bpv.parts.map((b, i) => (
               <li key={`${b.name}${i}`}>
-                <span className="fs-floorplan__status" data-status={b.status}>{t(b.status === 'exists' ? 'Built' : b.status === 'partial' ? 'Partly built' : 'Missing')}</span>
+                <span className="fs-floorplan__status" data-status={stale ? 'stale' : b.status}>{(stale ? `${t('Earlier:')} ` : '') + t(b.status === 'exists' ? 'Built' : b.status === 'partial' ? 'Partly built' : 'Missing')}</span>
                 <span><strong>{b.name}</strong>{b.description && b.description !== b.name ? ` — ${b.description}` : ''}{b.why ? <em className="fs-floorplan__why"> {b.why}</em> : null}</span>
                 {b.matches[0] && (
                   <small>
@@ -140,7 +153,9 @@ export function ProjectFloorplan({ workspace }: { workspace: string }) {
               </li>
             ))}
           </ul>
-        )}
+          </>
+          );
+        })()}
       </div>
     </section>
   );

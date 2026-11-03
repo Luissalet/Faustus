@@ -33,4 +33,6 @@
 .fs-floorplan__status[data-status="exists"] { color: var(--fs-success, #2f7a4f); }
 .fs-floorplan__status[data-status="partial"] { color: var(--fs-warning, #8a5a14); }
 .fs-floorplan__status[data-status="missing"] { color: var(--fs-danger); }
+.fs-floorplan__status[data-status="stale"] { color: var(--fs-text-2); border-style: dashed; }
+.fs-floorplan__basis { font-size: 13px; margin: 6px 0 0; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .fs-floorplan__search { font-size: 16px; } }
