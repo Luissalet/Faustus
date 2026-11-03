@@ -221,7 +221,9 @@ def _read_text(full: str) -> str:
         data = fh.read(_READ_LIMIT + 1)
     if len(data) > _READ_LIMIT:
         raise ValueError("file too large to check")
-    return data.decode("utf-8", errors="replace")
+    # Files written on Windows end lines with CRLF; normalise so ``^...$`` criteria
+    # behave the same on every platform.
+    return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
 def _md_table(text: str) -> Tuple[List[str], List[List[str]]]:
