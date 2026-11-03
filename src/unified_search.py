@@ -60,13 +60,16 @@ def _result(*, source: str, id_: Any, title: str, snippet: str, url: str,
 # function its own route uses, owner-scoped exactly the same way.
 # ---------------------------------------------------------------------------
 
-def _chats(owner: Optional[str], q: str, limit: int) -> List[Dict[str, Any]]:
-    """`routes/chat_routes.py` GET /api/search -> `src.session_search`."""
+def _chats(owner: Optional[str], q: str, limit: int, *, after: str = "",
+           before: str = "") -> List[Dict[str, Any]]:
+    """`routes/chat_routes.py` GET /api/search -> `src.session_search`.
+    `after`/`before` bound the message time (verbatim transcripts as of a date)."""
     from src.session_search import search_session_messages
 
+    bounds = {k: v for k, v in (("after", after), ("before", before)) if v}
     hits = search_session_messages(
         q, limit=limit, owner=owner, restrict_owner=owner is not None,
-        include_legacy_owner=False,
+        include_legacy_owner=False, **bounds,
     )
     out: List[Dict[str, Any]] = []
     for hit in hits:
@@ -316,6 +319,8 @@ def search(
     limit: int = 8,
     *,
     time_budget: float = _DEFAULT_TIME_BUDGET,
+    after: str = "",
+    before: str = "",
 ) -> Dict[str, Any]:
     """Search every requested source concurrently and return one ranked list.
 
@@ -347,7 +352,9 @@ def search(
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(wanted))
     try:
         futures = {
-            pool.submit(_SOURCE_FUNCS[name], owner, query, cap): name
+            (pool.submit(_SOURCE_FUNCS[name], owner, query, cap, after=after, before=before)
+             if name == "chats" and (after or before)
+             else pool.submit(_SOURCE_FUNCS[name], owner, query, cap)): name
             for name in wanted
         }
         for future, name in futures.items():

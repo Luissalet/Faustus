@@ -276,7 +276,9 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search keyword(s) to find in past conversations"}
+                    "query": {"type": "string", "description": "Search keyword(s) to find in past conversations"},
+                    "after": {"type": "string", "description": "Only messages from this date on (ISO date, e.g. 2026-10-01)"},
+                    "before": {"type": "string", "description": "As of: only messages written before this date (ISO date) -- what had been said by then"}
                 },
                 "required": ["query"]
             }
@@ -290,7 +292,9 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Keywords to find in this project's earlier chats"}
+                    "query": {"type": "string", "description": "Keywords to find in this project's earlier chats"},
+                    "after": {"type": "string", "description": "Only messages from this date on (ISO date, e.g. 2026-10-01)"},
+                    "before": {"type": "string", "description": "As of: only messages written before this date (ISO date) -- what had been said by then"}
                 },
                 "required": ["query"]
             }

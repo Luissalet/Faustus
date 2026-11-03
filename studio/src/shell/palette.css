@@ -478,3 +478,5 @@
   color: var(--fs-text-3);
   font-size: 11px;
 }
+.fs-palette__until { display: inline-flex; align-items: center; gap: 6px; }
+.fs-palette__until input { font: inherit; font-size: 12px; background: transparent; color: inherit; border: 0; padding: 0; min-width: 0; }

@@ -2,7 +2,7 @@ import { Command } from 'cmdk';
 import { Brain, FileText, Image, KanbanSquare, MessageSquare, NotebookPen, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { SEARCH_SOURCES, searchAll, type SearchHit, type SearchSource } from '../adapters/unifiedSearch';
+import { SEARCH_SOURCES, searchAll, type SearchHit, type SearchSource, type SearchWhen } from '../adapters/unifiedSearch';
 import { overlayRoot } from './overlayRoot';
 import { DESTINATIONS, TOOLS } from './routes';
 import { CONTEXT_LABELS, TOOL_PLACEMENT, toolContext, toolHref, toolsIn } from './toolPlacement';
@@ -46,11 +46,13 @@ const SOURCE_ICON: Record<SearchSource, typeof Brain> = {
 
 /** Everything the owner has that matches, mixed (`GET /api/search/all`),
  *  once the query is two characters or more; 250 ms after the last key. */
-function useEverywhere(open: boolean, query: string, types: SearchSource[]) {
+function useEverywhere(open: boolean, query: string, types: SearchSource[], when: SearchWhen = {}) {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const q = query.trim();
   const key = types.join(',');
+  const after = when.after ?? '';
+  const before = when.before ?? '';
   useEffect(() => {
     if (!open || q.length < 2) {
       setHits([]);
@@ -60,7 +62,7 @@ function useEverywhere(open: boolean, query: string, types: SearchSource[]) {
     const controller = new AbortController();
     setLoading(true);
     const timer = window.setTimeout(() => {
-      searchAll(q, key ? (key.split(',') as SearchSource[]) : [], 6, controller.signal)
+      searchAll(q, key ? (key.split(',') as SearchSource[]) : [], 6, controller.signal, { after, before })
         .then((r) => setHits(r.results ?? []))
         .catch(() => {
           /* navigation still works without it */
@@ -71,7 +73,7 @@ function useEverywhere(open: boolean, query: string, types: SearchSource[]) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [open, q, key]);
+  }, [open, q, key, after, before]);
   return { hits, loading };
 }
 
@@ -88,7 +90,10 @@ export function CommandPalette() {
   const [query, setQuery] = useState('');
   const visibleTools = query.trim() ? TOOLS.filter(tool => tool.path !== '/creator' || creatorAvailable) : contextual;
   const [types, setTypes] = useState<SearchSource[]>([]);
-  const { hits, loading } = useEverywhere(open, query, types);
+  const [sinceDays, setSinceDays] = useState(0);
+  const [until, setUntil] = useState('');
+  const after = sinceDays ? new Date(Date.now() - sinceDays * 86400000).toISOString().slice(0, 10) : '';
+  const { hits, loading } = useEverywhere(open, query, types, { after, before: until });
   useEffect(() => {
     if (!open) setQuery('');
   }, [open]);
@@ -127,6 +132,20 @@ export function CommandPalette() {
               {t(SOURCE_LABEL[source])}
             </button>
           ))}
+        </div>
+      )}
+      {query.trim().length >= 2 && (types.length === 0 || types.includes('chats')) && (
+        <div className="fs-palette__filters" role="group" aria-label={t('Chats from')} data-testid="palette-when">
+          {[[0, 'Any time'], [7, 'Past week'], [30, 'Past month'], [365, 'Past year']].map(([days, label]) => (
+            <button key={days} type="button" className="fs-palette__chip" aria-pressed={sinceDays === days}
+              onClick={() => setSinceDays(Number(days))} data-testid={`palette-since-${days}`}>
+              {t(String(label))}
+            </button>
+          ))}
+          <label className="fs-palette__chip fs-palette__until" title={t('Only what had been said by this date')}>
+            {t('As of')}
+            <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label={t('As of date')} data-testid="palette-until" />
+          </label>
         </div>
       )}
       <Command.List className="fs-palette__list">

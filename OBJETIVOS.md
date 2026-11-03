@@ -1,5 +1,12 @@
 # Objetivos acordados
 
+## Radar GitTrend 03-11-2026: skills, plano del código y búsqueda a fecha
+
+Integrado: 17 skills nuevas en `skills/library` (GSAP, FFmpeg, diseño de páginas, repaso de interfaces, motion graphics en navegador y producción de juegos para Unity), fijadas a commit y con avisos; `code_floorplan` (plano en lenguaje llano con caché por hash, rutas y peticiones, HTML autocontenido, blueprint con juicio del modelo) en Proyecto → Resumen; filtros `after`/`before` («a fecha de») en la búsqueda de transcripciones, sus herramientas y la paleta.
+
+- Plano: en repos grandes (Faustus) cada pasada describe como mucho `max_labels` ficheros; falta una pasada en segundo plano que complete el resto sin pulsar Generar varias veces.
+- Búsqueda de transcripciones: el ámbito por persona (además de por proyecto) y un carril semántico sobre los mensajes literales siguen sin existir; hoy es texto completo + LIKE.
+
 ## Programa Hangar: siguientes pasos — 03-11-2026, #1925/#1927
 
 Integrado hoy en el grafo de código: expediente de recepción por revisión, `locate`, paquete de contexto por cambio, recorridos de negocio entre capas y entrega verificada (HANDOFF.md). En Vitruvius: equivalencia, banco de reglas, reproducción mínima, ensayo de actualización de dependencias y taller de rendimiento. En Nightingale: conciliación, libro explicable, ensayo de migración y laboratorio de escenarios.

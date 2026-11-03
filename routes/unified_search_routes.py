@@ -25,6 +25,8 @@ def setup_unified_search_routes() -> APIRouter:
         q: str = Query("", min_length=0),
         types: str = Query(""),
         limit: int = Query(8, ge=1, le=25),
+        after: str = Query("", max_length=40),
+        before: str = Query("", max_length=40),
     ) -> Dict[str, Any]:
         import asyncio
 
@@ -32,7 +34,8 @@ def setup_unified_search_routes() -> APIRouter:
         wanted: Optional[List[str]] = None
         if types.strip():
             wanted = [t.strip() for t in types.split(",") if t.strip()]
-        return await asyncio.to_thread(unified_search.search, owner, q, wanted, limit)
+        return await asyncio.to_thread(unified_search.search, owner, q, wanted, limit,
+                                       after=after, before=before)
 
     return router
 

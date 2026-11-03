@@ -5973,6 +5973,9 @@ def setup_chat_routes(
         request: Request,
         q: str = Query("", min_length=0),
         limit: int = Query(20, ge=1, le=100),
+        after: str = Query("", max_length=40),
+        before: str = Query("", max_length=40),
+        folder: str = Query("", max_length=300),
     ) -> List[Dict[str, Any]]:
         if not q or not q.strip():
             return []
@@ -5986,6 +5989,9 @@ def setup_chat_routes(
                 owner=_user,
                 restrict_owner=_user is not None,
                 include_legacy_owner=False,
+                folder=folder or None,
+                after=after or None,
+                before=before or None,
             )
         ]
 

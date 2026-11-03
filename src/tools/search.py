@@ -16,6 +16,8 @@ async def do_search_chats(
     limit: int = 20,
     owner: str | None = None,
     folder: str | None = None,
+    after: str | None = None,
+    before: str | None = None,
 ) -> Dict:
     """Search past session transcripts for the calling user's sessions only.
 
@@ -31,20 +33,28 @@ async def do_search_chats(
         kwargs = {"limit": limit, "owner": owner}
         if folder:
             kwargs["folder"] = folder
+        if after:
+            kwargs["after"] = after
+        if before:
+            kwargs["before"] = before
         results = search_session_messages(query, **kwargs)
 
         # In local single-user mode the Imported library is the user's chat
         # history too. Its store is global, so keep it out of project-scoped
         # and multi-user searches where the caller's ownership is ambiguous.
         imported = []
-        if not folder:
+        if not folder and not after and not before:
             from src.owner_identity import auth_disabled
             if auth_disabled():
                 from src import history_import
                 if history_import.enabled() and os.path.exists(history_import.db_path()):
                     imported = history_import.search(query, k=min(limit, 10))["hits"]
+        window = ""
+        if after or before:
+            window = " (" + ", ".join(x for x in (f"after {after}" if after else "",
+                                                  f"before {before}" if before else "") if x) + ")"
         if not results and not imported:
-            return {"results": f"No chats found matching \"{query}\"."}
+            return {"results": f"No chats found matching \"{query}\"{window}."}
 
         # Group by session to avoid duplicate links
         seen_sessions = {}
@@ -52,11 +62,13 @@ async def do_search_chats(
             if result.session_id not in seen_sessions:
                 seen_sessions[result.session_id] = result
 
-        lines = [f"Found {len(seen_sessions)} live chat(s) and {len(imported)} imported message(s) matching \"{query}\":\n"]
+        lines = [f"Found {len(seen_sessions)} live chat(s) and {len(imported)} imported message(s) matching \"{query}\"{window}:\n"]
         for sid, result in seen_sessions.items():
             lines.append(f"- [**{result.session_name}**](#session-{sid})")
             lines.append(f"  Open: [Open chat](#session-{sid})")
             lines.append(f"  Match ({result.role}): {result.content_snippet}")
+            if result.timestamp:
+                lines.append(f"  When: {result.timestamp[:16].replace('T', ' ')}")
             if result.context_before:
                 before = result.context_before[-1]
                 lines.append(f"  Before ({before['role']}): {before['content'][:180]}")

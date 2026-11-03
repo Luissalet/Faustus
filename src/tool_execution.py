@@ -509,6 +509,17 @@ def _resolve_tool_path_in_roots(
     raise ValueError(f"path '{raw_path}' is outside the workspace / project work roots")
 
 
+def _search_time_bounds(content: str) -> Dict[str, str]:
+    """`after: <date>` / `before: <date>` lines under a search_chats query."""
+    out: Dict[str, str] = {}
+    for line in (content or "").split("\n")[1:]:
+        key, _, value = line.partition(":")
+        key = key.strip().lower()
+        if key in ("after", "before", "as_of") and value.strip():
+            out["before" if key == "as_of" else key] = value.strip()[:40]
+    return out
+
+
 def vet_project_root(raw: str) -> Optional[str]:
     """Validate a file or directory before attaching it as a project root.
 
@@ -2353,10 +2364,12 @@ async def _execute_tool_block_impl(
             desc = f"{tool}: {result.get('title', '')}"
     elif tool == "search_chats":
         query = content.split("\n")[0].strip()
+        bounds = _search_time_bounds(content)
         desc = f"search_chats: {query[:80]}"
-        result = await do_search_chats(query, owner=owner)
+        result = await do_search_chats(query, owner=owner, **bounds)
     elif tool == "search_project_chats":
         query = content.split("\n")[0].strip()
+        bounds = _search_time_bounds(content)
         desc = f"search_project_chats: {query[:80]}"
         from services.projects import project_for_session
         project = project_for_session(session_id or "", owner)
@@ -2364,7 +2377,7 @@ async def _execute_tool_block_impl(
             result = {"error": "This chat is not attached to a project", "exit_code": 1}
         else:
             result = await do_search_chats(
-                query, owner=owner, folder=project.get("folder") or ""
+                query, owner=owner, folder=project.get("folder") or "", **bounds
             )
     elif tool == "project_context":
         desc = "project_context"

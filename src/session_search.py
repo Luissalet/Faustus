@@ -49,6 +49,26 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
+def parse_when(value: Any) -> datetime | None:
+    """A time bound for transcript search: a datetime, or an ISO date /
+    datetime string ("2026-10-01", "2026-10-01T18:00"). Returned naive UTC,
+    the way message timestamps are stored; None when empty or unreadable."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        raw = str(value).strip().replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 def _message_to_context(msg: DBChatMessage) -> dict[str, Any]:
     return {
         "message_id": msg.id,
@@ -205,6 +225,8 @@ def _search_like(
     restrict_owner: bool,
     include_legacy_owner: bool,
     folder: str | None,
+    after: datetime | None = None,
+    before: datetime | None = None,
 ) -> list[SessionSearchResult]:
     safe_q = _escape_like(query)
     q = (
@@ -222,6 +244,10 @@ def _search_like(
         q = _owner_filter(q, owner, include_legacy_owner)
     if folder:
         q = q.filter(DBSession.folder.ilike(_escape_like(folder), escape="\\"))
+    if after is not None:
+        q = q.filter(DBChatMessage.timestamp >= after)
+    if before is not None:
+        q = q.filter(DBChatMessage.timestamp < before)
     rows = q.order_by(DBChatMessage.timestamp.desc()).limit(limit).all()
     shaped = ((msg, session_name, _snippet(msg.content or "", query)) for msg, session_name in rows)
     return _rows_to_results(db, shaped, query, context_messages)
@@ -255,6 +281,8 @@ def _search_fts(
     restrict_owner: bool,
     include_legacy_owner: bool,
     folder: str | None,
+    after: datetime | None = None,
+    before: datetime | None = None,
 ) -> list[SessionSearchResult] | None:
     fts_query = _sanitize_fts_query(query)
     if not fts_query or not _has_fts_table(db):
@@ -275,6 +303,13 @@ def _search_fts(
     folder_clause = "AND lower(s.folder) = lower(:folder)" if folder else ""
     if folder:
         params["folder"] = folder
+    time_clause = ""
+    if after is not None:
+        time_clause += " AND m.timestamp >= :after"
+        params["after"] = after.strftime("%Y-%m-%d %H:%M:%S")
+    if before is not None:
+        time_clause += " AND m.timestamp < :before"
+        params["before"] = before.strftime("%Y-%m-%d %H:%M:%S")
 
     sql = text(
         f"""
@@ -288,6 +323,7 @@ def _search_fts(
           {archived_clause}
           {owner_clause}
           {folder_clause}
+          {time_clause}
           AND s.name NOT LIKE 'SFT trace batch%'
           AND m.role IN ('user', 'assistant')
         ORDER BY bm25(chat_messages_fts), m.timestamp DESC
@@ -324,11 +360,14 @@ def search_session_messages(
     include_legacy_owner: bool = True,
     folder: str | None = None,
     db=None,
+    after: Any = None,
+    before: Any = None,
 ) -> list[SessionSearchResult]:
     """Search session transcripts using FTS5 when available.
 
     `owner=None` is deliberately treated as legacy/null-owner scope rather
-    than global access.
+    than global access. `after`/`before` bound the message time (ISO date or
+    datetime); `before` is the "as of" view: only what had been said by then.
     """
     query = (query or "").strip()
     if not query:
@@ -336,6 +375,7 @@ def search_session_messages(
 
     limit = max(1, min(int(limit or 20), 100))
     context_messages = max(0, min(int(context_messages or 0), 3))
+    after_dt, before_dt = parse_when(after), parse_when(before)
 
     owns_db = db is None
     if owns_db:
@@ -351,6 +391,8 @@ def search_session_messages(
             restrict_owner,
             include_legacy_owner,
             folder,
+            after_dt,
+            before_dt,
         )
         if fts_results is not None:
             like_results = _search_like(
@@ -363,6 +405,8 @@ def search_session_messages(
                 restrict_owner,
                 include_legacy_owner,
                 folder,
+                after_dt,
+                before_dt,
             )
             merged: list[SessionSearchResult] = []
             seen: set[str] = set()
@@ -384,6 +428,8 @@ def search_session_messages(
             restrict_owner,
             include_legacy_owner,
             folder,
+            after_dt,
+            before_dt,
         )
     finally:
         if owns_db:

@@ -706,6 +706,9 @@ def _raw_openai_tool_call_to_block(value) -> Optional[ToolBlock]:
         content = "\n".join(blocks)
     elif tool_type in ("search_chats", "search_project_chats"):
         content = args.get("query", "")
+        for bound in ("after", "before"):
+            if args.get(bound):
+                content += f"\n{bound}: {args[bound]}"
     elif tool_type in ("project_context", "manage_project_context", "project_workspace", "manage_teach_mode",
                        "capability_health", "branch_futures"):
         content = json.dumps(args)

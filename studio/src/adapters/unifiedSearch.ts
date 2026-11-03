@@ -24,8 +24,14 @@ export interface SearchAll {
   elapsed_ms: number;
 }
 
-export function searchAll(q: string, types: SearchSource[] = [], limit = 6, signal?: AbortSignal): Promise<SearchAll> {
+/** Time bounds for chat transcripts: `after` (from this date on) and
+ *  `before` (as of: only what had been said by then), ISO dates. */
+export interface SearchWhen { after?: string; before?: string }
+
+export function searchAll(q: string, types: SearchSource[] = [], limit = 6, signal?: AbortSignal, when: SearchWhen = {}): Promise<SearchAll> {
   const params = new URLSearchParams({ q, limit: String(limit) });
   if (types.length) params.set('types', types.join(','));
+  if (when.after) params.set('after', when.after);
+  if (when.before) params.set('before', when.before);
   return getJson<SearchAll>(`/api/search/all?${params.toString()}`, signal);
 }
