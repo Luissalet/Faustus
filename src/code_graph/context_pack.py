@@ -51,7 +51,7 @@ class _Reader:
                 with open(os.path.join(self.root, *rel.split("/")), "rb") as handle:
                     raw = handle.read()
                 self._hash[rel] = hashlib.sha256(raw).hexdigest()[:12]
-                self._lines[rel] = raw.decode("utf-8", "replace").split("\n")
+                self._lines[rel] = raw.decode("utf-8", "replace").replace("\r\n", "\n").split("\n")
             except OSError:
                 self._lines[rel], self._hash[rel] = [], ""
         return self._lines[rel]

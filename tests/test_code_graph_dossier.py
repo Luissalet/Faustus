@@ -380,3 +380,10 @@ def test_mcp_tools(repo):
     out = asyncio.run(cgs.call_tool("code_graph_context_pack",
                                     {"root": repo, "symbols": ["place_order"], "budget_lines": 30}))
     assert '"hashes"' in out[0].text
+
+
+def test_context_pack_strips_windows_line_endings(tmp_path):
+    (tmp_path / "crlf.py").write_bytes(b"def crlf_target(x):\r\n    return x + 1\r\n\r\n\r\ndef caller():\r\n    return crlf_target(2)\r\n")
+    res = code_graph.context_pack("crlf_target", str(tmp_path), budget_lines=50)
+    texts = [l["text"] for i in res["items"] for l in i.get("lines", [])]
+    assert texts and not any(t.endswith("\r") for t in texts)
