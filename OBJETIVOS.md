@@ -1,5 +1,15 @@
 # Objetivos acordados
 
+## Programa Hangar: siguientes pasos — 03-11-2026, #1925/#1927
+
+Integrado hoy en el grafo de código: expediente de recepción por revisión, `locate`, paquete de contexto por cambio, recorridos de negocio entre capas y entrega verificada (HANDOFF.md). En Vitruvius: equivalencia, banco de reglas, reproducción mínima, ensayo de actualización de dependencias y taller de rendimiento. En Nightingale: conciliación, libro explicable, ensayo de migración y laboratorio de escenarios.
+
+- Recorridos de negocio: seguir imports JS entre módulos, routers de Express montados desde otro fichero y botones creados por JS; hoy quedan como huecos.
+- Entrega verificada: ejecutar Docker/compose cuando exista y probar el instalador de dependencias de pruebas (`.[test]`) además de `pip install .`.
+- Theseus: vista web para equivalencia, banco de reglas, reproducciones y rendimiento (hoy API/MCP); reglas dentro del paquete de evidencias.
+- Babel: ensayo de actualización para JS/TS.
+- Ensayos de valor E1, E2 y E6 del informe Hangar con un encargo real, midiendo minutos de corrección humana.
+
 ## Continuación de la sesión de navegador —29-10-2026, #1797/#1717
 
 El contexto AX y las acciones reales de Brave están comprobados. La entrega 1797 corrige el cierre a partir del progreso reciente, la localización de resultados y la composición de una sola respuesta final; 94 casos y una recuperación independiente pasan. Falta activar el código aprobado cuando el servidor normal quede libre y contrastar el mismo flujo con el modelo global antes de cerrar 1797. El turno ajeno activo se conserva; no se detienen modelos.
