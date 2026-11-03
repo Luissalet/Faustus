@@ -879,6 +879,12 @@ def add_item(
     prov.setdefault("who", trust_class)
     if temporal_state:
         prov.setdefault("temporal_state", temporal_state)
+    # FAUSTUS §120 B: a text over MAX_TEXT_CHARS is still stored (refusing
+    # would lose the whole fact), but no longer silently: the item says how
+    # long the original was, so a reader knows the stored text is a cut.
+    full_len = len(" ".join(str(text or "").split()))
+    if full_len > MAX_TEXT_CHARS:
+        prov.setdefault("truncated_from_chars", full_len)
     item = {
         "id": uuid.uuid4().hex,
         "owner": owner,

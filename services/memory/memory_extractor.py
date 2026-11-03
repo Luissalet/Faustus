@@ -751,6 +751,18 @@ async def audit_memories(
 
             final_entries.append(entry)
 
+        # The extraction guard (volatile_facts) also covers what is already
+        # stored: a snapshot such as "the workspace root has 2 files", saved
+        # before the guard existed, is dropped here whatever the model kept.
+        kept_entries = []
+        for entry in final_entries:
+            _why = volatile_reason(entry.get("text") or "")
+            if _why:
+                logger.info("[memory-audit] dropped %r: %s", (entry.get("text") or "")[:60], _why)
+                continue
+            kept_entries.append(entry)
+        final_entries = kept_entries
+
         after_count = len(final_entries)
 
         # A reply that names none of the ids it was given is not a tidy-up,
