@@ -30,6 +30,9 @@ def test_the_reachable_surface_is_exactly_this():
     assert {key: value for key, value in surface.items() if '/api/codex/' not in key} == {
         "DELETE|PATCH|POST|PUT /api/v1/chat": ("chat",),
         "GET|HEAD|OPTIONS /api/models": ("chat",),
+        # Exact global model inference without conversations (fd19d09b).
+        "GET|HEAD|OPTIONS /api/global-model": ("chat",),
+        "POST /api/global-model/v1/chat/completions": ("chat",),
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/dispatch*": ("agents:dispatch",),
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/workflows/published*": ("agents:dispatch",),
         "GET|HEAD|OPTIONS /api/changesets/from-dispatch/*": ("agents:dispatch",),
@@ -70,6 +73,9 @@ def test_the_reachable_surface_is_exactly_this():
         "GET|HEAD|OPTIONS /api/history/{session_id}": ("sessions",),
         "POST /api/chat_stream": ("sessions",),
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/voice*": ("sessions",),
+        # Owned dictation vocabulary and recoverable text (574cbad0), no desktop input.
+        "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/dictation/vocabulary*": ("sessions",),
+        "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/dictation/history*": ("sessions",),
         "GET|HEAD|OPTIONS /api/chat/resume/{session_id}": ("sessions",),
         "GET|HEAD|OPTIONS /api/chat/stream_status/{session_id}": ("sessions",),
         "GET|HEAD|OPTIONS /api/chat/activity": ("sessions",),

@@ -1,4 +1,4 @@
-﻿# tests/test_csp_no_external_hosts.py
+# tests/test_csp_no_external_hosts.py
 """Agora #204: the browser UI is fully self-hosted.
 
 The default page CSP must not allow any external script/style/font/connect

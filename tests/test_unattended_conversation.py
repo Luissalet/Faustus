@@ -1,4 +1,4 @@
-﻿"""Headless runs nobody is watching: a conversation task whose replies only
+"""Headless runs nobody is watching: a conversation task whose replies only
 reach the user through a tool, and a model server that drops a connection."""
 
 import asyncio
@@ -349,11 +349,14 @@ def test_completion_work_uses_real_effects_and_workspace_reads_not_tool_availabi
     assert al._workspace_completion_work(intent, [], effects)
 
 
-def test_completion_work_preserves_requested_files_and_pending_progress(tmp_path):
+def test_completion_work_preserves_requested_files_but_not_bare_progress(tmp_path):
     ledger = al._harness.TurnLedger(str(tmp_path), "Write the result.")
     assert al._workspace_completion_work({}, ["result.json"], ledger)
+    # Since 0442c6a1 a progress list describes the task; on its own it is not
+    # workspace work (positive local intent or real work still are).
     ledger.progress = [{"id": "1", "content": "Write result", "status": "pending"}]
-    assert al._workspace_completion_work({}, [], ledger)
+    assert not al._workspace_completion_work({}, [], ledger)
+    assert al._workspace_completion_work({"workspace_work": True}, [], ledger)
 
 
 def test_prepared_workspace_intent_survives_an_explicit_continuation():

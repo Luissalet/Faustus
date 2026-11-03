@@ -101,7 +101,7 @@ def patch_session(tmp_path, monkeypatch):
 
     def call(*, endpoint_id="a", url=NATIVE):
         return handler(request=None, sid="s", name=None, folder=None, model="new",
-            endpoint_url=url, endpoint_id=endpoint_id)
+            endpoint_url=url, endpoint_id=endpoint_id, reasoning_effort=None)
 
     yield call, session, factory
     engine.dispose()

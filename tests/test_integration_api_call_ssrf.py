@@ -157,11 +157,11 @@ async def test_pin_carries_the_whole_validated_ip_set(monkeypatch):
     (check_outbound_url validated every one), in resolver order, so it can fall
     back past a dead first address instead of failing the whole call."""
     monkeypatch.setattr("src.url_safety._default_resolver",
-                        lambda host: ["93.184.216.34", "198.51.100.7"])
+                        lambda host: ["93.184.216.34", "1.0.0.1"])
     result, transport, _ = await _call_capturing_transport("http://multi.example")
 
     assert result.get("exit_code") == 0
-    assert [str(ip) for ip in transport._pinned_ips] == ["93.184.216.34", "198.51.100.7"]
+    assert [str(ip) for ip in transport._pinned_ips] == ["93.184.216.34", "1.0.0.1"]
 
 
 class _FakeStream:

@@ -272,7 +272,7 @@ def _endpoint_for(router, path="/api/models/fit-explain"):
 
 def test_the_fit_explain_route_is_registered_and_authenticated():
     router = mr.setup_model_routes(model_discovery=None)
-    assert "/api/models/fit-explain" in {r.path for r in router.routes}
+    assert "/api/models/fit-explain" in {getattr(r, "path", None) for r in router.routes}
 
 
 def test_local_ollama_model_explained_against_its_calibration_manifest(monkeypatch, tmp_path):

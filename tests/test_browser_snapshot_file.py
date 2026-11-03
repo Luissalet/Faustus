@@ -1,4 +1,4 @@
-﻿"""A page snapshot the browser saved to a file is put back inline.
+"""A page snapshot the browser saved to a file is put back inline.
 
 Seen live (22-10): recent @playwright/mcp builds answer navigate / snapshot
 with "- [Snapshot](.playwright-mcp\\page-....yml)"; the model cannot open the

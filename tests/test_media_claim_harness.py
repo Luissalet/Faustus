@@ -1,4 +1,8 @@
-"""An image edit claimed without an image tool is rejected like a coding claim."""
+"""An image edit claimed without an image tool is flagged, not retried.
+
+Since 7bfba264 (docs/HARNESS-EVIDENCE.md) a final report keeps its text and
+the harness records an advisory diagnostic instead of spending a correction
+round or replacing the answer; the image claim follows the same rule."""
 import asyncio
 import json
 
@@ -32,16 +36,17 @@ def _run(monkeypatch, replies, user):
     return calls, effects, _events(asyncio.run(run()))
 
 
-def test_claimed_edit_without_tool_gets_another_round_and_real_edit(monkeypatch):
+def test_claimed_edit_without_tool_is_flagged_without_a_correction_round(monkeypatch):
     claim = 'Se ha añadido un bigote grande al hombre en la imagen original.'
     call = '```edit_image\n' + json.dumps({'action': 'instruction', 'image_id': 'src',
                                            'prompt': 'ponle un bigote'}) + '\n```'
     user = 'Edita la imagen adjunta: ponle un bigote grande al hombre.' + CHROME
     calls, effects, events = _run(monkeypatch, [claim, call, 'Listo.'], user)
-    assert effects == ['edit_image'] and len(calls) == 3
-    assert any(e.get('type') == 'harness_check' and 'image_claim_without_tool' in (e.get('reasons') or [])
-               for e in events)
-    assert any(e.get('type') == 'generated_image' and e.get('url') == URL for e in events)
+    assert effects == [] and len(calls) == 1
+    flagged = [e for e in events if e.get('type') == 'harness_check'
+               and 'image_claim_without_tool' in (e.get('reasons') or [])]
+    assert flagged and flagged[-1].get('advisory') is True
+    assert not any(e.get('type') == 'generated_image' for e in events)
 
 
 def test_plain_question_about_an_image_is_not_held_to_a_claim(monkeypatch):
@@ -52,13 +57,15 @@ def test_plain_question_about_an_image_is_not_held_to_a_claim(monkeypatch):
     assert not any(e.get('type') == 'harness_check' and e.get('reasons') for e in events)
 
 
-def test_claim_that_survives_the_retry_is_replaced_by_the_truth(monkeypatch):
+def test_claim_is_kept_with_an_advisory_instead_of_being_replaced(monkeypatch):
     claim = 'Se ha añadido un bigote grande al hombre en la imagen original.'
     user = 'Edita la imagen adjunta: ponle un bigote grande al hombre.' + CHROME
     calls, effects, events = _run(monkeypatch, [claim], user)
-    assert effects == []
-    replaced = [e for e in events if e.get('type') == 'response_replace']
-    assert replaced and 'No he editado ni generado ninguna imagen' in replaced[-1]['text']
+    assert effects == [] and len(calls) == 1
+    assert not any(e.get('type') == 'response_replace' for e in events)
+    assert any(e.get('type') == 'harness_check' and e.get('status') == 'advisory'
+               and 'image_claim_without_tool' in (e.get('reasons') or []) for e in events)
+    assert claim in ''.join(e.get('delta', '') for e in events if not e.get('thinking'))
 
 
 import pytest

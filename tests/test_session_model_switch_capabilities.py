@@ -96,7 +96,7 @@ def rename_endpoint(monkeypatch, tmp_path):
 
 def _switch(endpoint, sid, model, endpoint_url):
     return endpoint(request=None, sid=sid, name=None, folder=None,
-                     model=model, endpoint_url=endpoint_url, endpoint_id=None)
+                     model=model, endpoint_url=endpoint_url, endpoint_id=None, reasoning_effort=None)
 
 
 def test_switching_to_a_model_without_vision_or_tools_reports_what_was_lost(rename_endpoint):
