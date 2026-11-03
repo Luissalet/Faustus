@@ -3205,6 +3205,40 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_graph_business_route",
+            "description": "Follow one user action across layers: UI element (by visible text) -> handler -> fetch/axios/XHR request -> backend route -> service calls -> SQL/ORM/file write, with the tests covering each hop. Each hop has file:line evidence and a certainty (resolved, observed, unresolved); name-only look-alikes are listed under gaps and never linked. Optional runtime_trace confirms or completes hops.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start": {"type": "string", "description": "Visible text or id of the button/link/form, or 'METHOD /path', or a symbol name"},
+                    "end": {"type": "string", "description": "Where to stop, e.g. 'saved', 'INSERT INTO quotes', a table or function name (optional)"},
+                    "runtime_trace": {"type": "array", "items": {"type": "object"}, "description": "Observed events [{kind: http|call|sql, method, path, function, file, line}] from a server log or captured network log"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": ["start"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_handoff",
+            "description": "Client handoff package: install/configure/migrate/run/test/recover/demo instructions from the repo dossier, executed in a throwaway copy and written to HANDOFF.md. Only verified commands are presented as instructions; failed and not-run ones go under 'Not verified' with the reason. Runs the repository's own commands.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "out_dir": {"type": "string", "description": "Where to write HANDOFF.md and handoff-report.json (default <root>/.handoff)"},
+                    "run": {"type": "boolean", "description": "Execute the steps in a throwaway copy (default true); false only drafts and marks everything not verified"},
+                    "timeout": {"type": "number", "description": "Seconds allowed per step (default 120)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_context_pack",
             "description": "Budgeted context for a planned change: target source, contracts, direct consumers with exact call lines, tests with assertion lines and flows, trimmed to budget_lines; left-out pieces carry `more` handles; pass the previous `hashes` as known_hashes to skip unchanged files.",
             "parameters": {

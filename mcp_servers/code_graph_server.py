@@ -294,6 +294,47 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="code_graph_business_route",
+            description=(
+                "What happens from pressing a UI action until it is saved: UI element (by visible text) "
+                "-> handler -> fetch/axios/XHR/WebSocket request -> backend route (FastAPI/Flask/Express, "
+                "path params as patterns) -> service calls -> SQL/ORM/file writes, with the tests covering "
+                "each hop. Every hop has file:line evidence and a certainty: resolved, observed (confirmed "
+                "by runtime_trace), unresolved; name-only look-alikes are gaps, never links. "
+                "Ruta de negocio entre capas, de la pulsaci\u00f3n al guardado. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start": {"type": "string", "description": "Visible text/id of the UI element, 'METHOD /path' or a symbol"},
+                    "end": {"type": "string", "description": "e.g. 'saved', 'INSERT INTO quotes', a table or function"},
+                    "runtime_trace": {"type": "array", "items": {"type": "object"},
+                                      "description": "[{kind: http|call|sql, method, path, function, file, line}]"},
+                    **_ROOT_PROP,
+                },
+                "required": ["start"],
+            },
+        ),
+        Tool(
+            name="code_graph_handoff",
+            description=(
+                "Client handoff package with verified instructions: builds install/configure/migrate/run/"
+                "test/recover/demo steps from the dossier, executes them in a throwaway copy of the repo "
+                "(fresh venv, npm only with network, app probed, tests run) and writes HANDOFF.md with only "
+                "verified commands as instructions and a 'Not verified' section. Paquete de entrega al "
+                "cliente. Runs the repository's own commands and writes HANDOFF.md under out_dir."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "out_dir": {"type": "string"}, "run": {"type": "boolean"},
+                    "timeout": {"type": "number", "minimum": 5, "maximum": 900},
+                    **_ROOT_PROP,
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="code_graph_change_risk",
             description=(
                 "Deterministic 0-100 change-risk score for paths/symbols or the current diff. "
@@ -434,6 +475,23 @@ def _tool_context_pack(args: dict) -> list[TextContent]:
                                         known_hashes=args.get("known_hashes")))
 
 
+def _tool_business_route(args: dict) -> list[TextContent]:
+    cg = _engine["code_graph"]
+    trace = args.get("runtime_trace")
+    return _json_result(cg.business_route(str(args.get("root") or ""), str(args.get("start") or ""),
+                                          str(args["end"]) if args.get("end") else None,
+                                          trace if isinstance(trace, list) else None))
+
+
+def _tool_handoff(args: dict) -> list[TextContent]:
+    cg = _engine["code_graph"]
+    run = args.get("run")
+    res = cg.handoff(str(args.get("root") or ""), str(args.get("out_dir") or "") or None,
+                     run=True if run is None else bool(run), timeout=float(args.get("timeout") or 120))
+    res.pop("markdown", None)
+    return _json_result(res)
+
+
 _HANDLERS = {
     "code_graph_search": _tool_search,
     "code_graph_trace": _tool_trace,
@@ -448,6 +506,8 @@ _HANDLERS = {
     "code_graph_dossier": _tool_dossier,
     "code_graph_locate": _tool_locate,
     "code_graph_context_pack": _tool_context_pack,
+    "code_graph_business_route": _tool_business_route,
+    "code_graph_handoff": _tool_handoff,
 }
 
 
@@ -465,6 +525,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return _text_result(f"Error: the code graph could not be loaded: {exc}")
 
     try:
+        if name == "code_graph_handoff":
+            # minutes of subprocess work: keep the JSON-RPC loop responsive
+            return await asyncio.to_thread(_HANDLERS[name], args)
         return _HANDLERS[name](args)
     except ValueError as exc:
         return _text_result(f"{name}: {exc}")

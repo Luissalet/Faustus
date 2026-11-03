@@ -1216,6 +1216,16 @@ EXAMPLES: Dict[str, List[str]] = {
         "what do I need to read before touching place_order",
         "show the callers, contracts and tests around this symbol within 80 lines",
     ],
+    "code_graph_business_route": [
+        "qu\u00e9 pasa desde que el usuario pulsa Generar presupuesto hasta que se guarda",
+        "trace this button to the database, hop by hop",
+        "which endpoint and tables does the checkout screen touch, and which tests cover them",
+    ],
+    "code_graph_handoff": [
+        "prepara el paquete de entrega para el cliente con instrucciones verificadas",
+        "check that the install, run and test commands of this repo really work from a clean copy",
+        "write a handoff document listing what could not be verified",
+    ],
     "run_report": [
         "where did the time of that last turn go",
         "¿dónde se fue el coste del último turno?",
