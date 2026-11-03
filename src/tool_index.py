@@ -488,6 +488,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # Lot D: fix memory -- past solved issues remembered per project and
     # recalled before a similar task. src/fix_memory.py + src/agent_tools/fix_memory_tools.py.
     "recall_fixes": "Look up past solved issues in this project's own fix memory that look similar to a query, an error, or a set of files -- so a fix already worked out once is reused instead of rediscovered. Read-only. Use for 'has this come up before', 'how did we fix this last time', 'have I seen this error in this project'.",
+    "uncertainty_next_observation": "Decide what to observe or test next when several explanations compete (failure causes, diagnoses, design options): give the hypotheses with prior weights and the candidate tests with their cost (minutes or money) and what each hypothesis predicts for each test (a discrete value, a numeric interval such as a thickness reading, or a probability distribution), plus any results already observed. Returns the posterior over the hypotheses, the tests ranked by expected information gain per unit cost, the one recommended next test with a plain explanation of which hypotheses it separates, the pairs of hypotheses no listed test can tell apart (and what kind of observation would be needed), and a stop rule. A case_id keeps the case so each new result updates the same case. Use for 'qué mido primero para distinguir estas causas', 'what should I test next', 'cuál es la prueba más barata que separa estas hipótesis', 'which check tells these failure causes apart', 'is it worth measuring more'.",
     "prior_art": "Before building something, work out which parts already exist as maintained open-source projects to reuse (dependency), which exist only as a reference to adapt (study the approach, write your own code -- mandatory when the license is incompatible), and which are small/generic enough to write. Every repository name is checked live against the GitHub API before being presented as real -- existence, archived/fork status, health (last push), stars, and license compatibility. Actions: rubric (the decomposition checklist, no network), verify (check a filled slate live, ranked table + next actions), search (GitHub repo search when there's no candidate yet), report (read back or list saved verify reports). Use for 'does this already exist', 'is there a library for this', 'should I write this myself or use a package', 'reuse or write it', 'ya existe una librería para esto', 'antes de construir esto, qué hay ya', 'no reinventes la rueda', 'hay alguna alternativa de código abierto'.",
     # Autonomous bug hunter: src/bug_hunt.py + src/agent_tools/bug_hunt_tools.py.
     "bug_hunt": "Autonomous bug hunter: understands a function/class/file (or a whole directory), generates edge-case pytest tests for it (normal, boundary, invalid-input, idempotency), runs them isolated under the workspace, and triages every failure as a real bug in the code, a wrong expectation in the generated test, or unclear -- never blindly blaming the code for a bad test. Optionally keeps the tests that expose a real bug as regression tests under tests/. Use for 'find bugs in this file/function', 'stress test this code', 'busca bugs en <archivo>'.",
@@ -1348,6 +1349,13 @@ class ToolIndex:
         frozenset({"write a", "create a doc", "draft", "compose", "poem", "story",
                    "essay", "outline", "letter"}):
             {"create_document", "edit_document", "update_document"},
+        # Uncertainty sensor: which observation to make next.
+        frozenset({"qué pruebo primero", "que pruebo primero", "qué mido primero", "que mido primero",
+                   "what should i test next", "what to test next", "what should i measure next",
+                   "which test separates", "prueba más barata que separa",
+                   "distinguir entre estas causas", "tell these causes apart",
+                   "competing hypotheses", "hipótesis en competencia"}):
+            {"uncertainty_next_observation"},
         # Prior art (GIT-08): reuse/adapt/write, verified live against GitHub.
         frozenset({"prior art", "ya existe", "hay alguna librería", "hay una librería",
                    "reutilizar", "reuse or write", "no reinventes la rueda",

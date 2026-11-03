@@ -3171,6 +3171,37 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "uncertainty_next_observation",
+            "description": "Which observation to make next among competing hypotheses: posterior from the results so far, candidate tests ranked by expected information gain per cost, the recommended test with why it separates the hypotheses, pairs no test can separate, and a stop rule. Pass a case_id to keep the case across calls.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hypotheses": {"type": "array", "items": {"type": "object", "properties": {
+                        "id": {"type": "string"}, "prior": {"type": "number", "description": "Prior weight (default uniform)"},
+                        "description": {"type": "string"}}, "required": ["id"]},
+                        "description": "Competing explanations"},
+                    "candidates": {"type": "array", "items": {"type": "object", "properties": {
+                        "id": {"type": "string"}, "description": {"type": "string"},
+                        "cost": {"type": "number", "description": "Minutes or money; keep one unit across candidates"},
+                        "cost_unit": {"type": "string"},
+                        "predictions": {"type": "object", "description": "{hypothesis id: predicted outcome}. Outcome = a discrete value, a numeric interval [lo, hi], or a distribution {outcome: probability}"}},
+                        "required": ["id", "predictions"]}, "description": "Observations/tests that could be made"},
+                    "observed": {"type": "array", "items": {"type": "object", "properties": {
+                        "candidate": {"type": "string"}, "result": {"description": "Observed value, number, or [lo, hi] range"}},
+                        "required": ["candidate", "result"]}, "description": "Results already observed. With a case_id these are appended to the case"},
+                    "case_id": {"type": "string", "description": "Keep/update this case between calls"},
+                    "action": {"type": "string", "description": "'next' (default), 'get', 'list' or 'delete' (cases)"},
+                    "stop_threshold": {"type": "number", "description": "Stop when the top posterior reaches this (default 0.95)"},
+                    "min_gain_per_cost": {"type": "number", "description": "Stop when the best remaining gain per cost (bits) is below this (default 0.001)"},
+                    "noise": {"type": "number", "description": "Noise floor of every likelihood (default 0.02)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_dossier",
             "description": "Intake dossier of a repo at its current git revision: structure, entry points, build/run and test commands quoted with file:line, data, integrations (hosts, env vars, SDKs), screens, main flows and explicit uncertainties; each fact has evidence and a code/config/inferred label. action='diff' compares two stored revisions.",
             "parameters": {

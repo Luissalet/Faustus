@@ -1200,6 +1200,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué módulos se han movido o acoplado nuevo desde entonces",
         "check whether this change introduced a new dependency cycle",
     ],
+    "uncertainty_next_observation": [
+        "tengo tres posibles causas del fallo, qué mido primero para distinguirlas",
+        "which of these four tests should I run next to tell the causes apart, given their costs",
+        "cuál es la prueba más barata que separa estas hipótesis",
+        "I measured the thickness and it is 2.1 mm, update the diagnosis and tell me whether to keep testing",
+    ],
     "code_graph_dossier": [
         "acabo de recibir este repositorio, dame el panorama general",
         "how do I build, run and test this repo, with evidence",
