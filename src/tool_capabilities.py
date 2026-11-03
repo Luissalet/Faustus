@@ -656,6 +656,13 @@ _register({"brain_graph"}, ToolEffect.READ_PRIVATE,
 # calls through the endpoint the turn already uses; nothing is written.
 _register({"graph_ask"}, ToolEffect.READ_PRIVATE,
           result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+# Recipes learned from finished work, the derivation graph and the decision map
+# (src/derivation_ops.py): records under DATA_DIR; the graph hashes files the
+# caller names inside the workspace and may register results in Atlas's Hoard
+# through the local Hub. None of them runs a tool or a transformation.
+_register({"recipe_learn", "decision_map"}, ToolEffect.WRITE_PRIVATE)
+_register({"derivation_graph"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
+          result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
           ToolEffect.NETWORK_EGRESS, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 _register({"reach_crawl"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,

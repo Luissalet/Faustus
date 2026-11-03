@@ -1226,6 +1226,21 @@ EXAMPLES: Dict[str, List[str]] = {
         "check that the install, run and test commands of this repo really work from a clean copy",
         "write a handoff document listing what could not be verified",
     ],
+    "recipe_learn": [
+        "convierte lo que acabamos de hacer en una receta reutilizable",
+        "turn this finished job into a recipe with the file names as parameters",
+        "try the recipe on another customer before saving it",
+    ],
+    "derivation_graph": [
+        "qué hay que recalcular porque ha cambiado este fichero de entrada",
+        "rebuild only the results affected by the new parameter and reuse the rest",
+        "resume the rebuild from where it failed without repeating the finished steps",
+    ],
+    "decision_map": [
+        "si cambia la unidad de medida, qué entregables hay que rehacer",
+        "link this requirement to the decision and the deliverable it affects",
+        "what depends on the requirement about the output format",
+    ],
     "run_report": [
         "where did the time of that last turn go",
         "¿dónde se fue el coste del último turno?",

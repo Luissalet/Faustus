@@ -85,6 +85,7 @@ from .artifact_read_tool import ReadArtifactTool, ArtifactSearchTool
 from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool, ReachExtractTool, ReachReadManyTool, ReachBrowserTool, ReachCrawlTool, ReachRecipeTool
 from .brain_graph_tool import BrainGraphTool
 from .graph_ask_tool import GraphAskTool
+from .derivation_tools import RecipeLearnTool, DerivationGraphTool, DecisionMapTool
 from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
     CodeGraphChangesTool, CodeGraphImpactTool, CodeGraphArchitectureTool,
@@ -285,6 +286,11 @@ TOOL_HANDLERS = {
     "reach_recipe": ReachRecipeTool().execute,
     "brain_graph": BrainGraphTool().execute,
     "graph_ask": GraphAskTool().execute,
+    # Recipes learned from finished work, selective rebuild of derived results and the
+    # decision/effect map -- src/derivation_ops.py.
+    "recipe_learn": RecipeLearnTool().execute,
+    "derivation_graph": DerivationGraphTool().execute,
+    "decision_map": DecisionMapTool().execute,
     # Code graph (R2, Reach wave): architecture/tracing queries over
     # src.context_engine.code_index's resolved graph. See src/code_graph/.
     "code_graph_index": CodeGraphIndexTool().execute,
@@ -562,7 +568,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # src/agent_tools/alternatives_tools.py.
              "alt_start", "alt_compare", "alt_apply",
              # Reach (R1) -- src/agent_tools/reach_tools.py.
-             "reach_read", "reach_search", "reach_doctor", "reach_extract", "reach_read_many", "reach_browser", "reach_crawl", "reach_recipe", "brain_graph", "graph_ask",
+             "reach_read", "reach_search", "reach_doctor", "reach_extract", "reach_read_many", "reach_browser", "reach_crawl", "reach_recipe", "brain_graph", "graph_ask", "recipe_learn", "derivation_graph", "decision_map",
              # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_impact", "code_graph_architecture",

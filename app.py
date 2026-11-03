@@ -1331,6 +1331,9 @@ app.include_router(setup_condense_routes(session_manager))
 # (src/strategy_policy.py, src/recipes.py).
 from routes.strategy_routes import setup_strategy_routes
 app.include_router(setup_strategy_routes())
+# Learned recipes, derived results with selective rebuild, decision map (src/derivation_ops.py).
+from routes.derivation_routes import setup_derivation_routes
+app.include_router(setup_derivation_routes())
 
 # Isolated, comparable alternatives (W2-G / CMP-13): worktree/snapshot_dir/
 # doc_version experiments, three-way apply/combine against the main copy

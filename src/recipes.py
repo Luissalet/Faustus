@@ -43,6 +43,10 @@ _BUILTIN_DIR = os.path.join(_REPO_ROOT, "docs", "recipes")
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
+def _dict_list(value: Any) -> List[Dict[str, Any]]:
+    return [dict(x) for x in value if isinstance(x, dict)] if isinstance(value, list) else []
+
+
 @dataclass
 class Recipe:
     id: str
@@ -55,8 +59,33 @@ class Recipe:
     license: Optional[str] = None
     status: str = "published"
     source: Optional[Dict[str, Any]] = None
+    # Learned recipes (src/recipe_learning.py) only. All empty for the
+    # built-ins and for the coarse drafts of `from_run`, and then left out of
+    # `to_dict()` so those keep their shape.
+    params: List[Dict[str, Any]] = field(default_factory=list)
+    step_templates: List[Dict[str, Any]] = field(default_factory=list)
+    examples: List[Dict[str, Any]] = field(default_factory=list)
+    limits: List[str] = field(default_factory=list)
+    tries: List[Dict[str, Any]] = field(default_factory=list)
+    version: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        out = self._base_dict()
+        if self.params:
+            out["params"] = [dict(x) for x in self.params]
+        if self.step_templates:
+            out["step_templates"] = [dict(x) for x in self.step_templates]
+        if self.examples:
+            out["examples"] = [dict(x) for x in self.examples]
+        if self.limits:
+            out["limits"] = list(self.limits)
+        if self.tries:
+            out["tries"] = [dict(x) for x in self.tries]
+        if self.version:
+            out["version"] = self.version
+        return out
+
+    def _base_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
@@ -83,6 +112,12 @@ class Recipe:
             license=data.get("license") if isinstance(data.get("license"), str) else None,
             status=str(data.get("status") or "published"),
             source=data.get("source") if isinstance(data.get("source"), dict) else None,
+            params=_dict_list(data.get("params")),
+            step_templates=_dict_list(data.get("step_templates")),
+            examples=_dict_list(data.get("examples")),
+            limits=[str(x) for x in (data.get("limits") or [])],
+            tries=_dict_list(data.get("tries")),
+            version=str(data.get("version") or ""),
         )
 
 
@@ -154,6 +189,9 @@ def procedure_block(recipe: Recipe) -> str:
         lines.append("Inputs: " + "; ".join(recipe.inputs))
     for i, step in enumerate(recipe.steps, 1):
         lines.append(f"{i}. {step}")
+    if recipe.params:
+        lines.append("Parameters: " + "; ".join(
+            f"{p.get('name')} ({p.get('kind', 'text')}, e.g. {p.get('example')})" for p in recipe.params))
     if recipe.success_conditions:
         lines.append("Done when: " + "; ".join(recipe.success_conditions))
     return "\n".join(lines)
@@ -389,6 +427,11 @@ def from_run(run_id: str, owner: str) -> Recipe:
     )
     _save_draft(owner, recipe)
     return recipe
+
+
+def save_recipe(owner: str, recipe: Recipe) -> None:
+    """Public name for the owner-scoped write the learned-recipe flow needs."""
+    _save_draft(owner, recipe)
 
 
 def _save_draft(owner: str, recipe: Recipe) -> None:
