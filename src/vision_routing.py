@@ -336,6 +336,27 @@ def _probe_endpoint(url: str, models: Sequence[str], deadline: float) -> tuple:
             capable.append(m)
         elif ans is False:
             negative.add(m)
+    if not capable:
+        # An OpenAI-compatible server on the LAN (vLLM on the Sparks) answers
+        # none of the three capability reports above, and its model names do
+        # not say whether the checkpoint sees (deepseek-v4.1-flash and
+        # glm-5.3-flash both do). Its own tokenizer / 1-token image probe
+        # does, cached for the probe TTL. Seen live 03-11: the default model
+        # read colours from an image while /api/vision/status said "No vision
+        # model available".
+        for m in ordered:
+            if m in negative:
+                continue
+            if time.monotonic() > deadline:
+                break
+            try:
+                ans = ch.openai_compat_supports_vision(url, m)
+            except Exception:  # noqa: BLE001
+                ans = None
+            if ans is True:
+                capable.append(m)
+            elif ans is False:
+                negative.add(m)
     return capable, negative
 
 

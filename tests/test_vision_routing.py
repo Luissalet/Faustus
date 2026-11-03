@@ -30,15 +30,39 @@ def _ep(ep_id, url, models, local=True):
             "models": list(models), "local": local}
 
 
-def _no_probes(monkeypatch, ollama=None, llama=None, lmstudio=None):
+def _no_probes(monkeypatch, ollama=None, llama=None, lmstudio=None, openai=None):
     monkeypatch.setattr(ch, "lmstudio_supports_vision", lambda url, m: (lmstudio or {}).get(m))
     monkeypatch.setattr(ch, "llamacpp_supports_vision", lambda url: llama)
     monkeypatch.setattr(ch, "ollama_supports_vision", lambda url, m: (ollama or {}).get(m))
+    monkeypatch.setattr(ch, "openai_compat_supports_vision", lambda url, m: (openai or {}).get(m))
 
 
 # ---------------------------------------------------------------------------
 # resolution
 # ---------------------------------------------------------------------------
+
+def test_auto_asks_a_lan_openai_compatible_server_with_an_image_probe(monkeypatch):
+    # vLLM on the Sparks answers none of the Ollama / LM Studio / llama.cpp
+    # capability reports, and "deepseek-v4.1-flash" says nothing by its name.
+    endpoints = [_ep("sparks", "http://192.168.0.185:8888/v1/chat/completions",
+                     ["deepseek-v4.1-flash", "text-only-model"])]
+    monkeypatch.setattr(vr, "list_vision_endpoints", lambda owner: endpoints)
+    monkeypatch.setattr(vr, "_gate_allows", lambda url, owner: True)
+    _no_probes(monkeypatch, openai={"deepseek-v4.1-flash": True, "text-only-model": False})
+
+    route = vr.resolve_vision_route("carol-vr")
+    assert route["source"] == "auto"
+    assert (route["model"], route["endpoint_id"]) == ("deepseek-v4.1-flash", "sparks")
+
+
+def test_image_probe_saying_no_leaves_the_route_empty(monkeypatch):
+    endpoints = [_ep("sparks", "http://192.168.0.185:8888/v1/chat/completions", ["text-only-model"])]
+    monkeypatch.setattr(vr, "list_vision_endpoints", lambda owner: endpoints)
+    monkeypatch.setattr(vr, "_gate_allows", lambda url, owner: True)
+    _no_probes(monkeypatch, openai={"text-only-model": False})
+
+    assert vr.resolve_vision_route("dave-vr")["source"] == "none"
+
 
 def test_auto_prefers_a_local_model_the_server_reports_as_vision(monkeypatch):
     endpoints = [
