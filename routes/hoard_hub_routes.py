@@ -93,6 +93,19 @@ def compact_board(board, *, done_limit=40):
             'done_total': done_total, 'dropped': dropped, 'agents': agents}
 
 
+def darwin_panel_result(raw):
+    """Darwin's `darwin_panel` answer through the hub's family proxy, or why it is not there (never raises)."""
+    if not isinstance(raw, dict):
+        return {'ok': False, 'error': "Darwin's Hoard did not answer"}
+    if not raw.get('ok'):
+        return {'ok': False, 'error': str(raw.get('error') or "Darwin's Hoard did not answer")[:300]}
+    body = raw.get('result')
+    if not isinstance(body, dict) or 'scope' not in body:
+        error = body.get('error') if isinstance(body, dict) else None
+        return {'ok': False, 'error': str(error or "Unexpected answer from Darwin's Hoard")[:300]}
+    return {'ok': True, **body}
+
+
 def setup_hoard_hub_routes() -> APIRouter:
     router = APIRouter(tags=["hoard-hub"])
 
@@ -179,6 +192,18 @@ def setup_hoard_hub_routes() -> APIRouter:
             if body.get(key):
                 args[key] = str(body[key])
         return await asyncio.to_thread(call, 'hub_agora_space_create', args)
+
+    @router.get('/api/hoard/darwin/panel')
+    async def darwin_panel(request: Request, space: str = '', project: str = '', limit: int = 6):
+        """What Darwin's Hoard knows about the Hoard a project is about (Research and ecosystem: the whole family),
+        through the hub's family proxy, so Studio never calls the app cross-origin."""
+        require_admin(request)
+        from src.family_services import configure as configure_family
+        from src.hoard_link import family
+        configure_family()
+        args = {'space': space[:60], 'project': project[:200], 'limit': max(1, min(limit, 20))}
+        raw = await asyncio.to_thread(family.call, 'darwin', 'darwin_panel', args, timeout=40)
+        return darwin_panel_result(raw)
 
     @router.get('/api/hoard/agora/open')
     def open_coordination_board(space_id: str = 'ecosystem', embedded: bool = False):
