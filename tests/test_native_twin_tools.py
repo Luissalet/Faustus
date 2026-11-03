@@ -25,7 +25,7 @@ def test_listed_copies_take_nothing_the_native_tool_does_not(server):
     for name in builtin_mcp.NATIVE_TWIN_TOOLS[server]:
         assert name in tools, f"{server} no longer publishes {name}"
         assert name in NATIVE, f"{name} has no native tool any more"
-        mcp_params = set((tools[name].inputSchema or {}).get("properties", {}))
+        mcp_params = set((tools[name].inputSchema or {}).get("properties", {})) - builtin_mcp.NATIVE_TWIN_SESSION_PARAMS.get(server, frozenset())
         native_params = set((NATIVE[name].get("parameters") or {}).get("properties", {}))
         assert mcp_params <= native_params, f"{server}.{name} accepts {sorted(mcp_params - native_params)} the native one does not"
 

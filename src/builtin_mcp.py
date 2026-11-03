@@ -174,6 +174,12 @@ NATIVE_TWIN_TOOLS: dict[str, frozenset[str]] = {
     "image_gen": frozenset({"generate_image"}),
 }
 
+# Parameters a listed copy needs only because it runs outside a chat session: the native tool takes the same value
+# from the session (the active project), so they do not make the copy do more.
+NATIVE_TWIN_SESSION_PARAMS: dict[str, frozenset[str]] = {
+    "project_workspace": frozenset({"project_id"}),
+}
+
 
 def is_native_twin(qualified_name: str) -> bool:
     """True for `mcp__<server>__<tool>` that only mirrors a native tool: every tool of a NATIVE_TWIN_SERVERS server,
