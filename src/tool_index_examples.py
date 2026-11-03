@@ -1200,6 +1200,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué módulos se han movido o acoplado nuevo desde entonces",
         "check whether this change introduced a new dependency cycle",
     ],
+    "uncertainty_next_observation": [
+        "tengo tres posibles causas del fallo, qué mido primero para distinguirlas",
+        "which of these four tests should I run next to tell the causes apart, given their costs",
+        "cuál es la prueba más barata que separa estas hipótesis",
+        "I measured the thickness and it is 2.1 mm, update the diagnosis and tell me whether to keep testing",
+    ],
     "code_graph_dossier": [
         "acabo de recibir este repositorio, dame el panorama general",
         "how do I build, run and test this repo, with evidence",
@@ -1231,6 +1237,21 @@ EXAMPLES: Dict[str, List[str]] = {
         "make a plain-language map of this project with its routes and API calls",
         "exporta el plano del código a un HTML que pueda abrir",
         "which parts of this spec already exist in the code and which are missing",
+    ],
+    "recipe_learn": [
+        "convierte lo que acabamos de hacer en una receta reutilizable",
+        "turn this finished job into a recipe with the file names as parameters",
+        "try the recipe on another customer before saving it",
+    ],
+    "derivation_graph": [
+        "qué hay que recalcular porque ha cambiado este fichero de entrada",
+        "rebuild only the results affected by the new parameter and reuse the rest",
+        "resume the rebuild from where it failed without repeating the finished steps",
+    ],
+    "decision_map": [
+        "si cambia la unidad de medida, qué entregables hay que rehacer",
+        "link this requirement to the decision and the deliverable it affects",
+        "what depends on the requirement about the output format",
     ],
     "run_report": [
         "where did the time of that last turn go",

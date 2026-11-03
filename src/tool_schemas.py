@@ -3175,6 +3175,37 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "uncertainty_next_observation",
+            "description": "Which observation to make next among competing hypotheses: posterior from the results so far, candidate tests ranked by expected information gain per cost, the recommended test with why it separates the hypotheses, pairs no test can separate, and a stop rule. Pass a case_id to keep the case across calls.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hypotheses": {"type": "array", "items": {"type": "object", "properties": {
+                        "id": {"type": "string"}, "prior": {"type": "number", "description": "Prior weight (default uniform)"},
+                        "description": {"type": "string"}}, "required": ["id"]},
+                        "description": "Competing explanations"},
+                    "candidates": {"type": "array", "items": {"type": "object", "properties": {
+                        "id": {"type": "string"}, "description": {"type": "string"},
+                        "cost": {"type": "number", "description": "Minutes or money; keep one unit across candidates"},
+                        "cost_unit": {"type": "string"},
+                        "predictions": {"type": "object", "description": "{hypothesis id: predicted outcome}. Outcome = a discrete value, a numeric interval [lo, hi], or a distribution {outcome: probability}"}},
+                        "required": ["id", "predictions"]}, "description": "Observations/tests that could be made"},
+                    "observed": {"type": "array", "items": {"type": "object", "properties": {
+                        "candidate": {"type": "string"}, "result": {"description": "Observed value, number, or [lo, hi] range"}},
+                        "required": ["candidate", "result"]}, "description": "Results already observed. With a case_id these are appended to the case"},
+                    "case_id": {"type": "string", "description": "Keep/update this case between calls"},
+                    "action": {"type": "string", "description": "'next' (default), 'get', 'list' or 'delete' (cases)"},
+                    "stop_threshold": {"type": "number", "description": "Stop when the top posterior reaches this (default 0.95)"},
+                    "min_gain_per_cost": {"type": "number", "description": "Stop when the best remaining gain per cost (bits) is below this (default 0.001)"},
+                    "noise": {"type": "number", "description": "Noise floor of every likelihood (default 0.02)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_dossier",
             "description": "Intake dossier of a repo at its current git revision: structure, entry points, build/run and test commands quoted with file:line, data, integrations (hosts, env vars, SDKs), screens, main flows and explicit uncertainties; each fact has evidence and a code/config/inferred label. action='diff' compares two stored revisions.",
             "parameters": {
@@ -3220,6 +3251,75 @@ FUNCTION_TOOL_SCHEMAS = [
                     "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
                 },
                 "required": ["start"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recipe_learn",
+            "description": "Recipes learned from finished work. propose: from run_id, session_id (a conversation's stored tool calls, turn defaults to the last), workflow_run_id or explicit request+steps [{tool, args}], builds a draft recipe whose request literals (paths, names, ids, URLs, numbers) are named parameters; step order, tools and argument templates are kept, with provenance, the first case as example and limits. try: dry-run on a second case (params {name: value}, every value different from the first case) without running tools: reports resolved steps, leaked literals of the first case and the rendered calls. promote: publishes to the recipe and skill library, only after a clean try. search/show/list. Only when the user asks to keep a procedure; never for every conversation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["propose", "try", "promote", "search", "show", "list"]},
+                    "run_id": {"type": "string"}, "session_id": {"type": "string"}, "workflow_run_id": {"type": "string"},
+                    "turn": {"type": "integer", "description": "Which turn with tool calls of the conversation (default -1, the last)"},
+                    "request": {"type": "string", "description": "With steps: the request the steps answered"},
+                    "steps": {"type": "array", "items": {"type": "object"}, "description": "[{tool, args}] in order"},
+                    "title": {"type": "string"},
+                    "params_hint": {"type": "object", "description": "Values to treat as parameters: {name: first-case value}"},
+                    "recipe_id": {"type": "string"},
+                    "params": {"type": "object", "description": "try: the second case's values by parameter name"},
+                    "query": {"type": "string"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "derivation_graph",
+            "description": "Derived results with selective rebuild. define a node (op {kind, name, version}, inputs: file paths / {node} / {artifact_id}, params, outputs, base_dir), plan [target] to see stale nodes and why (input hash, parameter, tool version, edited output, failed/interrupted, decision-map flag), rebuild [target]: returns the next stale node with its idempotency key to run with your own tools, then complete {node, outputs} records the measured hashes. Completed nodes are never repeated, so it resumes after a failure. atlas {project_id} registers results in Atlas's Hoard when reachable, else local only. show/list/remove/base_dir.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["define", "remove", "show", "list", "plan", "rebuild", "complete", "base_dir", "atlas"]},
+                    "graph": {"type": "string", "description": "Graph name (default 'default')"},
+                    "node": {"type": "string"},
+                    "op": {"type": "object", "description": "{kind: tool|recipe|workflow|skill, name, version}"},
+                    "inputs": {"type": "array", "items": {}, "description": "Path strings, {node: id} or {artifact_id: id}"},
+                    "params": {"type": "object"},
+                    "outputs": {"type": "array", "items": {}, "description": "define: declared output paths; complete: the files produced"},
+                    "base_dir": {"type": "string"},
+                    "target": {"description": "A node id or a list of them (default all)"},
+                    "value": {"description": "complete: a non-file result"},
+                    "error": {"type": "string", "description": "complete: the operation failed with this"},
+                    "project_id": {"type": "string", "description": "atlas: Atlas project to register results in ('' clears)"},
+                    "provenance": {"type": "object"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "decision_map",
+            "description": "Explicit relations requirement -> decision -> derivation node -> deliverable (items of kind requirement, decision, unit, format, assumption, deliverable; derivation nodes referenced as node:<id>). add / link {from, to, relation} / unlink / remove / show. affected_by {change}: everything that must be recalculated or reviewed when that item changes, following only explicit links and derivation inputs, never meaning; invalidate=true flags the affected nodes so the next rebuild reruns them.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "link", "unlink", "remove", "show", "affected_by"]},
+                    "graph": {"type": "string"},
+                    "id": {"type": "string"}, "kind": {"type": "string", "enum": ["requirement", "decision", "unit", "format", "assumption", "deliverable"]},
+                    "title": {"type": "string"}, "note": {"type": "string"}, "path": {"type": "string"},
+                    "from": {"type": "string"}, "to": {"type": "string"}, "relation": {"type": "string"},
+                    "change": {"type": "string", "description": "An item id, node:<id> or an item's exact title"},
+                    "invalidate": {"type": "boolean"}
+                },
+                "required": ["action"]
             }
         }
     },

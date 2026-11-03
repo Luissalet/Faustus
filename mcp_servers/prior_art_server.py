@@ -166,6 +166,37 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="uncertainty_next_observation",
+            description=(
+                "Decide what to observe next among competing hypotheses (failure causes, diagnoses, design "
+                "options): posterior from the results so far, candidate tests ranked by expected information "
+                "gain per cost, the recommended test with why it separates the hypotheses, pairs no listed test "
+                "can separate, and a stop rule. Qué mido / qué pruebo primero para distinguir estas causas. "
+                "Predictions per hypothesis may be a discrete value, a numeric interval or a distribution. "
+                "Pass case_id to keep the case: new results update the same case. Pure maths; writes only the "
+                "case record."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hypotheses": {"type": "array", "items": {"type": "object", "properties": {
+                        "id": {"type": "string"}, "prior": {"type": "number"}, "description": {"type": "string"}},
+                        "required": ["id"]}},
+                    "candidates": {"type": "array", "items": {"type": "object", "properties": {
+                        "id": {"type": "string"}, "description": {"type": "string"},
+                        "cost": {"type": "number"}, "cost_unit": {"type": "string"},
+                        "predictions": {"type": "object"}}, "required": ["id", "predictions"]}},
+                    "observed": {"type": "array", "items": {"type": "object", "properties": {
+                        "candidate": {"type": "string"}, "result": {}}, "required": ["candidate", "result"]}},
+                    "case_id": {"type": "string"},
+                    "action": {"type": "string", "enum": ["next", "get", "list", "delete"]},
+                    "stop_threshold": {"type": "number"},
+                    "min_gain_per_cost": {"type": "number"},
+                    "noise": {"type": "number"},
+                },
+            },
+        ),
     ]
 
 
@@ -217,7 +248,18 @@ def _tool_report(args: dict) -> list[TextContent]:
     return _json_result({"ok": True, "reports": rows})
 
 
+def _tool_uncertainty(args: dict) -> list[TextContent]:
+    import os
+    from src import uncertainty_case
+    owner = os.environ.get("ODYSSEUS_MCP_PRIOR_ART_OWNER", "").strip()
+    try:
+        return _json_result({"ok": True, **uncertainty_case.advance(args, owner)})
+    except ValueError as exc:
+        return _text_result(f"uncertainty_next_observation: {exc}")
+
+
 _HANDLERS = {
+    "uncertainty_next_observation": _tool_uncertainty,
     "prior_art_rubric": _tool_rubric,
     "prior_art_verify": _tool_verify,
     "prior_art_search": _tool_search,
