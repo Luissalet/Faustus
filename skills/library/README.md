@@ -49,6 +49,35 @@ decides where a product UI may be striking and keeps work screens quiet,
 with motion rules and a bounded verification pass through Vitruvius and the
 design detector.
 
+## Web motion, media, page design and game production
+
+Added 2026-11-03, each adapted from a pinned upstream commit (sources,
+SHAs and licences in `THIRD_PARTY_NOTICES.md`):
+
+- **GSAP** — `gsap-core`, `gsap-timeline`, `gsap-scrolltrigger`,
+  `gsap-plugins`, `gsap-utils`, `gsap-react`, `gsap-performance`,
+  `gsap-frameworks`: tweens, sequencing, scroll-linked animation, plugins
+  (Flip, SplitText, DrawSVG, MorphSVG, Draggable), helpers, React and
+  Vue/Svelte lifecycles, and frame-rate work.
+- `ffmpeg-video-editing` — probe first, lossless when possible, a fixed
+  step order, measured checks and a contact sheet after picture changes,
+  using `inspect_media`, `transform_media` and FFmpeg through the shell.
+- `hallmark-page-design` — a floor of rules for new pages that should not
+  look generated, one question round, the hero first, then a sweep.
+- `unslop-interface` — a nine-pass redline of an existing generic-looking
+  screen from a five-line direction (CC BY 4.0, credited).
+- `browser-motion-graphics` — promos, openers, kinetic type and explainers
+  as one self-contained HTML/GSAP file driven by timeline time, with
+  checks against slideshow structure.
+- Game production for Unity and other engines — `game-design-document`,
+  `game-sprint-stories`, `game-playtest-report`, `game-balance-check`,
+  `game-release-checklist`; they file work with the project board tools
+  and run tests through the `unity` tool.
+
+Every one is tagged (`gsap`, `animation`, `ffmpeg`, `video`, `design`,
+`gamedev`, `unity`, plus Spanish keywords) so the per-turn skill selector
+matches them once installed.
+
 ## Format
 
 Every skill here uses the exact dialect `services/memory/skill_format.py`
