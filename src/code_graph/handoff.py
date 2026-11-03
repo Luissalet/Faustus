@@ -89,7 +89,10 @@ def _kill(proc: "subprocess.Popen[str]") -> None:
         if os.name != "nt":
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         else:
-            proc.terminate()
+            # A shell=True child is cmd.exe; terminate() would leave the app it
+            # started running and holding the output pipe open.
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], stdin=subprocess.DEVNULL,
+                           capture_output=True, timeout=15)
         try:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
@@ -486,7 +489,8 @@ def _exec_run(step: Dict[str, Any], ctx: _Ctx, install_failed: bool) -> None:
     if exited is None:
         _kill(proc)
     try:
-        out = proc.stdout.read() if proc.stdout else ""
+        out, _ = proc.communicate(timeout=5)
+        out = out or ""
     except Exception:  # noqa: BLE001
         pass
     code = proc.returncode
