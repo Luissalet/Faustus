@@ -554,7 +554,7 @@ def _iter_files(paths: Iterable[str], max_files: int) -> Iterable[str]:
 # checkout itself (the root of that trust is reviewed as itself).
 
 _FAMILY_MIN_BYTES = 200
-_HOARD_LINK_NAMES = ("HoardLink", "Hoard Link", "hoard-link", "Hoard Link's Hoard")
+_HOARD_LINK_NAMES = ("HoardLink", "Hoard Link", "hoard-link", "Hoard Link's Hoard", "Hoard Hub")
 
 
 def _is_hoard_link_checkout(path: str) -> bool:

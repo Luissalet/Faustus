@@ -95,3 +95,18 @@ def test_hoard_link_dir_env_points_at_a_checkout_elsewhere(family, tmp_path_fact
     assert _exfil(security_scan.scan_paths(str(elsewhere)))[0].severity == "critical"
     monkeypatch.setenv("HOARD_LINK_DIR", str(family / "HoardLink"))
     assert _exfil(security_scan.scan_paths(str(elsewhere)))[0].severity == "low"
+
+
+def test_checkout_named_hoard_hub_is_found_next_to_the_app(tmp_path, monkeypatch):
+    """The checkout was renamed to «Hoard Hub»: a sibling with that name is the family library too."""
+    monkeypatch.delenv("HOARD_LINK_DIR", raising=False)
+    hub = tmp_path / "Hoard Hub"
+    _write(str(hub / "hoard_link" / "hub" / "__main__.py"), "print('hub')\n")
+    _write(str(hub / "hoard_link" / "family.py"), FAMILY)
+    _git(str(hub), "init", "-q")
+    _git(str(hub), "add", "-A")
+    _git(str(hub), "commit", "-q", "-m", "family")
+    app = tmp_path / "Darwin's Hoard"
+    _write(str(app / "darwin_hoard" / "hoard_link" / "family.py"), FAMILY)
+    found = _exfil(security_scan.scan_paths(str(app)))
+    assert found and all(f.severity == "low" for f in found)
