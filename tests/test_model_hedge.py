@@ -161,6 +161,7 @@ class _FakeServer:
     def __init__(self, mode, text="", delay=0.0):
         self.mode, self.text, self.delay = mode, text, delay
         self.requests = 0
+        self.bodies = []  # the JSON bodies received, in order
         self.disconnected = asyncio.Event()
         self.server = None
         self.port = None
@@ -187,20 +188,23 @@ class _FakeServer:
             for line in lines[1:]:
                 if line.lower().startswith("content-length:"):
                     length = int(line.split(":", 1)[1])
-            if length:
-                await reader.readexactly(length)
+            body = await reader.readexactly(length) if length else b""
             if method != "POST" or not path.endswith("/chat/completions"):
                 writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                 await writer.drain()
                 return
             self.requests += 1
+            try:
+                self.bodies.append(json.loads(body.decode("utf-8") or "{}"))
+            except ValueError:
+                self.bodies.append({})
             writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
                          b"Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
             await writer.drain()
             if self.mode == "stall":
                 await self._stall(reader, writer)
             else:
-                await self._answer(writer)
+                await self._answer(writer, self.bodies[-1].get("model") or "m")
         except (ConnectionError, asyncio.IncompleteReadError):
             self.disconnected.set()
         finally:
@@ -224,11 +228,12 @@ class _FakeServer:
         finally:
             eof.cancel()
 
-    async def _answer(self, writer):
+    async def _answer(self, writer, model="m"):
         await asyncio.sleep(self.delay)
 
         def frame(delta, finish=None):
-            body = {"id": "x", "object": "chat.completion.chunk", "model": "m",
+            # the server reports the model it was asked for, as vLLM does
+            body = {"id": "x", "object": "chat.completion.chunk", "model": model,
                     "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
             return ("data: " + json.dumps(body) + "\n\n").encode()
 
@@ -250,14 +255,17 @@ def hedge_env(monkeypatch, tmp_path):
     monkeypatch.setattr(model_hedge, "_RECENT", model_hedge.deque(maxlen=200))
     monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
     monkeypatch.setattr(llm_core, "is_sparks_url", lambda u: False)
-    state = {"cfg": {"enabled": True, "delay_s": 0.3, "target": "auto", "delay_overrides": {}}}
+    state = {"cfg": {"enabled": True, "delay_s": 0.3, "target": "auto", "delay_overrides": {}},
+             "service": {"endpoint_ids": set(), "servers": set()}}
     monkeypatch.setattr(model_hedge, "config", lambda: dict(state["cfg"]))
+    monkeypatch.setattr(model_hedge, "global_service", lambda: state["service"])
     return state
 
 
 def _wire_same_model(monkeypatch, other):
     base = model_hedge._base(other.url)
-    monkeypatch.setattr(model_hedge, "endpoint_models", lambda: [
+    monkeypatch.setattr(model_hedge, "global_service", lambda: {"endpoint_ids": {"ep-b"}, "servers": set()})
+    monkeypatch.setattr(model_hedge, "endpoint_models", lambda *a, **k: [
         {"endpoint_id": "ep-b", "label": "Spark B", "base": base, "models": ["m"]}])
     monkeypatch.setattr(model_hedge, "_resolve", lambda ep, model: (
         (other.url, model, {}), {"endpoint_id": "ep-b", "endpoint_label": "Spark B"}))
@@ -325,13 +333,20 @@ def test_http_stalled_primary_is_answered_by_the_same_model_elsewhere(hedge_env,
 
 
 def test_http_primary_that_answers_in_time_sends_nothing_to_the_hedge(hedge_env, monkeypatch):
+    # The premise is a primary that answers before the delay: a cold first
+    # request to a local server can take a few hundred ms on a busy machine,
+    # so the delay here leaves room for it (the stalled cases use 0.3 s).
+    hedge_env["cfg"]["delay_s"] = 1.5
+
     async def scenario():
         fast = await _FakeServer("answer", "primary answer").start()
         other = await _FakeServer("answer", "should not run").start()
         _wire_same_model(monkeypatch, other)
         try:
+            t0 = time.monotonic()
             chunks = await _collect([(fast.url, "m", {})])
-            await asyncio.sleep(0.5)  # past the delay: still nothing is started
+            assert time.monotonic() - t0 < 1.5  # it did answer in time
+            await asyncio.sleep(1.7)  # past the delay: still nothing is started
         finally:
             await fast.stop()
             await other.stop()
@@ -370,7 +385,10 @@ def _cfg(**kw):
 
 def test_target_resolution(monkeypatch):
     monkeypatch.setattr(model_hedge, "_host_dead", lambda u: False)
-    monkeypatch.setattr(model_hedge, "endpoint_models", lambda: [])
+    # every route of this test is on the global service (the mixed case has its own test)
+    monkeypatch.setattr(model_hedge, "global_service", lambda: {
+        "endpoint_ids": {"a", "b", "c", "self"}, "servers": {"http://b:9000", "http://c:8000"}})
+    monkeypatch.setattr(model_hedge, "endpoint_models", lambda *a, **k: [])
     primary = ("http://a:8000/v1/chat/completions", "m", {})
     fallback = ("http://b:9000/v1/chat/completions", "other", {"Authorization": "x"})
     descs = [{"endpoint_id": "a"}, {"endpoint_id": "b", "endpoint_label": "B"}]
@@ -382,7 +400,7 @@ def test_target_resolution(monkeypatch):
     assert model_hedge.plan(*primary, candidates=[primary, fallback], cfg=_cfg(target="off")) is None
     assert model_hedge.plan(*primary, candidates=[primary, fallback], cfg=_cfg(enabled=False)) is None
     # the same model on another endpoint wins over the fallback
-    monkeypatch.setattr(model_hedge, "endpoint_models", lambda: [
+    monkeypatch.setattr(model_hedge, "endpoint_models", lambda *a, **k: [
         {"endpoint_id": "self", "label": "A", "base": "http://a:8000/v1", "models": ["m"]},
         {"endpoint_id": "c", "label": "C", "base": "http://c:8000/v1", "models": ["M"]}])
     monkeypatch.setattr(model_hedge, "_resolve", lambda ep, model: (
@@ -423,8 +441,9 @@ def test_update_validates_and_writes(monkeypatch):
     written = {}
     monkeypatch.setattr("src.settings.update_settings", lambda patch: written.update(patch))
     monkeypatch.setattr(model_hedge, "status", lambda limit=20: {"ok": True})
-    monkeypatch.setattr(model_hedge, "endpoint_models", lambda: [
+    monkeypatch.setattr(model_hedge, "endpoint_models", lambda *a, **k: [
         {"endpoint_id": "ep", "label": "EP", "base": "http://x/v1", "models": ["m"]}])
+    monkeypatch.setattr(model_hedge, "_endpoint_rows", lambda enabled_only=True: [])
     model_hedge.update({"enabled": False, "delay_s": 15, "target": "ep::m",
                         "delay_overrides": {"m": 30}})
     assert written == {"agent_hedge_enabled": False, "agent_hedge_delay_s": 15.0,
@@ -479,3 +498,323 @@ def test_the_turn_metrics_carry_the_hedges_of_their_run(monkeypatch, tmp_path):
         llm_trace.reset_current_run_id(token)
     assert metrics["hedges"][0]["answered_by_endpoint_label"] == "Spark B"
     assert metrics["hedges"][0]["after_s"] == 23.1
+
+
+# ---------------------------------------------------------------------------
+# review 2037: preparing the hedge never stalls the primary
+# ---------------------------------------------------------------------------
+
+def test_a_slow_hedge_preparation_never_delays_a_primary_that_answers():
+    """The hedge is prepared in its own task: the primary answering during a
+    slow preparation is delivered at once and the preparation is cancelled."""
+    marks = {}
+    prep = {"cancelled": False, "finished": False}
+    notices = []
+
+    async def primary():
+        await asyncio.sleep(0.15)
+        marks["primary_ready"] = time.monotonic()
+        yield _delta("primary")
+
+    async def start_hedge():
+        try:
+            await asyncio.sleep(2.0)  # e.g. context preparation for the hedge route
+        except asyncio.CancelledError:
+            prep["cancelled"] = True
+            raise
+        prep["finished"] = True
+        return _Stream([(0.0, _delta("hedge"))]).gen()
+
+    async def run():
+        chunks = []
+        async for chunk in model_hedge.race_first_token(
+                primary(), start_hedge, 0.05, on_decided=lambda info: notices.append(info)):
+            if "first" not in marks and "delta" in model_hedge._event(chunk):
+                marks["first"] = time.monotonic()
+            chunks.append(chunk)
+        return chunks
+
+    t0 = time.monotonic()
+    chunks = asyncio.run(run())
+    assert _texts(chunks) == "primary"
+    # delivered as soon as the primary had it, not after the 2 s preparation
+    assert marks["first"] - marks["primary_ready"] < 0.05
+    assert time.monotonic() - t0 < 1.0
+    assert prep["cancelled"] is True and prep["finished"] is False
+    assert notices and notices[0]["winner"] == "primary"
+    assert notices[0]["hedge_ready_s"] is None and notices[0]["loser_cancelled"] is True
+
+
+def test_cancelling_the_caller_cancels_a_hedge_still_being_prepared():
+    prep = {"cancelled": False}
+    primary = _Stream([(30.0, _delta("never"))])
+
+    async def start_hedge():
+        try:
+            await asyncio.sleep(30.0)
+        except asyncio.CancelledError:
+            prep["cancelled"] = True
+            raise
+        return None
+
+    async def consume():
+        async for _ in model_hedge.race_first_token(primary.gen(), start_hedge, 0.05):
+            pass
+
+    async def run():
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0.3)  # past the delay: the preparation is running
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+    assert prep["cancelled"] is True
+    assert primary.closed and not primary.finished
+
+
+def test_a_failed_hedge_preparation_leaves_the_primary_and_records_nothing():
+    notices = []
+    primary = _Stream([(0.3, _delta("primary"))])
+
+    async def start_hedge():
+        await asyncio.sleep(0.01)
+        raise RuntimeError("no route state")
+
+    async def run():
+        return [c async for c in model_hedge.race_first_token(
+            primary.gen(), start_hedge, 0.05, on_decided=lambda info: notices.append(info))]
+
+    assert _texts(asyncio.run(run())) == "primary"
+    assert notices == []
+
+
+# ---------------------------------------------------------------------------
+# review 2037: a named hedge route outside the chain is prepared and adopted
+# ---------------------------------------------------------------------------
+
+def test_http_named_model_outside_the_chain_gets_its_own_request_and_is_adopted(hedge_env, monkeypatch):
+    """endpoint::model hedge that is not in the chain: the candidate factory
+    prepares its own request (its own max_tokens and messages) under the next
+    index, and when it answers a fallback event names that route and model even
+    though the server reports exactly the model it was asked for."""
+    hedge_env["service"] = {"endpoint_ids": {"ep-named"}, "servers": set()}
+    hedge_env["cfg"]["target"] = "ep-named::named-model"
+    prepared = []
+
+    async def factory(index, url, model, headers):
+        prepared.append((index, model, dict(headers)))
+        own = 123 if model == "primary-model" else 7
+        return {"messages": [{"role": "user", "content": f"prepared for {model}"}],
+                "kwargs": {"max_tokens": own}}
+
+    async def scenario():
+        stall = await _FakeServer("stall").start()
+        answer = await _FakeServer("answer", "named route answered").start()
+        monkeypatch.setattr(model_hedge, "_resolve", lambda ep, model: (
+            (answer.url, model, {"Authorization": "Bearer named"}),
+            {"endpoint_id": "ep-named", "endpoint_label": "Spark N", "connection_revision": "rev-7",
+             "endpoint_cost_tracked": False}))
+        try:
+            chunks = await _collect(
+                [(stall.url, "primary-model", {})], candidate_request_factory=factory,
+                candidate_route_descriptors=[{"endpoint_id": "ep-primary", "endpoint_label": "Primary"}])
+            await asyncio.wait_for(stall.disconnected.wait(), timeout=5)
+        finally:
+            await stall.stop()
+            await answer.stop()
+        return chunks, stall, answer
+
+    chunks, stall, answer = asyncio.run(scenario())
+    events = _events(chunks)
+    # each route was prepared for itself: the hedge under the next free index
+    assert prepared == [(0, "primary-model", {}), (1, "named-model", {"Authorization": "Bearer named"})]
+    assert stall.bodies[0]["model"] == "primary-model" and stall.bodies[0]["max_tokens"] == 123
+    assert answer.bodies[0]["model"] == "named-model" and answer.bodies[0]["max_tokens"] == 7
+    assert answer.bodies[0]["messages"][-1]["content"] == "prepared for named-model"
+    text = "".join(e.get("delta", "") for e in events if "delta" in e and not e.get("thinking"))
+    assert text.strip() == "named route answered"
+    # the provider reported the model it was asked for: no model_actual of its own
+    assert not [e for e in events if e.get("type") == "model_actual"]
+    hedge = [e for e in events if e.get("type") == "hedge"]
+    fallback = [e for e in events if e.get("type") == "fallback"]
+    assert len(hedge) == 1 and hedge[0]["winner"] == "hedge" and hedge[0]["answered_by"] == "named-model"
+    assert len(fallback) == 1
+    assert fallback[0]["hedge"] is True and fallback[0]["candidate_index"] == 1
+    assert fallback[0]["selected_model"] == "primary-model" and fallback[0]["answered_by"] == "named-model"
+    assert fallback[0]["answered_by_endpoint_id"] == "ep-named"
+    assert fallback[0]["answered_by_endpoint_label"] == "Spark N"
+    assert fallback[0]["answered_by_connection_revision"] == "rev-7"
+    assert fallback[0]["answered_by_endpoint_cost_tracked"] is False
+    # announcements come before the first answered token
+    first_delta = next(i for i, e in enumerate(events) if "delta" in e)
+    assert events.index(hedge[0]) < events.index(fallback[0]) < first_delta
+
+
+def test_agent_run_adopts_a_hedge_route_that_was_not_in_the_chain(monkeypatch):
+    """The agent loop prepares the hedge route (index len(chain)) through its
+    own candidate factory and, when the fallback event names that index, pins
+    that route and model for the rest of the run like any fallback."""
+    import src.agent_loop as agent_loop
+
+    primary = ("https://selected.example/v1", "selected-model", {})
+    hedge_route = ("https://spark.example/v1", "hedge-model", {"Authorization": "spark"})
+    seen_candidates, route_modes = [], []
+    round_number = 0
+
+    monkeypatch.setattr(agent_loop, "get_setting", lambda key, default=None: default)
+    monkeypatch.setattr(agent_loop, "get_mcp_manager", lambda: None)
+    monkeypatch.setattr(agent_loop, "estimate_tokens", lambda *args, **kwargs: 10)
+    monkeypatch.setattr(agent_loop, "blocked_tools_for_owner", lambda owner: set())
+    monkeypatch.setattr(
+        agent_loop, "_agent_route_tool_mode",
+        lambda url, model, owner=None, headers=None: route_modes.append((url, model, headers))
+        or (model == "selected-model", False, False))
+
+    async def fake_stream(candidates, messages, **kwargs):
+        nonlocal round_number
+        round_number += 1
+        seen_candidates.append(list(candidates))
+        factory = kwargs["candidate_request_factory"]
+        if round_number == 1:
+            await factory(0, *candidates[0])
+            # the hedge route is not in the chain: prepared under the next index
+            request = await factory(len(candidates), *hedge_route)
+            assert request["messages"]
+            yield "data: " + json.dumps({
+                "type": "hedge", "winner": "hedge", "outcome": "first_token", "after_s": 20.4,
+                "hedge_endpoint_id": "ep-spark", "hedge_endpoint_label": "Spark 4",
+                "answered_by": "hedge-model", "answered_by_endpoint_label": "Spark 4"}) + "\n\n"
+            yield "data: " + json.dumps({
+                "type": "fallback", "hedge": True, "selected_model": "selected-model",
+                "answered_by": "hedge-model", "candidate_index": len(candidates),
+                "answered_by_endpoint_id": "ep-spark", "answered_by_endpoint_label": "Spark 4",
+                "answered_by_endpoint_cost_tracked": False,
+                "answered_by_connection_revision": "rev-1", "failures": []}) + "\n\n"
+            call = {"name": "bash", "arguments": json.dumps({"command": "printf ok"})}
+            yield "data: " + json.dumps({"type": "tool_calls", "calls": [call]}) + "\n\n"
+        else:
+            await factory(0, *candidates[0])
+            yield "data: " + json.dumps({"delta": "done"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    async def fake_execute(block, *args, **kwargs):
+        return "bash", {"output": "ok", "exit_code": 0}
+
+    monkeypatch.setattr(agent_loop, "stream_llm_with_fallback", fake_stream)
+    monkeypatch.setattr(agent_loop, "execute_tool_block", fake_execute)
+
+    async def run():
+        return [c async for c in agent_loop.stream_agent_loop(
+            primary[0], primary[1], [{"role": "user", "content": "Run one tool and report back."}],
+            max_rounds=3, relevant_tools={"bash"}, headers={}, fallbacks=[], _is_teacher_run=True)]
+
+    chunks = asyncio.run(run())
+    # round 2 goes to the route that answered, not back to the stalled primary
+    assert seen_candidates == [[primary], [hedge_route]]
+    # the hedge route got its own route state (tool transport) before it was sent
+    assert ("https://spark.example/v1", "hedge-model", {"Authorization": "spark"}) in route_modes
+    fallback = json.loads(next(c for c in chunks if '"type": "fallback"' in c)[6:])
+    assert fallback["pinned_for_run"] is True and fallback["round"] == 1
+    metrics = json.loads(next(c for c in chunks if '"type": "metrics"' in c)[6:])["data"]
+    assert metrics["requested_model"] == "selected-model"
+    assert metrics["model"] == "hedge-model"
+    assert metrics["round_models"] == ["hedge-model", "hedge-model"]
+    assert metrics["round_endpoint_ids"][0] == "ep-spark"
+    assert metrics["tool_events"][0]["model"] == "hedge-model"
+
+
+# ---------------------------------------------------------------------------
+# review 2037: hedges stay on the global LLM service (the Sparks)
+# ---------------------------------------------------------------------------
+
+_MIXED_ROWS = [
+    # published by Sparks recipes
+    {"endpoint_id": "sparks-a", "label": "Sparks A", "base_url": "http://10.0.0.5:8888/v1",
+     "enabled": True, "models": ["m"]},
+    {"endpoint_id": "sparks-b", "label": "Sparks B (recipe, stopped)", "base_url": "http://10.0.0.9:30001/v1",
+     "enabled": False, "models": []},
+    {"endpoint_id": "sparks-c", "label": "Sparks C", "base_url": "http://10.0.0.7:8000/v1",
+     "enabled": True, "models": ["m"]},
+    # a hand-made endpoint pointing at the server of sparks-b: compatible
+    {"endpoint_id": "spark4", "label": "Spark 4", "base_url": "http://10.0.0.9:30001/v1",
+     "enabled": True, "models": ["m2"]},
+    # a local text model serving the same model name: never a hedge
+    {"endpoint_id": "loc", "label": "llama.cpp (local)", "base_url": "http://127.0.0.1:8081/v1",
+     "enabled": True, "models": ["m", "m2"]},
+]
+
+
+def _mixed_inventory(monkeypatch, rows=None):
+    rows = list(_MIXED_ROWS if rows is None else rows)
+    monkeypatch.setattr(model_hedge, "_load_settings", lambda: {
+        "sparks_enabled": True,
+        "sparks_endpoints": {"rec-a": "sparks-a", "rec-b": "sparks-b", "rec-c": "sparks-c"}})
+    monkeypatch.setattr(model_hedge, "_endpoint_rows", lambda enabled_only=True: [
+        r for r in rows if r["enabled"] or not enabled_only])
+    monkeypatch.setattr(model_hedge, "_host_dead", lambda u: False)
+    by_id = {r["endpoint_id"]: r for r in rows}
+
+    def resolve(endpoint_id, model):
+        row = by_id.get(endpoint_id)
+        if not row or not row["enabled"] or model not in row["models"]:
+            return None
+        return ((row["base_url"] + "/chat/completions", model, {}),
+                {"endpoint_id": endpoint_id, "endpoint_label": row["label"], "connection_revision": ""})
+    monkeypatch.setattr(model_hedge, "_resolve", resolve)
+
+
+def test_mixed_inventory_auto_picks_only_global_endpoints(monkeypatch):
+    _mixed_inventory(monkeypatch)
+    service = model_hedge.global_service()
+    assert service["endpoint_ids"] == {"sparks-a", "sparks-b", "sparks-c"}
+    # the stopped recipe's server still marks the hand-made Spark endpoint as global
+    assert "http://10.0.0.9:30001" in service["servers"]
+    assert "http://127.0.0.1:8081" not in service["servers"]
+    listed = {ep["endpoint_id"] for ep in model_hedge.endpoint_models()}
+    assert listed == {"sparks-a", "sparks-c", "spark4"}
+    primary = ("http://10.0.0.5:8888/v1/chat/completions", "m", {})
+    found = model_hedge.plan(*primary, cfg=_cfg())
+    assert found["endpoint_id"] == "sparks-c" and found["kind"] == "same_model"
+    assert not found["url"].startswith("http://127.0.0.1")
+
+
+def test_mixed_inventory_never_falls_back_to_a_local_text_model(monkeypatch):
+    # without sparks-c, the only other server listing "m" is the local one
+    _mixed_inventory(monkeypatch, [r for r in _MIXED_ROWS if r["endpoint_id"] != "sparks-c"])
+    primary = ("http://10.0.0.5:8888/v1/chat/completions", "m", {})
+    local = ("http://127.0.0.1:8081/v1/chat/completions", "m", {})
+    spark4 = ("http://10.0.0.9:30001/v1/chat/completions", "m2", {})
+    assert model_hedge.plan(*primary, cfg=_cfg()) is None
+    assert model_hedge.plan(*primary, cfg=_cfg(target="same_model")) is None
+    # a local fallback of the chain is skipped; a global one after it is used
+    descs = [{"endpoint_id": "sparks-a"}, {"endpoint_id": "loc"}, {"endpoint_id": "spark4"}]
+    assert model_hedge.plan(*primary, candidates=[primary, local], descriptors=descs[:2], cfg=_cfg()) is None
+    found = model_hedge.plan(*primary, candidates=[primary, local, spark4], descriptors=descs,
+                             cfg=_cfg(target="fallback"))
+    assert found["candidate_index"] == 2 and found["endpoint_id"] == "spark4"
+
+
+def test_mixed_inventory_named_targets_must_be_global(monkeypatch):
+    _mixed_inventory(monkeypatch)
+    primary = ("http://10.0.0.5:8888/v1/chat/completions", "m", {})
+    assert model_hedge.plan(*primary, cfg=_cfg(target="loc::m")) is None
+    assert model_hedge.plan(*primary, cfg=_cfg(target="loc")) is None
+    found = model_hedge.plan(*primary, cfg=_cfg(target="spark4::m2"))
+    assert found["endpoint_id"] == "spark4" and found["kind"] == "named"
+    with pytest.raises(ValueError, match="global LLM service"):
+        model_hedge.validate_target("loc::m")
+    assert model_hedge.validate_target("spark4::m2") == "spark4::m2"
+    values = {o["value"] for o in model_hedge.target_options()}
+    assert "spark4::m2" in values and "sparks-c::m" in values
+    assert not any(v.startswith("loc::") for v in values)
+
+
+def test_no_global_service_means_no_hedge(monkeypatch):
+    _mixed_inventory(monkeypatch)
+    monkeypatch.setattr(model_hedge, "_load_settings", lambda: {"sparks_enabled": False,
+                                                                "sparks_endpoints": {"rec-a": "sparks-a"}})
+    primary = ("http://10.0.0.5:8888/v1/chat/completions", "m", {})
+    assert model_hedge.endpoint_models() == []
+    assert model_hedge.plan(*primary, cfg=_cfg()) is None
+    assert model_hedge.plan(*primary, cfg=_cfg(target="spark4::m2")) is None

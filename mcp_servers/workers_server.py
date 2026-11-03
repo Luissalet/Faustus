@@ -1296,7 +1296,8 @@ TOOLS: List[Tool] = [
             "Hedged first token of the Faustus chat model: when a streamed request has released no first "
             "token after a delay, the same request also goes to a hedge target (same model on another "
             "endpoint, the first fallback, or a named endpoint_id::model) and the stream that answers first "
-            "is used. action=status: settings, the hedge the default model gets, selectable targets, recent "
+            "is used. Targets are always on the global LLM service (the Sparks), never a local text model. "
+            "action=status: settings, the hedge the default model gets, selectable targets, recent "
             "races (who answered, after how many seconds). action=set: enabled, delay_s, target, delay_overrides."
         ),
         inputSchema={"type": "object", "properties": {

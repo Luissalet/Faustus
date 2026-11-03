@@ -3898,6 +3898,14 @@ def setup_chat_routes(
                                                 _actual_candidate_index = 0
                                             if 0 <= _actual_candidate_index < len(_foreground_route_descriptors):
                                                 _actual_route = _foreground_route_descriptors[_actual_candidate_index]
+                                            elif data.get("hedge"):
+                                                # A hedge target outside the chain answered
+                                                # (src/model_hedge.py): its identity is in the event.
+                                                _actual_route = {
+                                                    "endpoint_id": data.get("answered_by_endpoint_id"),
+                                                    "endpoint_label": data.get("answered_by_endpoint_label"),
+                                                    "endpoint_cost_tracked": data.get("answered_by_endpoint_cost_tracked"),
+                                                }
                                             if _commit_chat_compaction(_actual_candidate_index):
                                                 _compacted_length = _chat_request_state["context_lengths"].get(
                                                     _actual_candidate_index,

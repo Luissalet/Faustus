@@ -13918,12 +13918,18 @@ async def _stream_agent_loop_body(
                 else {}
             )
         _candidate_request_states = {0: _active_route_state}
+        # The route each prepared index stands for. A hedge target outside
+        # the chain (src/model_hedge.py) is prepared under index
+        # len(_candidates), so a fallback event naming that index can still
+        # be adopted below.
+        _candidate_request_routes = {0: (endpoint_url, model, headers)}
         _compaction_budget_exhaustion = None
         _recovery_cancelled = False
         _recovery_budget_exhaustion = None
 
         async def _candidate_request(index, candidate_url, candidate_model, candidate_headers):
             nonlocal _last_route_request_messages, _last_route_context_length, _compaction_budget_exhaustion
+            _candidate_request_routes[index] = (candidate_url, candidate_model, candidate_headers)
             if index == 0:
                 state = _active_route_state
             else:
@@ -14756,17 +14762,33 @@ async def _stream_agent_loop_body(
                                 "answered_by_endpoint_cost_tracked"
                             )
                         candidate_index = data.get("candidate_index")
-                        if (
-                            _pinned_fallback_candidate is None
-                            and isinstance(candidate_index, int)
-                            and 0 < candidate_index < len(_candidates)
-                        ):
-                            _pinned_fallback_candidate = _candidates[candidate_index]
-                            _pinned_fallback_route = (
+                        _answering_route = None
+                        if isinstance(candidate_index, int) and 0 < candidate_index < len(_candidates):
+                            _answering_route = (
+                                _candidates[candidate_index],
                                 _candidate_route_descriptors[candidate_index]
                                 if candidate_index < len(_candidate_route_descriptors)
-                                else {}
+                                else {},
                             )
+                        elif (
+                            isinstance(candidate_index, int)
+                            and candidate_index >= len(_candidates)
+                            and candidate_index in _candidate_request_routes
+                        ):
+                            # A hedge target outside the chain answered
+                            # (src/model_hedge.py): the route it was prepared
+                            # for, with the identity the event carries.
+                            _answering_route = (
+                                _candidate_request_routes[candidate_index],
+                                {
+                                    "endpoint_id": data.get("answered_by_endpoint_id"),
+                                    "endpoint_label": data.get("answered_by_endpoint_label"),
+                                    "endpoint_cost_tracked": data.get("answered_by_endpoint_cost_tracked"),
+                                    "connection_revision": data.get("answered_by_connection_revision") or "",
+                                },
+                            )
+                        if _pinned_fallback_candidate is None and _answering_route is not None:
+                            _pinned_fallback_candidate, _pinned_fallback_route = _answering_route
                             # QA-28/MOD-06: the task's tool transport and image
                             # handling below already adapt to whichever model
                             # answers this round (`answering_state["is_api_model"]`,
@@ -14882,6 +14904,16 @@ async def _stream_agent_loop_body(
                             )
                             if data.get("hedge_endpoint_id"):
                                 _round_actual_endpoint_id = data.get("hedge_endpoint_id")
+                        elif data.get("winner") == "primary":
+                            # Preparing the hedge request recorded its route's
+                            # prompt and window as the last ones; the primary
+                            # answered, so its own prepared request is what
+                            # usage estimates and compaction refer to.
+                            _primary_state = _candidate_request_states.get(0) or {}
+                            if _primary_state.get("request_messages") is not None:
+                                _last_route_request_messages = _primary_state["request_messages"]
+                            if _primary_state.get("context_length"):
+                                _last_route_context_length = _primary_state["context_length"]
                         data["round"] = round_num
                         yield f"data: {json.dumps(data)}\n\n"
                     elif data.get("type") == "model_actual":

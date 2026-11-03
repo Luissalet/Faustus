@@ -586,8 +586,16 @@ de modo que ningún token ni llamada a herramienta se produce dos veces; una vez
 llega el primer token no se lanza nada más. El destino (`agent_hedge_target`) es
 `auto` (el mismo modelo en otro endpoint activo que lo ofrezca; si no, el primer
 modelo de respaldo de la cadena; si no, ninguno), `same_model`, `fallback`, `off`,
-un id de endpoint o `endpoint_id::modelo` para un modelo concreto. Si gana otro
-modelo de la cadena de respaldo, queda fijado para la ejecución igual que un
+un id de endpoint o `endpoint_id::modelo` para un modelo concreto. Todo destino
+está en el servicio LLM global: un endpoint publicado por una receta de las Sparks
+(`sparks_endpoints`) u otro endpoint que apunte a uno de esos servidores; un LLM de
+texto local nunca es la cobertura y, con las Sparks desactivadas, no se cubre nada.
+La petición de cobertura se prepara para su propia ruta con la fábrica de
+candidatos del llamante (mensajes, herramientas, límites), también cuando la ruta
+no está en la cadena de respaldo, y esa preparación corre en su propia tarea: si el
+principal responde mientras tanto se entrega al momento y la preparación se
+cancela. Una cobertura que gana se anuncia como respaldo (`hedge: true`), así que la
+ejecución fija la ruta y el modelo que respondieron de verdad, como cualquier
 respaldo. El trabajo en segundo plano no se cubre. Cada carrera queda registrada
 con su ejecución (`data/model_hedges.jsonl` y las métricas del turno en `hedges`) y
 el chat muestra «Respondió la cobertura (endpoint) tras N s». Controles en

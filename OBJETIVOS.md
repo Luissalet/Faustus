@@ -4,8 +4,8 @@
 
 Integrado: si el modelo del chat no suelta primer token en `agent_hedge_delay_s` (20 s), la misma petición va también a un destino de cobertura (mismo modelo en otro endpoint, primer respaldo o `endpoint_id::modelo`) y gana el primer flujo que responda; el otro se cierra (src/model_hedge.py, Ajustes > Modelos, `/api/model-hedge`, herramienta `model_hedge` de agente y MCP). Probado en vivo con un servidor local que se queda callado y DeepSeek V4.1 Flash de las Sparks como cobertura: respondió la cobertura a los 5 s y el principal quedó desconectado.
 
-- Hoy el modelo por defecto (DeepSeek V4.1 Flash en las 4 Sparks) no tiene destino automático: no hay otro servidor con DeepSeek ni modelos de respaldo configurados. Hace falta elegir uno en Ajustes > Modelos (por ejemplo Qwen3.8 Flash Next de la Spark 4) o añadir un respaldo.
-- Fuera de una ejecución del agente, una cobertura hacia un servidor local del propio PC espera la ranura de generación local que ocupa el principal; contra servidores remotos o dentro de una ejecución no espera.
+- El modelo por defecto (DeepSeek V4.1 Flash en las 4 Sparks) no tiene destino automático (no hay otro servidor con DeepSeek ni respaldos), así que el destino elegido en Ajustes > Modelos es Qwen3.8 Flash Next de la Spark 4 (`ed331ad6`, 20 s). El 03-11 por la tarde esa Spark respondía 503 (el motor tras su keepalive-proxy no contestaba): mientras siga así, la cobertura falla al instante y el principal sigue como si no hubiera cobertura.
+- Revisión 2037: la cobertura solo va al servicio global (endpoints de recetas de las Sparks u otros que apunten a sus servidores, como Qwen3.8 Flash Next de la Spark 4), nunca a un LLM de texto local; se prepara en su propia tarea sin frenar al principal, y una ruta nombrada fuera de la cadena recibe su propia petición y se adopta al ganar.
 
 ## Radar GitTrend 03-11-2026: skills, plano del código y búsqueda a fecha
 

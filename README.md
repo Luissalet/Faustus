@@ -927,9 +927,16 @@ been streamed, so no token or tool call is produced twice; once a first token ha
 arrived nothing else is started. The target (`agent_hedge_target`) is `auto` (the
 same model on another enabled endpoint when one lists it, else the first fallback
 model of the chain, else none), `same_model`, `fallback`, `off`, an endpoint id,
-or `endpoint_id::model` for a named model. A different model of the fallback chain
-that wins is pinned for the run the same way a fallback is. Background work is not
-hedged. Each race is recorded with its run (`data/model_hedges.jsonl`, the turn's
+or `endpoint_id::model` for a named model. Every target is on the global LLM service:
+an endpoint published by a Sparks recipe (`sparks_endpoints`) or another endpoint
+pointing at one of those servers; a local text model is never the hedge, and with
+the Sparks disabled nothing is hedged. The hedge request is prepared for its own
+route by the caller's candidate factory (messages, tools, limits), also when the
+route is not part of the fallback chain, and that preparation runs in its own task
+so a primary that answers meanwhile is delivered at once and the preparation is
+cancelled. A hedge that wins is announced as a fallback (`hedge: true`), so the run
+pins the route and model that really answered, like any fallback. Background work
+is not hedged. Each race is recorded with its run (`data/model_hedges.jsonl`, the turn's
 metrics under `hedges`) and the chat shows "Answered by hedge (endpoint) after N s".
 Controls in Settings > Models (toggle, delay, target list, per-model delays, the
 hedge the default model gets now and the recent races) and in Settings > Agent;

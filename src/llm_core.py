@@ -8854,22 +8854,28 @@ async def _stream_sparks_service(url, model, messages, **kwargs):
         await _wait_for_sparks_service(attempt)
 
 
-def _hedged_primary_stream(primary_stream, *, url, model, messages, kwargs, request_messages,
-                           request_kwargs, candidates, route_descriptors,
-                           candidate_request_factory, hedge):
+def _hedged_primary_stream(primary_stream, *, url, model, messages, kwargs,
+                           candidates, route_descriptors, candidate_request_factory, hedge):
     """Race the primary against ``hedge`` until one releases a first token
-    (src/model_hedge.py). The hedge request reuses the primary's prepared
-    request when it is the same model; another model of the chain gets its
-    own request from ``candidate_request_factory``."""
+    (src/model_hedge.py).
+
+    The hedge route is prepared like any candidate: ``candidate_request_factory``
+    builds its own request (messages, tools, limits, route state) under its
+    chain index, or under the next free index (``len(candidates)``) when the
+    route is not part of the chain. When the hedge answers, a ``fallback``
+    event (``hedge: true``) carries that index and the route that answered,
+    so the caller adopts that route and model exactly as for a fallback."""
     from src import model_hedge
 
     index = hedge.get("candidate_index")
-    other_model = model_hedge._model_key(hedge["model"]) != model_hedge._model_key(model)
+    if not (isinstance(index, int) and 0 < index < len(candidates)):
+        index = len(candidates)  # a route outside the chain gets the next index
+    hedge["request_index"] = index
 
     async def start_hedge():
         h_url, h_model, h_headers = hedge["url"], hedge["model"], hedge.get("headers") or {}
-        h_messages, h_kwargs = request_messages, request_kwargs
-        if other_model and index and candidate_request_factory is not None:
+        h_messages, h_kwargs = messages, kwargs
+        if candidate_request_factory is not None:
             request = candidate_request_factory(index, h_url, h_model, h_headers) or {}
             if hasattr(request, "__await__"):
                 request = await request
@@ -8887,20 +8893,28 @@ def _hedged_primary_stream(primary_stream, *, url, model, messages, kwargs, requ
         entry = model_hedge.record(info, hedge, primary_url=url, primary_model=model,
                                    primary_route=primary_route, session_id=kwargs.get("session_id"))
         frames = [model_hedge.notice_chunk(entry)]
-        if (info.get("winner") == "hedge" and other_model and isinstance(index, int)
-                and 0 < index < len(candidates)):
-            # Another model answers this round: the caller adapts to it the
-            # same way it does for a fallback of the chain.
-            descriptor = route_descriptors[index] if index < len(route_descriptors) else {}
+        if info.get("winner") == "hedge" and info.get("outcome") == "first_token":
+            # Another route (and maybe another model) answers this round: the
+            # caller adopts it the same way it does for a fallback, with the
+            # request state it prepared for this index.
+            descriptor = (route_descriptors[index]
+                          if index < len(candidates) and index < len(route_descriptors) else {})
+            descriptor = descriptor or {}
             frames.append('data: ' + json.dumps({
                 "type": "fallback", "hedge": True,
                 "selected_model": model, "answered_by": hedge["model"],
                 "selected_endpoint_id": primary_route.get("endpoint_id"),
                 "selected_endpoint_label": primary_route.get("endpoint_label"),
                 "selected_endpoint_cost_tracked": primary_route.get("endpoint_cost_tracked"),
-                "answered_by_endpoint_id": descriptor.get("endpoint_id"),
-                "answered_by_endpoint_label": descriptor.get("endpoint_label"),
-                "answered_by_endpoint_cost_tracked": descriptor.get("endpoint_cost_tracked"),
+                "answered_by_endpoint_id": descriptor.get("endpoint_id") or hedge.get("endpoint_id"),
+                "answered_by_endpoint_label": (descriptor.get("endpoint_label")
+                                               or hedge.get("endpoint_label")),
+                "answered_by_endpoint_cost_tracked": (
+                    descriptor["endpoint_cost_tracked"]
+                    if isinstance(descriptor.get("endpoint_cost_tracked"), bool)
+                    else hedge.get("endpoint_cost_tracked")),
+                "answered_by_connection_revision": (descriptor.get("connection_revision")
+                                                    or hedge.get("connection_revision") or ""),
                 "candidate_index": index,
                 "reason": f"no first token after {hedge['delay_s']:.0f} s",
                 "failures": [],
@@ -9021,7 +9035,6 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
             if hedge is not None:
                 candidate_stream = _hedged_primary_stream(
                     candidate_stream, url=url, model=model, messages=messages, kwargs=kwargs,
-                    request_messages=candidate_messages, request_kwargs=candidate_kwargs,
                     candidates=cands, route_descriptors=route_descriptors,
                     candidate_request_factory=candidate_request_factory, hedge=hedge,
                 )

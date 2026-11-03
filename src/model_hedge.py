@@ -11,7 +11,9 @@ Hedging only happens before anything has been streamed to the caller, so a
 tool call or a token is never produced twice. Once either stream has
 released a first token the race is over and nothing else is started.
 
-Hedge target (``agent_hedge_target``):
+Hedge target (``agent_hedge_target``), always on the global LLM service (an
+endpoint published by a Sparks recipe, or another endpoint pointing at one of
+those servers); a local text model is never used as the alternative:
 
 - ``auto``: the same model on another enabled endpoint when one lists it,
   otherwise the first configured fallback of the chain, otherwise none.
@@ -20,6 +22,12 @@ Hedge target (``agent_hedge_target``):
 - ``<endpoint_id>``: the same model on that endpoint.
 - ``<endpoint_id>::<model>``: a named model on that endpoint.
 - ``off``: never hedge (same as ``agent_hedge_enabled`` = false).
+
+The hedge request is prepared like any candidate of the chain (the caller's
+``candidate_request_factory`` builds its messages, tools and limits for that
+route, even when the route is not part of the chain), and a hedge that
+answers is announced as a fallback so the caller adopts the route and model
+that really answered.
 
 Every race that started a hedge is recorded (in memory, and appended to
 ``DATA_DIR/model_hedges.jsonl``) with the run id of the agent run it
@@ -149,12 +157,48 @@ def _target(url: str, model: str, headers: Optional[Dict], descriptor: Optional[
         "endpoint_id": descriptor.get("endpoint_id"),
         "endpoint_label": descriptor.get("endpoint_label") or _base(url),
         "endpoint_cost_tracked": descriptor.get("endpoint_cost_tracked"),
+        "connection_revision": descriptor.get("connection_revision") or "",
         "candidate_index": candidate_index,
     }
 
 
-def endpoint_models() -> List[Dict[str, Any]]:
-    """Every enabled endpoint (not an official client) with the models it lists."""
+# ---------------------------------------------------------------------------
+# the global LLM service: the only place a hedge may go
+# ---------------------------------------------------------------------------
+# Text generation runs on the global service (the Sparks); a local text model
+# is never used as the alternative when it is slow. So a hedge target must be
+# an endpoint published by a Sparks recipe (settings ``sparks_endpoints``) or
+# another endpoint pointing at one of those servers (same scheme, host and
+# port, e.g. a hand-made endpoint for a Spark). Nothing here is a fixed IP or
+# model: the set follows whatever the Sparks sync published.
+
+_LOOPBACK = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+
+def _server(url: str) -> str:
+    """``scheme://host:port`` of a URL, lower case; "" when it has no host."""
+    from urllib.parse import urlsplit
+    try:
+        parts = urlsplit(str(url or "").strip())
+        host = (parts.hostname or "").lower()
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return ""
+    if not host:
+        return ""
+    return f"{(parts.scheme or 'http').lower()}://{host}:{port}"
+
+
+def _load_settings() -> Dict[str, Any]:
+    try:
+        from src.settings import load_settings
+        return load_settings() or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _endpoint_rows(enabled_only: bool = True) -> List[Dict[str, Any]]:
+    """Endpoints of the table (not official clients) with the models they list."""
     try:
         from src.database import ModelEndpoint, SessionLocal
         from src.endpoint_resolver import _endpoint_enabled_models
@@ -162,15 +206,19 @@ def endpoint_models() -> List[Dict[str, Any]]:
         return []
     db = SessionLocal()
     try:
+        query = db.query(ModelEndpoint)
+        if enabled_only:
+            query = query.filter(ModelEndpoint.is_enabled == True)  # noqa: E712
         out = []
-        for ep in db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all():  # noqa: E712
+        for ep in query.all():
             base = str(getattr(ep, "base_url", "") or "")
             if not base or base.startswith("faustus-cli://"):
                 continue
             out.append({
                 "endpoint_id": str(ep.id),
                 "label": getattr(ep, "name", None) or str(ep.id),
-                "base": _base(base),
+                "base_url": base,
+                "enabled": bool(getattr(ep, "is_enabled", True)),
                 "models": list(_endpoint_enabled_models(ep) or []),
             })
         return out
@@ -179,6 +227,49 @@ def endpoint_models() -> List[Dict[str, Any]]:
         return []
     finally:
         db.close()
+
+
+def global_service() -> Dict[str, Any]:
+    """``{"endpoint_ids", "servers"}`` of the global LLM service (the Sparks)."""
+    settings = _load_settings()
+    if not settings.get("sparks_enabled", True):
+        return {"endpoint_ids": set(), "servers": set()}
+    ids = {str(v) for v in (settings.get("sparks_endpoints") or {}).values() if v}
+    servers = set()
+    if ids:
+        for row in _endpoint_rows(enabled_only=False):
+            if row["endpoint_id"] in ids:
+                server = _server(row["base_url"])
+                host = server.split("://", 1)[-1].rsplit(":", 1)[0].strip("[]")
+                if server and host not in _LOOPBACK:
+                    servers.add(server)
+    return {"endpoint_ids": ids, "servers": servers}
+
+
+def is_global(endpoint_id: Any, url: str, service: Optional[Dict[str, Any]] = None) -> bool:
+    """True when this route belongs to the global LLM service."""
+    service = service if service is not None else global_service()
+    if endpoint_id and str(endpoint_id) in service.get("endpoint_ids", ()):
+        return True
+    server = _server(url)
+    return bool(server) and server in service.get("servers", ())
+
+
+def endpoint_models(service: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Enabled endpoints of the global LLM service with the models they list:
+    the only endpoints a hedge may use."""
+    service = service if service is not None else global_service()
+    out = []
+    for row in _endpoint_rows(enabled_only=True):
+        if not is_global(row["endpoint_id"], row["base_url"], service):
+            continue
+        out.append({
+            "endpoint_id": row["endpoint_id"],
+            "label": row["label"],
+            "base": _base(row["base_url"]),
+            "models": row["models"],
+        })
+    return out
 
 
 def _resolve(endpoint_id: str, model: str):
@@ -190,11 +281,13 @@ def _resolve(endpoint_id: str, model: str):
         return None
 
 
-def same_model_elsewhere(url: str, model: str) -> Optional[Dict[str, Any]]:
-    """The same model on another enabled endpoint (another server), if any."""
+def same_model_elsewhere(url: str, model: str,
+                         service: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The same model on another enabled endpoint of the global service."""
+    service = service if service is not None else global_service()
     primary = _base(url)
     wanted = _model_key(model)
-    for ep in endpoint_models():
+    for ep in endpoint_models(service):
         if ep["base"] == primary:
             continue
         match = next((m for m in ep["models"] if _model_key(m) == wanted), None)
@@ -206,11 +299,16 @@ def same_model_elsewhere(url: str, model: str) -> Optional[Dict[str, Any]]:
         (h_url, h_model, h_headers), descriptor = resolved
         if _base(h_url) == primary or _host_dead(h_url):
             continue
+        if not is_global(descriptor.get("endpoint_id") or ep["endpoint_id"], h_url, service):
+            continue
         return _target(h_url, h_model, h_headers, descriptor, "same_model")
     return None
 
 
-def _chain_fallback(url: str, candidates, descriptors) -> Optional[Dict[str, Any]]:
+def _chain_fallback(url: str, candidates, descriptors,
+                    service: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The first fallback of the chain that belongs to the global service."""
+    service = service if service is not None else global_service()
     primary = _base(url)
     for index, cand in enumerate(list(candidates or [])[1:], start=1):
         try:
@@ -220,19 +318,26 @@ def _chain_fallback(url: str, candidates, descriptors) -> Optional[Dict[str, Any
         if not c_url or str(c_url).startswith("faustus-cli://") or _host_dead(c_url):
             continue
         descriptor = descriptors[index] if descriptors and index < len(descriptors) else {}
+        if not is_global((descriptor or {}).get("endpoint_id"), c_url, service):
+            continue  # a local text model is never the alternative
         kind = "same_model" if (_model_key(c_model) == _model_key(candidates[0][1])
                                 and _base(c_url) != primary) else "fallback"
         return _target(c_url, c_model, c_headers, descriptor, kind, candidate_index=index)
     return None
 
 
-def _named(spec: str, url: str, model: str, candidates) -> Optional[Dict[str, Any]]:
+def _named(spec: str, url: str, model: str, candidates,
+           service: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    service = service if service is not None else global_service()
     endpoint_id, _, named_model = spec.partition("::")
     endpoint_id, named_model = endpoint_id.strip(), (named_model.strip() or model)
     resolved = _resolve(endpoint_id, named_model)
     if not resolved:
         return None
     (h_url, h_model, h_headers), descriptor = resolved
+    if not is_global(descriptor.get("endpoint_id") or endpoint_id, h_url, service):
+        logger.info("[hedge] target %s is not on the global LLM service; no hedge", spec)
+        return None
     if _base(h_url) == _base(url) and _model_key(h_model) == _model_key(model):
         return None  # the primary itself is not a hedge
     kind = "same_model" if _model_key(h_model) == _model_key(model) else "named"
@@ -255,14 +360,15 @@ def plan(url: str, model: str, headers: Optional[Dict] = None, candidates=None,
     candidates = list(candidates or [(url, model, headers or {})])
     if mode == "off":
         return None
+    service = global_service()
     if mode in ("auto", "same_model"):
-        found = same_model_elsewhere(url, model)
+        found = same_model_elsewhere(url, model, service)
         if found is None and mode == "auto":
-            found = _chain_fallback(url, candidates, descriptors)
+            found = _chain_fallback(url, candidates, descriptors, service)
     elif mode == "fallback":
-        found = _chain_fallback(url, candidates, descriptors)
+        found = _chain_fallback(url, candidates, descriptors, service)
     else:
-        found = _named(spec, url, model, candidates)
+        found = _named(spec, url, model, candidates, service)
     if found is None:
         return None
     found["delay_s"] = delay_for(model, cfg)
@@ -354,8 +460,11 @@ async def race_first_token(
 ):
     """Yield the primary stream, or the hedge when it answers first.
 
-    ``start_hedge`` is awaited once, only when ``delay_s`` passes without a
-    first token from the primary, and returns the hedge stream (or None).
+    ``start_hedge`` is called once, only when ``delay_s`` passes without a
+    first token from the primary, and returns the hedge stream (or None). It
+    runs in its own task (preparing the hedge request may take a while), so
+    the primary keeps being read meanwhile; a primary that answers during
+    that preparation wins at once and the preparation is cancelled.
     Before a winner is known every chunk is held, so nothing reaches the
     caller twice. ``on_decided`` is called once when a hedge was started and
     may return a chunk (or a list of chunks) yielded before the winner's output.
@@ -370,8 +479,24 @@ async def race_first_token(
     errored = {"primary": False, "hedge": False}
     done: Dict[str, Optional[tuple]] = {"primary": None, "hedge": None}
     hedge_due = delay_s is not None and delay_s >= 0
-    hedge_started_s: Optional[float] = None
+    timing: Dict[str, Any] = {"started": None, "ready": None, "failed": False}
     winner: Optional[str] = None
+
+    async def start_and_produce() -> None:
+        """Prepare the hedge request, then own its stream like the primary's."""
+        try:
+            source = await start_hedge()
+        except asyncio.CancelledError:
+            raise  # the primary answered (or the caller left) while preparing
+        except Exception as exc:  # noqa: BLE001 - the primary keeps going
+            logger.warning("[hedge] could not start the hedge: %s", exc)
+            source = None
+        if source is None:
+            timing["failed"] = True
+            await queue.put(("hedge", "end", None))
+            return
+        timing["ready"] = time.monotonic() - t0
+        await _produce("hedge", source, queue)
 
     def running(tag: str) -> bool:
         return tasks[tag] is not None and not errored[tag] and done[tag] is None
@@ -385,14 +510,8 @@ async def race_first_token(
                 tag, kind, value = await asyncio.wait_for(queue.get(), timeout=timeout)
             except asyncio.TimeoutError:
                 hedge_due = False
-                source = None
-                try:
-                    source = await start_hedge()
-                except Exception as exc:  # noqa: BLE001 - the primary keeps going
-                    logger.warning("[hedge] could not start the hedge: %s", exc)
-                if source is not None:
-                    hedge_started_s = time.monotonic() - t0
-                    tasks["hedge"] = asyncio.create_task(_produce("hedge", source, queue))
+                timing["started"] = time.monotonic() - t0
+                tasks["hedge"] = asyncio.create_task(start_and_produce())
                 continue
             if kind == "chunk":
                 if tag == "primary" and tasks["hedge"] is None and _passes_through(value):
@@ -413,7 +532,7 @@ async def race_first_token(
 
         loser = "hedge" if winner == "primary" else "primary"
         cancelled = await _stop(tasks[loser])
-        if tasks["hedge"] is not None and on_decided is not None:
+        if tasks["hedge"] is not None and not timing["failed"] and on_decided is not None:
             answered = not errored[winner] and any(first_token(c) for c in held[winner])
             info = {
                 "winner": winner,
@@ -421,7 +540,10 @@ async def race_first_token(
                     done[winner] and done[winner][0] == "error") else "empty"),
                 "after_s": round(time.monotonic() - t0, 3),
                 "delay_s": float(delay_s),
-                "hedge_started_s": round(hedge_started_s or 0.0, 3),
+                "hedge_started_s": round(timing["started"] or 0.0, 3),
+                # None: the primary answered while the hedge was still being
+                # prepared, so the hedge request was never sent.
+                "hedge_ready_s": None if timing["ready"] is None else round(timing["ready"], 3),
                 "loser_cancelled": bool(cancelled),
             }
             try:
@@ -522,6 +644,7 @@ def record(info: Dict[str, Any], hedge: Dict[str, Any], *, primary_url: str, pri
         "after_s": info.get("after_s"),
         "delay_s": info.get("delay_s"),
         "hedge_started_s": info.get("hedge_started_s"),
+        "hedge_ready_s": info.get("hedge_ready_s"),
         "loser_cancelled": bool(info.get("loser_cancelled")),
         "primary_model": primary_model,
         "primary_endpoint_id": route.get("endpoint_id"),
@@ -658,6 +781,9 @@ def validate_target(value: Any) -> str:
     endpoint_id, sep, model = text.partition("::")
     known = {ep["endpoint_id"]: ep for ep in endpoint_models()}
     if endpoint_id not in known:
+        if any(row["endpoint_id"] == endpoint_id for row in _endpoint_rows(enabled_only=True)):
+            raise ValueError(f"endpoint {endpoint_id} is not part of the global LLM service (Sparks); "
+                             "a local text model is never used as the hedge")
         raise ValueError(f"unknown or disabled endpoint: {endpoint_id}")
     if sep and model.strip() and known[endpoint_id]["models"] and model.strip() not in known[endpoint_id]["models"]:
         raise ValueError(f"{model.strip()} is not listed by endpoint {endpoint_id}")

@@ -1467,7 +1467,8 @@ GROUPS: list[dict[str, Any]] = [
             _text("agent_hedge_target", "Hedge target",
                   "auto: the same model on another endpoint, else the first fallback of the chain; "
                   "same_model; fallback; off; an endpoint id (same model there); or "
-                  "endpoint_id::model for a named model.",
+                  "endpoint_id::model for a named model. Only the global LLM service (the "
+                  "Sparks) is used; a local text model is never the hedge.",
                   placeholder="auto"),
             _text("agent_hedge_delay_overrides", "Hedge delay per model",
                   "JSON object {model: seconds} that replaces the delay for those models.",

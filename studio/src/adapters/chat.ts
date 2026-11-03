@@ -807,7 +807,9 @@ export type ChatEvent =
    *  is doing, and the ticket to answer while `phase` is `vram_blocked`. */
   | { type: 'vram'; phase: string; message: string; blocked?: VramBlocked }
   | { type: 'image'; url: string }
-  | { type: 'fallback'; answeredBy: string; selected: string }
+  /** `hedge`: the route that answered is a hedged first token (src/model_hedge.py);
+   *  the preceding `hedge` event already says so. */
+  | { type: 'fallback'; answeredBy: string; selected: string; hedge?: boolean }
   | { type: 'hedge'; winner: string; outcome: string; afterS: number; endpoint: string; model: string }
   | {
       type: 'terminal';
@@ -2051,7 +2053,10 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
     case 'generated_image':
       return raw.url ? { type: 'image', url: str(raw.url) } : null;
     case 'fallback':
-      return { type: 'fallback', answeredBy: str(raw.answered_by), selected: str(raw.selected_model) };
+      return {
+        type: 'fallback', answeredBy: str(raw.answered_by), selected: str(raw.selected_model),
+        ...(raw.hedge === true ? { hedge: true } : {}),
+      };
     case 'hedge':
       return {
         type: 'hedge', winner: str(raw.winner), outcome: str(raw.outcome),

@@ -105,7 +105,7 @@ export function ModelHedgeSection({ say }: { say?: (msg: string) => void }) {
             <Text id="hedge-delay" type="number" value={delay} onChange={setDelay} disabled={!s.enabled} />
           </Field>
           <Field label={t('Hedge target')} htmlFor="hedge-target"
-            help={t('Automatic uses the same model on another endpoint when one lists it, else the first fallback model of the chain.')}>
+            help={t('Only the global LLM service (the Sparks) is offered; a local text model is never the hedge. Automatic uses the same model on another of its endpoints when one lists it, else the first fallback of the chain served there.')}>
             <Select id="hedge-target" value={target} options={options} onChange={setTarget} />
           </Field>
           <Field label={t('Hedge delay per model')} htmlFor="hedge-overrides"

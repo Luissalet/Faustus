@@ -39,4 +39,15 @@ assert.match(turn.note, /23/);
 const lost = decode({ type: 'hedge', winner: 'primary', outcome: 'first_token', after_s: 21 }, null);
 assert.equal(apply(blankTurn('assistant'), lost).note, undefined);
 
+// The fallback event a winning hedge sends next (so the run adopts the route
+// that answered) keeps the hedge note instead of calling it a failure.
+const hedgeFallback = decode({
+  type: 'fallback', hedge: true, selected_model: 'local-model', answered_by: 'deepseek-v4.1-flash',
+}, null);
+assert.equal(hedgeFallback.hedge, true);
+assert.equal(apply(turn, hedgeFallback).note, turn.note);
+const realFallback = decode({ type: 'fallback', selected_model: 'a', answered_by: 'b' }, null);
+assert.equal(realFallback.hedge, undefined);
+assert.match(apply(turn, realFallback).note, /did not answer/);
+
 console.log('model-hedge-event: ok');

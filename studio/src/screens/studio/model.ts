@@ -1109,6 +1109,9 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         ? { ...turn, note: t('Answered by hedge ({endpoint}) after {s} s.', { endpoint: event.endpoint || event.model, s: Math.round(event.afterS) }) }
         : turn;
     case 'fallback':
+      // A hedge that answered was not a failure of the chosen model: keep
+      // the "Answered by hedge" note its `hedge` event already set.
+      if (event.hedge) return turn;
       return {
         ...turn,
         note: t('{model} did not answer; {other} answered instead.', { model: event.selected || t('The chosen model'), other: event.answeredBy }),
