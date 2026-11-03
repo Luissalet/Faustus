@@ -2072,10 +2072,14 @@ DEFAULT_SETTINGS = {
     # and the stream that answers first wins; the other is closed.
     "agent_hedge_enabled": True,
     "agent_hedge_delay_s": 20.0,
-    # auto | same_model | fallback | off | <endpoint_id> | <endpoint_id>::<model>
+    # auto | same_model | fallback | reissue | off | <endpoint_id> | <endpoint_id>::<model>
+    # (auto ends in reissue: the same request re-sent to the same server)
     "agent_hedge_target": "auto",
     # JSON object {model: seconds} overriding the delay per model.
     "agent_hedge_delay_overrides": "{}",
+    # Re-sent requests (reissue) allowed per agent run, 0-5; and per model.
+    "agent_hedge_reissue_max": 1,
+    "agent_hedge_reissue_overrides": "{}",
     # Lot I: instincts (src/instincts.py) -- small learned per-project
     # behaviours mined from real sessions in the background. Master switch:
     # when False, render_block/injection is skipped entirely (read at call

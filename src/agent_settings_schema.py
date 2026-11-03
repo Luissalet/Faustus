@@ -1465,14 +1465,23 @@ GROUPS: list[dict[str, Any]] = [
                    "Seconds the primary stream may stay silent before the hedge request starts.",
                    1, 600, 1),
             _text("agent_hedge_target", "Hedge target",
-                  "auto: the same model on another endpoint, else the first fallback of the chain; "
-                  "same_model; fallback; off; an endpoint id (same model there); or "
+                  "auto: the same model on another endpoint, else the first fallback of the chain, "
+                  "else the same request re-sent to the same server; same_model; fallback; "
+                  "reissue; off; an endpoint id (same model there); or "
                   "endpoint_id::model for a named model. Only the global LLM service (the "
                   "Sparks) is used; a local text model is never the hedge.",
                   placeholder="auto"),
             _text("agent_hedge_delay_overrides", "Hedge delay per model",
                   "JSON object {model: seconds} that replaces the delay for those models.",
                   placeholder='{"deepseek-v4.1-flash": 15}'),
+            _int("agent_hedge_reissue_max", "Re-sends per turn",
+                 "How many times one agent turn may re-send a silent request to the same server "
+                 "(target reissue, or auto with no other route). 0 turns re-sending off. A re-send "
+                 "is skipped when the server reports requests waiting in its queue.",
+                 0, 5),
+            _text("agent_hedge_reissue_overrides", "Re-sends per model",
+                  "JSON object {model: re-sends per turn} that replaces the number above for those models.",
+                  placeholder='{"deepseek-v4.1-flash": 1}'),
         ],
     ),
     _group(

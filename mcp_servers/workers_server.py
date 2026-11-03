@@ -1295,17 +1295,24 @@ TOOLS: List[Tool] = [
         description=(
             "Hedged first token of the Faustus chat model: when a streamed request has released no first "
             "token after a delay, the same request also goes to a hedge target (same model on another "
-            "endpoint, the first fallback, or a named endpoint_id::model) and the stream that answers first "
-            "is used. Targets are always on the global LLM service (the Sparks), never a local text model. "
-            "action=status: settings, the hedge the default model gets, selectable targets, recent "
-            "races (who answered, after how many seconds). action=set: enabled, delay_s, target, delay_overrides."
+            "endpoint, the first fallback, a named endpoint_id::model, or reissue: the identical request "
+            "re-sent to the same server, for one request it accepted and holds silent) and the stream that "
+            "answers first is used; the other is closed so the server aborts it. auto ends in reissue when "
+            "there is no other route. A re-send is limited per turn (reissue_max, reissue_overrides) and "
+            "skipped when the server reports requests waiting in its queue. Targets are always on the "
+            "global LLM service (the Sparks), never a local text model. action=status: settings, the hedge "
+            "the default model gets, selectable targets, recent races and skipped re-sends (who answered, "
+            "after how many seconds, why a re-send was skipped). action=set: enabled, delay_s, target, "
+            "delay_overrides, reissue_max, reissue_overrides."
         ),
         inputSchema={"type": "object", "properties": {
             "action": {"type": "string", "enum": ["status", "set"], "default": "status"},
             "enabled": {"type": "boolean"},
             "delay_s": {"type": "number", "description": "1-600 seconds without a first token"},
-            "target": {"type": "string", "description": "auto, same_model, fallback, off, <endpoint_id> or <endpoint_id>::<model>"},
+            "target": {"type": "string", "description": "auto, same_model, fallback, reissue, off, <endpoint_id> or <endpoint_id>::<model>"},
             "delay_overrides": {"type": "object", "description": "{model: seconds}"},
+            "reissue_max": {"type": "integer", "description": "0-5 re-sends per turn (target reissue)"},
+            "reissue_overrides": {"type": "object", "description": "{model: re-sends per turn}"},
             "limit": {"type": "integer", "default": 20},
         }},
     ),
@@ -1879,7 +1886,8 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         if name == "model_hedge":
             action = str(args.get("action") or "status").strip().lower()
             if action == "set":
-                body = {k: args[k] for k in ("enabled", "delay_s", "target", "delay_overrides") if k in args}
+                body = {k: args[k] for k in ("enabled", "delay_s", "target", "delay_overrides",
+                                             "reissue_max", "reissue_overrides") if k in args}
                 data = await asyncio.to_thread(_request, "PATCH", "/api/model-hedge", body)
             else:
                 limit = max(1, min(int(args.get("limit") or 20), 200))

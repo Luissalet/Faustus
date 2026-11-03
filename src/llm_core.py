@@ -8855,7 +8855,8 @@ async def _stream_sparks_service(url, model, messages, **kwargs):
 
 
 def _hedged_primary_stream(primary_stream, *, url, model, messages, kwargs,
-                           candidates, route_descriptors, candidate_request_factory, hedge):
+                           candidates, route_descriptors, candidate_request_factory, hedge,
+                           primary_headers=None, primary_messages=None, primary_kwargs=None):
     """Race the primary against ``hedge`` until one releases a first token
     (src/model_hedge.py).
 
@@ -8864,15 +8865,46 @@ def _hedged_primary_stream(primary_stream, *, url, model, messages, kwargs,
     chain index, or under the next free index (``len(candidates)``) when the
     route is not part of the chain. When the hedge answers, a ``fallback``
     event (``hedge: true``) carries that index and the route that answered,
-    so the caller adopts that route and model exactly as for a fallback."""
+    so the caller adopts that route and model exactly as for a fallback.
+
+    A re-send (``hedge["kind"] == "reissue"``) is the request the primary was
+    sent (``primary_messages``/``primary_kwargs``), sent again to the same
+    route as a new HTTP request, once its guard (src/model_hedge.py
+    ``reissue_gate``: per-run budget, server queue) allows it; nothing is
+    adopted when it answers, the route is the primary's."""
     from src import model_hedge
 
+    reissue = hedge.get("kind") == "reissue"
     index = hedge.get("candidate_index")
-    if not (isinstance(index, int) and 0 < index < len(candidates)):
+    if reissue:
+        index = 0
+    elif not (isinstance(index, int) and 0 < index < len(candidates)):
         index = len(candidates)  # a route outside the chain gets the next index
     hedge["request_index"] = index
+    t0 = time.monotonic()
+
+    async def start_reissue():
+        session_id = kwargs.get("session_id")
+        gate = await asyncio.to_thread(model_hedge.reissue_gate, url, model, session_id=session_id)
+        if not gate.get("ok"):
+            model_hedge.record_skip(gate, hedge, primary_url=url, primary_model=model,
+                                    after_s=time.monotonic() - t0,
+                                    primary_route=route_descriptors[0] if route_descriptors else {},
+                                    session_id=session_id)
+            return None
+        r_messages = primary_messages if primary_messages is not None else messages
+        r_kwargs = primary_kwargs if primary_kwargs is not None else kwargs
+        r_headers = primary_headers if primary_headers is not None else (hedge.get("headers") or {})
+        logger.info("[hedge] %s at %s has no first token after %.0fs; re-sending the same "
+                    "request there (%s of %s for this run)", model, _host_key(url),
+                    hedge["delay_s"], gate.get("used"), gate.get("limit"))
+        factory = _stream_sparks_service if is_sparks_url(url) else stream_llm
+        return factory(url, model, r_messages, headers=r_headers,
+                       **{**r_kwargs, "availability_only_transport": True})
 
     async def start_hedge():
+        if reissue:
+            return await start_reissue()
         h_url, h_model, h_headers = hedge["url"], hedge["model"], hedge.get("headers") or {}
         h_messages, h_kwargs = messages, kwargs
         if candidate_request_factory is not None:
@@ -8893,6 +8925,8 @@ def _hedged_primary_stream(primary_stream, *, url, model, messages, kwargs,
         entry = model_hedge.record(info, hedge, primary_url=url, primary_model=model,
                                    primary_route=primary_route, session_id=kwargs.get("session_id"))
         frames = [model_hedge.notice_chunk(entry)]
+        if reissue:
+            return frames  # same route and model: nothing to adopt
         if info.get("winner") == "hedge" and info.get("outcome") == "first_token":
             # Another route (and maybe another model) answers this round: the
             # caller adopts it the same way it does for a fallback, with the
@@ -9037,6 +9071,8 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
                     candidate_stream, url=url, model=model, messages=messages, kwargs=kwargs,
                     candidates=cands, route_descriptors=route_descriptors,
                     candidate_request_factory=candidate_request_factory, hedge=hedge,
+                    primary_headers=headers, primary_messages=candidate_messages,
+                    primary_kwargs=candidate_kwargs,
                 )
         if managed_sparks:
             from src.first_token_budget import effective

@@ -926,8 +926,19 @@ client go away and aborts the request. Hedging only happens before anything has
 been streamed, so no token or tool call is produced twice; once a first token has
 arrived nothing else is started. The target (`agent_hedge_target`) is `auto` (the
 same model on another enabled endpoint when one lists it, else the first fallback
-model of the chain, else none), `same_model`, `fallback`, `off`, an endpoint id,
-or `endpoint_id::model` for a named model. Every target is on the global LLM service:
+model of the chain, else a re-send), `same_model`, `fallback`, `reissue`, `off`, an
+endpoint id, or `endpoint_id::model` for a named model. `reissue` sends the identical
+request (same messages, tools and limits, a new HTTP request so the server gives it
+a new request id) again to the same endpoint and model: it covers a single request
+that the server accepted and holds without emitting while the server itself is
+healthy, which is the case when one model is spread over every Spark and there is no
+second server. At most `agent_hedge_reissue_max` re-sends per turn (1 by default,
+0-5; per-model numbers in `agent_hedge_reissue_overrides`), and none when the server
+reports requests waiting in its queue (vLLM `num_requests_waiting` or SGLang
+`num_queue_reqs` from its `/metrics`, else Prometheus's `/api/serving`), so a
+re-send never queues behind its own stuck sibling; a skipped re-send is recorded with
+its reason (`limit` or `saturated`). A re-send that answers needs no route
+adoption and the chat shows "Answered by a re-sent request after N s". Every target is on the global LLM service:
 an endpoint published by a Sparks recipe (`sparks_endpoints`) or another endpoint
 pointing at one of those servers; a local text model is never the hedge, and with
 the Sparks disabled nothing is hedged. The hedge request is prepared for its own
@@ -938,8 +949,9 @@ cancelled. A hedge that wins is announced as a fallback (`hedge: true`), so the 
 pins the route and model that really answered, like any fallback. Background work
 is not hedged. Each race is recorded with its run (`data/model_hedges.jsonl`, the turn's
 metrics under `hedges`) and the chat shows "Answered by hedge (endpoint) after N s".
-Controls in Settings > Models (toggle, delay, target list, per-model delays, the
-hedge the default model gets now and the recent races) and in Settings > Agent;
+Controls in Settings > Models (toggle, delay, target list, per-model delays,
+re-sends per turn and per model, the hedge the default model gets now and the
+recent races and skipped re-sends) and in Settings > Agent;
 `GET/PATCH /api/model-hedge`, the `model_hedge` agent tool and the `model_hedge`
 tool of the workers MCP server (src/model_hedge.py).
 

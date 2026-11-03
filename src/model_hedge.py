@@ -16,9 +16,20 @@ endpoint published by a Sparks recipe, or another endpoint pointing at one of
 those servers); a local text model is never used as the alternative:
 
 - ``auto``: the same model on another enabled endpoint when one lists it,
-  otherwise the first configured fallback of the chain, otherwise none.
+  otherwise the first configured fallback of the chain, otherwise a re-sent
+  request to the same server (``reissue``).
 - ``same_model``: only the same model on another endpoint.
 - ``fallback``: only the first configured fallback of the chain.
+- ``reissue``: the identical request sent again to the SAME endpoint and
+  model (a new HTTP request, so the server gives it a new request id). It
+  targets a single request the server accepted and then holds without
+  emitting while the server itself is healthy. Guarded: at most
+  ``agent_hedge_reissue_max`` re-sends per agent run (per-model overrides in
+  ``agent_hedge_reissue_overrides``), and none when the server reports
+  requests waiting in its queue (vLLM ``num_requests_waiting``, SGLang
+  ``num_queue_reqs``, or Prometheus's ``/api/serving``), so a re-sent request
+  never queues behind its own stuck sibling. A skipped re-send is recorded
+  with its reason.
 - ``<endpoint_id>``: the same model on that endpoint.
 - ``<endpoint_id>::<model>``: a named model on that endpoint.
 - ``off``: never hedge (same as ``agent_hedge_enabled`` = false).
@@ -27,7 +38,9 @@ The hedge request is prepared like any candidate of the chain (the caller's
 ``candidate_request_factory`` builds its messages, tools and limits for that
 route, even when the route is not part of the chain), and a hedge that
 answers is announced as a fallback so the caller adopts the route and model
-that really answered.
+that really answered. A re-send (``reissue``) instead reuses the request the
+primary was sent (same messages, tools and limits) and needs no adoption: the
+route and model are the primary's.
 
 Every race that started a hedge is recorded (in memory, and appended to
 ``DATA_DIR/model_hedges.jsonl``) with the run id of the agent run it
@@ -51,12 +64,18 @@ SETTING_ENABLED = "agent_hedge_enabled"
 SETTING_DELAY = "agent_hedge_delay_s"
 SETTING_TARGET = "agent_hedge_target"
 SETTING_OVERRIDES = "agent_hedge_delay_overrides"
-SETTING_KEYS = (SETTING_ENABLED, SETTING_DELAY, SETTING_TARGET, SETTING_OVERRIDES)
+SETTING_REISSUE_MAX = "agent_hedge_reissue_max"
+SETTING_REISSUE_OVERRIDES = "agent_hedge_reissue_overrides"
+SETTING_KEYS = (SETTING_ENABLED, SETTING_DELAY, SETTING_TARGET, SETTING_OVERRIDES,
+                SETTING_REISSUE_MAX, SETTING_REISSUE_OVERRIDES)
 
 DEFAULT_DELAY_S = 20.0
 MIN_DELAY_S = 1.0
 MAX_DELAY_S = 600.0
-TARGET_MODES = ("auto", "same_model", "fallback", "off")
+DEFAULT_REISSUE_MAX = 1
+MAX_REISSUE_MAX = 5
+CAPACITY_TIMEOUT_S = 2.5
+TARGET_MODES = ("auto", "same_model", "fallback", "reissue", "off")
 _LOG_NAME = "model_hedges.jsonl"
 _LOG_MAX_LINES = 2000
 _RECENT: "deque[Dict[str, Any]]" = deque(maxlen=200)
@@ -105,6 +124,40 @@ def parse_overrides(raw: Any) -> Dict[str, float]:
     return out
 
 
+def _clamp_reissues(value: Any, default: int = DEFAULT_REISSUE_MAX) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(MAX_REISSUE_MAX, number))
+
+
+def parse_reissue_overrides(raw: Any) -> Dict[str, int]:
+    """``{model: re-sends per run}`` from the JSON text setting; 0 turns them off."""
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return {}
+        try:
+            raw = json.loads(text)
+        except ValueError:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, int] = {}
+    for model, count in raw.items():
+        name = str(model or "").strip()
+        if not name or isinstance(count, bool):
+            continue
+        try:
+            out[name] = _clamp_reissues(float(count))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def config() -> Dict[str, Any]:
     target = str(_get_setting(SETTING_TARGET, "auto") or "auto").strip() or "auto"
     return {
@@ -112,7 +165,20 @@ def config() -> Dict[str, Any]:
         "delay_s": _clamp_delay(_get_setting(SETTING_DELAY, DEFAULT_DELAY_S)),
         "target": target,
         "delay_overrides": parse_overrides(_get_setting(SETTING_OVERRIDES, "{}")),
+        "reissue_max": _clamp_reissues(_get_setting(SETTING_REISSUE_MAX, DEFAULT_REISSUE_MAX)),
+        "reissue_overrides": parse_reissue_overrides(_get_setting(SETTING_REISSUE_OVERRIDES, "{}")),
     }
+
+
+def reissues_for(model: str, cfg: Optional[Dict[str, Any]] = None) -> int:
+    """Re-sent requests allowed per agent run for this model."""
+    cfg = cfg or config()
+    wanted = _model_key(model)
+    for name, count in (cfg.get("reissue_overrides") or {}).items():
+        if _model_key(name) == wanted:
+            return int(count)
+    value = cfg.get("reissue_max")
+    return DEFAULT_REISSUE_MAX if value is None else int(value)
 
 
 def _model_key(model: str) -> str:
@@ -349,6 +415,139 @@ def _named(spec: str, url: str, model: str, candidates,
     return _target(h_url, h_model, h_headers, descriptor, kind, candidate_index=index)
 
 
+def _reissue(url: str, model: str, headers: Optional[Dict], descriptors,
+             service: Optional[Dict[str, Any]] = None,
+             cfg: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The primary route itself, for a re-sent request; only on the global
+    service and only when this model allows at least one re-send per run."""
+    service = service if service is not None else global_service()
+    descriptor = (descriptors[0] if descriptors else None) or {}
+    if not is_global(descriptor.get("endpoint_id"), url, service):
+        return None
+    if reissues_for(model, cfg) <= 0:
+        return None
+    found = _target(url, model, headers, descriptor, "reissue", candidate_index=0)
+    found["reissue_max"] = reissues_for(model, cfg)
+    return found
+
+
+# ---------------------------------------------------------------------------
+# re-send guards: per-run budget and the server's own queue
+# ---------------------------------------------------------------------------
+
+_REISSUES: Dict[str, int] = {}
+_REISSUES_MAX_KEYS = 500
+_WAITING_METRICS = ("vllm:num_requests_waiting", "sglang:num_queue_reqs")
+_RUNNING_METRICS = ("vllm:num_requests_running", "sglang:num_running_reqs")
+
+
+def _metric_sum(text: str, names) -> Optional[float]:
+    total, seen = 0.0, False
+    for line in text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        name = line.split("{", 1)[0].split(" ", 1)[0]
+        if name not in names:
+            continue
+        try:
+            total += float(line.rsplit(" ", 1)[-1])
+            seen = True
+        except ValueError:
+            continue
+    return total if seen else None
+
+
+def _get_text(url: str, timeout: float) -> Optional[str]:
+    import urllib.request
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(urllib.request.Request(url, headers={"Accept": "text/plain"}),
+                         timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            return resp.read(4_000_000).decode("utf-8", "replace")
+    except Exception as exc:  # noqa: BLE001 - closed, refused, timeout
+        logger.debug("[hedge] %s unreadable: %s", url, exc)
+        return None
+
+
+def _serving_capacity(url: str) -> Optional[Dict[str, Any]]:
+    """Waiting/running from Prometheus's ``/api/serving`` for this server."""
+    try:
+        from src import sparks
+        code, body = sparks._request("GET", "/api/serving", timeout=CAPACITY_TIMEOUT_S)
+    except Exception:  # noqa: BLE001
+        return None
+    if code != 200 or not isinstance(body, dict):
+        return None
+    server = _server(url)
+    for ep in body.get("endpoints") or []:
+        if not isinstance(ep, dict) or _server(ep.get("base_url") or "") != server:
+            continue
+        now = ep.get("now") or {}
+        if now.get("waiting") is None:
+            return None
+        return {"waiting": float(now.get("waiting") or 0), "running": now.get("running"),
+                "source": "prometheus /api/serving"}
+    return None
+
+
+def server_capacity(url: str) -> Dict[str, Any]:
+    """What the server says about its queue: ``{known, waiting, running,
+    saturated, source}``. Read from the server's ``/metrics`` (vLLM or
+    SGLang), else from Prometheus's ``/api/serving``. Unknown is not saturated."""
+    server = _server(url)
+    out: Dict[str, Any] = {"known": False, "waiting": None, "running": None,
+                           "saturated": False, "source": ""}
+    text = _get_text(server + "/metrics", CAPACITY_TIMEOUT_S) if server else None
+    waiting = _metric_sum(text, _WAITING_METRICS) if text else None
+    if waiting is not None:
+        out.update(known=True, waiting=waiting, running=_metric_sum(text, _RUNNING_METRICS),
+                   source=f"{server}/metrics")
+    else:
+        found = _serving_capacity(url)
+        if found:
+            out.update(known=True, **found)
+    out["saturated"] = bool(out["known"] and (out["waiting"] or 0) > 0)
+    return out
+
+
+def _run_key(session_id: Optional[str] = None) -> str:
+    try:
+        from src.llm_trace import current_run_id
+        run_id = current_run_id() or ""
+    except Exception:  # noqa: BLE001
+        run_id = ""
+    if run_id:
+        return f"run:{run_id}"
+    return f"session:{session_id}" if session_id else ""
+
+
+def reissue_gate(url: str, model: str, *, session_id: Optional[str] = None,
+                 cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Decide, when the delay has passed, whether the re-send may go out.
+
+    ``{ok, reason, used, limit, capacity}``; ``reason`` is ``limit`` (this run
+    already spent its re-sends) or ``saturated`` (the server has requests
+    waiting, so the copy would queue behind its own stuck sibling). A re-send
+    that is allowed is counted against the run at once."""
+    limit = reissues_for(model, cfg)
+    key = _run_key(session_id)
+    with _LOCK:
+        used = _REISSUES.get(key, 0) if key else 0
+    if limit <= 0 or used >= limit:
+        return {"ok": False, "reason": "limit", "used": used, "limit": limit, "capacity": None}
+    capacity = server_capacity(url)
+    if capacity.get("saturated"):
+        return {"ok": False, "reason": "saturated", "used": used, "limit": limit, "capacity": capacity}
+    if key:
+        with _LOCK:
+            _REISSUES[key] = _REISSUES.get(key, 0) + 1
+            while len(_REISSUES) > _REISSUES_MAX_KEYS:
+                _REISSUES.pop(next(iter(_REISSUES)))
+    return {"ok": True, "reason": "", "used": used + 1, "limit": limit, "capacity": capacity}
+
+
 def plan(url: str, model: str, headers: Optional[Dict] = None, candidates=None,
          descriptors=None, cfg: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """The hedge for a primary route, or None when hedging does not apply."""
@@ -361,14 +560,19 @@ def plan(url: str, model: str, headers: Optional[Dict] = None, candidates=None,
     if mode == "off":
         return None
     service = global_service()
+    found = None
     if mode in ("auto", "same_model"):
         found = same_model_elsewhere(url, model, service)
         if found is None and mode == "auto":
             found = _chain_fallback(url, candidates, descriptors, service)
     elif mode == "fallback":
         found = _chain_fallback(url, candidates, descriptors, service)
-    else:
+    elif mode != "reissue":
         found = _named(spec, url, model, candidates, service)
+    if found is None and mode in ("auto", "reissue"):
+        # No other route of the global service: send the same request again
+        # to the same server (a single held sequence, not a sick server).
+        found = _reissue(url, model, headers, descriptors, service, cfg)
     if found is None:
         return None
     found["delay_s"] = delay_for(model, cfg)
@@ -649,6 +853,7 @@ def record(info: Dict[str, Any], hedge: Dict[str, Any], *, primary_url: str, pri
         "primary_model": primary_model,
         "primary_endpoint_id": route.get("endpoint_id"),
         "primary_endpoint_label": route.get("endpoint_label") or _base(primary_url),
+        "kind": hedge.get("kind"),
         "hedge_kind": hedge.get("kind"),
         "hedge_model": hedge.get("model"),
         "hedge_endpoint_id": hedge.get("endpoint_id"),
@@ -663,6 +868,54 @@ def record(info: Dict[str, Any], hedge: Dict[str, Any], *, primary_url: str, pri
     logger.info("[hedge] %s %s after %.1fs (hedge %s @ %s started at %.1fs)",
                 entry["winner"], entry["outcome"], entry["after_s"] or 0, entry["hedge_model"],
                 entry["hedge_endpoint_label"], entry["hedge_started_s"] or 0)
+    return entry
+
+
+def record_skip(gate: Dict[str, Any], hedge: Dict[str, Any], *, primary_url: str,
+                primary_model: str, after_s: float, primary_route: Optional[Dict[str, Any]] = None,
+                session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Store a re-send that was due but not sent, with the reason."""
+    try:
+        from src.llm_trace import current_run_id
+        run_id = current_run_id() or ""
+    except Exception:  # noqa: BLE001
+        run_id = ""
+    route = primary_route or {}
+    capacity = gate.get("capacity") or {}
+    entry = {
+        "ts": time.time(),
+        "run_id": run_id,
+        "session_id": session_id or "",
+        "winner": None,
+        "outcome": "skipped",
+        "skip_reason": gate.get("reason") or "",
+        "reissues_used": gate.get("used"),
+        "reissues_limit": gate.get("limit"),
+        "server_waiting": capacity.get("waiting"),
+        "server_running": capacity.get("running"),
+        "capacity_source": capacity.get("source") or "",
+        "after_s": round(float(after_s or 0), 3),
+        "delay_s": hedge.get("delay_s"),
+        "hedge_started_s": round(float(after_s or 0), 3),
+        "hedge_ready_s": None,
+        "loser_cancelled": False,
+        "primary_model": primary_model,
+        "primary_endpoint_id": route.get("endpoint_id"),
+        "primary_endpoint_label": route.get("endpoint_label") or _base(primary_url),
+        "kind": hedge.get("kind"),
+        "hedge_kind": hedge.get("kind"),
+        "hedge_model": hedge.get("model"),
+        "hedge_endpoint_id": hedge.get("endpoint_id"),
+        "hedge_endpoint_label": hedge.get("endpoint_label"),
+        "answered_by": primary_model,
+        "answered_by_endpoint_label": route.get("endpoint_label") or _base(primary_url),
+    }
+    with _LOCK:
+        _RECENT.append(entry)
+    _append_log(entry)
+    logger.info("[hedge] re-send of %s skipped (%s; waiting=%s, used %s of %s)", primary_model,
+                entry["skip_reason"], entry["server_waiting"], entry["reissues_used"],
+                entry["reissues_limit"])
     return entry
 
 
@@ -695,9 +948,10 @@ def for_run(run_id: str) -> List[Dict[str, Any]]:
 
 def target_options() -> List[Dict[str, Any]]:
     options: List[Dict[str, Any]] = [
-        {"value": "auto", "label": "Automatic: same model elsewhere, else the first fallback"},
+        {"value": "auto", "label": "Automatic: same model elsewhere, else the first fallback, else re-send"},
         {"value": "same_model", "label": "Same model on another endpoint"},
         {"value": "fallback", "label": "First fallback model of the chain"},
+        {"value": "reissue", "label": "Re-send the same request to the same server"},
         {"value": "off", "label": "No hedge"},
     ]
     for ep in endpoint_models():
@@ -732,6 +986,8 @@ def _default_route():
 
 def stats(items: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     items = items if items is not None else recent(_LOG_MAX_LINES)
+    skipped = [i for i in items if i.get("outcome") == "skipped"]
+    items = [i for i in items if i.get("outcome") != "skipped"]
     hedge_wins = [i for i in items if i.get("winner") == "hedge" and i.get("outcome") == "first_token"]
     waits = [float(i.get("after_s") or 0) for i in hedge_wins]
     return {
@@ -739,6 +995,9 @@ def stats(items: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         "hedge_wins": len(hedge_wins),
         "primary_wins": sum(1 for i in items if i.get("winner") == "primary" and i.get("outcome") == "first_token"),
         "avg_hedge_answer_s": round(sum(waits) / len(waits), 1) if waits else None,
+        "reissue_wins": sum(1 for i in hedge_wins if (i.get("hedge_kind") or i.get("kind")) == "reissue"),
+        "reissue_skips": len(skipped),
+        "reissue_skips_saturated": sum(1 for i in skipped if i.get("skip_reason") == "saturated"),
     }
 
 
@@ -756,6 +1015,7 @@ def status(limit: int = 20) -> Dict[str, Any]:
             "endpoint_id": descriptor.get("endpoint_id"),
             "endpoint_label": descriptor.get("endpoint_label"),
             "delay_s": delay_for(model, cfg),
+            "reissue_max": reissues_for(model, cfg),
             "hedge": None if found is None else {
                 k: found.get(k) for k in ("kind", "model", "endpoint_id", "endpoint_label", "delay_s")
             },
@@ -765,6 +1025,7 @@ def status(limit: int = 20) -> Dict[str, Any]:
         **cfg,
         "min_delay_s": MIN_DELAY_S,
         "max_delay_s": MAX_DELAY_S,
+        "max_reissue_max": MAX_REISSUE_MAX,
         "current": current,
         "targets": target_options(),
         "recent": items,
@@ -791,7 +1052,8 @@ def validate_target(value: Any) -> str:
 
 
 def update(patch: Dict[str, Any]) -> Dict[str, Any]:
-    """Change {enabled, delay_s, target, delay_overrides}; any subset."""
+    """Change {enabled, delay_s, target, delay_overrides, reissue_max,
+    reissue_overrides}; any subset."""
     from src.settings import update_settings
     changes: Dict[str, Any] = {}
     if patch.get("enabled") is not None:
@@ -816,6 +1078,26 @@ def update(patch: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(raw, dict):
             raise ValueError("delay_overrides must be an object {model: seconds}")
         changes[SETTING_OVERRIDES] = json.dumps(parse_overrides(raw), ensure_ascii=False)
+    if patch.get("reissue_max") is not None:
+        value = patch["reissue_max"]
+        try:
+            number = float(value)
+            count = int(number) if not isinstance(value, bool) and number.is_integer() else None
+        except (TypeError, ValueError):
+            count = None
+        if count is None or not 0 <= count <= MAX_REISSUE_MAX:
+            raise ValueError(f"reissue_max must be a whole number between 0 and {MAX_REISSUE_MAX}")
+        changes[SETTING_REISSUE_MAX] = count
+    if patch.get("reissue_overrides") is not None:
+        raw = patch["reissue_overrides"]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw or "{}")
+            except ValueError:
+                raise ValueError("reissue_overrides must be a JSON object {model: re-sends}") from None
+        if not isinstance(raw, dict):
+            raise ValueError("reissue_overrides must be an object {model: re-sends}")
+        changes[SETTING_REISSUE_OVERRIDES] = json.dumps(parse_reissue_overrides(raw), ensure_ascii=False)
     if not changes:
         raise ValueError("nothing to change")
     update_settings(changes)

@@ -585,8 +585,20 @@ cliente se ha ido y aborta la petición. Solo se cubre antes de haber enviado na
 de modo que ningún token ni llamada a herramienta se produce dos veces; una vez
 llega el primer token no se lanza nada más. El destino (`agent_hedge_target`) es
 `auto` (el mismo modelo en otro endpoint activo que lo ofrezca; si no, el primer
-modelo de respaldo de la cadena; si no, ninguno), `same_model`, `fallback`, `off`,
-un id de endpoint o `endpoint_id::modelo` para un modelo concreto. Todo destino
+modelo de respaldo de la cadena; si no, un reenvío), `same_model`, `fallback`,
+`reissue`, `off`, un id de endpoint o `endpoint_id::modelo` para un modelo concreto.
+`reissue` vuelve a enviar la petición idéntica (mismos mensajes, herramientas y
+límites, en una petición HTTP nueva, así que el servidor le da otro id) al mismo
+endpoint y modelo: cubre una petición que el servidor aceptó y retiene sin soltar
+nada mientras el servidor sigue sano, que es lo que pasa cuando un modelo ocupa
+todas las Sparks y no hay segundo servidor. Como mucho `agent_hedge_reissue_max`
+reenvíos por turno (1 por defecto, de 0 a 5; por modelo en
+`agent_hedge_reissue_overrides`), y ninguno si el servidor informa de peticiones
+esperando en su cola (`num_requests_waiting` de vLLM o `num_queue_reqs` de SGLang en
+su `/metrics`; si no, `/api/serving` de Prometheus), para que un reenvío nunca haga
+cola detrás de su hermano atascado; un reenvío omitido se registra con su motivo
+(`limit` o `saturated`). Un reenvío que responde no cambia de ruta y el chat
+muestra «Respondió una petición reenviada tras N s». Todo destino
 está en el servicio LLM global: un endpoint publicado por una receta de las Sparks
 (`sparks_endpoints`) u otro endpoint que apunte a uno de esos servidores; un LLM de
 texto local nunca es la cobertura y, con las Sparks desactivadas, no se cubre nada.
@@ -599,8 +611,9 @@ ejecución fija la ruta y el modelo que respondieron de verdad, como cualquier
 respaldo. El trabajo en segundo plano no se cubre. Cada carrera queda registrada
 con su ejecución (`data/model_hedges.jsonl` y las métricas del turno en `hedges`) y
 el chat muestra «Respondió la cobertura (endpoint) tras N s». Controles en
-Ajustes > Modelos (interruptor, espera, lista de destinos, esperas por modelo, la
-cobertura que recibe ahora el modelo por defecto y las últimas carreras) y en
+Ajustes > Modelos (interruptor, espera, lista de destinos, esperas por modelo,
+reenvíos por turno y por modelo, la cobertura que recibe ahora el modelo por
+defecto y las últimas carreras y reenvíos omitidos) y en
 Ajustes > Agente; `GET/PATCH /api/model-hedge`, la herramienta de agente
 `model_hedge` y la herramienta `model_hedge` del servidor MCP de workers
 (src/model_hedge.py).

@@ -810,7 +810,7 @@ export type ChatEvent =
   /** `hedge`: the route that answered is a hedged first token (src/model_hedge.py);
    *  the preceding `hedge` event already says so. */
   | { type: 'fallback'; answeredBy: string; selected: string; hedge?: boolean }
-  | { type: 'hedge'; winner: string; outcome: string; afterS: number; endpoint: string; model: string }
+  | { type: 'hedge'; winner: string; outcome: string; afterS: number; endpoint: string; model: string; kind?: string }
   | {
       type: 'terminal';
       failed: boolean;
@@ -2062,6 +2062,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         type: 'hedge', winner: str(raw.winner), outcome: str(raw.outcome),
         afterS: typeof raw.after_s === 'number' ? raw.after_s : Number(raw.after_s) || 0,
         endpoint: str(raw.answered_by_endpoint_label), model: str(raw.answered_by),
+        ...(raw.hedge_kind ? { kind: str(raw.hedge_kind) } : {}),
       };
     case 'agent_terminal': {
       const failure = (data.failure && typeof data.failure === 'object' ? data.failure : {}) as Record<

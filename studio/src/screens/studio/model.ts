@@ -1105,9 +1105,11 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'hedge':
       // Hedged first token (src/model_hedge.py): only a hedge that answered
       // changes who wrote this turn, so only that is worth a note.
-      return event.winner === 'hedge' && event.outcome === 'first_token'
-        ? { ...turn, note: t('Answered by hedge ({endpoint}) after {s} s.', { endpoint: event.endpoint || event.model, s: Math.round(event.afterS) }) }
-        : turn;
+      // A re-sent request (kind `reissue`) is the same route and model.
+      if (!(event.winner === 'hedge' && event.outcome === 'first_token')) return turn;
+      return event.kind === 'reissue'
+        ? { ...turn, note: t('Answered by a re-sent request after {s} s.', { s: Math.round(event.afterS) }) }
+        : { ...turn, note: t('Answered by hedge ({endpoint}) after {s} s.', { endpoint: event.endpoint || event.model, s: Math.round(event.afterS) }) };
     case 'fallback':
       // A hedge that answered was not a failure of the chosen model: keep
       // the "Answered by hedge" note its `hedge` event already set.

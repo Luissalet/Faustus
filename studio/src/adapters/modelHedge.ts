@@ -16,8 +16,14 @@ export interface HedgeTargetOption {
 
 export interface HedgeRace {
   ts: number;
-  winner: 'primary' | 'hedge';
-  outcome: 'first_token' | 'error' | 'empty';
+  /** null for a re-send that was due but skipped (`outcome: 'skipped'`). */
+  winner: 'primary' | 'hedge' | null;
+  outcome: 'first_token' | 'error' | 'empty' | 'skipped';
+  /** `reissue`: the same request re-sent to the same server. */
+  hedge_kind?: string;
+  /** For a skipped re-send: `limit` (turn budget spent) or `saturated` (server queue). */
+  skip_reason?: string;
+  server_waiting?: number | null;
   after_s: number;
   delay_s: number;
   hedge_started_s: number;
@@ -35,20 +41,29 @@ export interface HedgeStatus {
   delay_s: number;
   target: string;
   delay_overrides: Record<string, number>;
+  /** Re-sends to the same server allowed per turn (target `reissue`). */
+  reissue_max: number;
+  reissue_overrides: Record<string, number>;
   min_delay_s: number;
   max_delay_s: number;
+  max_reissue_max?: number;
   current: null | {
     model: string;
     endpoint_label?: string;
     delay_s: number;
+    reissue_max?: number;
     hedge: null | { kind: string; model: string; endpoint_label?: string; delay_s: number };
   };
   targets: HedgeTargetOption[];
   recent: HedgeRace[];
-  stats: { races: number; hedge_wins: number; primary_wins?: number; avg_hedge_answer_s?: number | null };
+  stats: {
+    races: number; hedge_wins: number; primary_wins?: number; avg_hedge_answer_s?: number | null;
+    reissue_wins?: number; reissue_skips?: number; reissue_skips_saturated?: number;
+  };
 }
 
-export type HedgePatch = Partial<Pick<HedgeStatus, 'enabled' | 'delay_s' | 'target' | 'delay_overrides'>>;
+export type HedgePatch = Partial<Pick<HedgeStatus,
+  'enabled' | 'delay_s' | 'target' | 'delay_overrides' | 'reissue_max' | 'reissue_overrides'>>;
 
 export function getHedgeStatus(signal?: AbortSignal): Promise<HedgeStatus> {
   return getJson<HedgeStatus>('/api/model-hedge', signal);

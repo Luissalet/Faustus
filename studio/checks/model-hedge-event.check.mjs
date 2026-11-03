@@ -36,6 +36,16 @@ const turn = apply(blankTurn('assistant'), won);
 assert.match(turn.note, /Spark B/);
 assert.match(turn.note, /23/);
 
+// A re-sent request to the same server (kind reissue) says so, not "hedge".
+const resent = decode({
+  type: 'hedge', winner: 'hedge', outcome: 'first_token', after_s: 20.6, hedge_kind: 'reissue',
+  answered_by: 'deepseek-v4.1-flash', answered_by_endpoint_label: 'Sparks · DeepSeek',
+}, null);
+assert.equal(resent.kind, 'reissue');
+const resentTurn = apply(blankTurn('assistant'), resent);
+assert.match(resentTurn.note, /re-sent request after 21 s/);
+assert.doesNotMatch(resentTurn.note, /hedge/i);
+
 const lost = decode({ type: 'hedge', winner: 'primary', outcome: 'first_token', after_s: 21 }, null);
 assert.equal(apply(blankTurn('assistant'), lost).note, undefined);
 

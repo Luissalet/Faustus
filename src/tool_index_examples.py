@@ -1275,6 +1275,8 @@ EXAMPLES: Dict[str, List[str]] = {
         "si el modelo no empieza a contestar en 15 segundos, pregunta también a la otra Spark",
         "which answers came from the hedge and after how long",
         "desactiva la petición de reserva del primer token",
+        "if DeepSeek stays silent re-send the same request to the same server",
+        "por qué no se reenvió la petición cuando el modelo se quedó callado",
     ],
     "turn_review": [
         "why did your last answer take so long",

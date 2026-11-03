@@ -158,8 +158,14 @@ class _FakeServer:
     server holding a tool call) until the client goes away.
     mode="answer": streams a short answer after `delay` seconds."""
 
-    def __init__(self, mode, text="", delay=0.0):
+    def __init__(self, mode, text="", delay=0.0, *, waiting=None, stall_s=30.0, pause_s=0.0):
+        # mode "stall_first": the first request stalls (for stall_s, then
+        # answers), every later one answers. waiting: the value its GET
+        # /metrics reports as vLLM num_requests_waiting (None: no /metrics).
+        # pause_s: pause after the first answered token.
         self.mode, self.text, self.delay = mode, text, delay
+        self.waiting, self.stall_s, self.pause_s = waiting, stall_s, pause_s
+        self.metrics_reads = 0
         self.requests = 0
         self.bodies = []  # the JSON bodies received, in order
         self.disconnected = asyncio.Event()
@@ -189,6 +195,15 @@ class _FakeServer:
                 if line.lower().startswith("content-length:"):
                     length = int(line.split(":", 1)[1])
             body = await reader.readexactly(length) if length else b""
+            if method == "GET" and path == "/metrics" and self.waiting is not None:
+                self.metrics_reads += 1
+                text = ("# TYPE vllm:num_requests_waiting gauge\n"
+                        f'vllm:num_requests_waiting{{model_name="m"}} {float(self.waiting)}\n'
+                        f'vllm:num_requests_running{{model_name="m"}} {float(self.requests)}\n').encode()
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "
+                             + str(len(text)).encode() + b"\r\nConnection: close\r\n\r\n" + text)
+                await writer.drain()
+                return
             if method != "POST" or not path.endswith("/chat/completions"):
                 writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                 await writer.drain()
@@ -203,6 +218,9 @@ class _FakeServer:
             await writer.drain()
             if self.mode == "stall":
                 await self._stall(reader, writer)
+            elif self.mode == "stall_first" and self.requests == 1:
+                if await self._stall(reader, writer, seconds=self.stall_s):
+                    await self._answer(writer, self.bodies[-1].get("model") or "m")
             else:
                 await self._answer(writer, self.bodies[-1].get("model") or "m")
         except (ConnectionError, asyncio.IncompleteReadError):
@@ -213,18 +231,21 @@ class _FakeServer:
             except Exception:
                 pass
 
-    async def _stall(self, reader, writer):
+    async def _stall(self, reader, writer, seconds=30.0):
+        """Hold the request; True when the client is still there afterwards."""
         eof = asyncio.ensure_future(reader.read(1))
         try:
-            for _ in range(600):
+            for _ in range(int(seconds / 0.05)):
                 if eof.done():
                     self.disconnected.set()
-                    return
+                    return False
                 writer.write(b": holding\n\n")
                 await writer.drain()
                 await asyncio.sleep(0.05)
+            return True
         except ConnectionError:
             self.disconnected.set()
+            return False
         finally:
             eof.cancel()
 
@@ -238,10 +259,10 @@ class _FakeServer:
             return ("data: " + json.dumps(body) + "\n\n").encode()
 
         writer.write(frame({"role": "assistant"}))
-        for word in self.text.split(" "):
+        for n, word in enumerate(self.text.split(" ")):
             writer.write(frame({"content": word + " "}))
             await writer.drain()
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(self.pause_s if n == 0 and self.pause_s else 0.01)
         writer.write(frame({}, "stop"))
         writer.write(b"data: [DONE]\n\n")
         await writer.drain()
@@ -253,6 +274,9 @@ def hedge_env(monkeypatch, tmp_path):
     monkeypatch.setenv("ODYSSEUS_LOCAL_MODEL_GATE", "false")
     monkeypatch.setattr(model_hedge, "_log_path", lambda: str(tmp_path / "model_hedges.jsonl"))
     monkeypatch.setattr(model_hedge, "_RECENT", model_hedge.deque(maxlen=200))
+    monkeypatch.setattr(model_hedge, "_REISSUES", {})
+    # the queue is read from the fake server's own /metrics, never Prometheus
+    monkeypatch.setattr(model_hedge, "_serving_capacity", lambda url: None)
     monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
     monkeypatch.setattr(llm_core, "is_sparks_url", lambda u: False)
     state = {"cfg": {"enabled": True, "delay_s": 0.3, "target": "auto", "delay_overrides": {}},
@@ -785,11 +809,15 @@ def test_mixed_inventory_never_falls_back_to_a_local_text_model(monkeypatch):
     primary = ("http://10.0.0.5:8888/v1/chat/completions", "m", {})
     local = ("http://127.0.0.1:8081/v1/chat/completions", "m", {})
     spark4 = ("http://10.0.0.9:30001/v1/chat/completions", "m2", {})
-    assert model_hedge.plan(*primary, cfg=_cfg()) is None
+    # auto ends in a re-send to the primary's own (global) server, never the local one
+    found = model_hedge.plan(*primary, cfg=_cfg())
+    assert found["kind"] == "reissue" and found["url"] == primary[0]
     assert model_hedge.plan(*primary, cfg=_cfg(target="same_model")) is None
+    assert model_hedge.plan(*primary, cfg=_cfg(target="auto", reissue_max=0)) is None
     # a local fallback of the chain is skipped; a global one after it is used
     descs = [{"endpoint_id": "sparks-a"}, {"endpoint_id": "loc"}, {"endpoint_id": "spark4"}]
-    assert model_hedge.plan(*primary, candidates=[primary, local], descriptors=descs[:2], cfg=_cfg()) is None
+    found = model_hedge.plan(*primary, candidates=[primary, local], descriptors=descs[:2], cfg=_cfg())
+    assert found["kind"] == "reissue" and found["endpoint_id"] == "sparks-a"
     found = model_hedge.plan(*primary, candidates=[primary, local, spark4], descriptors=descs,
                              cfg=_cfg(target="fallback"))
     assert found["candidate_index"] == 2 and found["endpoint_id"] == "spark4"
@@ -818,3 +846,201 @@ def test_no_global_service_means_no_hedge(monkeypatch):
     assert model_hedge.endpoint_models() == []
     assert model_hedge.plan(*primary, cfg=_cfg()) is None
     assert model_hedge.plan(*primary, cfg=_cfg(target="spark4::m2")) is None
+
+
+# ---------------------------------------------------------------------------
+# reissue: the same request re-sent to the same server
+# ---------------------------------------------------------------------------
+
+def _wire_reissue(hedge_env, server):
+    hedge_env["cfg"]["target"] = "reissue"
+    hedge_env["service"] = {"endpoint_ids": set(), "servers": {model_hedge._server(server.url)}}
+
+
+def test_http_reissue_answers_a_held_request_and_closes_it(hedge_env, monkeypatch):
+    from src import llm_trace
+
+    async def scenario():
+        server = await _FakeServer("stall_first", "answered by the re-send", waiting=0).start()
+        _wire_reissue(hedge_env, server)
+        token = llm_trace.set_current_run_id("run-reissue-1")
+        try:
+            t0 = time.monotonic()
+            chunks = await _collect([(server.url, "m", {})], max_tokens=321)
+            elapsed = time.monotonic() - t0
+            await asyncio.wait_for(server.disconnected.wait(), timeout=5)
+        finally:
+            llm_trace.reset_current_run_id(token)
+            await server.stop()
+        return chunks, elapsed, server
+
+    chunks, elapsed, server = asyncio.run(scenario())
+    events = _events(chunks)
+    text = "".join(e.get("delta", "") for e in events if "delta" in e and not e.get("thinking"))
+    assert text.strip() == "answered by the re-send"
+    assert elapsed < 10
+    # two HTTP requests to the same server, identical bodies (messages, tools, limits)
+    assert server.requests == 2
+    assert server.bodies[0] == server.bodies[1]
+    assert server.bodies[0]["messages"] and "321" in json.dumps(server.bodies[0])
+    assert server.metrics_reads == 1  # the queue was checked before re-sending
+    # the held request's HTTP connection was closed, so the server aborts it
+    assert server.disconnected.is_set()
+    notices = [e for e in events if e.get("type") == "hedge"]
+    assert len(notices) == 1
+    assert notices[0]["winner"] == "hedge" and notices[0]["outcome"] == "first_token"
+    assert notices[0]["kind"] == "reissue" and notices[0]["hedge_kind"] == "reissue"
+    assert notices[0]["loser_cancelled"] is True
+    # same route and model: no fallback event to adopt another route
+    assert not [e for e in events if e.get("type") == "fallback"]
+    runs = model_hedge.for_run("run-reissue-1")
+    assert len(runs) == 1 and runs[0]["hedge_kind"] == "reissue"
+
+
+def test_http_reissue_is_skipped_when_the_server_has_a_queue(hedge_env, monkeypatch):
+    from src import llm_trace
+
+    async def scenario():
+        # the first request is held for 1 s and then answers; the server
+        # reports two requests waiting, so the copy would only queue
+        server = await _FakeServer("stall_first", "primary after all", waiting=2, stall_s=1.0).start()
+        _wire_reissue(hedge_env, server)
+        token = llm_trace.set_current_run_id("run-reissue-2")
+        try:
+            chunks = await _collect([(server.url, "m", {})])
+        finally:
+            llm_trace.reset_current_run_id(token)
+            await server.stop()
+        return chunks, server
+
+    chunks, server = asyncio.run(scenario())
+    events = _events(chunks)
+    assert "".join(e.get("delta", "") for e in events if "delta" in e).strip() == "primary after all"
+    assert server.requests == 1 and server.metrics_reads == 1
+    assert not [e for e in events if e.get("type") == "hedge"]
+    runs = model_hedge.for_run("run-reissue-2")
+    assert len(runs) == 1
+    skip = runs[0]
+    assert skip["outcome"] == "skipped" and skip["skip_reason"] == "saturated"
+    assert skip["server_waiting"] == 2 and skip["kind"] == "reissue"
+    assert 0.25 <= skip["after_s"] < 1.0
+    stats = model_hedge.stats(runs)
+    assert stats["races"] == 0 and stats["reissue_skips"] == 1 and stats["reissue_skips_saturated"] == 1
+
+
+def test_http_no_reissue_after_the_first_token(hedge_env, monkeypatch):
+    async def scenario():
+        # first token at once, then a pause longer than the delay
+        server = await _FakeServer("answer", "first then the rest", waiting=0, pause_s=0.8).start()
+        _wire_reissue(hedge_env, server)
+        try:
+            chunks = await _collect([(server.url, "m", {})])
+        finally:
+            await server.stop()
+        return chunks, server
+
+    chunks, server = asyncio.run(scenario())
+    events = _events(chunks)
+    assert "".join(e.get("delta", "") for e in events if "delta" in e).strip() == "first then the rest"
+    assert server.requests == 1 and server.metrics_reads == 0
+    assert not [e for e in events if e.get("type") == "hedge"]
+    assert model_hedge.recent(10) == []
+
+
+def test_reissue_gate_budget_per_run_and_per_model(monkeypatch):
+    from src import llm_trace
+    monkeypatch.setattr(model_hedge, "_REISSUES", {})
+    monkeypatch.setattr(model_hedge, "server_capacity", lambda url: {
+        "known": True, "waiting": 0.0, "running": 1.0, "saturated": False, "source": "test"})
+    url = "http://10.0.0.5:8888/v1/chat/completions"
+    cfg = _cfg(reissue_max=1, reissue_overrides={"Big": 2, "never": 0})
+    token = llm_trace.set_current_run_id("run-a")
+    try:
+        assert model_hedge.reissue_gate(url, "m", cfg=cfg)["ok"] is True
+        second = model_hedge.reissue_gate(url, "m", cfg=cfg)
+        assert second["ok"] is False and second["reason"] == "limit" and second["used"] == 1
+        assert model_hedge.reissue_gate(url, "big", cfg=cfg)["ok"] is True  # its own budget
+        assert model_hedge.reissue_gate(url, "never", cfg=cfg)["reason"] == "limit"
+    finally:
+        llm_trace.reset_current_run_id(token)
+    token = llm_trace.set_current_run_id("run-b")  # a new turn starts afresh
+    try:
+        assert model_hedge.reissue_gate(url, "m", cfg=cfg)["ok"] is True
+    finally:
+        llm_trace.reset_current_run_id(token)
+    monkeypatch.setattr(model_hedge, "server_capacity", lambda url: {
+        "known": True, "waiting": 3.0, "running": 16.0, "saturated": True, "source": "test"})
+    token = llm_trace.set_current_run_id("run-c")
+    try:
+        gate = model_hedge.reissue_gate(url, "m", cfg=cfg)
+        assert gate["ok"] is False and gate["reason"] == "saturated"
+        assert model_hedge._REISSUES.get("run:run-c", 0) == 0  # a skip spends nothing
+    finally:
+        llm_trace.reset_current_run_id(token)
+
+
+def test_reissue_plan_needs_a_global_primary(monkeypatch):
+    monkeypatch.setattr(model_hedge, "_host_dead", lambda u: False)
+    monkeypatch.setattr(model_hedge, "endpoint_models", lambda *a, **k: [])
+    monkeypatch.setattr(model_hedge, "global_service", lambda: {
+        "endpoint_ids": {"sparks-ds"}, "servers": {"http://10.0.0.5:8888"}})
+    primary = ("http://10.0.0.5:8888/v1/chat/completions", "deepseek", {"X": "1"})
+    descs = [{"endpoint_id": "sparks-ds", "endpoint_label": "Sparks DS"}]
+    for target in ("auto", "reissue", "REISSUE"):
+        found = model_hedge.plan(*primary, descriptors=descs, cfg=_cfg(target=target))
+        assert found["kind"] == "reissue" and found["url"] == primary[0] and found["model"] == "deepseek"
+        assert found["endpoint_id"] == "sparks-ds" and found["delay_s"] == 20.0
+    assert model_hedge.plan(*primary, descriptors=descs,
+                            cfg=_cfg(target="reissue", reissue_overrides={"deepseek": 0})) is None
+    local = ("http://127.0.0.1:8081/v1/chat/completions", "deepseek", {})
+    assert model_hedge.plan(*local, descriptors=[{"endpoint_id": "loc"}], cfg=_cfg(target="reissue")) is None
+    assert model_hedge.validate_target("reissue") == "reissue"
+    assert any(o["value"] == "reissue" for o in model_hedge.target_options())
+
+
+def test_server_capacity_reads_vllm_sglang_and_prometheus(monkeypatch):
+    url = "http://10.0.0.5:8888/v1/chat/completions"
+    sglang = ('# HELP sglang:num_queue_reqs The number of requests in the waiting queue.\n'
+              'sglang:num_running_reqs{model_name="ds",tp_rank="0"} 3.0\n'
+              'sglang:num_queue_reqs{model_name="ds",tp_rank="0"} 2.0\n'
+              'sglang:num_grammar_queue_reqs{model_name="ds"} 9.0\n')
+    seen = []
+    monkeypatch.setattr(model_hedge, "_get_text", lambda u, timeout: seen.append(u) or sglang)
+    cap = model_hedge.server_capacity(url)
+    assert seen == ["http://10.0.0.5:8888/metrics"]
+    assert cap["saturated"] is True and cap["waiting"] == 2.0 and cap["running"] == 3.0
+    vllm = 'vllm:num_requests_waiting{model_name="m"} 0.0\nvllm:num_requests_running{model_name="m"} 1.0\n'
+    monkeypatch.setattr(model_hedge, "_get_text", lambda u, timeout: vllm)
+    cap = model_hedge.server_capacity(url)
+    assert cap["known"] is True and cap["saturated"] is False and cap["running"] == 1.0
+    # no metrics on the server: Prometheus's /api/serving for the same server
+    monkeypatch.setattr(model_hedge, "_get_text", lambda u, timeout: None)
+    from src import sparks
+    monkeypatch.setattr(sparks, "_request", lambda method, path, body=None, **kw: (200, {"endpoints": [
+        {"base_url": "http://10.0.0.9:8000/v1", "now": {"waiting": 5}},
+        {"base_url": "http://10.0.0.5:8888/v1", "now": {"waiting": 1, "running": 4}}]}))
+    cap = model_hedge.server_capacity(url)
+    assert cap["saturated"] is True and cap["source"] == "prometheus /api/serving"
+    # nothing known: not saturated (the re-send goes)
+    monkeypatch.setattr(sparks, "_request", lambda method, path, body=None, **kw: (None, None))
+    cap = model_hedge.server_capacity(url)
+    assert cap["known"] is False and cap["saturated"] is False
+
+
+def test_reissue_settings_update_and_surfaces(monkeypatch):
+    written = {}
+    monkeypatch.setattr("src.settings.update_settings", lambda patch: written.update(patch))
+    monkeypatch.setattr(model_hedge, "status", lambda limit=20: {"ok": True})
+    model_hedge.update({"target": "reissue", "reissue_max": 2, "reissue_overrides": '{"m": 0, "x": 9}'})
+    assert written == {"agent_hedge_target": "reissue", "agent_hedge_reissue_max": 2,
+                       "agent_hedge_reissue_overrides": '{"m": 0, "x": 5}'}
+    for bad in ({"reissue_max": 6}, {"reissue_max": -1}, {"reissue_max": 1.5},
+                {"reissue_max": "x"}, {"reissue_overrides": "nope"}, {"reissue_overrides": [1]}):
+        with pytest.raises(ValueError):
+            model_hedge.update(bad)
+    from src.settings import DEFAULT_SETTINGS
+    assert DEFAULT_SETTINGS["agent_hedge_reissue_max"] == 1
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    schema = next(t for t in FUNCTION_TOOL_SCHEMAS if t["function"]["name"] == "model_hedge")
+    assert {"reissue_max", "reissue_overrides"} <= set(schema["function"]["parameters"]["properties"])
+    assert "reissue" in schema["function"]["parameters"]["properties"]["target"]["description"]

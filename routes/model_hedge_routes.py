@@ -4,8 +4,11 @@ GET   /api/model-hedge         -- enabled, delay, target, per-model delays, the
                                   hedge the default model would get now, the
                                   selectable targets, recent races and totals.
 PATCH /api/model-hedge         -- change {enabled, delay_s, target,
-POST  /api/model-hedge            delay_overrides}; any subset. Same effect as
-                                  the ``agent_hedge_*`` settings.
+POST  /api/model-hedge            delay_overrides, reissue_max,
+                                  reissue_overrides}; any subset. Same effect
+                                  as the ``agent_hedge_*`` settings. target
+                                  ``reissue`` re-sends the same request to the
+                                  same server.
 """
 import logging
 from typing import Any, Dict, Optional, Union
@@ -23,6 +26,8 @@ class HedgePatch(BaseModel):
     delay_s: Optional[float] = None
     target: Optional[str] = None
     delay_overrides: Optional[Union[Dict[str, Any], str]] = None
+    reissue_max: Optional[float] = None
+    reissue_overrides: Optional[Union[Dict[str, Any], str]] = None
 
 
 def setup_model_hedge_routes():
