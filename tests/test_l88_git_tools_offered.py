@@ -12,8 +12,10 @@ from src import agent_loop
 
 def _block():
     src = open(agent_loop.__file__, encoding="utf-8").read()
-    start = src.index("Tools the user NAMED are offered")
-    return src[start:start + 3500]
+    # The git floor follows the named-tools block; the window starts at the
+    # last copy of that comment and ends at the end of the git floor.
+    start = src.rindex("Tools the user NAMED are offered")
+    return src[start:src.index("_hot_seed |= _git_add", start) + 40]
 
 
 def test_named_tools_are_offered_and_git_floor_exists():

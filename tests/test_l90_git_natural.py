@@ -359,8 +359,10 @@ def test_agent_rules_mention_repo_resolution_without_path():
 # ---------------------------------------------------------------------------
 def _git_intent_pattern():
     src = open(agent_loop.__file__, encoding="utf-8").read()
-    start = src.index("Tools the user NAMED are offered")
-    block = src[start:start + 3500]
+    # The git floor follows the named-tools block; the window starts at the
+    # last copy of that comment and ends at the end of the git floor.
+    start = src.rindex("Tools the user NAMED are offered")
+    block = src[start:src.index("_hot_seed |= _git_add", start) + 40]
     m = re.search(r're\.search\(\s*r"(.+?)"\s*r"(.+?)",', block, re.S)
     assert m, "intent regex not found"
     return re.compile(m.group(1) + m.group(2), re.IGNORECASE)
