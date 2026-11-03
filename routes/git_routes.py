@@ -319,8 +319,13 @@ def setup_git_routes() -> APIRouter:
         # adapter's shape -- skips remotes/user/identity/policy entirely.
         is_light = bool(light)
         rows = git_panel.repo_summaries(metas, light=is_light)
-        if not is_light:
-            rows = [_attach_identity_policy(row, owner) for row in rows]
+        if not is_light and rows:
+            # Identity and policy read config files per repo; serially they
+            # cost ~11 s for 89 repos on Windows (04-11), enough with the
+            # summaries to push the full list past the 45 s route limit.
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
+                rows = list(pool.map(lambda row: _attach_identity_policy(row, owner), rows))
         return {"repos": rows, "git_version": git_panel.git_version()}
 
     # ------------------------------------------------------------------
