@@ -121,6 +121,7 @@ from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEv
 from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
 from .contract_tools import CriteriaCheckTool
 from .prior_art_tools import PriorArtTool
+from .uncertainty_tool import UncertaintyNextObservationTool
 from .ci_tools import CiFailuresTool
 from .coordination_tool import CoordinationTool
 from src.coordination.tools import NAMES as _COORDINATION_TOOLS
@@ -380,6 +381,8 @@ TOOL_HANDLERS = {
     # Prior art (GIT-08): reuse, adapt, or write, with every repository name
     # checked live before it reaches the user. See src/prior_art.py.
     "prior_art": PriorArtTool().execute,
+    # Which observation to make next among competing hypotheses (src/uncertainty_sensor.py).
+    "uncertainty_next_observation": UncertaintyNextObservationTool().execute,
     # CI failure analyzer (lot C): what really broke in a GitHub Actions run,
     # read from the run's own logs. See src/ci_failures.py.
     "ci_failures": CiFailuresTool().execute,
@@ -607,6 +610,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Prior art (GIT-08): reuse/adapt/write, verified live against
              # GitHub -- src/agent_tools/prior_art_tools.py.
              "prior_art",
+             # Uncertainty sensor -- src/agent_tools/uncertainty_tool.py.
+             "uncertainty_next_observation",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
              "inspect_image",
              # Autonomous bug hunter -- src/agent_tools/bug_hunt_tools.py.

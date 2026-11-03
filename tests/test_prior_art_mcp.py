@@ -16,7 +16,8 @@ pytest.importorskip("mcp")
 
 import mcp_servers.prior_art_server as srv
 
-TOOL_NAMES = {"prior_art_rubric", "prior_art_verify", "prior_art_search", "prior_art_report"}
+TOOL_NAMES = {"prior_art_rubric", "prior_art_verify", "prior_art_search", "prior_art_report",
+              "uncertainty_next_observation"}
 
 
 @pytest.fixture(autouse=True)

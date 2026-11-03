@@ -192,6 +192,12 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # Uncertainty sensor: pure maths over what the model supplies; when a case_id
+    # is given it keeps the case record under the data dir.
+    {"uncertainty_next_observation"},
+    ToolEffect.WRITE_PRIVATE,
+)
+_register(
     {"web_fetch"},
     ToolEffect.BROKERED_NETWORK_READ,
     ToolEffect.NETWORK_EGRESS,
