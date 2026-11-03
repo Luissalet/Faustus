@@ -22,7 +22,9 @@ anything (a structural dry run). This module is the explicit other mode:
 * **a step counts only when it finished.** Each step is classified ``ok`` /
   ``error`` (an error object, a non-zero exit code, a blocked call, a process
   that exited non-zero) / ``queued`` (a job that returned an id and had not
-  finished when the wait ran out, or one this module has no way to wait on) /
+  finished when the wait ran out, or one this module has no way to wait on;
+  ``src/job_waiters.py`` registers the tools with a status tool: image requests,
+  fan-out runs, research podcasts, deep research) /
   ``exception``. Processes started with ``process_start`` (and ``bg:`` jobs)
   are waited on through ``process_read`` until they exit or ``job_timeout``
   passes. Anything but ``ok`` stops the chain: later steps are ``skipped``.
@@ -59,6 +61,7 @@ import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src import derivation_graph as dg
+from src import job_waiters as jw
 from src import recipe_learning as rl
 from src import recipes as recipes_store
 
@@ -550,6 +553,21 @@ def execute(recipe_id: str, owner: str, params: Mapping[str, Any], *, executor: 
         except Exception as exc:  # noqa: BLE001 - recorded as the step's outcome
             rep.update(status="exception", detail=f"{type(exc).__name__}: {exc}")
             raise StepFailed(rep["detail"]) from exc
+        job = jw.find(tool, result)
+        if job is not None:
+            waiter, job_id = job
+            ids = {**(_ids(result) if isinstance(result, Mapping) else {}), waiter.id_key: job_id}
+            rep["waited_for"] = f"{tool}:{job_id}"
+            state, detail, final = jw.wait(waiter, job_id, executor, call_id, owner, timeout)
+            status = {jw.DONE: "ok", jw.FAILED: "error"}.get(state, "queued")
+            if state == "timeout":
+                detail = f"{detail}: still running, not counted as finished"
+            rep.update(status=status, detail=detail if status != "ok" else "", ids=ids,
+                       output=_compact(final if final is not None else result),
+                       finished_at=time.time())
+            if status != "ok":
+                raise StepFailed(f"{tool}: {status}: {detail}")
+            return {"value": {"status": "ok", "ids": ids, "output_sha": _hash(rep["output"])[:16]}}
         status, detail, wait = classify(tool, result)
         ids = _ids(result) if isinstance(result, Mapping) else {}
         if status == "pending" and wait:

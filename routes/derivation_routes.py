@@ -11,7 +11,9 @@ POST /api/recipes/{recipe_id}/execute   {params, workspace, criteria?, inputs?, 
                                         through the normal tool dispatcher, exit criteria checked on the delivered files
 GET  /api/recipes/{recipe_id}/verification   stored verifications and whether each is still fresh
 POST /api/recipes/{recipe_id}/promote   only after a clean try
+(GET /api/recipes, the list with every recipe in full, is in routes/strategy_routes.py)
 GET  /api/recipes/search                ?query=&limit=
+GET  /api/recipes/{recipe_id}           the whole recipe (steps, parameters, criteria, executions)
 GET  /api/derivations                   graphs of the owner
 GET  /api/derivations/{graph}           nodes, state, Atlas project
 GET  /api/derivations/{graph}/plan      ?target=   (target repeatable) stale nodes and why
@@ -65,6 +67,10 @@ def setup_derivation_routes() -> APIRouter:
     async def search_recipes(request: Request, query: str = Query(...), limit: int = 10):
         owner = owner_of(request)
         return _reply(derivation_ops.run_recipe(owner, {"action": "search", "query": query, "limit": limit}))
+
+    @router.get("/api/recipes/{recipe_id}")
+    async def show_recipe(request: Request, recipe_id: str):
+        return _reply(derivation_ops.run_recipe(owner_of(request), {"action": "show", "recipe_id": recipe_id}))
 
     _EXEC_KEYS = ("params", "mode", "workspace", "criteria", "inputs", "job_timeout", "rerun")
 

@@ -28,6 +28,7 @@ export const TOOL_PLACEMENT: Record<string, { context: ToolContext; hint: string
   '/cookbook': { context: 'connections', hint: 'Install and serve local models' },
   '/context': { context: 'chat', hint: 'Conversation context and token use' },
   '/workflows': { context: 'automations', hint: 'Reusable workflows' },
+  '/recipes': { context: 'automations', hint: 'Learned recipes and their real runs' },
 };
 
 export const CONTEXT_LABELS: Record<ToolContext, string> = {

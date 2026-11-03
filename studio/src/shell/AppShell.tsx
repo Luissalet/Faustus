@@ -39,6 +39,7 @@ const CompareScreen = lazyChunk(() => import('../screens/compare/Compare').then(
 const ContextScreen = lazyChunk(() => import('../screens/Context').then((m) => ({ default: m.ContextScreen })));
 const AgoraScreen = lazyChunk(() => import('../screens/Agora').then((m) => ({default: m.AgoraScreen})));
 const StateMirrorScreen = lazyChunk(() => import('../screens/StateMirror').then((m) => ({ default: m.StateMirrorScreen })));
+const RecipesScreen = lazyChunk(() => import('../screens/Recipes').then((m) => ({ default: m.RecipesScreen })));
 const DeltasScreen = lazyChunk(() => import('../screens/Deltas').then((m) => ({ default: m.DeltasScreen })));
 const CompletionScreen = lazyChunk(() => import('../screens/Completion').then((m) => ({ default: m.CompletionScreen })));
 const SettingsScreen = lazyChunk(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
@@ -277,6 +278,7 @@ function RouteBody() {
         <Route path="/agora" element={<AgoraScreen />} />
         <Route path="/state" element={<StateMirrorScreen />} />
         <Route path="/deltas" element={<DeltasScreen />} />
+        <Route path="/recipes" element={<RecipesScreen />} />
         <Route path="/completion" element={<CompletionScreen />} />
         <Route path="/cookbook" element={<CookbookScreen />} />
         <Route path="/context" element={<ContextScreen />} />

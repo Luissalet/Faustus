@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookOpenCheck,
   Bot,
   Brain,
   CalendarDays,
@@ -119,6 +120,8 @@ export const TOOLS: Tool[] = [
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat },
   { path: '/context', label: 'Context', icon: Gauge },
   { path: '/workflows', label: 'Workflows', icon: Network },
+  // Learned recipes: what Faustus can repeat, and what each real run verified.
+  { path: '/recipes', label: 'Recipes', icon: BookOpenCheck },
 ];
 
 /**
@@ -162,6 +165,7 @@ export const SERVER_ROUTES = [
   '/cookbook',
   '/context',
   '/workflows',
+  '/recipes',
   '/creator',
   // The paths the interface this one replaced owned. Still served, still in
   // bookmarks; the router redirects each to the screen that took over.

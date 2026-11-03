@@ -46,6 +46,18 @@ def _guard(fn: Callable[[], Dict[str, Any]]) -> Dict[str, Any]:
         return _err("derivations.error", f"{type(exc).__name__}: {exc}")
 
 
+def _recipe_row(r: recipes_store.Recipe) -> Dict[str, Any]:
+    """One line of the recipe list: what it is and how its last real run ended
+    (the execution record, not a promise: ``last_status`` is None when it was
+    never executed for real)."""
+    last = r.executions[-1] if r.executions else {}
+    return {"id": r.id, "title": r.title, "status": r.status, "learned": bool(r.step_templates),
+            "params": [p["name"] for p in r.params], "steps": len(r.step_templates),
+            "criteria": len(r.exit_criteria), "executions": len(r.executions),
+            "last_status": last.get("status"), "last_at": last.get("at"),
+            "last_verified": bool(last.get("verified")) if last else None}
+
+
 def _s(args: Mapping[str, Any], key: str) -> str:
     return str(args.get(key) or "").strip()
 
@@ -139,8 +151,7 @@ def run_recipe(owner: str, args: Mapping[str, Any], *, executor: Optional[rex.Ex
         if action == "show":
             r = recipes_store.get_recipe(_s(args, "recipe_id"), owner)
             return {"recipe": r.to_dict()} if r else _err("recipes.not_found", "no such recipe")
-        return {"recipes": [{"id": r.id, "title": r.title, "status": r.status, "learned": bool(r.step_templates),
-                             "params": [p["name"] for p in r.params]} for r in recipes_store.list_recipes(owner)]}
+        return {"recipes": [_recipe_row(r) for r in recipes_store.list_recipes(owner)]}
     return _guard(go)
 
 
