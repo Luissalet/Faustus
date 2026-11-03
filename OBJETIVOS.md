@@ -2473,3 +2473,12 @@ El código 536848fe ya está integrado y activo y el ensayo nativo R7 completó 
 Continuar la ayuda real de Browser en Writer 1796/1095, con las capacidades aún ausentes y sus pruebas propias. Tratar por separado la migración autorizada de la extensión a la carpeta canónica y la aceptación del runtime portable. Conservar el worktree del que depende la extensión cargada y las evidencias previas; no repetir acciones externas correctas para satisfacer etiquetas históricas.
 
 Corregir y probar la limitación inglesa preexistente del detector de trabajo local: «Use only the browser to inspect the page. Do not edit files. Then run pytest.» puede producir workspace_work=False sin un target adicional. El helper nuevo deja pasar esa orden positiva, pero el detector heredado no reconoce pytest solo en esa frase. No se anuncia resuelta por 1797 ni se atribuye al delta Browser-only. La orden española equivalente y la inglesa con ruta tienen su cobertura acotada. También se conserva el incidente de detección de idioma de una respuesta simulada ambigua; no prueba un fallo equivalente del ensayo nativo R7. Estos pendientes se abordan como trabajo operativo del producto, manteniendo su alcance.
+
+
+## Recetas aprendidas, reconstrucción selectiva y mapa de decisiones — 03-11-2026
+
+Implementado en `src/recipe_learning.py`, `src/derivation_graph.py` y `src/derivation_ops.py` (ver FAUSTUS.md, 03-11-2026). Pasos siguientes, por orden:
+
+1. Probar `recipe_learn` con trazas reales de un turno de Faustus y medir cuántos literales de la petición se quedan sin detectar; añadir patrones solo con casos reales.
+2. Conectar `derivation_graph` a los nodos `artifact_store` de los workflows para que cada artefacto guardado cree su nodo sin declararlo a mano.
+3. Permitir que `recipe_try` ejecute pasos de solo lectura con un ejecutor aprobado, para comprobar salidas y no solo resolución de plantillas.

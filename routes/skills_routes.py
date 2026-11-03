@@ -2148,7 +2148,14 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         user = _owner(request)
         skills = skills_manager.load(owner=user)
         results = skills_manager.get_relevant_skills(query, skills, max_items=10)
-        return {"skills": results, "query": query, "count": len(results)}
+        out = {"skills": results, "query": query, "count": len(results)}
+        try:
+            # Recipes (built-in, drafts, promoted) are searched with the skills.
+            from src import recipe_learning
+            out["recipes"] = recipe_learning.search(query, user or "", limit=10)
+        except Exception:
+            logger.debug("recipe search skipped", exc_info=True)
+        return out
 
     # -- ADP-25: manifest/hash/diff review for `.faustus|.agents|.claude/
     # skills` folder skills (src.skills_runtime), separate from the
