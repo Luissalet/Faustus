@@ -10272,3 +10272,106 @@ This checklist is shared by the conversation and may come from an earlier turn.	
 Latest recorded plan	Último plan registrado
 Latest recorded changes	Últimos cambios registrados
 Plans and changes remain here until a later turn replaces them.	Los planes y los cambios permanecen aquí hasta que otro turno los sustituye.
+A real execution needs a workspace folder.	Una ejecución real necesita una carpeta de trabajo.
+Absolute path of the active workspace	Ruta absoluta del espacio de trabajo activo
+Busy	Ocupada
+Change at least the parameters that make this a different case from the first one.	Cambia al menos los parámetros que hacen que este sea un caso distinto del primero.
+Choose a recipe to see its steps and run it.	Elige una receta para ver sus pasos y ejecutarla.
+Criteria are not valid JSON	Los criterios no son JSON válido
+Criteria failed	Criterios no cumplidos
+Criteria must be a JSON list of objects {"kind": …, "path": …}.	Los criterios deben ser una lista JSON de objetos {"kind": …, "path": …}.
+Criterion failed	Criterio no cumplido
+Criterion kind must be one of	El tipo de criterio debe ser uno de
+Does not render	No se genera
+Dry run: structural check only	Ensayo en seco: solo comprobación estructural
+Executed, not verified	Ejecutada, sin verificar
+Executes the steps through the normal tools, with the usual permissions, and checks the exit criteria on the delivered files.	Ejecuta los pasos con las herramientas normales, con los permisos de siempre, y comprueba los criterios de salida sobre los archivos entregados.
+Exit criteria	Criterios de salida
+Exit criteria (JSON list)	Criterios de salida (lista JSON)
+Fields	Campos
+First case	Primer caso
+Incomplete	Incompleta
+Learned recipes	Recetas aprendidas
+Never executed	Nunca ejecutada
+No exit criteria declared: a real run will execute the steps but cannot verify anything.	Sin criterios de salida: una ejecución real ejecutará los pasos pero no podrá verificar nada.
+No learned recipes yet	Aún no hay recetas aprendidas
+Not finished	Sin terminar
+Not run	No ejecutado
+Not runnable	No ejecutable
+Nothing was executed and nothing was checked. This only shows whether each step renders with these parameters. It is not a verification.	No se ejecutó nada ni se comprobó nada. Solo muestra si cada paso se genera con estos parámetros. No es una verificación.
+Parameters are not valid JSON	Los parámetros no son JSON válido
+Parameters as JSON	Parámetros en JSON
+Parameters must be a JSON object {"name": value}.	Los parámetros deben ser un objeto JSON {"nombre": valor}.
+Procedures Faustus learned from work that went well. A dry run only checks that the steps render for a new case. A real run executes them through the normal tools and checks what was delivered against the exit criteria; only that can end as verified.	Procedimientos que Faustus aprendió de trabajos que salieron bien. Un ensayo en seco solo comprueba que los pasos se generan para un caso nuevo. Una ejecución real los ejecuta con las herramientas normales y contrasta lo entregado con los criterios de salida; solo eso puede acabar verificado.
+Reading the recipe	Leyendo la receta
+Reading the recipes	Leyendo las recetas
+Reading the verifications…	Leyendo las verificaciones…
+Real execution	Ejecución real
+Real executions	Ejecuciones reales
+Renders with these parameters	Se genera con estos parámetros
+Reused	Reutilizado
+Run every step again, ignoring earlier runs of this case	Repetir todos los pasos, ignorando ejecuciones anteriores de este caso
+Run on a new case	Ejecutar sobre un caso nuevo
+Run the recipe on a new case	Ejecutar la receta sobre un caso nuevo
+Step error	Paso con error
+Step failed	Paso fallido
+Step finished	Paso terminado
+Structural check only: nothing is executed or verified.	Solo comprobación estructural: no se ejecuta ni se verifica nada.
+Structural dry run	Ensayo en seco
+This recipe has no parameters.	Esta receta no tiene parámetros.
+This recipe was never executed for real.	Esta receta nunca se ha ejecutado de verdad.
+Verification current	Verificación vigente
+Verification stale	Verificación caducada
+Wait for jobs (s)	Esperar a los trabajos (s)
+What the recipe does	Qué hace la receta
+When a task goes well, ask Faustus to learn it as a recipe; it will show up here with its parameters and exit criteria.	Cuando una tarea sale bien, pide a Faustus que la aprenda como receta; aparecerá aquí con sus parámetros y criterios de salida.
+Why it ran	Por qué se ejecutó
+Workspace folder (real execution)	Carpeta de trabajo (ejecución real)
+criteria	criterios
+every step finished and every criterion passed	todos los pasos terminaron y todos los criterios se cumplieron
+expected	esperado
+parameters	parámetros
+responded	respondió
+steps	pasos
+waited for	esperó a
+{n} executions stored.	{n} ejecuciones guardadas.
+{ran} executed now · {reused} reused · {skipped} not run	{ran} ejecutados ahora · {reused} reutilizados · {skipped} sin ejecutar
+Loading the history from the phone… {pct}%	Cargando el historial del móvil… {pct} %
+Loading the history from the phone…	Cargando el historial del móvil…
+Receiving the messages that arrived while it was off…	Recibiendo los mensajes que llegaron mientras estaba apagado…
+{n} new so far	{n} nuevos por ahora
+Hedged first token	Primer token con cobertura
+When the chat model has released no first token (text, reasoning or a tool call) after the delay below, the same request is also sent to a hedge target and the stream that answers first is used; the other is closed so its server stops generating. It only happens before anything was streamed, so no token or tool call is produced twice (src/model_hedge.py). Settings > Models has the same controls with the list of targets and the recent races.	Si el modelo del chat no ha soltado ningún primer token (texto, razonamiento o llamada a herramienta) tras la espera de abajo, la misma petición se envía también a un destino de cobertura y se usa el flujo que responda primero; el otro se cierra para que su servidor deje de generar. Solo ocurre antes de que se haya enviado nada, así que ningún token ni llamada a herramienta se produce dos veces (src/model_hedge.py). Ajustes > Modelos tiene los mismos controles con la lista de destinos y las carreras recientes.
+Hedge a slow first token	Cubrir un primer token lento
+Off: a request waits for its own model as before.	Desactivado: la petición espera a su propio modelo como antes.
+Hedge after (seconds without a first token)	Cubrir tras (segundos sin primer token)
+Seconds the primary stream may stay silent before the hedge request starts.	Segundos que el flujo principal puede estar callado antes de lanzar la petición de cobertura.
+Hedge target	Destino de cobertura
+auto: the same model on another endpoint, else the first fallback of the chain; same_model; fallback; off; an endpoint id (same model there); or endpoint_id::model for a named model.	auto: el mismo modelo en otro endpoint; si no hay, el primer respaldo de la cadena; same_model; fallback; off; un id de endpoint (el mismo modelo allí); o endpoint_id::modelo para un modelo concreto.
+Hedge delay per model	Espera de cobertura por modelo
+JSON object {model: seconds} that replaces the delay for those models.	Objeto JSON {modelo: segundos} que sustituye la espera para esos modelos.
+If the chat model has not started answering (text, reasoning or a tool call) after the delay, the same request also goes to the hedge target and whichever answers first is used. The other request is closed so its server stops. Nothing is sent twice once a token has been streamed.	Si el modelo del chat no ha empezado a responder (texto, razonamiento o llamada a herramienta) tras la espera, la misma petición va también al destino de cobertura y se usa la que responda primero. La otra petición se cierra para que su servidor pare. Una vez enviado un token no se repite nada.
+Between {min} and {max} seconds.	Entre {min} y {max} segundos.
+Automatic uses the same model on another endpoint when one lists it, else the first fallback model of the chain.	Automático usa el mismo modelo en otro endpoint si alguno lo ofrece; si no, el primer modelo de respaldo de la cadena.
+Optional JSON object {model: seconds} that replaces the delay for those models.	Objeto JSON opcional {modelo: segundos} que sustituye la espera para esos modelos.
+Hedge settings saved	Ajustes de cobertura guardados
+Per-model delays must be a JSON object like {"model": 15}	Las esperas por modelo deben ser un objeto JSON como {"modelo": 15}
+No default chat model is set.	No hay modelo de chat por defecto.
+{model} at {endpoint}: hedge {hedge} at {hedgeEndpoint} after {s} s without a first token.	{model} en {endpoint}: cobertura con {hedge} en {hedgeEndpoint} tras {s} s sin primer token.
+{model} at {endpoint}: no hedge target available. Add another endpoint serving it, a fallback model, or pick a target above.	{model} en {endpoint}: no hay destino de cobertura. Añade otro endpoint que lo sirva, un modelo de respaldo o elige un destino arriba.
+Races recorded: {n}; answered by the hedge: {h}.	Carreras registradas: {n}; respondidas por la cobertura: {h}.
+Average answer through the hedge: {s} s.	Respuesta media por la cobertura: {s} s.
+Answered by the hedge ({endpoint}) after {s} s	Respondió la cobertura ({endpoint}) tras {s} s
+The primary answered first ({endpoint}) after {s} s	El principal respondió primero ({endpoint}) tras {s} s
+Neither answered; the primary error was kept ({s} s)	No respondió ninguno; se mantuvo el error del principal ({s} s)
+Answered by hedge ({endpoint}) after {s} s.	Respondió la cobertura ({endpoint}) tras {s} s.
+Automatic: same model elsewhere, else the first fallback	Automático: el mismo modelo en otro sitio; si no, el primer respaldo
+Same model on another endpoint	El mismo modelo en otro endpoint
+First fallback model of the chain	Primer modelo de respaldo de la cadena
+No hedge	Sin cobertura
+{n} recipe step	{n} paso
+{n} recipe steps	{n} pasos
+{n} recipe parameter	{n} parámetro
+{n} recipe parameters	{n} parámetros
+{n} exit criterion	{n} criterio de salida
+{n} exit criteria	{n} criterios de salida

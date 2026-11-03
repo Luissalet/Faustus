@@ -1979,6 +1979,12 @@ async def serve_workflows(request: Request):
     real run over the same definition."""
     return await serve_index(request)
 
+@app.get("/recipes")
+async def serve_recipes(request: Request):
+    """Studio Recipes: learned procedures, a structural dry run (never a
+    verification) and the real execution with its per-step and criteria results."""
+    return await serve_index(request)
+
 @app.get("/alternatives")
 async def serve_alternatives(request: Request):
     """Studio Alternatives (W2-G / CMP-13): isolated experiments comparing
