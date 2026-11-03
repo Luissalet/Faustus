@@ -79,6 +79,8 @@ BROWSER_EVIDENCE_MARKERS = (
 )
 # Shell tools: only evidence when the command itself looks mutating (see below).
 SHELL_TOOLS = frozenset({"bash", "python", "powershell"})
+# A file a shell command can run as a check (TurnLedger.edited_verifiers).
+_VERIFIER_SCRIPT_RE = re.compile(r"\.(?:py|js|mjs|cjs|ts|sh|ps1|bat|cmd|rb)$")
 # Non-file side effects (documents, notes, mail…) — evidence for "I did X" claims
 # that are not about repo files.
 OTHER_EFFECT_TOOLS = frozenset({
@@ -2147,6 +2149,38 @@ class TurnLedger:
                     out.append(p)
         return out
 
+    def edited_verifiers(self) -> List[str]:
+        """Scripts this turn ran as a check, then edited, then ran again.
+
+        Seen in coaching (FAUSTUS §90): asked to make a check pass, the agent
+        rewrote the check script itself. Running a script, changing it and
+        running it again is the shape of that; writing a test first and then
+        running it is not, so a script that was never run before its first
+        edit is left alone. Matched by file name, because a shell command
+        names the script relative to wherever it runs."""
+        runs: Dict[str, List[int]] = {}
+        edits: Dict[str, List[int]] = {}
+        shown: Dict[str, str] = {}
+        for i, e in enumerate(self.events):
+            if not isinstance(e, dict):
+                continue
+            for p in e.get("paths") or []:
+                name = _norm(str(p)).rsplit("/", 1)[-1].lower()
+                if not _VERIFIER_SCRIPT_RE.search(name):
+                    continue
+                # A failing check run counts: that is the run the edit "fixes".
+                if e.get("tool") in SHELL_TOOLS and e.get("tool") != "python" and e.get("kind") == "shell":
+                    runs.setdefault(name, []).append(i)
+                elif e.get("ok") and e.get("kind") == "mutation" and e.get("tool") in FILE_MUTATION_TOOLS:
+                    edits.setdefault(name, []).append(i)
+                    shown.setdefault(name, str(p))
+        out: List[str] = []
+        for name, at in edits.items():
+            ran = runs.get(name) or []
+            if any(r < at[0] for r in ran) and any(r > at[0] for r in ran):
+                out.append(shown[name])
+        return out
+
     def mutated_ui_paths(self) -> List[str]:
         return [p for p in self.mutated_paths() if UI_PATH_RE.search(p.replace("\\", "/"))]
 
@@ -2596,6 +2630,9 @@ class TurnLedger:
                     reasons.append("plan_without_action")
             except Exception:  # noqa: BLE001
                 pass
+        verifier_edits = self.edited_verifiers()
+        if verifier_edits:
+            reasons.append("verifier_edited")
         check = {
             "ok": not reasons,
             "reasons": reasons,
@@ -2608,6 +2645,7 @@ class TurnLedger:
             "intent": intent,
             "permission": permission,
             "context_paths": contextual_path_text(body, self.user_text)[1],
+            "verifier_edits": verifier_edits,
         }
         try:
             check["verification"] = self.verify_outcome(check)
@@ -2619,7 +2657,8 @@ class TurnLedger:
     def record_claim_advisory(self, check: Dict[str, Any], round_num: int) -> Dict[str, Any]:
         """Keep evidence and an honest verdict without steering or hiding prose."""
         diagnostic = {key: check.get(key) for key in (
-            "reasons", "bad_paths", "untouched_paths", "bad_citations", "context_paths", "verification")}
+            "reasons", "bad_paths", "untouched_paths", "bad_citations", "context_paths", "verification",
+            "verifier_edits")}
         diagnostic.update(round=round_num, advisory=True)
         self.claim_diagnostics.append(diagnostic)
         self.claim_diagnostics = self.claim_diagnostics[-20:]
@@ -2631,11 +2670,16 @@ class TurnLedger:
     def advisory_note(self, check: Dict[str, Any]) -> str:
         paths = list(dict.fromkeys((check.get("bad_paths") or []) + (check.get("untouched_paths") or [])))
         detail = ", ".join(f"`{p}`" for p in paths[:6])
+        checks = ", ".join(f"`{p}`" for p in (check.get("verifier_edits") or [])[:6])
         if self.language == "es":
             return "Comprobación de evidencias: algunas afirmaciones no están verificadas por las acciones observadas." + (
-                " Archivos sin verificar: " + detail + "." if detail else "")
+                " Archivos sin verificar: " + detail + "." if detail else "") + (
+                " Se editó la comprobación que se estaba usando para validar el trabajo: " + checks
+                + "; revisa que el cambio no la haya debilitado." if checks else "")
         return "Evidence notice: some claims are not verified by observed actions." + (
-            " Unverified files: " + detail + "." if detail else "")
+            " Unverified files: " + detail + "." if detail else "") + (
+            " The check used to validate the work was itself edited: " + checks
+            + "; review that the change did not weaken it." if checks else "")
 
     def record_answer_advisory(self, reasons: List[str], round_num: int) -> None:
         self.answer_diagnostics.append({"reasons": list(reasons), "round": round_num, "advisory": True})

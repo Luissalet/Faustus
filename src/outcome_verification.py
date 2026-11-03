@@ -285,7 +285,10 @@ def _read_completion(t: _Tally, check: Any) -> None:
         t.note("completion_claims_supported", "completion", "no sentence of the answer outruns the tool log")
         return
     for reason in reasons:
-        kind = "claim_unsupported" if reason in _CLAIM_REASONS else "stopped_short"
+        # The script used to check the work was edited during the turn: what
+        # it now says is not independent evidence (TurnLedger.edited_verifiers).
+        kind = ("verifier_edited" if reason == "verifier_edited"
+                else "claim_unsupported" if reason in _CLAIM_REASONS else "stopped_short")
         t.bad(kind, "completion", reason)
 
 

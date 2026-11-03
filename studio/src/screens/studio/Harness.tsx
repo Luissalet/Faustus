@@ -70,6 +70,8 @@ const REASON_WORDS: Record<string, string> = {
   thinking_aloud: 'the report contains unresolved working reasoning',
   busy_slot: 'a proposed time overlaps an observed busy slot',
   ungrounded_figure: 'a figure is not backed by observed sources',
+  image_claim_without_tool: 'says an image was edited, but no image tool ran',
+  verifier_edited: 'edited the script it used to check its own work',
 };
 
 export function CheckList({ checks }: { checks: HarnessCheck[] }) {

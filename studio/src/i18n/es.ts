@@ -8710,6 +8710,8 @@ export const es: Record<string, string> = {
   "a dispatched task may name a": "una tarea despachada puede nombrar un",
   "a distance this build cannot name": "una distancia que esta versión no sabe nombrar",
   "a figure is not backed by observed sources": "una cifra no está respaldada por las fuentes observadas",
+  "says an image was edited, but no image tool ran": "dice que se editó una imagen, pero no se ejecutó ninguna herramienta de imagen",
+  "edited the script it used to check its own work": "editó el script que usaba para comprobar su propio trabajo",
   "a file in the bound workspace": "un archivo del espacio de trabajo vinculado",
   "a file inside an expert corpus": "un archivo dentro del corpus de un experto",
   "a goal declared in objectives.jsonl": "un objetivo declarado en objectives.jsonl",
