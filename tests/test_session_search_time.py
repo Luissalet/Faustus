@@ -48,3 +48,74 @@ def test_tool_content_lines_become_time_bounds():
         "after": "2026-09-20", "before": "2026-10-01"}
     assert _search_time_bounds("hangar\nas_of: 2026-09-15") == {"before": "2026-09-15"}
     assert _search_time_bounds("just a query") == {}
+
+
+def _seed_warehouse(db):
+    # Three turns of one chat: before, inside and after a requested window.
+    _add_session(db, "w1", owner="alice", name="Warehouse planning")
+    _add_message(db, "w1", "w-old", "user", "Old state before requested interval", datetime(2026, 8, 1, 9, 0))
+    _add_message(db, "w1", "w-hit", "assistant", "Inventory decision: use Warehouse A", datetime(2026, 9, 1, 9, 0))
+    _add_message(db, "w1", "w-new", "user", "Future revision: switch to Warehouse B", datetime(2026, 9, 30, 9, 0))
+    db.commit()
+
+
+@pytest.mark.parametrize("with_fts", [True, False])
+def test_context_turns_stay_inside_the_time_window(with_fts):
+    db = _db(with_fts=with_fts)
+    try:
+        _seed_warehouse(db)
+        windowed = search_session_messages(
+            "Inventory decision", owner="alice", db=db, context_messages=3,
+            after="2026-08-15", before="2026-09-15")
+        assert [r.message_id for r in windowed] == ["w-hit"]
+        hit = windowed[0].to_dict()
+        assert hit["context_before"] == [] and hit["context_after"] == []
+        text_blob = repr(hit)
+        assert "Warehouse B" not in text_blob and "Old state" not in text_blob
+
+        # Only `before`: earlier context is in the as-of view, later is not.
+        as_of = search_session_messages(
+            "Inventory decision", owner="alice", db=db, context_messages=3, before="2026-09-15")[0]
+        assert [c["content"] for c in as_of.context_before] == ["Old state before requested interval"]
+        assert as_of.context_after == []
+
+        # Only `after`: later context stays, the turn before the window goes.
+        since = search_session_messages(
+            "Inventory decision", owner="alice", db=db, context_messages=3, after="2026-08-15")[0]
+        assert since.context_before == []
+        assert [c["content"] for c in since.context_after] == ["Future revision: switch to Warehouse B"]
+
+        # No window: both neighbours, unchanged behaviour.
+        free = search_session_messages("Inventory decision", owner="alice", db=db, context_messages=3)[0]
+        assert [c["message_id"] for c in free.context_before] == ["w-old"]
+        assert [c["message_id"] for c in free.context_after] == ["w-new"]
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("with_fts", [True, False])
+def test_search_chats_tool_text_hides_turns_outside_the_window(with_fts, monkeypatch):
+    import asyncio
+
+    from sqlalchemy.orm import sessionmaker
+
+    import src.session_search as session_search
+    from src.tools.search import do_search_chats
+
+    db = _db(with_fts=with_fts)
+    try:
+        _seed_warehouse(db)
+        maker = sessionmaker(bind=db.get_bind())
+        monkeypatch.setattr(session_search, "SessionLocal", maker)
+        import src.owner_identity as owner_identity
+        monkeypatch.setattr(owner_identity, "auth_disabled", lambda: False)
+        out = asyncio.run(do_search_chats(
+            "Inventory decision", owner="alice", after="2026-08-15", before="2026-09-15"))["results"]
+        assert "Inventory decision: use Warehouse A" in out
+        assert "Warehouse B" not in out and "Old state" not in out
+        assert "after 2026-08-15, before 2026-09-15" in out
+
+        unbounded = asyncio.run(do_search_chats("Inventory decision", owner="alice"))["results"]
+        assert "Future revision: switch to Warehouse B" in unbounded
+    finally:
+        db.close()

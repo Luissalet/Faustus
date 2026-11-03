@@ -159,28 +159,42 @@ def _owner_filter(query, owner: str | None, include_legacy_owner: bool):
     return query.filter((DBSession.owner == owner) | (DBSession.owner.is_(None)))
 
 
-def _context_for_message(db, msg: DBChatMessage, count: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _context_for_message(
+    db,
+    msg: DBChatMessage,
+    count: int,
+    after: datetime | None = None,
+    before: datetime | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Neighbouring turns around a hit. The same `after`/`before` window that
+    bounds the hit bounds its context, so an "as of" search never leaks a
+    later (or earlier-than-requested) message through the surrounding turns."""
     if count <= 0 or not msg.timestamp:
         return [], []
 
+    def _windowed(q):
+        if after is not None:
+            q = q.filter(DBChatMessage.timestamp >= after)
+        if before is not None:
+            q = q.filter(DBChatMessage.timestamp < before)
+        return q
+
     before_rows = (
-        db.query(DBChatMessage)
-        .filter(
+        _windowed(db.query(DBChatMessage).filter(
             DBChatMessage.session_id == msg.session_id,
             DBChatMessage.role.in_(SEARCH_ROLES),
             DBChatMessage.timestamp < msg.timestamp,
-        )
+        ))
         .order_by(DBChatMessage.timestamp.desc())
         .limit(count)
         .all()
     )
     after_rows = (
-        db.query(DBChatMessage)
-        .filter(
+        _windowed(db.query(DBChatMessage).filter(
             DBChatMessage.session_id == msg.session_id,
             DBChatMessage.role.in_(SEARCH_ROLES),
             DBChatMessage.timestamp > msg.timestamp,
-        )
+        ))
         .order_by(DBChatMessage.timestamp.asc())
         .limit(count)
         .all()
@@ -192,12 +206,20 @@ def _context_for_message(db, msg: DBChatMessage, count: int) -> tuple[list[dict[
     return before, after
 
 
-def _rows_to_results(db, rows: Iterable[tuple[DBChatMessage, str, str]], query: str, context_messages: int) -> list[SessionSearchResult]:
+def _rows_to_results(
+    db,
+    rows: Iterable[tuple[DBChatMessage, str, str]],
+    query: str,
+    context_messages: int,
+    window_after: datetime | None = None,
+    window_before: datetime | None = None,
+) -> list[SessionSearchResult]:
     results: list[SessionSearchResult] = []
     for msg, session_name, snippet in rows:
         if _is_approval_placeholder(msg):
             continue
-        before, after = _context_for_message(db, msg, context_messages)
+        before, after = _context_for_message(
+            db, msg, context_messages, window_after, window_before)
         content = msg.content or ""
         results.append(
             SessionSearchResult(
@@ -250,7 +272,7 @@ def _search_like(
         q = q.filter(DBChatMessage.timestamp < before)
     rows = q.order_by(DBChatMessage.timestamp.desc()).limit(limit).all()
     shaped = ((msg, session_name, _snippet(msg.content or "", query)) for msg, session_name in rows)
-    return _rows_to_results(db, shaped, query, context_messages)
+    return _rows_to_results(db, shaped, query, context_messages, after, before)
 
 
 def _fetch_messages_by_id(db, message_ids):
@@ -347,7 +369,7 @@ def _search_fts(
         if found:
             msg, session_name = found
             rows.append((msg, session_name, hit[1] or ""))
-    return _rows_to_results(db, rows, query, context_messages)
+    return _rows_to_results(db, rows, query, context_messages, after, before)
 
 
 def search_session_messages(

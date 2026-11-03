@@ -69,12 +69,14 @@ async def do_search_chats(
             lines.append(f"  Match ({result.role}): {result.content_snippet}")
             if result.timestamp:
                 lines.append(f"  When: {result.timestamp[:16].replace('T', ' ')}")
+            # Context turns already respect the after/before window
+            # (session_search bounds them like the hit itself).
             if result.context_before:
-                before = result.context_before[-1]
-                lines.append(f"  Before ({before['role']}): {before['content'][:180]}")
+                prev_turn = result.context_before[-1]
+                lines.append(f"  Before ({prev_turn['role']}): {prev_turn['content'][:180]}")
             if result.context_after:
-                after = result.context_after[0]
-                lines.append(f"  After ({after['role']}): {after['content'][:180]}")
+                next_turn = result.context_after[0]
+                lines.append(f"  After ({next_turn['role']}): {next_turn['content'][:180]}")
             lines.append("")
 
         if imported:
