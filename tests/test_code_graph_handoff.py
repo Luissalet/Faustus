@@ -153,3 +153,16 @@ def test_handoff_missing_runtime_dependency_is_failed_not_verified(repo, tmp_pat
     assert phases["run"][0]["verdict"] == "not run" and "install" in phases["run"][0]["reason"]
     assert "definitely-not-a-real-package" in res["markdown"].split("## Not verified")[1] or \
         "pip install -r requirements.txt" in res["markdown"].split("## Not verified")[1]
+
+
+def test_handoff_plans_a_package_main_with_its_port(tmp_path):
+    repo = tmp_path / "pkgrepo"
+    (repo / "svc").mkdir(parents=True)
+    (repo / "svc" / "__init__.py").write_text("")
+    (repo / "svc" / "__main__.py").write_text(
+        "import argparse\nparser = argparse.ArgumentParser()\nparser.add_argument('--port', type=int, default=8000)\n"
+        "args = parser.parse_args()\nprint(args.port)\n")
+    (repo / "requirements.txt").write_text("")
+    res = code_graph.handoff(str(repo), str(tmp_path / "out"), run=False)
+    run = [s for s in res["steps"] if s["kind"] == "run"]
+    assert run and run[0]["command"].startswith("python -m svc --port ")

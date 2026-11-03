@@ -348,6 +348,17 @@ def _plan(files: _Files, d: Dict[str, Any], free_port: int) -> Dict[str, Any]:
                 var = re.search(r"^(\w+)\s*=\s*Flask\(", txt, re.M)
                 run_cmd = f"python -m flask --app {mod}:{var.group(1) if var else 'app'} run --port {free_port}"
                 entry_rel, run_ev = rel, web_py[0]["evidence"]
+    if not run_cmd:
+        # A package started with `python -m <pkg>`: its __main__.py serves or parses a port.
+        pkg_mains = sorted(p for p in files.paths if p.count("/") == 1 and p.endswith("/__main__.py"))
+        for rel in pkg_mains:
+            txt = files.text(rel)
+            if not re.search(r"uvicorn\.run|\.run\(|serve\(|argparse", txt):
+                continue
+            mod = rel.split("/", 1)[0]
+            run_cmd = f"python -m {mod}" + (f" --port {free_port}" if "--port" in txt else "")
+            entry_rel, run_ev = rel, f"{rel}:1"
+            break
     if run_cmd:
         port, reads_env, port_ev = _find_ports(files, entry_rel)
         steps.append(_step("run", "Start the application", run_cmd, run_ev, kind="run", port=port, port_from_env=reads_env,
