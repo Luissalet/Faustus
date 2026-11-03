@@ -1,4 +1,6 @@
-.fs-floorplan { display: grid; gap: 10px; min-width: 0; }
+.fs-floorplan { display: grid; gap: 10px; min-width: 0; justify-items: stretch; }
+.fs-floorplan > .fs-floorplan__parts, .fs-floorplan > .fs-floorplan__search, .fs-floorplan__blueprint { justify-self: stretch; }
+.fs-floorplan li, .fs-floorplan .fs-floorplan__stats { max-inline-size: none; } /* base.css caps li at 65ch; these are rows */
 .fs-floorplan h4 { margin: 0; font-size: 15px; font-weight: 600; }
 .fs-floorplan__actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .fs-floorplan__check { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--fs-text-2); cursor: pointer; }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Download, ExternalLink, FolderOpen, ListChecks, Map as MapIcon } from 'lucide-react';
 import { Button } from '../../components';
-import { t } from '../../i18n';
+import { t, tn } from '../../i18n';
 import {
   floorplanBlueprint, floorplanExportUrl, generateFloorplan, openFloorplan, studioFileHref,
   type Floorplan, type FloorplanFile, type FloorplanPart,
@@ -95,7 +95,7 @@ export function ProjectFloorplan({ workspace }: { workspace: string }) {
                   <button type="button" className="fs-floorplan__part-head" aria-expanded={isOpen} onClick={() => setExpanded((x) => ({ ...x, [part.id]: !x[part.id] }))} data-testid="floorplan-part">
                     <strong>{part.name}</strong>
                     <span className="fs-floorplan__label">{part.label}</span>
-                    <small>{t('{n} files', { n: String(part.files.length) })}{part.parent_name ? ` · ${part.parent_name}` : ''}</small>
+                    <small>{tn(part.files.length, '{n} file', '{n} files')}{part.parent_name ? ` · ${part.parent_name}` : ''}</small>
                   </button>
                   {isOpen && (
                     <ul className="fs-floorplan__files">

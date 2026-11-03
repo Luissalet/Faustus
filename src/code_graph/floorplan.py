@@ -312,12 +312,14 @@ def collect_parts(root: str, project_id: str = "") -> Tuple[List[Dict[str, Any]]
         from .communities import communities as _communities
         lvl0 = _communities(root, project_id=project_id, level=0, min_files=0, output_chars=200)
         lvl1 = _communities(root, project_id=project_id, level=1, min_files=0, output_chars=200)
-        names1 = {c["id"]: c.get("name", "") for c in (lvl1.get("communities") or [])}
+        names1 = {c["id"]: ("Top level" if str(c.get("name") or "").strip() == "." else c.get("name", ""))
+                  for c in (lvl1.get("communities") or [])}
         for c in lvl0.get("communities") or []:
             c = {**c, "files": [f for f in c.get("files") or [] if not _is_generated(f)]}
             if not c["files"]:
                 continue
-            parts.append({"id": c["id"], "name": c.get("name") or c["id"],
+            name = str(c.get("name") or "").strip()
+            parts.append({"id": c["id"], "name": "Top level" if name in ("", ".") else name,
                           "purpose": c.get("summary") or c.get("purpose") or "",
                           "parent": c.get("parent") or "",
                           "parent_name": names1.get(c.get("parent") or "", ""),
