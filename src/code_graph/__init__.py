@@ -43,6 +43,12 @@ file:line evidence and a code/config/inferred label, plus explicit
 uncertainties); `dossier_diff` compares two revisions; `locate` answers "where
 do I change X" with labelled candidates; `context_pack` returns the budgeted
 source/consumers/tests/flows a planned change needs.
+
+Business routes and handoff (this lot): `business_route` follows one user action
+from a UI element through its handler, client request, backend route and
+service calls to the DB/file write, with evidence, certainty and gaps per hop;
+`handoff` builds client install/run/test instructions from the dossier and
+verifies them in a throwaway copy of the repository.
 """
 from .query import (
     index,
@@ -63,6 +69,8 @@ from .flows import flows, flow, affected_flows
 from .drift import snapshot, drift, list_baselines
 from .dossier import dossier, dossier_diff, locate
 from .context_pack import context_pack
+from .business_route import business_route
+from .handoff import handoff
 
 __all__ = [
     "index", "search_graph", "trace_path", "callers", "callees",
@@ -72,4 +80,5 @@ __all__ = [
     "flows", "flow", "affected_flows",
     "snapshot", "drift", "list_baselines",
     "dossier", "dossier_diff", "locate", "context_pack",
+    "business_route", "handoff",
 ]

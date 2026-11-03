@@ -67,3 +67,37 @@ All three are available as chat tools and as tools of the `code_graph` MCP serve
 Limits: Python is analysed with `ast`, other languages with line patterns;
 dynamic imports, programmatic route registration and plugin discovery are
 reported as uncertainties, not followed.
+
+## Business route across layers and client handoff
+
+- `code_graph_business_route` (`GET /api/code-graph/business-route?start=&end=`,
+  `POST /api/code-graph/business-route` with `{start, end, runtime_trace, root}`):
+  follows one user action from a UI element to the write. `start` is the visible
+  text or id of a button/link/form, `METHOD /path`, or a symbol; `end` is a free
+  phrase (`saved`, `INSERT INTO quotes`, a table or function).
+  Result: `hops` (ordered; `layer` ui/frontend/backend/effect/trace, `kind`
+  ui_event, handler, http_call, route, call, db_write, db_commit, db_read,
+  file_write), `gaps`, `reached_end`, `runtime_trace`, `summary`. Each hop has
+  `evidence` (`path:line`) and `certainty`: `resolved` (static match),
+  `observed` (confirmed by a `runtime_trace` event), `unresolved` (dynamic URL,
+  computed handler or SQL, no matching route). `name-only` matches (similar
+  names) appear only in `gaps` and are never followed. Backend hops carry
+  `tests` with the path, evidence line and how the test reaches the hop.
+  `runtime_trace` events: `{kind: "http"|"call"|"sql", method, path, function,
+  file, line, sql?}`; they confirm hops, add hops the static pass missed
+  (`from_trace`) and can complete a dynamic client URL (`completed_by_trace`).
+- `code_graph_handoff` (`POST /api/code-graph/handoff`, body `{root, out_dir,
+  run, timeout}`): plans install, configure, migrate, run, test, recover and
+  demo steps from the dossier and, with `run=true`, executes them in a temporary
+  copy of the tree (no `.git`, virtualenvs or `node_modules`). Per step:
+  `command`, `exit_code`, `duration_s`, `output_tail`, `verdict` (`verified`,
+  `failed`, `not run`) and `reason`. Writes `HANDOFF.md` (verified commands as
+  instructions; failed and not-run ones under "Not verified") and
+  `handoff-report.json` to `out_dir` (default `<root>/.handoff`). It runs the
+  repository's own commands and may reach package registries, so it is
+  classified as code execution with workspace write and network egress.
+
+Limits: JS handlers are matched by function name inside the project, imports
+are not followed across modules, Express sub-routers mounted from other files
+are not prefixed, buttons created from JS are not found by text, and Docker is
+not executed.

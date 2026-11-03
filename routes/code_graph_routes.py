@@ -20,6 +20,9 @@ GET  /api/code-graph/affected-flows ?symbol=&base_ref=&limit=&root=
 GET  /api/code-graph/dossier        ?refresh=&top_flows=&root=&project_id=
 GET  /api/code-graph/dossier/diff   ?from_revision=&to_revision=&root=&project_id=
 GET  /api/code-graph/locate         ?question=&limit=&root=&project_id=
+GET  /api/code-graph/business-route ?start=&end=&root=&project_id=  (runtime_trace: POST body variant below)
+POST /api/code-graph/business-route {start, end?, runtime_trace?, root?}
+POST /api/code-graph/handoff {root?, out_dir?, run?, timeout?}
 POST /api/code-graph/context-pack   {symbols, root?, budget_lines?, base_ref?, known_hashes?}
 POST /api/code-graph/drift/snapshot {root?, project_id?, label?}
 GET  /api/code-graph/drift          ?baseline_id=&refresh=&root=&project_id=
@@ -55,6 +58,22 @@ class ContextPackBody(BaseModel):
     budget_lines: int = 120
     base_ref: str = ""
     known_hashes: dict = {}
+
+
+class BusinessRouteBody(BaseModel):
+    start: str
+    end: str | None = None
+    runtime_trace: list | None = None
+    root: str = ""
+    project_id: str = ""
+
+
+class HandoffBody(BaseModel):
+    root: str = ""
+    out_dir: str | None = None
+    run: bool = True
+    timeout: float = 120
+    project_id: str = ""
 
 
 def _guarded(fn, *a, **kw):
@@ -171,6 +190,24 @@ def setup_code_graph_routes():
                project_id: str = ""):
         require_admin(request)
         return _guarded(code_graph.locate, root, question, project_id=project_id, limit=limit)
+
+    @router.get("/business-route")
+    def business_route(request: Request, start: str = Query(...), end: str = "", root: str = "",
+                       project_id: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.business_route, root, start, end or None, None, project_id=project_id)
+
+    @router.post("/business-route")
+    def business_route_post(body: BusinessRouteBody, request: Request):
+        require_admin(request)
+        return _guarded(code_graph.business_route, body.root, body.start, body.end or None,
+                        body.runtime_trace, project_id=body.project_id)
+
+    @router.post("/handoff")
+    def handoff(body: HandoffBody, request: Request):
+        require_admin(request)
+        return _guarded(code_graph.handoff, body.root, body.out_dir, run=body.run,
+                        timeout=body.timeout, project_id=body.project_id)
 
     @router.post("/context-pack")
     def context_pack(body: ContextPackBody, request: Request):

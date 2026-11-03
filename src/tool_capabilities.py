@@ -816,8 +816,17 @@ _register(
      "code_graph_changes", "code_graph_impact", "code_graph_architecture",
      "code_graph_snippet", "code_graph_cochanges", "code_graph_risk",
      "code_graph_communities", "code_graph_flows", "code_graph_drift",
-     "code_graph_dossier", "code_graph_locate", "code_graph_context_pack"},
+     "code_graph_dossier", "code_graph_locate", "code_graph_context_pack",
+     "code_graph_business_route"},
     ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    # code_graph_handoff runs the repository's own install/run/test commands in a
+    # throwaway copy (so it executes code, and may reach package registries) and
+    # writes HANDOFF.md plus a JSON report into the workspace.
+    {"code_graph_handoff"},
+    ToolEffect.EXECUTE_CODE, ToolEffect.WRITE_WORKSPACE, ToolEffect.NETWORK_EGRESS,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(

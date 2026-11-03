@@ -344,3 +344,42 @@ class CodeGraphContextPackTool:
             base_ref=str(args.get("base_ref") or ""), known_hashes=args.get("known_hashes"),
             tool="code_graph_context_pack",
         )
+
+
+class CodeGraphBusinessRouteTool:
+    """`code_graph_business_route` {start, end?, runtime_trace?}: what happens from a
+    UI action until it is saved, hop by hop across frontend and backend."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="start")
+        start = str(args.get("start") or args.get("action") or "").strip()
+        if not start:
+            return {"error": "code_graph_business_route: start is required", "exit_code": 1}
+        trace = args.get("runtime_trace")
+        if isinstance(trace, str) and trace.strip().startswith("["):
+            try:
+                trace = json.loads(trace)
+            except ValueError:
+                trace = None
+        end = args.get("end")
+        return _catch(
+            code_graph.business_route, str(args.get("root") or args.get("workspace") or ""), start,
+            str(end) if end else None, trace if isinstance(trace, list) else None,
+            project_id=str(args.get("project_id") or ""), tool="code_graph_business_route",
+        )
+
+
+class CodeGraphHandoffTool:
+    """`code_graph_handoff` {out_dir?, run?, timeout?}: client handoff package whose
+    install/run/test instructions are executed in a throwaway copy and verified."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        import asyncio
+        args = _args(content, first_key="out_dir")
+        run = args.get("run")
+        run = True if run is None else (str(run).lower() not in ("false", "0", "no"))
+        return await asyncio.to_thread(
+            _catch, code_graph.handoff, str(args.get("root") or args.get("workspace") or ""),
+            str(args.get("out_dir") or "") or None, run=run, timeout=float(args.get("timeout") or 120),
+            project_id=str(args.get("project_id") or ""), tool="code_graph_handoff",
+        )
