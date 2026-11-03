@@ -3239,6 +3239,24 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_floorplan",
+            "description": "Plain-language floorplan of the workspace built on the code graph: its parts (communities) and files, each with a one-line description a non-programmer can read (written by the utility model and cached by file hash, so only changed files are relabelled), plus the HTTP routes each file serves and the outgoing requests it makes. action='generate' (default) builds or refreshes it; 'open' returns the last one; 'export' writes a self-contained interactive HTML map (search, parts -> files -> routes/requests, links that open files in Studio) and returns its path; 'blueprint' takes a PRD or goal text in `goal` and lists the planned parts marked exists / partial / missing against the current code. Use for 'explain this repo in plain words', 'make a map of this project', 'what routes and API calls does it have', 'which parts of this spec are already built'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["generate", "open", "export", "blueprint"], "description": "What to do (default generate)"},
+                    "goal": {"type": "string", "description": "PRD, spec or goal text for action=blueprint"},
+                    "labels": {"type": "string", "enum": ["auto", "model", "off"], "description": "auto (default): use the utility model only if it is already loaded and idle; model: call it even if it must load; off: deterministic descriptions only"},
+                    "max_labels": {"type": "integer", "description": "Most files sent to the model in this run (default 80); the rest keep a deterministic description until a later run"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_context_pack",
             "description": "Budgeted context for a planned change: target source, contracts, direct consumers with exact call lines, tests with assertion lines and flows, trimmed to budget_lines; left-out pieces carry `more` handles; pass the previous `hashes` as known_hashes to skip unchanged files.",
             "parameters": {

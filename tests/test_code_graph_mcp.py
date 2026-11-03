@@ -29,7 +29,7 @@ TOOL_NAMES = {
     "code_graph_architecture", "code_graph_communities", "code_graph_flows",
     "code_graph_affected_flows", "code_graph_snippet", "code_graph_change_risk",
     "code_graph_drift", "code_graph_dossier", "code_graph_locate", "code_graph_context_pack",
-    "code_graph_business_route", "code_graph_handoff",
+    "code_graph_business_route", "code_graph_handoff", "code_floorplan",
 }
 
 ROUTES_PY = '''"""HTTP routes."""

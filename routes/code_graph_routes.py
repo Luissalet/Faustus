@@ -27,10 +27,17 @@ POST /api/code-graph/context-pack   {symbols, root?, budget_lines?, base_ref?, k
 POST /api/code-graph/drift/snapshot {root?, project_id?, label?}
 GET  /api/code-graph/drift          ?baseline_id=&refresh=&root=&project_id=
 GET  /api/code-graph/drift/baselines ?limit=&root=&project_id=
+GET  /api/code-graph/floorplan      ?root=&project_id=  (last cached floorplan)
+POST /api/code-graph/floorplan      {root?, project_id?, labels?, max_labels?}
+POST /api/code-graph/floorplan/blueprint {goal, root?, project_id?, labels?}
+GET  /api/code-graph/floorplan/export ?root=&project_id=&download=  (self-contained HTML)
 """
 import logging
+import os
+from contextlib import contextmanager
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from core.middleware import require_admin
@@ -74,6 +81,51 @@ class HandoffBody(BaseModel):
     run: bool = True
     timeout: float = 120
     project_id: str = ""
+
+
+class FloorplanBody(BaseModel):
+    root: str = ""
+    project_id: str = ""
+    labels: str = "model"
+    max_labels: int = 60
+
+
+class BlueprintBody(BaseModel):
+    goal: str
+    root: str = ""
+    project_id: str = ""
+    labels: str = "model"
+
+
+@contextmanager
+def _project_workspace(request: Request, root: str):
+    """Bind a project's own work folder as the active workspace for this
+    request, so the Studio floorplan of a project works on that folder the
+    same way an agent turn in the project would. Only a folder that is the
+    `workspace` of one of the caller's projects is bound; any other root is
+    left to the usual confinement in `code_graph.query._root`."""
+    tokens = None
+    try:
+        from services.projects import get_store
+        from src import tool_execution as te
+        from src.auth_helpers import effective_user
+        wanted = te.vet_project_root(root or "")
+        if wanted and os.path.isdir(wanted):
+            for project in get_store().list(effective_user(request)) or []:
+                raw = project.get("workspace") if isinstance(project, dict) else getattr(project, "workspace", "")
+                ws = te.vet_project_root(str(raw or ""))
+                if ws and os.path.normcase(ws) == os.path.normcase(wanted):
+                    tokens = (te._active_workspace.set(ws), te._active_workspace_roots.set((ws,)))
+                    break
+    except Exception as exc:  # noqa: BLE001 - falls back to the default confinement
+        logger.debug("floorplan: project workspace binding skipped: %s", exc)
+    try:
+        yield
+    finally:
+        if tokens:
+            from src import tool_execution as te
+            te._active_workspace.reset(tokens[0])
+            te._active_workspace_roots.reset(tokens[1])
 
 
 def _guarded(fn, *a, **kw):
@@ -233,5 +285,42 @@ def setup_code_graph_routes():
         require_admin(request)
         return _guarded(code_graph.drift, root, project_id=project_id,
                         baseline_id=baseline_id, refresh=refresh)
+
+    @router.get("/floorplan")
+    def floorplan_open(request: Request, root: str = "", project_id: str = ""):
+        require_admin(request)
+        with _project_workspace(request, root):
+            return _guarded(code_graph.floorplan_open, root, project_id=project_id)
+
+    @router.post("/floorplan")
+    def floorplan_generate(body: FloorplanBody, request: Request):
+        require_admin(request)
+        with _project_workspace(request, body.root):
+            return _guarded(code_graph.floorplan_generate, body.root, project_id=body.project_id,
+                            labels=body.labels, max_labels=body.max_labels)
+
+    @router.post("/floorplan/blueprint")
+    def floorplan_blueprint(body: BlueprintBody, request: Request):
+        require_admin(request)
+        with _project_workspace(request, body.root):
+            return _guarded(code_graph.floorplan_blueprint, body.root, body.goal,
+                            project_id=body.project_id, labels=body.labels)
+
+    @router.get("/floorplan/export")
+    def floorplan_export(request: Request, root: str = "", project_id: str = "",
+                         download: bool = False):
+        require_admin(request)
+        with _project_workspace(request, root):
+            # Shown in the browser the page runs under the app's CSP, which only
+            # executes nonced inline scripts; the downloaded file needs none.
+            nonce = "" if download else str(getattr(request.state, "csp_nonce", "") or "")
+            res = _guarded(code_graph.floorplan_export, root, project_id=project_id,
+                           studio_base=str(request.base_url).rstrip("/"), nonce=nonce)
+        if res.get("exit_code") != 0:
+            raise HTTPException(status_code=404, detail=res.get("output") or "no floorplan yet")
+        headers = {}
+        if download:
+            headers["Content-Disposition"] = 'attachment; filename="floorplan.html"'
+        return HTMLResponse(res["html"], headers=headers)
 
     return router

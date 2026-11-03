@@ -1226,6 +1226,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "check that the install, run and test commands of this repo really work from a clean copy",
         "write a handoff document listing what could not be verified",
     ],
+    "code_floorplan": [
+        "explícame este repositorio en palabras sencillas, parte por parte",
+        "make a plain-language map of this project with its routes and API calls",
+        "exporta el plano del código a un HTML que pueda abrir",
+        "which parts of this spec already exist in the code and which are missing",
+    ],
     "run_report": [
         "where did the time of that last turn go",
         "¿dónde se fue el coste del último turno?",

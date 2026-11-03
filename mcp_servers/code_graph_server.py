@@ -335,6 +335,26 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="code_floorplan",
+            description=(
+                "Plain-language floorplan of the repo: parts and files with one-line descriptions "
+                "(utility model, cached by file hash), HTTP routes served and outgoing requests made. "
+                "action=generate|open|export (self-contained HTML map)|blueprint (goal text -> planned "
+                "parts marked exists/partial/missing). Plano del proyecto en palabras sencillas."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["generate", "open", "export", "blueprint"]},
+                    "goal": {"type": "string", "description": "PRD/goal text for action=blueprint."},
+                    "labels": {"type": "string", "enum": ["auto", "model", "off"]},
+                    "max_labels": {"type": "integer", "minimum": 0, "maximum": 2000},
+                    **_ROOT_PROP,
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="code_graph_change_risk",
             description=(
                 "Deterministic 0-100 change-risk score for paths/symbols or the current diff. "
@@ -492,6 +512,29 @@ def _tool_handoff(args: dict) -> list[TextContent]:
     return _json_result(res)
 
 
+def _tool_floorplan(args: dict) -> list[TextContent]:
+    cg = _engine["code_graph"]
+    root = str(args.get("root") or "")
+    action = str(args.get("action") or "generate").lower()
+    labels = str(args.get("labels") or "auto")
+    if action == "open":
+        res = cg.floorplan_open(root)
+    elif action == "export":
+        res = cg.floorplan_export(root)
+        res.pop("html", None)
+        return _json_result(res)
+    elif action == "blueprint":
+        res = cg.floorplan_blueprint(root, str(args.get("goal") or ""), labels=labels)
+        return _json_result(res)
+    else:
+        res = cg.floorplan_generate(root, labels=labels,
+                                    max_labels=int(args.get("max_labels") or 80))
+    plan = res.pop("plan", None)
+    if isinstance(plan, dict):
+        res["stats"] = plan.get("stats")
+    return _json_result(res)
+
+
 _HANDLERS = {
     "code_graph_search": _tool_search,
     "code_graph_trace": _tool_trace,
@@ -508,6 +551,7 @@ _HANDLERS = {
     "code_graph_context_pack": _tool_context_pack,
     "code_graph_business_route": _tool_business_route,
     "code_graph_handoff": _tool_handoff,
+    "code_floorplan": _tool_floorplan,
 }
 
 

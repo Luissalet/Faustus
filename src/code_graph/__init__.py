@@ -71,6 +71,12 @@ from .dossier import dossier, dossier_diff, locate
 from .context_pack import context_pack
 from .business_route import business_route
 from .handoff import handoff
+from .floorplan import (
+    generate as floorplan_generate,
+    open_plan as floorplan_open,
+    export as floorplan_export,
+    blueprint as floorplan_blueprint,
+)
 
 __all__ = [
     "index", "search_graph", "trace_path", "callers", "callees",
@@ -81,4 +87,5 @@ __all__ = [
     "snapshot", "drift", "list_baselines",
     "dossier", "dossier_diff", "locate", "context_pack",
     "business_route", "handoff",
+    "floorplan_generate", "floorplan_open", "floorplan_export", "floorplan_blueprint",
 ]

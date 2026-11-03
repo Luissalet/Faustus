@@ -1506,6 +1506,19 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     setParams(next, { replace: true });
   }, [params, setParams]);
 
+  /* The project floorplan opens a file in the side panel:
+     ?workspace=<folder>&file=<path relative to it>. */
+  useEffect(() => {
+    const fileParam = params.get('file');
+    const wsParam = params.get('workspace');
+    if (!fileParam || !wsParam) return;
+    panelDispatch({ type: 'file', workspace: wsParam, path: fileParam });
+    const next = new URLSearchParams(params);
+    next.delete('file');
+    next.delete('workspace');
+    setParams(next, { replace: true });
+  }, [params, setParams, panelDispatch]);
+
   /* Lote 86: the command palette's "Source control" lands here the same
      way — ?panel=git opens the git tab of the side panel. */
   useEffect(() => {

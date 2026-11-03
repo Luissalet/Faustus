@@ -64,6 +64,7 @@ import { ProjectTasks } from './project/Tasks';
 import { ProjectGroupChats } from './project/GroupChats';
 import { ProjectSkills } from './project/Skills';
 import { ProjectOverviewActivity, ProjectOverviewAgora } from './project/Overview';
+import { ProjectFloorplan } from './project/Floorplan';
 import './project/workspace.css';
 
 type TabId = ProjectSection;
@@ -1095,6 +1096,7 @@ export function ProjectScreen() {
               <Button variant="ghost" size="sm" icon={Link2} label={t('Manage sources')} onClick={() => setTab('knowledge')} testId="project-manage-sources" />
             </section>
           </div>
+          {project.workspace && <ProjectFloorplan workspace={project.workspace} />}
           <p className="fs-file__meta">
             {t('Created {when}', { when: relativeTime(project.created_at) })} · {t('updated {when}', { when: relativeTime(project.updated_at) })}
           </p>

@@ -383,3 +383,46 @@ class CodeGraphHandoffTool:
             str(args.get("out_dir") or "") or None, run=run, timeout=float(args.get("timeout") or 120),
             project_id=str(args.get("project_id") or ""), tool="code_graph_handoff",
         )
+
+
+class CodeFloorplanTool:
+    """`code_floorplan` {action?, goal?, labels?, max_labels?}: the plain-language
+    floorplan of the workspace (parts -> files -> routes/requests), its HTML
+    export, or a blueprint of a PRD/goal marked against what already exists."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        import asyncio
+        args = _args(content, first_key="action")
+        action = str(args.get("action") or "generate").strip().lower()
+        root_arg = str(args.get("root") or args.get("workspace") or "")
+        project_id = str(args.get("project_id") or "")
+        labels = str(args.get("labels") or "auto").strip().lower()
+        if action in ("open", "show", "read"):
+            res = _catch(code_graph.floorplan_open, root_arg, project_id=project_id,
+                         tool="code_floorplan")
+        elif action == "export":
+            res = _catch(code_graph.floorplan_export, root_arg, project_id=project_id,
+                         studio_base=str(args.get("studio_base") or ""), tool="code_floorplan")
+            res.pop("html", None)
+            return res
+        elif action == "blueprint":
+            goal = str(args.get("goal") or args.get("prd") or args.get("text") or "").strip()
+            if not goal:
+                return {"error": "code_floorplan: goal is required for action=blueprint", "exit_code": 1}
+            res = await asyncio.to_thread(
+                _catch, code_graph.floorplan_blueprint, root_arg, goal, project_id=project_id,
+                labels=labels, tool="code_floorplan")
+            return res
+        else:
+            try:
+                max_labels = int(args.get("max_labels") or 80)
+            except (TypeError, ValueError):
+                max_labels = 80
+            res = await asyncio.to_thread(
+                _catch, code_graph.floorplan_generate, root_arg, project_id=project_id,
+                labels=labels, max_labels=max_labels, tool="code_floorplan")
+        plan = res.pop("plan", None)
+        if isinstance(plan, dict):
+            res["stats"] = plan.get("stats")
+            res["generated_at"] = plan.get("generated_at")
+        return res
