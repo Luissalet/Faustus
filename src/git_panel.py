@@ -430,6 +430,9 @@ def _walk_projects(projects: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     (pre-dedupe) across every project/folder -- this is the part real disk
     I/O makes slow, so it is what gets cached."""
     out: List[Dict[str, Any]] = []
+    # Several projects often link the same folder (seen live: three projects
+    # on one 40-repo tree, ~14 s per walk on Windows); walk each folder once.
+    walked: Dict[str, List[str]] = {}
     for project in projects:
         if len(out) >= MAX_REPOS:
             break
@@ -438,7 +441,10 @@ def _walk_projects(projects: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for root in _project_root_folders(project):
             if len(out) >= MAX_REPOS:
                 break
-            paths = _walk_repos(root, max_depth=MAX_DEPTH, budget=MAX_REPOS - len(out))
+            key = os.path.normcase(root)
+            if key not in walked:
+                walked[key] = _walk_repos(root, max_depth=MAX_DEPTH, budget=MAX_REPOS)
+            paths = walked[key][:MAX_REPOS - len(out)]
             parents = _assign_parents(paths)
             for path in paths:
                 if len(out) >= MAX_REPOS:

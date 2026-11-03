@@ -65,7 +65,8 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "model_server_heal_timeout_s",
                                "telegram_bridge_enabled", "telegram_bot_token", "telegram_allowed_chat_ids",
                                "telegram_agent_mode", "telegram_model", "telegram_owner", "telegram_api_base",
-                               "paid_spend_cap_enabled", "paid_spend_cap_daily_usd", "paid_spend_cap_daily_tokens")
+                               "paid_spend_cap_enabled", "paid_spend_cap_daily_usd", "paid_spend_cap_daily_tokens",
+                               "llm_trace_retention_days")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -1790,6 +1791,9 @@ GROUPS: list[dict[str, Any]] = [
                   "Model name used to write the notes, on the utility endpoint. Empty = the utility model."),
             _int("agent_observations_retention_days", "Observations: days kept",
                  "Notes and summaries older than this are deleted. 0 = keep them all.", 0, 3650),
+            _int("llm_trace_retention_days", "Model call traces: days kept",
+                 "Each chat's model calls (llm_traces/<session>.jsonl, the turn panel's \"Model calls\") are "
+                 "deleted after this many days. Raise it to debug a problem reported later.", 1, 365),
         ],
     ),
 ]
