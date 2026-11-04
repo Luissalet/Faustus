@@ -30,8 +30,8 @@
 .fs-floorplan__bp li small { grid-column: 2; overflow-wrap: anywhere; }
 .fs-floorplan__why { color: var(--fs-text-2); font-style: normal; }
 .fs-floorplan__status { font-size: 12px; padding: 1px 8px; border-radius: 6px; border: 1px solid var(--fs-border); white-space: nowrap; }
-.fs-floorplan__status[data-status="exists"] { color: var(--fs-success, #2f7a4f); }
-.fs-floorplan__status[data-status="partial"] { color: var(--fs-warning, #8a5a14); }
+.fs-floorplan__status[data-status="exists"] { color: var(--fs-success); }
+.fs-floorplan__status[data-status="partial"] { color: var(--fs-warning); }
 .fs-floorplan__status[data-status="missing"] { color: var(--fs-danger); }
 .fs-floorplan__status[data-status="stale"] { color: var(--fs-text-2); border-style: dashed; }
 .fs-floorplan__basis { font-size: 13px; margin: 6px 0 0; overflow-wrap: anywhere; }

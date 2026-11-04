@@ -369,5 +369,6 @@ function getSnapshot() {
   return snap;
 }
 
-/** Applied once at module load so the first paint already wears the theme. */
-applyTheme(current);
+/** Applied once at module load so the first paint already wears the theme.
+ *  Skipped where there is no DOM (screen checks import this under Node). */
+if (typeof document !== 'undefined') applyTheme(current);

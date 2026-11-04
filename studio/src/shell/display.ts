@@ -51,7 +51,11 @@ export function useDisplay(): Display {
     getDisplay,
   );
 }
-document.documentElement.toggleAttribute('data-fullwidth', current.fullWidth);
+// Guarded so the module can be imported where there is no DOM (the screen
+// checks bundle screens that reach it and run them under Node).
+if (typeof document !== 'undefined') {
+  document.documentElement.toggleAttribute('data-fullwidth', current.fullWidth);
+}
 
 /* ── text treatments ── */
 
