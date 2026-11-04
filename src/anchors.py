@@ -32,11 +32,28 @@ _RECT = r"(?:@|\s*\(\s*)(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+
 _PAGE = re.compile(r"(?:^|(?<=[\s(,;]))(?:p\.?\s*|p[áa]g(?:ina)?\.?\s*|page\s+|hoja\s+(?=\d))(\d{1,4})\b(?:" + _RECT + r")?", re.I)
 _TIME_RE = re.compile(r"(?:t\s*=\s*|\bmin(?:uto)?\.?\s+|\bat\s+|\ben el\s+|\bsegundo\s+)(" + _TIME + r")(?:\s*(?:-|–|a|to|al)\s*(" + _TIME + r"))?"
                       r"|(?<![\d:])(" + _TIME + r")\s*(?:-|–)\s*(" + _TIME + r")(?![\d:])", re.I)
-_CELL = re.compile(r"(?:\b(?:celda|cell)\s*:?\s*)(?:([\w ]{1,40})!)?([A-Z]{1,3}[1-9]\d{0,6})\b|\b([A-Za-z_][\w]{0,40})!([A-Z]{1,3}[1-9]\d{0,6})\b")
+_REF_CELL = r"[A-Z]{1,3}[1-9]\d{0,6}"
+_CELL = re.compile(rf"(?:\b(?:celda|cell)\s*:?\s*)(?:([\w ]{{1,40}})!)?({_REF_CELL})(?::({_REF_CELL}))?\b|\b([A-Za-z_][\w]{{0,40}})!({_REF_CELL})(?::({_REF_CELL}))?\b")
 _OBJECT = re.compile(r"\b(obj|objeto|object|pieza|part|mesh|malla)(\s*:\s*|\s+)([«\"']?)([\w.\-]{1,80})", re.I)
 _LINE = re.compile(r"(?:\bL|\bl[íi]neas?\s+|\blines?\s+)(\d{1,6})(?:\s*(?:-|–|a|to)\s*(\d{1,6}))?\b")
 _SYMBOL = re.compile(r"\b(sym|s[íi]mbolo|symbol|funci[óo]n|function|clase|class)(\s*:\s*|\s+)(`?)([A-Za-z_][\w.]{0,120})`?", re.I)
 _REF = re.compile(r"^review:([a-z0-9-]{3,80})@v(\d{1,4})(?:#(.+))?$")
+
+
+def _split_cell(ref: str) -> tuple:
+    m = re.match(r"([A-Z]+)(\d+)$", ref)
+    n = 0
+    for ch in m.group(1):
+        n = n * 26 + ord(ch) - 64
+    return n, int(m.group(2))
+
+
+def _col_name(n: int) -> str:
+    out = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        out = chr(65 + r) + out
+    return out
 
 
 def _secs(t: str) -> int:
@@ -58,7 +75,8 @@ def label(a: Dict[str, Any]) -> str:
     if k == "time":
         return f"t={_hms(a['start'])}" + (f"-{_hms(a['end'])}" if a.get("end") is not None else "")
     if k == "cell":
-        return f"{a['sheet']}!{a['cell']}" if a.get("sheet") else f"cell:{a['cell']}"
+        span = a['cell'] + (f":{a['to']}" if a.get("to") else "")
+        return f"{a['sheet']}!{span}" if a.get("sheet") else f"cell:{span}"
     if k == "object":
         return f"obj:{a['name']}"
     if k == "line":
@@ -105,8 +123,11 @@ def parse(text: str) -> Optional[Dict[str, Any]]:
         if a["end"] is not None and a["end"] < a["start"]:
             a["start"], a["end"] = a["end"], a["start"]
     elif kind == "cell":
-        sheet, cell = (m.group(1), m.group(2)) if m.group(2) else (m.group(3), m.group(4))
+        sheet, cell, end = (m.group(1), m.group(2), m.group(3)) if m.group(2) else (m.group(4), m.group(5), m.group(6))
         a = {"kind": "cell", "sheet": (sheet or "").strip(), "cell": cell}
+        if end and end != cell:                                    # a range A1:B3, kept as top-left and bottom-right whatever the order written
+            (c1, r1), (c2, r2) = _split_cell(cell), _split_cell(end)
+            a["cell"], a["to"] = f"{_col_name(min(c1, c2))}{min(r1, r2)}", f"{_col_name(max(c1, c2))}{max(r1, r2)}"
     elif kind == "object":
         a = {"kind": "object", "name": m.group(4).rstrip(".,;")}
     elif kind == "line":

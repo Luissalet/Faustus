@@ -109,3 +109,32 @@ def test_a_backwards_line_range_marks_the_same_lines_as_the_forward_one(tmp_path
     fwd = av.view(f, {"kind": "line", "start": 3, "end": 5})
     back = av.view(f, {"kind": "line", "start": 5, "end": 3})
     assert [x["n"] for x in back["lines"] if x["hit"]] == [3, 4, 5] and back["lines"] == fwd["lines"]
+
+
+def test_a_cell_range_is_parsed_in_any_order_and_marks_every_cell_of_the_range(tmp_path):
+    from openpyxl import Workbook
+    a = anchors.parse("Datos!B3:A1")
+    assert a["cell"] == "A1" and a["to"] == "B3" and a["label"] == "Datos!A1:B3"
+    assert anchors.parse_ref("review:x-abc@v2#Datos!A1:B3")["anchor"]["to"] == "B3"
+    assert anchors.parse("Datos!A1").get("to") is None and anchors.parse("Datos!A1:A1").get("to") is None
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Datos"
+    ws["A1"], ws["B3"] = "uno", "dos"
+    f = tmp_path / "r.xlsx"
+    wb.save(f)
+    out = av.view(f, a)
+    hits = {c["ref"] for row in out["grid"] for c in row["cells"] if c["hit"]}
+    assert out["found"] and out["to"] == "B3" and out["cells_in_range"] == 6 and hits == {"A1", "B1", "A2", "B2", "A3", "B3"}
+    empty = av.view(f, anchors.parse("Datos!D5:E6"))
+    assert empty["found"] is False
+    csv = tmp_path / "r.csv"
+    csv.write_text("a,b\n,c\n", encoding="utf-8")
+    assert av.view(csv, {"kind": "cell", "sheet": "", "cell": "A1", "to": "B2"})["found"] is True
+
+
+def test_an_object_anchor_without_spaces_finds_an_object_named_with_spaces(tmp_path):
+    f = tmp_path / "ruedas.obj"
+    f.write_text("o Rueda dcha\nv 0 0 0\no Base\n", encoding="utf-8")
+    out = av.view(f, anchors.parse("obj:Rueda_dcha"))
+    assert out["found"] is True and out["object"] == "Rueda dcha"

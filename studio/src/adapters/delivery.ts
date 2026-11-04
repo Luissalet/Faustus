@@ -270,7 +270,7 @@ export interface AnchorView { version: number; name: string; ref: string; latest
   reason?: string; anchor: DeskAnchor | null; page?: number; pages?: number; rect?: number[] | null; text?: string[]; text_in_rect?: string; image?: string;
   start?: number; end?: number | null; media?: 'video' | 'audio' | null; fragment?: string; sheet?: string; sheets?: string[]; cell?: string; value?: string | null;
   columns?: string[]; grid?: { row: number; cells: { ref: string; value: string | null; hit: boolean }[] }[];
-  lines?: { n: number; text: string; hit: boolean }[]; declared_at?: number; object?: string; objects?: string[] }
+  lines?: { n: number; text: string; hit: boolean }[]; declared_at?: number; object?: string; objects?: string[]; ext?: string; to?: string; cells_in_range?: number }
 export async function viewDesk(id: string, q: { version?: number; anchor?: string; comment?: string; ref?: string }): Promise<AnchorView> {
   const p = new URLSearchParams({ image: 'true' });
   for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '') p.set(k, String(v));

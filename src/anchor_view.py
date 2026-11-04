@@ -81,27 +81,35 @@ def _symbol(lines: List[str], name: str) -> Dict[str, Any]:
     return {"found": False, "total_lines": len(lines), "lines": []}
 
 
-def _cell_grid(rows: List[List[Any]], sheet: str, cell: str, sheets: List[str]) -> Dict[str, Any]:
+def _cell_grid(rows: List[List[Any]], sheet: str, cell: str, sheets: List[str], to: str = "") -> Dict[str, Any]:
     m = _COL.match(cell.upper())
     col, row = _col_index(m.group(1)), int(m.group(2))
-    lo_r, hi_r = max(1, row - CONTEXT), row + CONTEXT
-    lo_c, hi_c = max(1, col - CONTEXT), col + CONTEXT
+    m2 = _COL.match(to.upper()) if to else None
+    col2, row2 = (_col_index(m2.group(1)), int(m2.group(2))) if m2 else (col, row)
+    col2, row2 = max(col, col2), max(row, row2)
+    lo_r, hi_r = max(1, row - CONTEXT), row2 + CONTEXT
+    lo_c, hi_c = max(1, col - CONTEXT), col2 + CONTEXT
     grid = []
     for r in range(lo_r, hi_r + 1):
         vals = rows[r - 1] if r - 1 < len(rows) else []
         grid.append({"row": r, "cells": [{"ref": f"{_col_letters(c)}{r}", "value": None if c - 1 >= len(vals) or vals[c - 1] is None else str(vals[c - 1])[:120],
-                                          "hit": (r, c) == (row, col)} for c in range(lo_c, hi_c + 1)]})
+                                          "hit": row <= r <= row2 and col <= c <= col2} for c in range(lo_c, hi_c + 1)]})
     value = rows[row - 1][col - 1] if row - 1 < len(rows) and col - 1 < len(rows[row - 1]) else None
-    return {"found": value is not None, "sheet": sheet, "sheets": sheets, "cell": cell.upper(), "value": None if value is None else str(value)[:500],
+    span = {"to": f"{_col_letters(col2)}{row2}", "cells_in_range": (row2 - row + 1) * (col2 - col + 1)} if (row2, col2) != (row, col) else {}
+    if span:                                      # a range is found when any of its cells holds something
+        found = any(rows[r - 1][c - 1] is not None for r in range(row, min(row2, len(rows)) + 1) for c in range(col, min(col2, len(rows[r - 1])) + 1))
+    else:
+        found = value is not None
+    return {"found": found, **span, "sheet": sheet, "sheets": sheets, "cell": cell.upper(), "value": None if value is None else str(value)[:500],
             "columns": [_col_letters(c) for c in range(lo_c, hi_c + 1)], "grid": grid}
 
 
-def _cells(path: Path, sheet: str, cell: str) -> Dict[str, Any]:
+def _cells(path: Path, sheet: str, cell: str, to: str = "") -> Dict[str, Any]:
     ext = path.suffix.lower()
     if ext in (".csv", ".tsv"):
         with path.open(encoding="utf-8", errors="replace", newline="") as fh:
             rows = [r for _, r in zip(range(100000), csv.reader(fh, delimiter="\t" if ext == ".tsv" else ","))]
-        return _cell_grid(rows, sheet or path.stem, cell, [path.stem])
+        return _cell_grid(rows, sheet or path.stem, cell, [path.stem], to)
     from openpyxl import load_workbook
     wb = load_workbook(str(path), read_only=True, data_only=True)
     try:
@@ -110,11 +118,12 @@ def _cells(path: Path, sheet: str, cell: str) -> Dict[str, Any]:
         if pick is None:
             return {"found": False, "sheet": sheet, "sheets": names, "cell": cell.upper(), "reason": f"no sheet {sheet!r}"}
         m = _COL.match(cell.upper())
-        need_r = int(m.group(2)) + CONTEXT
+        m2 = _COL.match(to.upper()) if to else None
+        need_r = max(int(m.group(2)), int(m2.group(2)) if m2 else 0) + CONTEXT
         rows = [list(r) for _, r in zip(range(need_r), wb[pick].iter_rows(values_only=True))]
     finally:
         wb.close()                  # a read-only workbook keeps the file locked on Windows until it is closed
-    return _cell_grid(rows, pick, cell, names)
+    return _cell_grid(rows, pick, cell, names, to)
 
 
 def object_names(path: Path) -> List[str]:
@@ -195,7 +204,7 @@ def view(path: Path, anchor: Optional[Dict[str, Any]], *, image: bool = False) -
         if kind == "cell":
             if ext not in (".xlsx", ".xlsm", ".csv", ".tsv"):
                 return {**base, "kind": kind, "found": False, "reason": f"a cell anchor needs a spreadsheet, this is {ext}"}
-            return {**base, "kind": kind, **_cells(path, anchor.get("sheet") or "", anchor["cell"])}
+            return {**base, "kind": kind, **_cells(path, anchor.get("sheet") or "", anchor["cell"], anchor.get("to") or "")}
         if kind in ("line", "symbol"):
             if ext not in TEXT_EXT:
                 return {**base, "kind": kind, "found": False, "reason": f"a {kind} anchor needs a text or code file, this is {ext}"}
@@ -204,7 +213,9 @@ def view(path: Path, anchor: Optional[Dict[str, Any]], *, image: bool = False) -
             return {**base, "kind": kind, **got}
         if kind == "object":
             names = object_names(path)
-            hit = next((n for n in names if n.lower() == str(anchor["name"]).lower()), None)
+            def same(n: str) -> bool:        # an anchor name has no spaces: «Rueda_dcha» names the object «Rueda dcha»
+                return re.sub(r"[\s_]+", "_", n.strip().lower()) == re.sub(r"[\s_]+", "_", str(anchor["name"]).strip().lower())
+            hit = next((n for n in names if same(n)), None)
             return {**base, "kind": kind, "found": hit is not None, "object": hit or anchor["name"], "objects": names,
                     **({} if names else {"reason": "no named objects in this file"})}
     except Exception as exc:  # noqa: BLE001 - a broken file is a fact to show, not a crash

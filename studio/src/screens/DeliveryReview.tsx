@@ -1,10 +1,12 @@
 import { Check, Crosshair, FileSearch, GitCompare, MessageSquarePlus, PackageCheck, Plus, Upload } from 'lucide-react';
 import { useSearchParams } from 'react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState } from '../components';
 import * as api from '../adapters/delivery';
 import { t } from '../i18n';
 import { DeleteItem } from './DeliveryDelete';
+
+const Anchor3D = lazy(() => import('./Anchor3D'));
 
 /**
  * Review desk (Hangar E32): one deliverable, its versions as snapshots, comments
@@ -59,6 +61,7 @@ function AnchorPanel({ deskId, q, onClose }: { deskId: string; q: { comment?: st
               ? <video controls preload="metadata" className="fs-dlv__anchor-media" src={api.deskVersionHref(deskId, v.version) + (v.fragment ?? '')} data-testid="review-anchor-media" />
               : <audio controls preload="metadata" src={api.deskVersionHref(deskId, v.version) + (v.fragment ?? '')} data-testid="review-anchor-media" />
           )}
+          {v.found && v.kind === 'cell' && v.to && <p className="fs-dlv__muted" data-testid="review-anchor-range">{t('Range')} {v.sheet}!{v.cell}:{v.to}</p>}
           {v.found && v.kind === 'cell' && v.grid && (
             <table className="fs-dlv__table fs-dlv__grid" data-testid="review-anchor-cells">
               <thead><tr><th>{v.sheet}</th>{(v.columns ?? []).map((c) => <th key={c}>{c}</th>)}</tr></thead>
@@ -67,6 +70,9 @@ function AnchorPanel({ deskId, q, onClose }: { deskId: string; q: { comment?: st
           )}
           {v.found && (v.kind === 'line' || v.kind === 'symbol') && v.lines && (
             <pre className="fs-dlv__pre fs-dlv__lines" data-testid="review-anchor-lines">{v.lines.map((l) => <div key={l.n} data-hit={l.hit || undefined}><span className="fs-dlv__muted">{String(l.n).padStart(5)} </span>{l.text}</div>)}</pre>
+          )}
+          {v.kind === 'object' && v.found && ['.obj', '.glb', '.gltf', '.stl', '.3mf'].includes(v.ext ?? '') && (
+            <Suspense fallback={<p className="fs-dlv__muted">{t('Opening…')}</p>}><Anchor3D url={api.deskVersionHref(deskId, v.version)} ext={v.ext ?? ''} target={v.object ?? ''} /></Suspense>
           )}
           {v.kind === 'object' && (v.objects ?? []).length > 0 && (
             <ul className="fs-dlv__plain fs-dlv__small" data-testid="review-anchor-objects">{(v.objects ?? []).map((o) => <li key={o} data-hit={o === v.object || undefined}>{o === v.object ? <strong>▶ {o}</strong> : o}</li>)}</ul>

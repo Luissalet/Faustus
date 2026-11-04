@@ -89,6 +89,8 @@
 
 /* Hangar E22: a version opened at an anchor */
 .fs-dlv__anchor-img { display: block; max-width: 100%; height: auto; border: 1px solid var(--fs-border); border-radius: 6px; }
+.fs-dlv__anchor-3d { border: 1px solid var(--fs-border); border-radius: 6px; overflow: hidden; min-height: 360px; }
+.fs-dlv__anchor-3d canvas { display: block; width: 100%; }
 .fs-dlv__anchor-media { display: block; max-width: 100%; max-height: 360px; }
 .fs-dlv__lines > div[data-hit], .fs-dlv__grid td[data-hit] { background: color-mix(in srgb, var(--fs-brand) 22%, transparent); }
 .fs-dlv__grid td[data-hit] { font-weight: 600; outline: 2px solid var(--fs-brand); }

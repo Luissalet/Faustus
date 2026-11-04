@@ -159,6 +159,8 @@ forget to keep in sync with the code.
   The full MIT license text is kept at
   [`licenses/Bundled-Agent-Workflows-MIT-LICENSE.txt`](licenses/Bundled-Agent-Workflows-MIT-LICENSE.txt).
 
+- **three.js** (npm `three`, bundled in the Studio build, loaded only when a review opens a 3D file). MIT, Copyright (c) 2010-2024 three.js authors. Used to show the object a review comment points at, highlighted, with the camera framed on it. Licence text: [`licenses/three.js-MIT-LICENSE.txt`](licenses/three.js-MIT-LICENSE.txt).
+
 *(Faustus descends from Odysseus, whose own `ACKNOWLEDGMENTS.md` already
 lists several vendored/adapted pieces — Diogenes, opencode, llmfit, Tongyi
 DeepResearch, bundled front-end JS libraries, Docker Compose images,
