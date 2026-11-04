@@ -176,11 +176,13 @@ class DesignCanvasTool:
         if version:
             result["canvas_version"] = version
             result["output"] += f" Version {version} of this canvas."
+        if concept.get("canvas_id") and concept.get("canvas_id") != concept.get("id"):
+            result["output"] += f" Its history id (for history, diff, decide) is `{concept['canvas_id']}`."
         if version > 1:
             # Darwin #989: what this filing changed against the previous design.
             try:
                 from src import design_canvas_history
-                changed = design_canvas_history.diff(str(concept.get("id")))
+                changed = design_canvas_history.diff(str(concept.get("canvas_id") or concept.get("id")))
                 result["diff"] = changed
                 result["output"] += "\n\n" + design_canvas_history.render_diff(changed)
             except Exception:  # noqa: BLE001 - the diff is a courtesy

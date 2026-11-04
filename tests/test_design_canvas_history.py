@@ -164,3 +164,46 @@ def test_mcp_tools(monkeypatch):
     assert "1 added" in asyncio.run(ws.call_tool("design_canvas_diff", {"canvas_id": "c9", "from_version": 1, "to_version": 2}))[0].text
     out = asyncio.run(ws.call_tool("design_canvas_decide", {"canvas_id": "c9", "decision": "Ship", "why": "ok"}))[0].text
     assert out == "logged on v2: Ship — why: ok" and seen[-1][2]["author"] == "agent"
+
+
+def test_a_version_that_does_not_exist_is_an_error_not_another_version():
+    history.record_version("c4", BASE)
+    history.record_version("c4", _v2())
+    for bad in (0, -1, -2, 3):
+        with pytest.raises(history.CanvasHistoryError):
+            history.version("c4", bad)
+        with pytest.raises(history.CanvasHistoryError):
+            history.add_decision("c4", "Keep it", version_number=bad)
+    assert history.version("c4")["version"] == 2 and history.version("c4", 1)["version"] == 1
+    assert history.decisions("c4") == []
+
+
+def test_rest_refuses_version_zero_and_negative(monkeypatch):
+    import routes.design_canvas_routes as routes
+    monkeypatch.setattr(routes, "require_user", lambda request: "")
+    app = FastAPI()
+    app.include_router(routes.setup_design_canvas_routes())
+    c = TestClient(app)
+    history.record_version("c5", BASE)
+    history.record_version("c5", _v2())
+    assert c.get("/api/design-canvas/c5/versions/0").status_code == 400
+    assert c.get("/api/design-canvas/c5/versions/-1").status_code == 400
+    assert c.post("/api/design-canvas/c5/decisions", json={"decision": "x", "version": 0}).status_code == 400
+    assert c.get("/api/design-canvas/c5/diff?from=0&to=2").status_code == 400
+    assert history.decisions("c5") == []
+
+
+def test_two_projects_filing_the_same_concept_id_keep_separate_histories(monkeypatch):
+    from src import design_canvas_pass
+    import src.project_concepts as pc
+
+    class Store:
+        def upsert_concept(self, **kw):
+            return {"id": kw.get("concept_id") or "design-x", "name": kw["name"]}
+    monkeypatch.setattr(pc, "_store", lambda **kw: Store())
+    a = design_canvas_pass.file_as_concept(BASE, "g", name="Design X", project_id="proj-a")
+    b = design_canvas_pass.file_as_concept(_v2(), "g", name="Design X", project_id="proj-b")
+    a2 = design_canvas_pass.file_as_concept(_v2(), "g", name="Design X", project_id="proj-a", concept_id="design-x")
+    assert a["canvas_version"] == 1 and b["canvas_version"] == 1
+    assert b["canvas_id"] != a["canvas_id"] and a2["canvas_id"] == a["canvas_id"] and a2["canvas_version"] == 2
+    assert [r["id"] for r in history.list_canvases(project_id="proj-b")] == [b["canvas_id"]]

@@ -19,6 +19,7 @@ and two things are built on top:
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -80,6 +81,21 @@ def get(canvas_id: str) -> Dict[str, Any]:
     return doc
 
 
+def scoped_id(canvas_id: str, project_id: str = "", workspace: str = "") -> str:
+    """The history id for a concept filed in `project_id`/`workspace`.
+
+    Concept ids are only unique inside one project's store, but the history
+    files share a folder: a second project filing a concept with the same id
+    gets its own history (``<id>.<hash of its scope>``) instead of adding
+    versions to the first project's canvas."""
+    scope = str(project_id or workspace or "")
+    doc = _load(canvas_id)
+    owner = str((doc or {}).get("project_id") or (doc or {}).get("workspace") or "")
+    if not doc or not scope or not owner or owner == scope:
+        return canvas_id
+    return f"{canvas_id[:100]}.{hashlib.sha1(scope.encode('utf-8')).hexdigest()[:8]}"
+
+
 def record_version(canvas_id: str, canvas: Dict[str, Any], *, goal: str = "", name: str = "",
                    author: str = "", source: str = "agent", note: str = "",
                    project_id: str = "", workspace: str = "", validate: bool = True) -> Dict[str, Any]:
@@ -133,8 +149,10 @@ def version(canvas_id: str, number: Optional[int] = None) -> Dict[str, Any]:
     versions = get(canvas_id).get("versions") or []
     if not versions:
         raise CanvasHistoryError(f"design canvas {canvas_id} has no versions")
-    if number is None or int(number) <= 0:
-        return versions[-1 if number is None else max(-len(versions), int(number) - 1)]
+    if number is None:
+        return versions[-1]
+    # 0 and negative numbers are not "the latest" or "counting from the end":
+    # they name no version, and a decision or a diff must not land elsewhere.
     for v in versions:
         if int(v["version"]) == int(number):
             return v

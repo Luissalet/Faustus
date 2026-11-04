@@ -116,10 +116,11 @@ def file_as_concept(canvas: Dict[str, Any], goal: str, *, name: str,
         from src import design_canvas_history
         cid = str((concept or {}).get("id") or "")
         if cid:
+            hid = design_canvas_history.scoped_id(cid, str(project_id or ""), str(workspace or ""))
             recorded = design_canvas_history.record_version(
-                cid, canvas, goal=goal, name=name, author=author, source=source,
+                hid, canvas, goal=goal, name=name, author=author, source=source,
                 project_id=str(project_id or ""), workspace=str(workspace or ""), validate=False)
-            concept = {**concept, "canvas_version": recorded.get("version")}
+            concept = {**concept, "canvas_version": recorded.get("version"), "canvas_id": hid}
     except Exception:  # noqa: BLE001 - history must never stop the filing
         logger.debug("design canvas: could not record the version", exc_info=True)
     return concept
