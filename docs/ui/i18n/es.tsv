@@ -10535,3 +10535,111 @@ the floorplan was refreshed first because the code had changed	el plano de códi
 {model} at {endpoint}: the same request is re-sent there after {s} s without a first token (up to {n} per turn).	{model} en {endpoint}: la misma petición se reenvía allí tras {s} s sin primer token (hasta {n} por turno).
 {n} described now, {m} reused, {p} waiting for the model	{n} descritos ahora, {m} reutilizados, {p} esperando al modelo
 {parts} parts · {files} files · {routes} routes · {requests} outgoing requests	{parts} partes · {files} archivos · {routes} rutas · {requests} peticiones salientes
+A commission keeps its scope versions, milestones, deliveries, contacts, files and decisions together.	Un encargo reúne sus versiones del alcance, hitos, entregas, contactos, ficheros y decisiones.
+Add contact	Añadir contacto
+Add decision	Añadir decisión
+Add file	Añadir fichero
+Add milestone	Añadir hito
+Add version	Añadir versión
+Agreed	Acordado
+Agreed scope	Alcance acordado
+Already included	Ya incluido
+Ambiguous	Ambiguo
+Amount	Importe
+Build and verify	Crear y comprobar
+Building and reopening…	Creando y reabriendo…
+Change request	Solicitud de cambio
+Changed in the zip	Cambiado en el zip
+Choose a package to see what was checked.	Elige un paquete para ver qué se comprobó.
+Clauses of the new request	Cláusulas de la nueva solicitud
+Client	Cliente
+Closed	Cerrado
+Commissions	Encargos
+Compare scope	Comparar alcance
+Comparing…	Comparando…
+Contents	Contenido
+Create one with the files of a finished job.	Crea uno con los ficheros de un trabajo terminado.
+Data source	Fuente de datos
+Decision map	Mapa de decisiones
+Decision map (graph id, optional)	Mapa de decisiones (id del grafo, opcional)
+Deliverables	Entregables
+Delivery package	Paquete de entrega
+Delivery packages	Paquetes de entrega
+Delivery package…	Paquete de entrega…
+Delivery sections	Secciones de entrega
+Document language	Idioma del documento
+Does not open	No se abre
+Due	Vence
+Earlier comparisons	Comparaciones anteriores
+Effect not grounded	Efecto sin fundamento
+First request	Petición inicial
+First request (optional)	Petición inicial (opcional)
+From the source	Desde el origen
+From the zip	Desde el zip
+Full path of the file	Ruta completa del fichero
+Hours per step (optional, "node: min-max" per line)	Horas por paso (opcional, «nodo: mín-máx» por línea)
+Instructions and limitations	Instrucciones y limitaciones
+Left out of the package	Fuera del paquete
+Limitations	Limitaciones
+Limitations (one per line)	Limitaciones (una por línea)
+Local change	Cambio local
+Lost	Perdido
+Mark done	Marcar hecho
+May be shared	Se puede compartir
+Milestone	Hito
+Milestones	Hitos
+Milestones and deliveries	Hitos y entregas
+Missing from the zip	Falta en el zip
+Negotiated from the first request	Negociado desde la petición inicial
+New commission	Nuevo encargo
+New delivery package	Nuevo paquete de entrega
+New package	Nuevo paquete
+New request	Nueva solicitud
+No client yet	Sin cliente todavía
+No commission open	Ningún encargo abierto
+No comparison open	Ninguna comparación abierta
+No decision map: effects are not grounded.	Sin mapa de decisiones: los efectos no tienen fundamento.
+No delivery packages yet	Aún no hay paquetes de entrega
+No reader	Sin lector
+No scope written yet.	Aún no hay alcance escrito.
+None stated.	Ninguna indicada.
+None written; an instructions file may be in the package.	No hay texto; puede haber un fichero de instrucciones en el paquete.
+Not ready	No lista
+Nothing depends on it	Nada depende de esto
+One clause per line	Una cláusula por línea
+Opens	Se abre
+Opportunity	Oportunidad
+Overdue	Vencido
+Pack the editable files, exports, data you may share, instructions and limitations of a job. Each editable and export is opened with a reader for its format before copying and again from the finished zip; the package is ready only when both pass.	Empaqueta los editables, las exportaciones, los datos que puedes compartir, las instrucciones y las limitaciones de un trabajo. Cada editable y cada exportación se abre con un lector de su formato antes de copiarla y otra vez desde el zip terminado; el paquete solo está listo si pasan las dos.
+Packages	Paquetes
+Partial rework	Rehacer en parte
+Paste the agreed scope and the new request to see what is new, changed or already included.	Pega el alcance acordado y la nueva solicitud para ver qué es nuevo, qué cambia y qué ya estaba incluido.
+People, files and decisions	Personas, ficheros y decisiones
+Questions for the client	Preguntas para el cliente
+Reading the packages	Leyendo los paquetes
+Ready to deliver	Lista para entregar
+Remove file	Quitar fichero
+Reopen the zip again	Reabrir el zip otra vez
+Reopening…	Reabriendo…
+Reruns	Rehace
+Reruns the pipeline	Rehace el pipeline
+Scope changes	Cambios de alcance
+Scope comparison	Comparación de alcance
+Software handoff	Entrega de software
+Software repository with a verified handoff (optional)	Repositorio con entrega de software comprobada (opcional)
+Stage	Fase
+The new request	La nueva solicitud
+The zip changed or a file no longer opens	El zip cambió o un fichero ya no se abre
+What is missing	Qué falta
+What is missing before it is ready	Qué falta para que esté lista
+What the reader saw	Qué vio el lector
+Zip unchanged and every file opens	Zip sin cambios y todos los ficheros se abren
+adds to the agreement	se suma al acuerdo
+no package	sin paquete
+no range for	sin rango para
+not found	no encontrado
+not run	no ejecutados
+not verified	sin comprobar
+restates the whole scope	sustituye todo el alcance
+{n} gap	{n} hueco
+{n} gaps	{n} huecos
