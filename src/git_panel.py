@@ -104,6 +104,10 @@ _DISCOVERY_TTL = 30.0
 _DISCOVERY_LOCK = threading.Lock()
 # owner-key -> (monotonic timestamp, projects fingerprint, deduped repo list)
 _DISCOVERY_CACHE: Dict[str, Tuple[float, Tuple[Any, ...], List[Dict[str, Any]]]] = {}
+# `stale_ok` callers (the repo list) take a walk this old at most while a new
+# one runs in the background; owner keys with a background walk running.
+_DISCOVERY_STALE_MAX = 600.0
+_DISCOVERY_REFRESHING: set = set()
 
 MAX_DIFF_BYTES = 200_000
 STDERR_SNIPPET_LIMIT = 2000
@@ -585,8 +589,37 @@ def _projects_fingerprint(projects: Sequence[Dict[str, Any]]) -> Tuple[Any, ...]
     )
 
 
+def _walk_owner(projects: List[Any], roots: List[str]) -> List[Dict[str, Any]]:
+    walked = _walk_projects(projects)
+    if roots:
+        walked.extend(_walk_watch_roots(roots, budget=max(0, MAX_REPOS - len(walked))))
+    return _dedupe_repos(walked)
+
+
+def _refresh_discovery_async(key: str, projects: List[Any], roots: List[str],
+                             fingerprint: Tuple[Any, ...]) -> None:
+    """Walk again in a background thread (one per owner at a time) and store it."""
+    with _DISCOVERY_LOCK:
+        if key in _DISCOVERY_REFRESHING:
+            return
+        _DISCOVERY_REFRESHING.add(key)
+
+    def run() -> None:
+        try:
+            result = _walk_owner(projects, roots)
+            with _DISCOVERY_LOCK:
+                _DISCOVERY_CACHE[key] = (time.monotonic(), fingerprint, result)
+        except Exception:  # noqa: BLE001 - the next caller walks itself
+            logger.debug("git_panel: background discovery failed", exc_info=True)
+        finally:
+            with _DISCOVERY_LOCK:
+                _DISCOVERY_REFRESHING.discard(key)
+
+    threading.Thread(target=run, name="git-discovery-refresh", daemon=True).start()
+
+
 def discover_repos_for_owner(owner: Optional[str], project_id: str = "", *,
-                             use_cache: bool = True) -> Optional[List[Dict[str, Any]]]:
+                             use_cache: bool = True, stale_ok: bool = False) -> Optional[List[Dict[str, Any]]]:
     """Every repo (incl. nested) under the owner's linked project folders,
     deduped by real path (`"projects"` lists every project that links it).
 
@@ -604,6 +637,11 @@ def discover_repos_for_owner(owner: Optional[str], project_id: str = "", *,
     every project) that it always walks fresh -- simpler than reasoning
     about a project-scoped cache key, and it keeps 404-on-unknown-project a
     real-time check.
+
+    `stale_ok` (the Source control list, src/git_repo_list.py): a cached walk
+    past the TTL but with the same fingerprint and younger than
+    `_DISCOVERY_STALE_MAX` is returned at once while a new walk runs in the
+    background -- under load the walk took ~8 s of the list's time budget.
     """
     from services.projects import get_store
 
@@ -628,13 +666,14 @@ def discover_repos_for_owner(owner: Optional[str], project_id: str = "", *,
             hit = _DISCOVERY_CACHE.get(key)
         if hit is not None:
             ts, cached_fingerprint, cached_result = hit
-            if cached_fingerprint == fingerprint and (time.monotonic() - ts) < _DISCOVERY_TTL:
+            age = time.monotonic() - ts
+            if cached_fingerprint == fingerprint and age < _DISCOVERY_TTL:
+                return cached_result
+            if stale_ok and cached_fingerprint == fingerprint and age < _DISCOVERY_STALE_MAX:
+                _refresh_discovery_async(key, projects, roots, fingerprint)
                 return cached_result
 
-    walked = _walk_projects(projects)
-    if roots:
-        walked.extend(_walk_watch_roots(roots, budget=max(0, MAX_REPOS - len(walked))))
-    result = _dedupe_repos(walked)
+    result = _walk_owner(projects, roots)
     if use_cache:
         with _DISCOVERY_LOCK:
             _DISCOVERY_CACHE[key] = (time.monotonic(), fingerprint, result)
@@ -877,7 +916,20 @@ def repo_summary(path: str, *, project_id: Any, project_name: Any, root_folder: 
     9.5s to well under 2s on Windows comes from -- a `git.exe` process spawn
     there costs far more than the git operation itself.
     """
-    status = _status_branch(path)
+    row = _summary_row(path, _status_branch(path), project_id=project_id, project_name=project_name,
+                       root_folder=root_folder, parent_repo_id=parent_repo_id, projects=projects,
+                       watched=watched)
+    if light:
+        return row
+    row["user"] = repo_user(path)
+    row["remotes"] = repo_remotes(path)
+    return row
+
+
+def _summary_row(path: str, status: Dict[str, Any], *, project_id: Any, project_name: Any,
+                 root_folder: str, parent_repo_id: Optional[str],
+                 projects: Optional[List[Dict[str, Any]]] = None, watched: bool = False) -> Dict[str, Any]:
+    """The light `repo_summary` row built from one parsed `_status_branch`."""
     row: Dict[str, Any] = {
         "id": compute_repo_id(path),
         "path": path,
@@ -907,10 +959,6 @@ def repo_summary(path: str, *, project_id: Any, project_name: Any, root_folder: 
         # shape stays byte-for-byte what the panel's tests pin.
         "conflicts": len(status["conflicts"]),
     }
-    if light:
-        return row
-    row["user"] = repo_user(path)
-    row["remotes"] = repo_remotes(path)
     return row
 
 

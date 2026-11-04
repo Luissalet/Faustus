@@ -200,6 +200,20 @@
   font-weight: 600;
 }
 
+/* A row whose status is still being read (pending) or is the last known one
+   while it is read again (stale): GET /api/git/repos answers by its budget. */
+.fs-sc__repo-reading {
+  display: inline-flex;
+  align-items: center;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px dashed var(--fs-border);
+  color: var(--fs-text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .fs-sc__repo-project {
   color: var(--fs-text-3);
   font-size: 11px;

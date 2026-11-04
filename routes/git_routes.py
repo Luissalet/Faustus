@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from core.middleware import require_human
 from src.auth_helpers import effective_user, require_user
-from src import agent_git_policy, git_github, git_identities, git_panel, git_radar
+from src import agent_git_policy, git_github, git_identities, git_panel, git_radar, git_repo_list
 
 logger = logging.getLogger(__name__)
 
@@ -199,14 +200,17 @@ def _repo_or_404(repo_id: str, owner: Optional[str]) -> Dict[str, Any]:
     return meta
 
 
-def _attach_identity_policy(row: Dict[str, Any], owner: Optional[str]) -> Dict[str, Any]:
+def _attach_identity_policy(row: Dict[str, Any], owner: Optional[str], *,
+                            local_identity: Optional[str] = None,
+                            identities: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """`identity`/`policy` for a full (non-`light`) repo row. Passes the
     `remotes` `repo_summary` already fetched into `active_identity_for_repo`
     so this never runs a second `remote -v` per repo -- alias match only,
     never probes ssh, so this never blocks a repo list on the network
     (that's what the dedicated identities/probe route, and the auto-probe on
     `GET .../identity`, are for). Login is whatever is already cached."""
-    ident = git_identities.active_identity_for_repo(row["path"], owner, remotes=row.get("remotes"))
+    ident = git_identities.active_identity_for_repo(row["path"], owner, remotes=row.get("remotes"),
+                                                    local_identity=local_identity, identities=identities)
     row["identity"] = (
         {"id": ident["id"], "label": ident["label"], "github_login": ident.get("github_login")}
         if ident else None
@@ -217,6 +221,9 @@ def _attach_identity_policy(row: Dict[str, Any], owner: Optional[str]) -> Dict[s
 
 
 def _summary(meta: Dict[str, Any], owner: Optional[str] = None, *, light: bool = False) -> Dict[str, Any]:
+    # A route that just changed the repo (or read it fresh): the list must not
+    # serve its older cached status for the next few seconds.
+    git_repo_list.forget(meta["path"])
     row = git_panel.repo_summary(
         meta["path"], project_id=meta["project_id"], project_name=meta["project_name"],
         root_folder=meta["root_folder"], parent_repo_id=meta["parent_repo_id"],
@@ -306,8 +313,11 @@ def setup_git_routes() -> APIRouter:
     @router.get("/repos")
     def list_repos(request: Request, project_id: str = "", light: int = 0,
                    _u: str = Depends(require_user)) -> Any:
+        started = time.monotonic()
         owner = _owner(request)
-        metas = git_panel.discover_repos_for_owner(owner, project_id=project_id)
+        # A walk past its 30 s TTL is served while a new one runs behind it
+        # (under load the walk alone took ~8 s of the list's budget).
+        metas = git_panel.discover_repos_for_owner(owner, project_id=project_id, stale_ok=True)
         if metas is None:
             raise HTTPException(404, "Project not found")
         if not git_panel.git_available():
@@ -318,15 +328,51 @@ def setup_git_routes() -> APIRouter:
         # budget for 24 repos on Windows), and `?light=1` -- the polling
         # adapter's shape -- skips remotes/user/identity/policy entirely.
         is_light = bool(light)
-        rows = git_panel.repo_summaries(metas, light=is_light)
+        # src/git_repo_list.py: statuses on one shared bounded pool, never two
+        # reads of the same repo at once, recent ones from memory, config
+        # reads cached by mtime, and an answer by the deadline (a repo still
+        # being read keeps its last row or a `pending` one; `refreshing`
+        # tells the panel to ask again). 89 repos under load passed 45 s (504).
+        budget = git_repo_list.LIGHT_BUDGET_S if is_light else git_repo_list.LIST_BUDGET_S
+        discovered_s = time.monotonic() - started
+        # The identity list (it can run `gh auth status`) is read once per
+        # request, in parallel with the statuses instead of after them.
+        identities_future = (None if is_light
+                             else git_repo_list.submit_side_read(git_identities.list_identities, owner))
+        rows, counts = git_repo_list.summaries(metas, light=is_light, deadline=started + budget)
+        statuses_s = time.monotonic() - started - discovered_s
         if not is_light and rows:
             # Identity and policy read config files per repo; serially they
             # cost ~11 s for 89 repos on Windows (04-11), enough with the
             # summaries to push the full list past the 45 s route limit.
+            # The identity list is read ONCE (started above): per repo, each
+            # read ran `gh auth status` whenever its 15 s cache had expired
+            # (~1.7 s, far more under load, several threads at once).
             from concurrent.futures import ThreadPoolExecutor
+            try:
+                identities = identities_future.result()["identities"]
+            except Exception:  # noqa: BLE001 - fall back to the per-repo read
+                identities = None
+
+            def _attach(row: Dict[str, Any]) -> Dict[str, Any]:
+                local_identity = row.pop("_local_identity", None)
+                if row.get("extras_pending"):
+                    row["identity"] = None
+                    pol = agent_git_policy.effective_policy(owner, row["id"])
+                    row["policy"] = {"effective": pol["effective"], "overridden": pol["overridden"]}
+                    return row
+                return _attach_identity_policy(row, owner, local_identity=local_identity,
+                                               identities=identities)
+
             with ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
-                rows = list(pool.map(lambda row: _attach_identity_policy(row, owner), rows))
-        return {"repos": rows, "git_version": git_panel.git_version()}
+                rows = list(pool.map(_attach, rows))
+        refreshing = bool(counts["stale"] or counts["pending"] or counts.get("extras_pending"))
+        elapsed = time.monotonic() - started
+        return {"repos": rows, "git_version": git_repo_list.git_version(),
+                "status_counts": counts, "refreshing": refreshing,
+                "elapsed_s": round(elapsed, 2),
+                "timing_s": {"discover": round(discovered_s, 2), "statuses": round(statuses_s, 2),
+                             "identity_policy": round(elapsed - discovered_s - statuses_s, 2)}}
 
     # ------------------------------------------------------------------
     # Radar (src/git_radar.py): which repos are waiting for a commit/push

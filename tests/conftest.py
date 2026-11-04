@@ -133,12 +133,17 @@ def clean_dead_host_cooldown():
     started feeding the same table, and it showed as two route tests that
     pass alone and fail in the suite.
     """
-    from src import llm_core
+    from src import git_repo_list, llm_core, probe_backoff
     llm_core._dead_hosts.clear()
     llm_core._host_fails.clear()
+    probe_backoff.clear()
+    # The repo list's status cache (src/git_repo_list.py) would serve one
+    # test's tmp repo state to the next test that reuses the path.
+    git_repo_list.clear_cache()
     yield
     llm_core._dead_hosts.clear()
     llm_core._host_fails.clear()
+    probe_backoff.clear()
 
 
 @pytest.fixture(autouse=True)

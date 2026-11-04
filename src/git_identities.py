@@ -467,24 +467,37 @@ def _alias_from_url(url: str) -> Optional[str]:
 
 
 def active_identity_for_repo(repo_path: str, owner: Optional[str], *, remote: str = "origin",
-                             remotes: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+                             remotes: Optional[List[Dict[str, Any]]] = None,
+                             local_identity: Optional[str] = None,
+                             identities: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
     """The identity explicitly selected for this checkout, otherwise the one
     whose `ssh_host` matches `remote`'s host alias, or None. Never probes --
     only local git config/alias matching plus whatever login is already cached.
 
     `remotes`, when given, is used INSTEAD of a fresh `git remote -v` --
     `routes/git_routes.py` passes the ones `repo_summary` already fetched so
-    listing repos never runs `remote -v` twice per repo."""
+    listing repos never runs `remote -v` twice per repo. `identities`, when
+    given, is `list_identities(owner)["identities"]` read once by a caller
+    that resolves many repos (the repo list), instead of once per repo --
+    each read can run `gh auth status` once its 15 s cache has expired."""
     from src import git_panel
 
     # A repository may choose its identity before it has a remote.  Keep that
     # preference in local git config: it stays with this checkout, is not
     # committed, and can be consumed later by either UI or agent publishing.
-    preferred = git_panel.run_git(
-        repo_path, "config", "--local", "--get", _REPO_IDENTITY_CONFIG_KEY,
-    )
-    if preferred.returncode == 0 and preferred.stdout.strip():
-        identity = find_identity(owner, preferred.stdout.strip())
+    # `local_identity`, when given (even ""), is that key's value as the
+    # caller already read it (src/git_repo_list.py caches it with the config
+    # files' modification times) instead of a fresh `git config` call.
+    if local_identity is None:
+        preferred = git_panel.run_git(
+            repo_path, "config", "--local", "--get", _REPO_IDENTITY_CONFIG_KEY,
+        )
+        local_identity = preferred.stdout.strip() if preferred.returncode == 0 else ""
+    if local_identity:
+        if identities is not None:
+            identity = next((i for i in identities if i.get("id") == local_identity), None)
+        else:
+            identity = find_identity(owner, local_identity)
         if identity is not None:
             return identity
 
@@ -496,7 +509,7 @@ def active_identity_for_repo(repo_path: str, owner: Optional[str], *, remote: st
     alias = _alias_from_url(entry.get("fetch_url") or entry.get("push_url") or "")
     if not alias:
         return None
-    for ident in list_identities(owner)["identities"]:
+    for ident in (identities if identities is not None else list_identities(owner)["identities"]):
         if ident.get("ssh_host") == alias:
             return ident
     return None

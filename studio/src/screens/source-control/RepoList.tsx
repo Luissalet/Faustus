@@ -82,6 +82,18 @@ export function RepoList({
                     {dirtyTotal}
                   </span>
                 )}
+                {repo.status_state === 'pending' && (
+                  <span className="fs-sc__repo-reading" data-testid="repo-status-pending"
+                    title={t('This repository is still being read; its counts appear when it finishes.')}>
+                    {t('reading…')}
+                  </span>
+                )}
+                {repo.status_state === 'stale' && (
+                  <span className="fs-sc__repo-reading" data-testid="repo-status-stale"
+                    title={t('Last known status, {s} s old; it is being read again.', { s: Math.round(repo.status_age_s ?? 0) })}>
+                    {t('{s} s ago', { s: Math.round(repo.status_age_s ?? 0) })}
+                  </span>
+                )}
               </span>
               {projectsLabel && <span className="fs-sc__repo-project" title={projectsLabel}>{projectsLabel}</span>}
             </button>

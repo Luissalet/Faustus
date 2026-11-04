@@ -183,11 +183,23 @@ export interface GitRepo {
    *  `GET /repos/{id}/identity` itself. */
   identity?: { id: string; label: string; github_login: string | null } | null;
   policy?: RepoPolicyResponse;
+  /** `GET /repos` within its time budget (src/git_repo_list.py): `fresh`,
+   *  `stale` (the last known status, `status_age_s` old, being re-read) or
+   *  `pending` (not read yet: branch from HEAD, counts unknown). */
+  status_state?: 'fresh' | 'stale' | 'pending';
+  status_age_s?: number | null;
+  /** Full mode: user/remotes/identity not read yet (empty until they are). */
+  extras_pending?: boolean;
 }
 
 export interface GitReposResponse {
   repos: GitRepo[];
   git_version: string | null;
+  /** How many rows are fresh/stale/pending, and whether any read is still
+   *  running in the background (the panel asks again while it is). */
+  status_counts?: { fresh: number; stale: number; pending: number; extras_pending?: number };
+  refreshing?: boolean;
+  elapsed_s?: number;
 }
 
 export type GitFileStatusCode = 'A' | 'M' | 'D' | 'R' | 'C';
@@ -1097,6 +1109,9 @@ export function mergeLightRepos(current: GitRepo[], light: GitRepo[]): GitRepo[]
       ahead: l.ahead,
       behind: l.behind,
       dirty: l.dirty,
+      // Only what the light row carries: an older server omits these.
+      ...(l.conflicts !== undefined ? { conflicts: l.conflicts } : {}),
+      ...(l.status_state !== undefined ? { status_state: l.status_state, status_age_s: l.status_age_s ?? null } : {}),
     };
   });
 }

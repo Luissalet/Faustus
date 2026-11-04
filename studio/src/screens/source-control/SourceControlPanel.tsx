@@ -52,6 +52,9 @@ import { t } from '../../i18n';
 const LOG_PAGE = 50;
 const COMPACT_LOG = 8;
 const POLL_MS = 15000;
+/** Re-ask a list that came back `refreshing` this often, at most this many times. */
+const REFILL_MS = 3000;
+const REFILL_MAX = 20;
 
 export interface SourceControlPanelProps {
   /** Scope the repo list to this project's linked folders (`?project_id=`
@@ -177,6 +180,25 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
     toastTimer.current = window.setTimeout(() => setToast(null), 3000);
   }, []);
 
+  // The full list answers by its time budget (src/git_repo_list.py): rows
+  // still being read come back `pending`/`stale` with `refreshing: true`,
+  // and the panel asks again shortly (quietly, the rail stays as it is) until
+  // every row is read — so a big tree delays its own row, never the list.
+  const refillTimer = useRef<number | undefined>(undefined);
+  const refillRepos = useCallback((attempt: number) => {
+    window.clearTimeout(refillTimer.current);
+    if (attempt > REFILL_MAX) return;
+    refillTimer.current = window.setTimeout(() => {
+      listRepos(effectiveProjectId)
+        .then((res) => {
+          setRepos(res.repos);
+          if (res.refreshing) refillRepos(attempt + 1);
+        })
+        .catch(() => refillRepos(attempt + 1));
+    }, REFILL_MS);
+  }, [effectiveProjectId]);
+  useEffect(() => () => window.clearTimeout(refillTimer.current), []);
+
   const loadRepos = useCallback(() => {
     setReposLoading(true);
     setReposError(null);
@@ -184,10 +206,11 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
       .then((res) => {
         setRepos(res.repos);
         setGitVersion(res.git_version);
+        if (res.refreshing) refillRepos(1);
       })
       .catch((e: unknown) => setReposError((e as Error).message))
       .finally(() => setReposLoading(false));
-  }, [effectiveProjectId]);
+  }, [effectiveProjectId, refillRepos]);
 
   useEffect(() => { loadRepos(); }, [loadRepos]);
 
