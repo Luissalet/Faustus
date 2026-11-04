@@ -205,9 +205,11 @@ def _base(url: str) -> str:
 
 
 def _host_dead(url: str) -> bool:
+    """A server in the dead-host cooldown or whose probes keep being refused
+    (`src.probe_backoff`) is no hedge target."""
     try:
-        from src.llm_core import _is_host_dead
-        return bool(_is_host_dead(url))
+        from src import probe_backoff
+        return bool(probe_backoff.should_skip(url))
     except Exception:  # noqa: BLE001
         return False
 

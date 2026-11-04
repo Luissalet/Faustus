@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from fastapi import UploadFile
 from typing import List, Optional
 
+from src import probe_backoff as _probe_backoff
 from src.upload_limits import format_byte_limit, get_chat_upload_max_bytes
 
 logger = logging.getLogger(__name__)
@@ -117,10 +118,14 @@ def _probe_lmstudio_models(url: str) -> Optional[list]:
         return cached[0]
     authority = host if parsed.port is None else f"{host}:{parsed.port}"
     probe_url = f"{parsed.scheme or 'http'}://{authority}/api/v1/models"
+    if _probe_backoff.should_skip(url):
+        return None
     try:
         r = httpx.get(probe_url, timeout=1.0)
-    except Exception:
+    except Exception as exc:
+        _probe_backoff.note_failure(url, exc)
         return None
+    _probe_backoff.note_success(url)
     try:
         data = r.json() if r.is_success else {}
     except Exception:
@@ -180,15 +185,19 @@ def llamacpp_supports_vision(url: str) -> Optional[bool]:
     if cached is not None and cached[1] > now:
         return cached[0]
     authority = host if parsed.port is None else f"{host}:{parsed.port}"
+    if _probe_backoff.should_skip(url):
+        return cached[0] if cached is not None else None
     try:
         r = httpx.get(f"{parsed.scheme or 'http'}://{authority}/props", timeout=3.0)
-    except Exception:
+    except Exception as exc:
+        _probe_backoff.note_failure(url, exc)
         # A server busy generating can take longer than the probe (live,
         # exam run 31: the 27B mid-round). What it was a minute ago is a far
         # better answer than none, which fell through to Ollama's /api/show
         # on a llama-server and then to the family name ("qwen3.8" reads as
         # multimodal) and sent images to a text-only model.
         return cached[0] if cached is not None else None
+    _probe_backoff.note_success(url)
     try:
         data = r.json() if r.is_success else {}
     except Exception:
@@ -247,10 +256,14 @@ def llamacpp_reasoning_efforts(url: str) -> Optional[tuple]:
     if cached is not None and cached[1] > now:
         return cached[0]
     authority = host if parsed.port is None else f"{host}:{parsed.port}"
+    if _probe_backoff.should_skip(url):
+        return None
     try:
         r = httpx.get(f"{parsed.scheme or 'http'}://{authority}/props", timeout=1.0)
+        _probe_backoff.note_success(url)
         data = r.json() if r.is_success else {}
-    except Exception:
+    except Exception as exc:
+        _probe_backoff.note_failure(url, exc)
         return None
     template = str((data or {}).get("chat_template") or "") if isinstance(data, dict) else ""
     answer = parse_reasoning_efforts(template)
@@ -463,10 +476,14 @@ def openai_compat_supports_vision(endpoint_url: str, model_name: str) -> Optiona
     cached = _openai_vision_cache.get(key)
     if cached and cached[1] > now:
         return cached[0]
+    if _probe_backoff.should_skip(url):
+        return None
     try:
         asked = _tokenize_vision_answer(url, model_name)
-    except _ServerUnreachable:
+    except _ServerUnreachable as exc:
+        _probe_backoff.note_failure(url, exc.__cause__ or exc)
         return None
+    _probe_backoff.note_success(url)
     if asked is not None:
         _openai_vision_cache[key] = (asked, now + _OPENAI_VISION_TTL)
         return asked
@@ -494,7 +511,8 @@ def openai_compat_supports_vision(endpoint_url: str, model_name: str) -> Optiona
             pass
         if exc.code in (400, 422) and any(w in detail for w in ("image", "multimodal", "multi-modal", "vision")):
             answer = False
-    except Exception:
+    except Exception as exc:
+        _probe_backoff.note_failure(url, exc)
         answer = None
     if answer is not None:
         _openai_vision_cache[key] = (answer, now + _OPENAI_VISION_TTL)

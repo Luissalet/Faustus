@@ -308,16 +308,22 @@ async def warm_context_length(endpoint_url: str, model: str, getter=None) -> int
 
 
 def _probe_host_dead(url: str) -> bool:
-    """True while `llm_core`'s shared dead-host cooldown covers `url`."""
+    """True while `llm_core`'s shared dead-host cooldown or the probe back-off
+    for refused connections (`src.probe_backoff`) covers `url`."""
     try:
-        from src.llm_core import _is_host_dead
-        return bool(_is_host_dead(url))
+        from src import probe_backoff
+        return bool(probe_backoff.should_skip(url))
     except Exception:  # noqa: BLE001 -- the cooldown is an optimisation
         return False
 
 
 def _probe_failed(url: str, exc: Exception) -> None:
     """Feed the shared cooldown when a probe found nobody answering."""
+    try:
+        from src import probe_backoff
+        probe_backoff.note_failure(url, exc)
+    except Exception:  # noqa: BLE001
+        pass
     if isinstance(exc, (OSError, ConnectionError, httpx.ConnectError, httpx.TimeoutException)) \
             or "onnect" in str(exc) or "imeout" in str(exc):
         try:

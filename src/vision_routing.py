@@ -246,10 +246,14 @@ def live_local_inventory(url: str) -> Dict[str, Any]:
         if hit and now - hit[0] < _LIVE_TTL_S:
             return hit[1]
     inv: Dict[str, Any] = {"models": {}, "loaded": set()}
+    from src import probe_backoff
+    if probe_backoff.should_skip(base):
+        return hit[1] if hit else inv
     try:
         import httpx
         with httpx.Client(timeout=2.0, trust_env=False) as client:
             tags = client.get(base + "/api/tags")
+            probe_backoff.note_success(base)
             if tags.status_code == 200:
                 for m in (tags.json() or {}).get("models") or []:
                     name = m.get("name") or m.get("model")
@@ -262,6 +266,7 @@ def live_local_inventory(url: str) -> Dict[str, Any]:
                     if name:
                         inv["loaded"].add(name)
     except Exception as exc:  # noqa: BLE001 - a probe never breaks a turn
+        probe_backoff.note_failure(base, exc)
         logger.debug("vision routing: live inventory of %s failed: %s", base, exc)
     with _cache_lock:
         _live_cache[base] = (now, inv)
@@ -401,13 +406,20 @@ def _pick_on_endpoints(endpoints: List[Dict[str, Any]], owner: Optional[str],
     preferred = str(_user_pref("default_endpoint_id", owner) or _global_setting("default_endpoint_id", "") or "")
     if preferred:
         local.sort(key=lambda ep: 0 if ep.get("id") == preferred else 1)
+    from src import probe_backoff
     for ep in local:
+        if probe_backoff.should_skip(ep["url"]):
+            # Its server keeps refusing connections: each probe would cost
+            # ~2 s on Windows for nothing, and a model there cannot answer.
+            continue
         capable, negative = _probe_endpoint(ep["url"], ep.get("models") or [], deadline)
         negatives[ep["url"]] = negative
         if capable:
             return _route(ep, rank_capable(ep["url"], capable)[0], source)
     for group, names in ((local, AUTO_CANDIDATES), (remote, AUTO_CANDIDATES)):
         for ep in group:
+            if group is local and probe_backoff.skipped(ep["url"]):
+                continue
             # A hosted model name on a local server is an alias of something
             # else (an Ollama tag called like a cloud model) -- only the
             # local VLM families count there.

@@ -1724,6 +1724,12 @@ def _clear_host_dead(url: str) -> None:
     with _host_health_lock:
         _dead_hosts.pop(key, None)
         _host_fails.pop(key, None)
+    # A request that reached the server also ends the capability-probe back-off.
+    try:
+        from src import probe_backoff
+        probe_backoff.note_success(url)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # Shared async HTTP client. Reusing one client keeps connections warm:
@@ -6389,8 +6395,14 @@ def _ollama_model_caps(url: str, model: str) -> Optional[frozenset]:
     if hit and now - hit[0] < _OLLAMA_CAPS_TTL:
         return hit[1]
     caps: Optional[frozenset] = None
+    from src import probe_backoff
+    if probe_backoff.should_skip(base):
+        # A server that keeps refusing: unknown, and not cached for 10 min so
+        # the answer comes back as soon as it does.
+        return hit[1] if hit else None
     try:
         r = httpx.post(base + "/api/show", json={"model": model}, timeout=3.0)
+        probe_backoff.note_success(base)
         if r.status_code < 400:
             data = r.json() or {}
             fmt = str(((data.get("details") or {}).get("format")) or "").strip().lower()
@@ -6402,6 +6414,7 @@ def _ollama_model_caps(url: str, model: str) -> Optional[frozenset]:
             else:
                 caps = frozenset(str(c) for c in (data.get("capabilities") or []))
     except Exception as e:  # noqa: BLE001 — best effort
+        probe_backoff.note_failure(base, e)
         logger.debug("ollama /api/show failed for %s: %s", model, e)
     _ollama_caps_cache[key] = (now, caps)
     return caps

@@ -2391,6 +2391,64 @@ def setup_model_routes(model_discovery):
         from src.vision_routing import vision_status
         return await _asyncio.to_thread(vision_status, owner)
 
+    @router.get("/model-endpoints/probe-backoff")
+    async def api_probe_backoff(request: Request):
+        """Servers whose capability probes are paused because they keep
+        refusing connections (`src.probe_backoff`): `{servers: [{server,
+        failures, skipped, retry_in_s, until, last_error, last_at}],
+        endpoints: {ep_id: server}, endpoint_names: {ep_id: name}}` — the
+        endpoints of the caller on each paused server, for Settings › Models
+        (disabled endpoints included: they are still in the list)."""
+        require_user(request)
+        owner = effective_user(request) or None
+        from src import probe_backoff
+        rows = probe_backoff.status()
+        keys = {r["server"] for r in rows}
+        endpoints: Dict[str, str] = {}
+        names: Dict[str, str] = {}
+        if keys:
+            db = SessionLocal()
+            try:
+                q = db.query(ModelEndpoint)
+                if owner:
+                    from src.auth_helpers import owner_filter
+                    q = owner_filter(q, ModelEndpoint, owner)
+                for ep in q.all():
+                    key = probe_backoff.server_key(ep.base_url or "")
+                    if key in keys:
+                        endpoints[ep.id] = key
+                        names[ep.id] = getattr(ep, "name", None) or ep.id
+            finally:
+                db.close()
+        return {"servers": rows, "endpoints": endpoints, "endpoint_names": names,
+                "threshold": probe_backoff.FAIL_THRESHOLD,
+                "base_s": probe_backoff.BASE_S, "max_s": probe_backoff.MAX_S}
+
+    @router.post("/model-endpoints/probe-backoff/clear")
+    async def api_probe_backoff_clear(request: Request, body: Dict[str, Any] = Body(default={})):
+        """Probe a paused server again now: `{url}` (or `{endpoint_id}`) clears
+        that server, an empty body clears every one. Returns `{cleared}`."""
+        require_user(request)
+        from src import probe_backoff
+        url = str((body or {}).get("url") or "").strip()
+        ep_id = str((body or {}).get("endpoint_id") or "").strip()
+        if ep_id and not url:
+            db = SessionLocal()
+            try:
+                ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == ep_id).first()
+                if not ep:
+                    raise HTTPException(404, "Endpoint not found")
+                url = ep.base_url or ""
+            finally:
+                db.close()
+        cleared = probe_backoff.clear(url or None)
+        try:
+            from src import vision_routing
+            vision_routing.clear_cache()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"cleared": cleared, "servers": probe_backoff.status()}
+
     @router.get("/models/fit-explain")
     async def api_models_fit_explain(
         request: Request,

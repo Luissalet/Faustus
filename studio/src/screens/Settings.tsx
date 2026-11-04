@@ -90,6 +90,7 @@ import { isOpenRouterEndpoint } from '../adapters/openrouter';
 import { OpenRouterPrefsSection } from './settings/OpenRouterPrefs';
 import { ModelRouterSection } from './settings/ModelRouter';
 import { ModelHedgeSection } from './settings/ModelHedge';
+import { ProbeBackoffSection } from './settings/ProbeBackoff';
 import { EndpointCapabilities } from './settings/EndpointCapabilities';
 import { t, tn } from '../i18n';
 import { SettingsNavigation } from './settings/SettingsNavigation';
@@ -1744,6 +1745,7 @@ export function SettingsScreen() {
           {section === 'device' && <ThisDeviceSection say={say} />}
           {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} onOpenOpenRouterPrefs={openOpenRouterPrefs} admin={admin} />}
           {section === 'models' && admin && <ModelHedgeSection say={say} />}
+          {section === 'models' && <ProbeBackoffSection endpoints={endpoints ?? []} say={say} />}
           {section === 'openrouter' && <OpenRouterPrefsSection endpoints={endpoints} focusEndpointId={openRouterFocusId} say={say} />}
           {section === 'local' && <LocalModelsSection admin={admin} say={say} />}
           {section === 'model_router' && <ModelRouterSection say={say} />}

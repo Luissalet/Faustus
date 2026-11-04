@@ -19,7 +19,8 @@ tokens go to planning and review:
     }
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
-session_usage / turn_review / model_hedge (hedged first token settings and races) / answer_versions / session_events (what a chat or a worker's chat used and what
+session_usage / turn_review / model_hedge (hedged first token settings and races) / probe_backoff (model
+servers whose probes are paused after refused connections) / answer_versions / session_events (what a chat or a worker's chat used and what
 its last turns did, with findings), run_report (effects that left the machine and whether they landed, a turn
 replayed call by call, where a turn's time and tokens went, orphaned workers),
 workers_wait (block until done, then the compact result), workers_wait_for
@@ -1317,6 +1318,23 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="probe_backoff",
+        description=(
+            "Model servers whose capability probes Faustus has paused because they keep refusing "
+            "connections (a llama.cpp or Ollama endpoint that is configured but not running). After 2 "
+            "refusals in a row of the same host:port, auto-detection (vision helper, context window, "
+            "model capabilities, hedge targets) skips that server for 60 s, doubling on each further "
+            "refusal up to 15 min; any answer from it ends the pause. action=status lists each paused "
+            "server (failures, seconds until the next try, last error) and which endpoint ids point at "
+            "it; action=clear probes again now (url or endpoint_id for one server, nothing for all)."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["status", "clear"], "default": "status"},
+            "url": {"type": "string", "description": "Any URL of the server to clear (clear only)"},
+            "endpoint_id": {"type": "string", "description": "Endpoint whose server to clear (clear only)"},
+        }},
+    ),
+    Tool(
         name="turn_review",
         description=(
             "What the last turns of a Faustus chat actually did, from what they saved: tools, failures with "
@@ -1894,6 +1912,14 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 data = await asyncio.to_thread(_request, "GET", f"/api/model-hedge?limit={limit}")
             data = dict(data or {})
             data["targets"] = (data.get("targets") or [])[:40]
+            return _text(json.dumps(data, ensure_ascii=False, indent=1))
+        if name == "probe_backoff":
+            action = str(args.get("action") or "status").strip().lower()
+            if action == "clear":
+                body = {k: str(args[k]) for k in ("url", "endpoint_id") if args.get(k)}
+                data = await asyncio.to_thread(_request, "POST", "/api/model-endpoints/probe-backoff/clear", body)
+            else:
+                data = await asyncio.to_thread(_request, "GET", "/api/model-endpoints/probe-backoff")
             return _text(json.dumps(data, ensure_ascii=False, indent=1))
         if name == "turn_review":
             sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
