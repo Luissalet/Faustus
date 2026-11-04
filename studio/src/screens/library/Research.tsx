@@ -9,6 +9,7 @@ import { safeExternal } from '../../lib/markdown';
 import { BulkBar, Highlight, SelectToggle, useSelection } from './parts';
 import { PodcastPanel } from '../research/Podcast';
 import { BlindReviewPanel, SourceVerdict, VerificationSummary } from '../research/Verification';
+import { OfficialOnlyFilter, SourceAuthorityFlags, officialCountOf, visibleSources } from '../research/SourceAuthority';
 import { summarise } from '../../lib/researchVerdicts';
 import '../research.css';
 
@@ -23,6 +24,7 @@ export function ResearchLibrary({ query, say, archived = false }: { query: strin
   const [error, setError] = useState<string | null>(null);
   const [sort, setSort] = useState<ResearchSort>('recent');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [officialOnly, setOfficialOnly] = useState(false);
   // The report whose podcast the user asked for from the actions menu: its
   // panel opens (and starts a job when there is none yet).
   const [podcastFor, setPodcastFor] = useState<string | null>(null);
@@ -175,14 +177,21 @@ export function ResearchLibrary({ query, say, archived = false }: { query: strin
                         <p className="fs-lib__summary">{d.summary || d.report.slice(0, 1200) || t('No summary')}</p>
                         <BlindReviewPanel review={d.blindReview} />
                         {d.sources.length > 0 && (
-                          <ol className="fs-lib__sources">
-                            {d.sources.slice(0, 20).map((s, i) => (
-                              <li key={i}>
-                                {safeExternal(s.url) ? <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a> : s.title}
-                                {summarise(d.sources).checked && <SourceVerdict source={s} />}
-                              </li>
-                            ))}
-                          </ol>
+                          <>
+                            {officialCountOf(d.sources) > 0 && (
+                              <p className="fs-gal__muted" data-testid="research-official-count">{t('{n} official', { n: officialCountOf(d.sources) })}</p>
+                            )}
+                            <OfficialOnlyFilter count={officialCountOf(d.sources)} checked={officialOnly} onChange={setOfficialOnly} />
+                            <ol className="fs-lib__sources">
+                              {visibleSources(d.sources, officialOnly).slice(0, 20).map((s, i) => (
+                                <li key={i}>
+                                  {safeExternal(s.url) ? <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a> : s.title}
+                                  <SourceAuthorityFlags source={s} />
+                                  {summarise(d.sources).checked && <SourceVerdict source={s} />}
+                                </li>
+                              ))}
+                            </ol>
+                          </>
                         )}
                         <div className="fs-gal__row">
                           <Button size="sm" icon={MessageSquarePlus} label={busy === 'discuss' ? t('Creating…') : t('Discuss in a new chat')} loading={busy === 'discuss'} onClick={() => void discuss(item)} />

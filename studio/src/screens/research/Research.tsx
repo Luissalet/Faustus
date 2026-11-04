@@ -59,6 +59,7 @@ import { Rich } from '../rich';
 import { Vitals } from '../studio/Vitals';
 import { VramAdmissionDialog } from '../VramAdmissionDialog';
 import { PodcastPanel } from './Podcast';
+import { OfficialOnlyFilter, SourceAuthorityFlags, officialCountOf, visibleSources } from './SourceAuthority';
 import '../research.css';
 
 /**
@@ -251,16 +252,6 @@ function ResearchStats({ stats }: { stats: Record<string, string> }) {
   );
 }
 
-/** The name of a site kind from `src/source_authority.py`; an unknown kind shows as it came. */
-function sourceTypeLabel(kind: string): string {
-  const labels: Record<string, string> = {
-    gov: t('government'), edu: t('university'), intergovernmental: t('intergovernmental'), docs: t('documentation'),
-    paper: t('paper'), code: t('code host'), wiki: t('wiki'), qa: t('Q&A'), forum: t('forum'), blog: t('blog'),
-    shop: t('shop'), social: t('social network'), video: t('video'),
-  };
-  return labels[kind] ?? kind;
-}
-
 /** The sources of a report, each with what the citation check made of it.
  *  When the check never ran for this report the chips are left out — the
  *  summary above says "not checked" once instead of on every line. */
@@ -268,19 +259,12 @@ export function SourceList({ sources }: { sources: ResearchSource[] }) {
   const [officialOnly, setOfficialOnly] = useState(false);
   if (sources.length === 0) return null;
   const checked = summarise(sources).checked;
-  const officialCount = sources.filter((s) => s.official).length;
-  // The checkbox only exists while some source is official; a ticked box carried over to a report
-  // with none would otherwise hide every source with no way to untick it.
-  const shown = officialOnly && officialCount > 0 ? sources.filter((s) => s.official) : sources;
+  const officialCount = officialCountOf(sources);
+  const shown = visibleSources(sources, officialOnly);
   return (
     <details className="fs-rs__sources" data-testid="research-sources">
       <summary>{tn(sources.length, '{n} source', '{n} sources')}{officialCount > 0 ? ` · ${t('{n} official', { n: officialCount })}` : ''}</summary>
-      {officialCount > 0 && (
-        <label className="fs-rs__source-filter">
-          <input type="checkbox" checked={officialOnly} onChange={(e) => setOfficialOnly(e.target.checked)} data-testid="research-official-only" />
-          {' '}{t('Official sources only')}
-        </label>
-      )}
+      <OfficialOnlyFilter count={officialCount} checked={officialOnly} onChange={setOfficialOnly} />
       <ol>
         {shown.map((s, i) => (
           <li key={`${s.url}-${i}`}>
@@ -295,16 +279,7 @@ export function SourceList({ sources }: { sources: ResearchSource[] }) {
             )}
             {/* WEB-02: duplicate-content and staleness signals —
                 shown when the backend stamps them. */}
-            {s.official && (
-              <span className="fs-rs__source-flag" data-tone="success" data-testid="research-source-official" title={t('Official source: government, university, intergovernmental body or vendor documentation')}>
-                {t('official')}
-              </span>
-            )}
-            {s.sourceType && (
-              <span className="fs-rs__source-flag" data-tone="info" data-testid="research-source-type">
-                {sourceTypeLabel(s.sourceType)}
-              </span>
-            )}
+            <SourceAuthorityFlags source={s} />
             {s.duplicateOf && (
               <span className="fs-rs__source-flag" data-tone="info" title={s.duplicateOf}>
                 {t('duplicate content')}
