@@ -297,6 +297,10 @@ def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
                     _mark_host_dead(url)
                 except Exception:  # noqa: BLE001
                     pass
+                # Nobody is listening: the ping below would only wait out its
+                # own timeout for the same refusal (on Windows a refused
+                # loopback connect alone takes about 2 s).
+                return False
         resident = {_norm_model(str(m.get("name") or m.get("model") or ""))
                     for m in (ps.get("models") or []) if isinstance(m, dict)}
         if resident and _norm_model(model) not in resident:

@@ -53,9 +53,11 @@ def test_a_refused_probe_feeds_the_cooldown(monkeypatch):
     monkeypatch.setattr(httpx, "get", _refused)
     monkeypatch.setattr(httpx, "post", lambda *a, **k: posted.append(a))
 
-    rmp.restore_keep_alive(ENDPOINT, MODEL, -1)
+    assert rmp.restore_keep_alive(ENDPOINT, MODEL, -1) is False
     assert marked, "the cooldown was never told the host is down"
     assert ENDPOINT in marked[0]
+    # The probe was refused: posting the ping would wait for the same refusal.
+    assert posted == []
 
 
 def test_a_live_host_still_gets_its_ping(monkeypatch):

@@ -96,7 +96,21 @@ cleanup. Specifically:
   enough; the parent-package attribute must be restored too (the import-state
   helpers handle both).
 - **`os.environ`** - use `monkeypatch.setenv` / `monkeypatch.delenv`, never raw
-  `os.environ[...] = ...` that outlives the test.
+  `os.environ[...] = ...` that outlives the test. The checkout's own `.env`
+  never reaches the test process: `tests/conftest.py` makes a discovery
+  `load_dotenv()` (the one `app.py` runs at import) a no-op; an explicit path
+  still loads. After each test the root conftest also puts `AUTH_ENABLED` and
+  `LOCALHOST_BYPASS` back and warns with the id of the test that changed them.
+- **Running services** - tests never reach the user's running instance or its
+  services. The root conftest stubs the family Hub calls and reports the
+  default ChromaDB address (localhost:8100) as closed, so the tool index uses
+  its in-memory lane; export `CHROMADB_HOST`/`CHROMADB_PORT` to test against a
+  ChromaDB on purpose.
+- **Reloading shared modules** - do not drop a module such as
+  `src.auth_helpers` from `sys.modules` to get a fresh copy: modules that
+  imported the first copy keep it, and a later
+  `app.dependency_overrides[require_user]` keyed on the new function no longer
+  matches the routes.
 - **Current working directory** - never `chdir` without restoring; never assert
   against cwd-relative paths like `./data`. Use a temp workspace helper instead.
 - **Database** - the root `conftest.py` defaults `DATABASE_URL` to an in-memory

@@ -19,6 +19,27 @@ def test_discovery_load_is_a_no_op(monkeypatch, tmp_path):
     assert "FAUSTUS_HERMETIC_PROBE" not in os.environ
 
 
+def test_the_checkout_env_by_explicit_path_is_a_no_op(monkeypatch):
+    from pathlib import Path
+    checkout_env = Path(__file__).resolve().parents[1] / ".env"
+    monkeypatch.delenv("AUTH_ENABLED", raising=False)
+    assert dotenv.load_dotenv(str(checkout_env)) is False
+    assert dotenv.load_dotenv(checkout_env) is False
+    assert os.environ.get("AUTH_ENABLED") is None
+
+
+def test_importing_markitdown_leaves_the_environment_alone(monkeypatch):
+    # Importing markitdown runs load_dotenv on the checkout's .env path (seen
+    # on 04-11: AUTH_ENABLED=false after test_markitdown_runtime and
+    # test_read_file_documents). Only meaningful on a first import.
+    monkeypatch.delenv("AUTH_ENABLED", raising=False)
+    import pytest
+    pytest.importorskip("markitdown")
+    from markitdown import MarkItDown
+    MarkItDown()
+    assert os.environ.get("AUTH_ENABLED") is None
+
+
 def test_explicit_path_still_loads(monkeypatch, tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text("FAUSTUS_HERMETIC_PROBE=explicit\n", encoding="utf-8")

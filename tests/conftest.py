@@ -53,6 +53,11 @@ def no_live_chroma(monkeypatch):
         return real(host, port, timeout)
 
     monkeypatch.setattr(chroma_client, "_port_open", port_open)
+    # Each test starts without a cached client and leaves none behind: a test
+    # that connected a fake client at localhost:8100 used to leave it in the
+    # singleton, and later health checks asked the real server behind it.
+    monkeypatch.setattr(chroma_client, "_client", None)
+    monkeypatch.setattr(chroma_client, "_client_addr", None)
 
 
 @pytest.fixture(autouse=True)
@@ -98,9 +103,11 @@ def _hermetic_dotenv():
     beside it and writes every key into os.environ for the rest of the worker.
     A .env with AUTH_ENABLED=false turned auth off for every later test in that
     worker: owner-scope and 401/403 tests passed alone and failed under xdist as
-    soon as an earlier test on the same worker had imported app. A discovery
-    call (no path, no stream) is a no-op here; an explicit path or stream (a
-    test's own .env, setup.py with a patched BASE_DIR) still loads.
+    soon as an earlier test on the same worker had imported app. Importing
+    markitdown does the same with an explicit path to that file. A discovery
+    call (no path, no stream) and a call naming the checkout's .env are no-ops
+    here; any other path or a stream (a test's own .env, setup.py with a
+    patched BASE_DIR) still loads.
     """
     try:
         import dotenv
@@ -110,10 +117,18 @@ def _hermetic_dotenv():
     real = dotenv.main.load_dotenv
     if getattr(real, "_faustus_hermetic", False):
         return
+    checkout_env = os.path.normcase(os.path.abspath(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")))
 
     def load_dotenv(dotenv_path=None, stream=None, *args, **kwargs):
         if dotenv_path is None and stream is None:
             return False
+        if dotenv_path is not None and stream is None:
+            try:
+                if os.path.normcase(os.path.abspath(os.fspath(dotenv_path))) == checkout_env:
+                    return False
+            except TypeError:
+                pass
         return real(dotenv_path, stream, *args, **kwargs)
 
     load_dotenv._faustus_hermetic = True
