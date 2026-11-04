@@ -1831,6 +1831,8 @@ class TurnLedger:
     def __init__(self, workspace: Optional[str] = None, user_text: str = ""):
         self.workspace = workspace
         self.user_text = user_text or ""
+        from src import task_constraints as _tc
+        self.task_constraints = _tc.extract(user_authored_text(self.user_text))
         self.language = detect_language(self.user_text)
         self._conversational: Optional[bool] = None
         self.events: List[Dict[str, Any]] = []
@@ -2008,6 +2010,12 @@ class TurnLedger:
             for _k in ("exit_code", "result_status", "status"):
                 if _k in result and isinstance(result[_k], (int, str)) and not isinstance(result[_k], bool):
                     ev[_k] = result[_k]
+        try:
+            from src import task_constraints as _tc
+            if ok and _tc.is_coordination_read(tool) and isinstance(result, dict):
+                _tc.merge(self.task_constraints, str(result.get("output") or result.get("content") or ""))
+        except Exception:  # noqa: BLE001 - a reminder never breaks a turn
+            pass
         self.events.append(ev)
         if ok and kind in ("mutation", "effect"):
             self._invalidate_tests()

@@ -18436,6 +18436,14 @@ async def _stream_agent_loop_body(
             # Evidence ledger: record what really ran (success, kind, paths).
             try:
                 _ledger_ev = _ledger.record(block.tool_type, block.content, result, round_num)
+                try:
+                    from src import task_constraints as _task_constraints
+                    _tc_note = _task_constraints.reminder(
+                        _ledger.task_constraints, block.tool_type, block.content)
+                    if _tc_note and isinstance(result, dict):
+                        result["output"] = str(result.get("output") or "") + "\n" + _tc_note
+                except Exception:  # noqa: BLE001 - a reminder never breaks a turn
+                    logger.debug("[task-constraints] reminder skipped", exc_info=True)
                 if _cc_book is not None:
                     # The contract criteria book keeps what each call ran and
                     # showed, so a criteria_check link can be judged against it.
