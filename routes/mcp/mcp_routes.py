@@ -349,14 +349,17 @@ def setup_mcp_routes(mcp_manager: McpManager):
         mutations = bool(config.get("mutations"))
         if not base_url or not rest_bridge.is_loopback_base_url(base_url):
             raise HTTPException(400, "base_url must be a loopback address (127.0.0.1, localhost or ::1)")
+        headers = rest_bridge.parse_extra_headers(config.get("headers"))
         try:
-            schema = rest_bridge.fetch_graphql_schema(base_url, None, path)
+            schema = rest_bridge.fetch_graphql_schema(base_url, headers or None, path)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(502, f"Could not read the GraphQL schema from {base_url}{path}: {exc}")
         specs, notes = rest_bridge.graphql_to_tools(schema, path, mutations)
         env = {"REST_BASE_URL": base_url.rstrip("/"), "REST_GRAPHQL_PATH": path}
         if mutations:
             env["REST_GRAPHQL_MUTATIONS"] = "1"
+        if headers:  # stored with the server's env, like any other MCP server credential
+            env["REST_HEADERS"] = json.dumps(headers)
         script = Path(__file__).resolve().parents[2] / "bridges" / "rest_mcp" / "server.py"
         host = urllib.parse.urlsplit(base_url).netloc
         return {

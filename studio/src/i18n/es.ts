@@ -10470,6 +10470,8 @@ export const es: Record<string, string> = {
   "video": "vídeo",
   "GraphQL server": "Servidor GraphQL",
   "GraphQL path": "Ruta de GraphQL",
+  "Header name (optional)": "Nombre de la cabecera (opcional)",
+  "Header value (kept in the server environment)": "Valor de la cabecera (se guarda en el entorno del servidor)",
   "Also expose mutations (they can change data)": "Exponer también las mutaciones (pueden modificar datos)",
   "Read the schema": "Leer el esquema",
   "{n} tools from this schema. The form below is filled in; press Add to register it.": "{n} herramientas de este esquema. El formulario de abajo está relleno; pulsa Añadir para registrarlo.",

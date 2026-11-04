@@ -25,6 +25,8 @@ REST_ALLOW           Optional regex over "METHOD /path", filtering which
                      the manifest). Default: "^GET " (read-only only).
 REST_TOKEN_FILE      Optional path to a bearer token, sent as
                      "Authorization: Bearer <token>" on every request.
+REST_HEADERS         Optional JSON object of extra request headers (e.g. {"X-Api-Key": "..."}), sent on every
+                     request including the GraphQL introspection; merged over the bearer token.
 REST_NAME            Optional display name for the MCP server.
 REST_GRAPHQL_PATH    Optional. Path of a GraphQL endpoint under REST_BASE_URL (e.g. /graphql). Its schema is
                      read by introspection at startup and every first-level Query field becomes a read-only tool
@@ -274,6 +276,27 @@ def _render_response(status_code: int, content_type: str, raw: bytes) -> str:
     return prefix + text
 
 
+def auth_headers(token: Any) -> Dict[str, str]:
+    """Request headers for the credential: a bearer token string, or a ready ``{header: value}`` dict
+    (REST_HEADERS), or nothing."""
+    if isinstance(token, dict):
+        return {str(k): str(v) for k, v in token.items()}
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def parse_extra_headers(raw: Any) -> Dict[str, str]:
+    """``REST_HEADERS``: a JSON object of extra request headers, e.g. {"X-Api-Key": "..."}."""
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k).strip(): str(v) for k, v in data.items() if str(k).strip() and v is not None}
+
+
 async def call_rest(base_url: str, token: Optional[str], method: str, path: str,
                      path_values: Dict[str, str], query: Dict[str, Any],
                      body: Optional[Dict[str, Any]], timeout: float = 30.0) -> str:
@@ -284,7 +307,7 @@ async def call_rest(base_url: str, token: Optional[str], method: str, path: str,
     for name, value in path_values.items():
         resolved_path = resolved_path.replace("{" + name + "}", quote(str(value), safe=""))
     url = base_url.rstrip("/") + "/" + resolved_path.lstrip("/")
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers = auth_headers(token)
     query = {k: v for k, v in (query or {}).items() if v is not None}
 
     def _do_request() -> Tuple[int, str, bytes]:
@@ -533,7 +556,7 @@ def graphql_request(spec: Dict[str, Any], values: Dict[str, Any]) -> Dict[str, A
 def fetch_graphql_schema(base_url: str, token: Optional[str], path: str, timeout: float = 10.0) -> Dict[str, Any]:
     """Run the introspection query against the local endpoint. Raises on a transport error or GraphQL errors."""
     import httpx
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers = auth_headers(token)
     resp = httpx.post(base_url.rstrip("/") + "/" + path.lstrip("/"), json={"query": INTROSPECTION_QUERY},
                       headers=headers, timeout=timeout)
     resp.raise_for_status()
@@ -562,6 +585,9 @@ def build_server(env: Dict[str, str]):
     if token_file and os.path.isfile(token_file):
         with open(token_file, "r", encoding="utf-8") as fh:
             token = fh.read().strip() or None
+    extra_headers = parse_extra_headers(env.get("REST_HEADERS"))
+    if extra_headers:  # a header map replaces the plain bearer token; keep it unless the map sets its own
+        token = {**auth_headers(token), **extra_headers}
 
     all_specs: List[Dict[str, Any]] = []
     all_notes: List[str] = []

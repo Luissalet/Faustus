@@ -16,6 +16,8 @@ export function GraphqlSetup({ onFill }: { onFill: (fields: GraphqlPreview['fiel
   const [baseUrl, setBaseUrl] = useState('http://127.0.0.1:8000');
   const [path, setPath] = useState('/graphql');
   const [mutations, setMutations] = useState(false);
+  const [headerName, setHeaderName] = useState('Authorization');
+  const [headerValue, setHeaderValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<GraphqlPreview | null>(null);
@@ -26,7 +28,10 @@ export function GraphqlSetup({ onFill }: { onFill: (fields: GraphqlPreview['fiel
     try {
       const r = await fetch('/api/mcp/graphql/preview', {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base_url: baseUrl, path, mutations }),
+        body: JSON.stringify({
+          base_url: baseUrl, path, mutations,
+          headers: headerName.trim() && headerValue ? { [headerName.trim()]: headerValue } : undefined,
+        }),
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `HTTP ${r.status}`);
@@ -49,6 +54,14 @@ export function GraphqlSetup({ onFill }: { onFill: (fields: GraphqlPreview['fiel
         </Field>
         <Field label={t('GraphQL path')} htmlFor="gql-path">
           <Text id="gql-path" value={path} onChange={setPath} placeholder="/graphql" />
+        </Field>
+      </div>
+      <div className="fs-set__grid2">
+        <Field label={t('Header name (optional)')} htmlFor="gql-hname">
+          <Text id="gql-hname" value={headerName} onChange={setHeaderName} placeholder="Authorization" />
+        </Field>
+        <Field label={t('Header value (kept in the server environment)')} htmlFor="gql-hvalue">
+          <Text id="gql-hvalue" value={headerValue} onChange={setHeaderValue} placeholder="Bearer ..." secret />
         </Field>
       </div>
       <div className="fs-set__inline">

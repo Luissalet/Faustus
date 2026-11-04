@@ -78,11 +78,18 @@ def test_request_declares_only_the_variables_given():
 
 class _Gql(http.server.BaseHTTPRequestHandler):
     seen = []
+    headers_seen = []
+    need_key = ""
 
     def log_message(self, *a):
         pass
 
     def do_POST(self):
+        _Gql.headers_seen.append(dict(self.headers))
+        if _Gql.need_key and self.headers.get("X-Api-Key") != _Gql.need_key:
+            self.send_response(401)
+            self.end_headers()
+            return
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         if "IntrospectionQuery" in body["query"]:
             out = SCHEMA
@@ -101,6 +108,8 @@ def endpoint():
     srv = http.server.HTTPServer(("127.0.0.1", 0), _Gql)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     _Gql.seen.clear()
+    _Gql.headers_seen.clear()
+    _Gql.need_key = ""
     yield f"http://127.0.0.1:{srv.server_port}"
     srv.shutdown()
 
@@ -146,3 +155,21 @@ def test_a_query_returning_a_union_gets_a_selection_set():
     assert specs[0]["graphql"]["selection"] == "{ __typename }"
     body = bridge.graphql_request(specs[0], {"q": "x"})
     assert body["query"].endswith("{ search(q: $q) { __typename } }")
+
+def test_a_header_map_reaches_the_introspection_and_every_call(endpoint):
+    _Gql.need_key = "s3cret"
+    with pytest.raises(Exception):  # no credential: the endpoint answers 401
+        bridge.fetch_graphql_schema(endpoint, None, "/graphql")
+    assert bridge.fetch_graphql_schema(endpoint, {"X-Api-Key": "s3cret"}, "/graphql")["data"]["__schema"]
+    mcp = bridge.build_server({"REST_BASE_URL": endpoint, "REST_GRAPHQL_PATH": "/graphql",
+                               "REST_HEADERS": json.dumps({"X-Api-Key": "s3cret"})})
+    assert "query_user" in {t.name for t in asyncio.run(mcp.list_tools())}
+    result = asyncio.run(mcp.call_tool("query_user", {"id": "7"}))
+    assert "Ada" in json.dumps(result, default=str)
+    assert _Gql.headers_seen[-1].get("X-Api-Key") == "s3cret"
+
+
+def test_extra_headers_are_parsed_defensively():
+    assert bridge.parse_extra_headers('{"A": "1", "": "x", "B": null}') == {"A": "1"}
+    assert bridge.parse_extra_headers("not json") == {} and bridge.parse_extra_headers("[1]") == {}
+    assert bridge.auth_headers("tok") == {"Authorization": "Bearer tok"} and bridge.auth_headers(None) == {}
