@@ -76,6 +76,16 @@ def _require_research_path(session_id: str) -> Path:
     return path
 
 
+def _owner_ok(stored, user) -> bool:
+    """Whether ``user`` may see a report stored for ``stored``. Plain identity with login on; on an install
+    without login (single-user mode) every owner bucket is the same person, so reports saved earlier as
+    another account (e.g. the first admin) still show in the one local Library."""
+    if (stored or "") == (user or ""):
+        return True
+    from src.owner_identity import owners_match
+    return owners_match(stored, user)
+
+
 def _find_owned_research_path(session_id: str, user: str) -> Path | None:
     path = _find_research_path(session_id)
     if path is None:
@@ -84,7 +94,7 @@ def _find_owned_research_path(session_id: str, user: str) -> Path | None:
         owner = json.loads(path.read_text(encoding="utf-8")).get("owner")
     except Exception:
         return None
-    if owner != user:
+    if not _owner_ok(owner, user):
         return None
     return path
 
@@ -377,7 +387,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             owner = json.loads(path.read_text(encoding="utf-8")).get("owner")
         except Exception:
             raise HTTPException(404, "Research not found")
-        if owner != user:
+        if not _owner_ok(owner, user):
             raise HTTPException(404, "Research not found")
 
     @router.get("/api/research/report/{session_id}")
@@ -507,7 +517,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                 # SECURITY: only show research belonging to this user. Legacy
                 # JSONs without an `owner` field are hidden — auth was the only
                 # gate before, so every user saw every other user's reports.
-                if d.get("owner") != user:
+                if not _owner_ok(d.get("owner"), user):
                     continue
                 # Archived view shows ONLY archived reports; default hides them.
                 if bool(d.get("archived")) != archived:
@@ -560,7 +570,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         except Exception as e:
             raise HTTPException(500, f"Failed to read research: {e}")
         # SECURITY: 404 (not 403) so we don't leak that the report exists.
-        if data.get("owner") != user:
+        if not _owner_ok(data.get("owner"), user):
             raise HTTPException(404, "Research not found")
         # Reports saved before the source classification get their kind/official marks here, by host.
         from src.source_authority import stamp_missing
@@ -631,7 +641,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         path = _require_research_path(session_id)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            if data.get("owner") != user:
+            if not _owner_ok(data.get("owner"), user):
                 raise HTTPException(404, "Research not found")
             data["archived"] = bool(archived)
             path.write_text(json.dumps(data), encoding="utf-8")
@@ -652,7 +662,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             # SECURITY: verify ownership before letting the caller delete it.
             try:
                 data = json.loads(json_path.read_text(encoding="utf-8"))
-                if data.get("owner") != user:
+                if not _owner_ok(data.get("owner"), user):
                     raise HTTPException(404, "Research not found")
             except HTTPException:
                 raise

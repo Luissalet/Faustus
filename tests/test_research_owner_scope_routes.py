@@ -130,3 +130,32 @@ def test_delete_rejects_cross_owner_without_unlinking_report(tmp_path, monkeypat
     assert exc.value.status_code == 404
     assert path.exists()
     assert json.loads(path.read_text(encoding="utf-8"))["result"] == "bob secret"
+
+
+def test_without_login_every_saved_owner_bucket_is_the_one_local_person(tmp_path, monkeypatch):
+    # Reports saved while an admin account existed must still show once the install runs as a local workspace;
+    # with login on (previous tests) other accounts stay hidden.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    data_dir = tmp_path / "data" / "deep_research"
+    _write_research(data_dir, "admin-old", owner="admin", query="Old", completed_at=10)
+    _write_research(data_dir, "local-new", owner="", query="New", completed_at=20)
+
+    router = setup_research_routes(_research_handler())
+    lib = _route(router, "/api/research/library", "GET")
+    out = asyncio.run(lib(request=_request(""), search=None, sort="recent", limit=50, archived=False))
+    assert sorted(i["id"] for i in out["research"]) == ["admin-old", "local-new"]
+    detail = _route(router, "/api/research/detail/{session_id}", "GET")
+    assert asyncio.run(detail(session_id="admin-old", request=_request("")))["query"] == "Old"
+
+
+def test_with_login_on_a_blank_caller_still_cannot_read_an_account_report(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    data_dir = tmp_path / "data" / "deep_research"
+    _write_research(data_dir, "admin-old", owner="admin", query="Old")
+    router = setup_research_routes(_research_handler())
+    detail = _route(router, "/api/research/detail/{session_id}", "GET")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(detail(session_id="admin-old", request=_request("")))
+    assert exc.value.status_code in (401, 404)  # anonymous with login on: refused either way
