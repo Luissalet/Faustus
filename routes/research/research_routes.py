@@ -562,6 +562,9 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         # SECURITY: 404 (not 403) so we don't leak that the report exists.
         if data.get("owner") != user:
             raise HTTPException(404, "Research not found")
+        # Reports saved before the source classification get their kind/official marks here, by host.
+        from src.source_authority import stamp_missing
+        stamp_missing(data.get("sources"))
         return data
 
     @router.get("/api/research/export-formats")

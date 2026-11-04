@@ -148,3 +148,15 @@ def stamp(entry: Dict[str, Any]) -> Tuple[str, bool]:
         entry["source_type"] = info["source_type"]
     entry["official"] = bool(info["official"])
     return entry["source_type"], entry["official"]
+
+
+def stamp_missing(sources: Any) -> Any:
+    """Saved reports from before the classification carry no ``official`` flag: classify those sources by
+    host when they are served (cheap, no network, the saved file is left alone). Sources that already carry
+    the flag, and anything that is not a list of dicts, are returned untouched."""
+    if not isinstance(sources, list):
+        return sources
+    for entry in sources:
+        if isinstance(entry, dict) and "official" not in entry:
+            stamp(entry)
+    return sources

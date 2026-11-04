@@ -111,3 +111,16 @@ def test_docs_prefix_on_a_platform_that_gives_anyone_a_subdomain_is_not_official
         assert classify_source(url)["official"] is False, url
     assert classify_source("https://docs.python.org/3/")["official"] is True
     assert classify_source("https://developer.mozilla.org/en-US/")["official"] is True
+
+def test_old_saved_sources_are_classified_when_served():
+    from src.source_authority import stamp_missing
+    saved = {"sources": [{"url": "https://www.boe.gov/x", "title": "BOE"},
+                         {"url": "https://reddit.com/r/x"},
+                         {"url": "https://docs.google.com/d/1", "official": False, "source_type": "blog"},
+                         "not a dict"]}
+    stamp_missing(saved["sources"])
+    boe, reddit, kept = saved["sources"][:3]
+    assert (boe["official"], boe["source_type"]) == (True, "gov")
+    assert (reddit["official"], reddit["source_type"]) == (False, "forum")
+    assert (kept["official"], kept["source_type"]) == (False, "blog")  # already classified: untouched
+    assert stamp_missing(None) is None and stamp_missing("x") == "x"
