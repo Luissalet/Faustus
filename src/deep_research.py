@@ -1499,7 +1499,23 @@ class DeepResearcher:
             gen_overrides=overrides,
             _spend_purpose="deep_research",
         )
-        return strip_thinking(response)
+        text = strip_thinking(response)
+        if not str(text or "").strip() and overrides and overrides.get("think") and stage in ("think", "read"):
+            # The model spent the whole budget reasoning and wrote no answer. One pass without thinking,
+            # and no more asking for the same effort in this run: the next calls start without it.
+            self.thinking_fallbacks = int(getattr(self, "thinking_fallbacks", 0)) + 1
+            self._think_overrides = {**(getattr(self, "_think_overrides", None) or {}), "think": False}
+            self._read_overrides = {**(getattr(self, "_read_overrides", None) or {}), "think": False}
+            retry = {**overrides, "think": False}
+            retry.pop("reasoning_budget", None)
+            logger.warning("[deep_research] %s call came back empty after thinking; retrying once without thinking", stage)
+            response = await llm_call_async(
+                url=self.llm_endpoint, model=self.llm_model, messages=messages, temperature=temperature,
+                max_tokens=max_tokens, headers=self.llm_headers, timeout=self._call_budget(max_tokens, timeout),
+                gen_overrides=retry, _spend_purpose="deep_research",
+            )
+            text = strip_thinking(response)
+        return text
 
     # ------------------------------------------------------------------
     # PLAN: create research strategy
@@ -3290,6 +3306,9 @@ class DeepResearcher:
             "URLs": len(self.urls_fetched),
             "Model": self.llm_model,
         }
+        if getattr(self, "thinking_fallbacks", 0):
+            # Calls that came back empty after thinking and were redone without it.
+            stats["Thinking skipped"] = f"{int(self.thinking_fallbacks)} call(s) redone without thinking"
         if self.providers_used:
             stats["Search"] = ", ".join(self.providers_used)
         if self.category:

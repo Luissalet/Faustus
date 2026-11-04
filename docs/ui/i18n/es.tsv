@@ -10495,3 +10495,4 @@ No threshold gives that guarantee.	Ningún umbral da esa garantía.
 Write one example per line: the confidence, then 1 if the answer was right or 0 if it was wrong.	Escribe un ejemplo por línea: la confianza y luego 1 si la respuesta fue correcta o 0 si fue errónea.
 Name the question to store its threshold.	Pon nombre a la pregunta para guardar su umbral.
 Threshold {threshold}: {accepted} of {samples} examples accepted ({coverage}%), {errors} wrong, error rate below {bound} with {conf}% confidence.	Umbral {threshold}: {accepted} de {samples} ejemplos aceptados ({coverage}%), {errors} erróneos, tasa de error por debajo de {bound} con {conf}% de confianza.
+Thinking skipped	Pensamiento omitido
