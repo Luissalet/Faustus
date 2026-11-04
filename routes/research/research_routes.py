@@ -9,7 +9,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from urllib.parse import quote as _urlquote
 
@@ -843,6 +843,17 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         # Optional map url → {content_hash, changed, unreachable, fetched_at}
         # so a caller that already re-checked pages can drive the plan.
         url_status: Optional[dict] = None
+
+    @router.get("/api/research/source-authority")
+    async def research_source_authority(request: Request, url: List[str] = Query(..., max_length=100)):
+        """What kind of site each URL is and whether it is an official one (government, university,
+        intergovernmental, a vendor's docs./developer. subdomain). Host-only, no network access; `official`
+        is True only on a strong signal. Same data the Research source list shows (src/source_authority.py)."""
+        _require_user(request)
+        from src.source_authority import annotate, summarise
+        items = annotate(url)
+        return {"sources": [{"url": i["url"], "source_type": i["source_type"], "official": i["official"]} for i in items],
+                "summary": summarise(url)}
 
     @router.get("/api/research/{session_id}/incremental")
     async def research_incremental_plan(

@@ -111,6 +111,9 @@ _BUILTIN_SERVERS = {
     # Page pruning (src/research_prune.py): url/html/text + a question -> the
     # blocks worth reading, with scores. No owner-scoped data, no writes.
     "research_prune": ("mcp_servers/research_prune_server.py", "Built-in: Page pruning"),
+    # Source authority (src/source_authority.py): what kind of site each cited URL
+    # is and whether it is an official one. Host-only, read-only, no owner data.
+    "source_authority": ("mcp_servers/source_authority_server.py", "Built-in: Source authority"),
     # Typed 3D scenes rendered headless with Blender (src/blender_scene): probe,
     # schema, validate, run, smoke. Writes only inside its own scenes folder
     # (BLENDER_SCENES_DIR/mcp); no owner-scoped data.

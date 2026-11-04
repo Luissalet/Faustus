@@ -38,6 +38,10 @@ export interface ResearchSource {
    *  means "no signal", not "fresh" — same passthrough dependency as above. */
   stale?: boolean;
   ageDays?: number;
+  /** What kind of site this is (`src/source_authority.py`): gov, edu, docs, paper, code, forum, blog, shop... Undefined when unknown. */
+  sourceType?: string;
+  /** True only on a strong host signal (government, university, intergovernmental, vendor docs). Undefined is not "unofficial", it is "no signal". */
+  official?: boolean;
   /** "Look at the page": the evidence of this source was read from a screenshot of it by the
    *  vision model (`captureModel`), not extracted as text. Undefined for ordinary sources. */
   fromCapture?: boolean;
@@ -64,6 +68,8 @@ function sourceFrom(s: Record<string, unknown>): ResearchSource {
     duplicateOf: typeof s.duplicate_of === 'string' && s.duplicate_of ? s.duplicate_of : undefined,
     stale: typeof s.stale === 'boolean' ? s.stale : undefined,
     ageDays: typeof s.age_days === 'number' ? s.age_days : undefined,
+    sourceType: typeof s.source_type === 'string' && s.source_type && s.source_type !== 'unknown' ? s.source_type : undefined,
+    official: s.official === true ? true : undefined,
     fromCapture: s.from_capture === true ? true : undefined,
     captureModel: s.from_capture === true && typeof s.capture_model === 'string' && s.capture_model ? s.capture_model : undefined,
     citationVerdict: verdict === 'supported' || verdict === 'not_supported' || verdict === 'unverifiable' ? verdict : undefined,

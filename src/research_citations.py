@@ -36,6 +36,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from src.source_authority import classify_source
+
 # Three outcomes, not a three-point scale. A scale invites the reader to
 # average it, and "we did not check" is not a worse grade than "the source has
 # the figure" -- it is not on the same axis at all. Stable machine values,
@@ -246,7 +248,8 @@ class SourceRegistry:
             "evidence": _as_text(finding.get("evidence")).strip(),
             "domain": domain_of(url),
             "fetched_at": _as_text(finding.get("fetched_at")).strip() or _now(),
-            "source_type": _as_text(finding.get("source_type")).strip() or "unknown",
+            "source_type": (_as_text(finding.get("source_type")).strip()
+                            or classify_source(url)["source_type"]),
         })
         self._by_key[key] = number
         self._note_engine(number, finding)

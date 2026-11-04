@@ -960,6 +960,9 @@ class ResearchHandler:
             if url and url not in seen and not is_low_quality(summary):
                 seen.add(url)
                 entry = {"url": url, "title": title}
+                # What kind of site this is and whether it is an official one (src/source_authority.py).
+                from src.source_authority import stamp as _stamp_authority
+                _stamp_authority(entry)
                 og_img = f.get("og_image", "")
                 if og_img:
                     entry["image"] = og_img
