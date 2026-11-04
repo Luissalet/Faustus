@@ -573,6 +573,14 @@ compara la precisión de la regla, la decisión y la combinación, con calibraci
 tiempos de caché. [API de decisiones tipadas](docs/api/typed_decision.md),
 [evaluación](docs/evals/typed-decisions.md).
 
+### Mantenimiento del 04-11-2026
+
+- **Visión en un servidor OpenAI-compatible de la red local.** La detección automática de visión pregunta ahora a un servidor vLLM/SGLang de la LAN con su tokenizador o una petición de 1 token con imagen (cacheada): un modelo servido que ve (DeepSeek V4.1 Flash y GLM 5.3 Flash en las Sparks ven) contesta imágenes, `/api/vision/status` y «mira la página» sin nombrar a mano un modelo de visión.
+- **Un rol guardado en un endpoint desactivado sigue al modelo por defecto.** Utilidad, tareas, despacho, investigación y los demás roles usan el modelo de chat por defecto cuando su endpoint guardado se ha desactivado o borrado y quien llama no trae modelo propio; la elección guardada se conserva y vuelve al reactivar el endpoint (la limpieza de memoria y los títulos ya no fallan con «No default model configured»).
+- **Comprobaciones editadas, marcadas.** Un turno que ejecuta un script, lo edita y lo vuelve a ejecutar registra el aviso `verifier_edited` (tarjeta del arnés en Studio, nota de evidencias, resultado no «verificado»): la comprobación que pasó no es una prueba independiente.
+- **Memoria.** La limpieza quita las fotos fijas del workspace guardadas («en la raíz hay 2 ficheros») con la misma guarda que la extracción; una memoria de más de 2.000 caracteres se sigue guardando recortada, con `provenance.truncated_from_chars`.
+- **Control de versiones.** Los proyectos que enlazan la misma carpeta comparten un único recorrido del disco al descubrir repos, y el recorrido lee el tipo de cada entrada del propio listado (89 repos en ~3 s en vez de ~17 s en Windows). La retención de trazas de llamadas al modelo (`llm_trace_retention_days`, 7 por defecto) es un campo de Ajustes › Agente.
+
 ### Primer token con cobertura
 
 Si el modelo de una petición de chat en streaming no ha soltado ningún primer

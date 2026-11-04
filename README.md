@@ -915,6 +915,30 @@ card and saved concept distinguish met, partially met, unmet and unverified
 requirements, with evidence. A scripted-model check proves the complete flow;
 it does not establish an autonomous quality score for the selected model.
 
+### Upkeep of 04-11-2026
+
+- **Vision on a LAN OpenAI-compatible server.** Vision auto-detection now asks a
+  vLLM/SGLang server on the local network with its tokenizer or a 1-token image
+  probe (cached), so a served checkpoint that sees (DeepSeek V4.1 Flash and GLM 5.3
+  Flash on the Sparks both do) answers images, `/api/vision/status` and "look at
+  the page" without naming a vision model by hand.
+- **A role saved on a disabled endpoint follows the default model.** Utility,
+  task, dispatch, research and the other roles resolve to the default chat model
+  when their saved endpoint has been disabled or removed and the caller has no
+  model of its own; the saved choice is kept, so re-enabling the endpoint brings
+  the role back to it (memory tidy-up and titles no longer fail with "No default
+  model configured").
+- **Edited checks are flagged.** A turn that runs a script, edits it and runs it
+  again records the advisory `verifier_edited` (harness card in Studio, evidence
+  note, outcome not "verified"): the check that passed is not independent evidence.
+- **Memory.** The tidy-up removes stored workspace snapshots ("the root has 2
+  files") with the same guard extraction uses; a memory longer than 2,000
+  characters is still stored cut, with `provenance.truncated_from_chars`.
+- **Source control.** Projects that link the same folder share one filesystem walk
+  during repo discovery, and the walk reads entry types from the directory listing
+  (89 repos found in ~3 s instead of ~17 s on Windows). Model-call trace retention (`llm_trace_retention_days`,
+  7 by default) is a field in Settings › Agent.
+
 ### Hedged first token
 
 A streamed chat request whose model has released no first token (text,

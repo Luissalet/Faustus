@@ -1,5 +1,22 @@
 # Objetivos acordados
 
+## Ideas y ajustes que estaban en PENDIENTES — 04-11-2026
+
+No bloquean nada ni esperan una respuesta concreta de Luis; salieron de PENDIENTES en el repaso del 04-11.
+
+- **Render de Mermaid en Studio** (11-09): hoy `MermaidView` enseña la fuente con copiar y descargar `.mmd`. Añadir el render con `mermaid` (MIT) cargado en diferido, para que el paquete inicial no crezca, manteniendo la fuente y la descarga.
+- **`grounding` y `memory_conflicts` como herramientas del agente** (FAUSTUS §145): exponerlas juntas, de sólo lectura.
+- **Umbrales con datos reales:** `typed_decision_min_confidence` (0,7) y `typed_decision_min_mass` (0,5) mirando los cubos de calibración (§177); `local_gibberish_script_threshold` (0,40) sólo si aparece un falso positivo real (§114).
+- **Prefijo `odysseus_*`** (colecciones vectoriales, `odysseus_kind`/`odysseus_ref`, §112): renombrarlo sólo junto a una migración de datos real.
+- **`agent_sandbox_mode` por defecto** (§85): que dependa del sistema operativo en vez de ser `auto` global.
+- **Material de documento y fork clásico** (excursos 11-09): que el panel conozca la ruta del documento; que el fork clásico deje de copiar mensajes.
+- **Autonomía de aprobaciones por familia** (§180): revisar con datos de uso reales antes de recomendar `active` por defecto en un perfil.
+- **Dictado con tecla mantenida** (§157): añadir push-to-talk como opción junto al pulsar/volver a pulsar de hoy.
+- **Listas para N personas** (`answer_checks.servings_requested`): calcular siempre las cantidades por persona con `python`.
+- **Precios por franja de OpenRouter:** contrastado el 04-11 con el catálogo real (454 modelos, todos con precio leído por `price_from_openrouter_raw`). Ese catálogo trae `pricing.overrides` por día y hora UTC (DeepSeek V4.1 Flash cuesta el doble en horas laborables) y la estimación usa el precio base: tomar el máximo de las franjas para la cota alta.
+- **Receta GLM alternativa:** probar `max_num_seqs` 16 (hoy 8: 115 tok/s agregados con 8, 16 o 64 peticiones) y un `reasoning_effort` menor en rondas de control de pantalla (con max piensa 60-80 s), la próxima vez que se cargue.
+- **Modelo pequeño de tool-calling en el dispositivo** (19-09): descartado mientras implique DLL nativa, descarga de pesos y telemetría por defecto.
+
 ## Primer token con cobertura — 03-11-2026
 
 Integrado: si el modelo del chat no suelta primer token en `agent_hedge_delay_s` (20 s), la misma petición va también a un destino de cobertura (mismo modelo en otro endpoint, primer respaldo o `endpoint_id::modelo`) y gana el primer flujo que responda; el otro se cierra (src/model_hedge.py, Ajustes > Modelos, `/api/model-hedge`, herramienta `model_hedge` de agente y MCP). Probado en vivo con un servidor local que se queda callado y DeepSeek V4.1 Flash de las Sparks como cobertura: respondió la cobertura a los 5 s y el principal quedó desconectado.
