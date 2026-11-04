@@ -133,3 +133,16 @@ def test_saved_schema_file_works_without_the_endpoint(tmp_path):
 def test_unreachable_endpoint_is_not_fatal():
     mcp = bridge.build_server({"REST_BASE_URL": "http://127.0.0.1:1", "REST_GRAPHQL_PATH": "/graphql"})
     assert {t.name for t in asyncio.run(mcp.list_tools())} == {"app_status"}
+
+
+def test_a_query_returning_a_union_gets_a_selection_set():
+    # a composite type without a selection set is a GraphQL validation error, a union has no fields of its own
+    schema = {"data": {"__schema": {"queryType": {"name": "Query"}, "mutationType": None, "types": [
+        {"kind": "OBJECT", "name": "Query", "fields": [
+            {"name": "search", "description": "", "args": [{"name": "q", "type": ID_REQ, "defaultValue": None}],
+             "type": T("NON_NULL", None, T("LIST", None, T("UNION", "Hit")))}]},
+        {"kind": "UNION", "name": "Hit", "fields": None}]}}}
+    specs, _ = bridge.graphql_to_tools(schema, "/graphql")
+    assert specs[0]["graphql"]["selection"] == "{ __typename }"
+    body = bridge.graphql_request(specs[0], {"q": "x"})
+    assert body["query"].endswith("{ search(q: $q) { __typename } }")

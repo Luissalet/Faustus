@@ -499,7 +499,7 @@ def graphql_to_tools(introspection: Dict[str, Any], path: str,
                               "required": (a.get("type") or {}).get("kind") == "NON_NULL" and a.get("defaultValue") is None,
                               "description": a.get("description") or "", "gql_type": _gql_type_str(a.get("type"))}
             kind, ret_name, is_list = _gql_unwrap(f.get("type"))
-            selection = _gql_selection(types, ret_name, _GQL_SELECTION_DEPTH) if kind in ("OBJECT", "INTERFACE") else ""
+            selection = _gql_selection(types, ret_name, _GQL_SELECTION_DEPTH) if kind in ("OBJECT", "INTERFACE", "UNION") else ""
             sig = ", ".join(f"{p['orig']}: {p['gql_type']}" for p in params.values())
             specs.append({
                 "name": tool,
