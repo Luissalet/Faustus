@@ -1569,6 +1569,9 @@ app.include_router(setup_token_calibration_routes())
 # claims — "who edits what" for the Agents screen (PLAN-03).
 from routes.agent_leases_routes import setup_agent_leases_routes
 app.include_router(setup_agent_leases_routes())
+# Each isolated worker's own package caches, listed and cleared (Darwin #999).
+from routes.worker_caches_routes import setup_worker_caches_routes
+app.include_router(setup_worker_caches_routes())
 # Agent & automation settings schema (Settings → Agent Tools form).
 from routes.agent_settings_routes import setup_agent_settings_routes
 app.include_router(setup_agent_settings_routes())

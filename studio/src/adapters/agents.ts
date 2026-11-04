@@ -96,6 +96,78 @@ export async function loadLeases(signal?: AbortSignal): Promise<LeasesSnapshot> 
   return { leases, conflicts };
 }
 
+/* ── worker caches (/api/agents/worker-caches) ────────────────────────────
+ *
+ * Darwin #999: every delegated worker and fan-out candidate resolves
+ * pip/npm/uv/... packages through caches of its own (src/worker_caches.py).
+ * One row per worker folder, with its size per tool and whether it runs.
+ */
+
+export interface WorkerCache {
+  root: string;
+  kind: string;
+  name: string;
+  sessionId: string;
+  parentSessionId: string;
+  agent: string;
+  active: boolean;
+  bytes: number;
+  files: number;
+  tools: Record<string, number>;
+  approximate: boolean;
+  crossReads: number;
+  created: number | null;
+}
+
+export interface WorkerCachesSnapshot {
+  base: string;
+  workers: WorkerCache[];
+  totalBytes: number;
+  active: number;
+}
+
+function workerCacheFromRow(r: Record<string, unknown>): WorkerCache {
+  const tools: Record<string, number> = {};
+  for (const [k, v] of Object.entries(asObject(r.tools))) tools[k] = Number(v) || 0;
+  return {
+    root: String(r.root ?? ''), kind: String(r.kind ?? ''), name: String(r.name ?? ''),
+    sessionId: String(r.session_id ?? ''), parentSessionId: String(r.parent_session_id ?? ''),
+    agent: String(r.agent ?? ''), active: Boolean(r.active), bytes: Number(r.bytes) || 0,
+    files: Number(r.files) || 0, tools, approximate: Boolean(r.approximate),
+    crossReads: Number(r.cross_reads) || 0, created: typeof r.created === 'number' ? r.created : null,
+  };
+}
+
+export async function loadWorkerCaches(filter: { sessionId?: string; parentSessionId?: string } = {}, signal?: AbortSignal): Promise<WorkerCachesSnapshot> {
+  const q = new URLSearchParams();
+  if (filter.sessionId) q.set('session_id', filter.sessionId);
+  if (filter.parentSessionId) q.set('parent_session_id', filter.parentSessionId);
+  const body = asObject(await getJson<unknown>(`/api/agents/worker-caches${q.toString() ? `?${q}` : ''}`, signal));
+  return {
+    base: String(body.base ?? ''),
+    workers: (Array.isArray(body.workers) ? body.workers : []).map((r) => workerCacheFromRow(asObject(r))),
+    totalBytes: Number(body.total_bytes) || 0,
+    active: Number(body.active) || 0,
+  };
+}
+
+/** Empty one worker's caches (`root`) or every idle worker's (`all`). */
+export async function clearWorkerCaches(target: { root?: string; sessionId?: string; all?: boolean; force?: boolean; forget?: boolean }): Promise<{ freedBytes: number; cleared: number; skipped: number }> {
+  const response = await fetch('/api/agents/worker-caches/clear', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ root: target.root, session_id: target.sessionId, all: target.all, force: target.force, forget: target.forget }),
+  });
+  if (!response.ok) throw new ApiError(`clear responded ${response.status}`, response.status);
+  const body = asObject(await response.json().catch(() => ({})));
+  return {
+    freedBytes: Number(body.freed_bytes) || 0,
+    cleared: Array.isArray(body.cleared) ? body.cleared.length : 0,
+    skipped: Array.isArray(body.skipped) ? body.skipped.length : 0,
+  };
+}
+
 /* ── agent profiles (/api/agent-profiles) ─────────────────────────────────
  *
  * The orthogonal half of a definition: how far a mission pushes, which

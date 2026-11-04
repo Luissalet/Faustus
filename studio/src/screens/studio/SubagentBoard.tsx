@@ -1,4 +1,5 @@
-import { ExternalLink, FileText, Pencil, RotateCcw, Square } from 'lucide-react';
+import { ExternalLink, FileText, Package, Pencil, RotateCcw, Square } from 'lucide-react';
+import { WorkerCacheInline } from '../agents/WorkerCaches';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, StatusBadge, type RunStatus } from '../../components';
@@ -89,6 +90,7 @@ function WorkerCard({ w, live, now, heat, onOpen, onRerun, onNotice }: { w: Work
   const [form, setForm] = useState<'steer' | 'rerun' | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showCaches, setShowCaches] = useState(false);
   const [stopState, setStopState] = useState<'idle' | 'stopping' | 'stopped' | 'gone'>('idle');
   const alive = workerLive(w);
   const reviewer = w.role === 'reviewer';
@@ -214,6 +216,7 @@ function WorkerCard({ w, live, now, heat, onOpen, onRerun, onNotice }: { w: Work
           </>
         )}
         {w.sessionId && <Button size="sm" icon={FileText} label={t('Transcript')} onClick={onOpen} />}
+        {w.sessionId && <Button size="sm" icon={Package} label={t('Caches')} aria-expanded={showCaches} onClick={() => setShowCaches(!showCaches)} />}
         {w.sessionId && (
           <Link className="fs-btn" data-size="sm" to={`/studio?s=${encodeURIComponent(w.sessionId)}`} title={w.sessionId}>
             <ExternalLink size={13} aria-hidden="true" /> <span>{t('Open its chat')}</span>
@@ -232,6 +235,7 @@ function WorkerCard({ w, live, now, heat, onOpen, onRerun, onNotice }: { w: Work
           />
         )}
       </footer>
+      {showCaches && w.sessionId && <WorkerCacheInline sessionId={w.sessionId} />}
       {form && (
         <form
           className="fs-sa__form"

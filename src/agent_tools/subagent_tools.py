@@ -1247,6 +1247,9 @@ class SubagentRun:
         #: this run's OWN evidence in `report()`, never against its prose.
         self.criteria: List[str] = list(task.get("criteria") or [])
         self.role = role
+        #: The folder this worker's package caches live in (Darwin #999),
+        #: set when it starts; see `src/worker_caches.py`.
+        self.cache_root = ""
         self.task_spec: Dict[str, Any] = {
             key: task[key] for key in (
                 "intent", "description", "required_capabilities",
@@ -1563,6 +1566,19 @@ async def _run_subagent(
     # The worker starts NOW (a queued worker waited before this point).
     run.started = time.time()
     run.last_event_at = run.started
+    # Darwin #999: every worker resolves packages through caches of its own
+    # (pip, npm, uv, yarn, pnpm, poetry, go, nuget, temp), so two workers can
+    # never pass anything to each other through a shared cache. A worker
+    # inside a fan-out candidate keeps the candidate's caches. Lives with
+    # this task's context, like the lock guard above.
+    try:
+        from src import worker_caches as _worker_caches
+        run.cache_root = _worker_caches.enter_worker(
+            child_sid, session_id=child_sid, name=run.name, role=run.role,
+            agent=run.agent, parent_session_id=parent_session_id or "",
+            workspace=workspace or "")
+    except Exception:  # noqa: BLE001 - caches must never stop a worker
+        logger.debug("delegate_agents: could not give %s its own caches", run.name, exc_info=True)
     if sm and not run.resumed:
         # The child inherits its parent's PROJECT, not its parent's folder
         # (plan §11): the folder groups sub-agent chats in the sidebar, and

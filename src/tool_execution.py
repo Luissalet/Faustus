@@ -553,7 +553,7 @@ def _workspace_temp_env(env: Mapping[str, str], session_id: Optional[str] = None
     from src import run_causality, worker_caches
 
     # Fan-out workers already own both temporary files and package caches.
-    if worker_caches.active_workspace():
+    if worker_caches.active_cache_root():
         return worker_caches.apply_active(env)
     if causal_call is None:
         causal_call = run_causality.capture_call(session_id, None)

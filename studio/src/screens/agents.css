@@ -1866,3 +1866,27 @@
   gap: var(--fs-space-2);
   font-size: var(--fs-label-size);
 }
+
+/* Worker caches (Darwin #999): each worker's own package-cache folder. */
+.fs-agents__cache-row {
+  display: grid;
+  gap: 2px;
+  padding-block: var(--fs-space-1);
+  border-block-start: 1px solid var(--fs-border);
+}
+.fs-agents__cache-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+.fs-agents__cache-path {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  color: var(--fs-text-muted, inherit);
+}
+.fs-agents__cache-live {
+  color: var(--fs-accent, inherit);
+  font-weight: 600;
+}
+.fs-agents__caches { margin-block-start: var(--fs-space-4); }

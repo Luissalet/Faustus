@@ -64,8 +64,36 @@ CACHES_DIRNAME = "_caches"
 CROSS_READS_FILE = "cross_reads.jsonl"
 MAX_CROSS_READS_KEPT = 200
 
+#: What a worker's cache root says about itself (kind, name, session ids):
+#: written once, the first time a command of that worker needs its caches,
+#: so the Agents screen and ``GET /api/agents/worker-caches`` can list them.
+META_FILE = "worker.json"
+#: Delegated workers (delegate_agents, the minions of an agent definition,
+#: dispatch and swarm workers) share the project folder, so their own
+#: caches live in Faustus' data folder, one folder per worker.
+WORKERS_DIRNAME = "worker_caches"
+#: Cache roots that live elsewhere (a fan-out candidate's ``_caches``),
+#: one absolute path per line, so the listing finds them too.
+EXTERNAL_INDEX = "external_roots.txt"
+
 _active: contextvars.ContextVar = contextvars.ContextVar("worker_cache_workspace", default=None)
 _allowed: contextvars.ContextVar = contextvars.ContextVar("worker_cache_allowed", default=())
+#: (cache_root, meta) of a delegated worker that has no workspace of its own.
+_own_root: contextvars.ContextVar = contextvars.ContextVar("worker_cache_own_root", default=None)
+#: Fan-out cache roots currently inside `isolated(...)`, for the "active" flag.
+_LIVE_ROOTS: Dict[str, int] = {}
+
+
+def workers_base_dir() -> str:
+    """``<data dir>/worker_caches``; read at call time so tests can move it."""
+    override = os.environ.get("FAUSTUS_WORKER_CACHES_DIR")
+    if override:
+        return os.path.abspath(override)
+    try:
+        from src.constants import DATA_DIR
+    except Exception:  # noqa: BLE001 - constants unavailable in a bare import
+        DATA_DIR = os.path.join(os.path.expanduser("~"), ".faustus")
+    return os.path.join(str(DATA_DIR), WORKERS_DIRNAME)
 
 
 def _norm(path: str) -> str:
@@ -86,13 +114,18 @@ def cache_root_for(workspace: str) -> str:
     return os.path.join(parent, CACHES_DIRNAME, name or "root")
 
 
-def isolated_env(workspace: str, base: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
+def isolated_env(workspace: Optional[str], base: Optional[Mapping[str, str]] = None, *,
+                 cache_root: Optional[str] = None,
+                 meta: Optional[Mapping[str, object]] = None) -> Dict[str, str]:
     """A copy of `base` (default: ``os.environ``) whose package caches and temp
-    folders all point inside `workspace`'s own cache root. The folders are
-    created, because pip, npm and Python's ``tempfile`` fail on a missing one
-    instead of creating it."""
+    folders all point inside `workspace`'s own cache root (or `cache_root`
+    when given: a delegated worker's folder). The folders are created,
+    because pip, npm and Python's ``tempfile`` fail on a missing one instead
+    of creating it."""
     env: Dict[str, str] = dict(os.environ if base is None else base)
-    root = cache_root_for(workspace)
+    root = cache_root or cache_root_for(str(workspace or ""))
+    _write_meta(root, meta or ({"kind": "fanout", "name": os.path.basename(str(workspace).rstrip("\\/")),
+                                "workspace": os.path.abspath(str(workspace))} if workspace else {}))
     if os.name == "nt":
         # Windows variable names are case-insensitive: an inherited `Tmp` or
         # `NPM_CONFIG_CACHE` would otherwise sit next to ours in the block
@@ -116,9 +149,17 @@ def isolated(workspace: str, *, allow: Iterable[str] = ()) -> Iterator[str]:
     read (a frozen base snapshot, say). Yields the cache root."""
     token = _active.set(os.path.abspath(str(workspace)))
     allowed_token = _allowed.set(tuple(_norm(p) for p in allow if p))
+    root = cache_root_for(workspace)
+    key = _norm(root)
+    _LIVE_ROOTS[key] = _LIVE_ROOTS.get(key, 0) + 1
     try:
-        yield cache_root_for(workspace)
+        yield root
     finally:
+        left = _LIVE_ROOTS.get(key, 1) - 1
+        if left > 0:
+            _LIVE_ROOTS[key] = left
+        else:
+            _LIVE_ROOTS.pop(key, None)
         _allowed.reset(allowed_token)
         _active.reset(token)
 
@@ -128,11 +169,50 @@ def active_workspace() -> Optional[str]:
     return _active.get()
 
 
+def worker_cache_root(worker_id: str) -> str:
+    """A delegated worker's own cache folder: ``<data>/worker_caches/<id>``."""
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(worker_id or "worker")).strip("._") or "worker"
+    return os.path.join(workers_base_dir(), safe[:80])
+
+
+def enter_worker(worker_id: str, **meta: object) -> str:
+    """Give the CURRENT context (one delegated worker's task) its own caches.
+
+    Called at the start of a delegated worker's coroutine; the context
+    variable dies with that task, so no reset is needed. A worker that is
+    already inside a fan-out candidate (``isolated(...)``) keeps the
+    candidate's caches, which sit next to its own folder; the return value
+    is whichever root the worker's commands will use. Nothing is created on
+    disk until a command needs the folders."""
+    ws = _active.get()
+    if ws:
+        return cache_root_for(ws)
+    root = worker_cache_root(worker_id)
+    info = {"kind": "delegate", "worker_id": str(worker_id), "created": time.time()}
+    info.update({k: v for k, v in meta.items() if v not in (None, "")})
+    _own_root.set((root, info))
+    return root
+
+
+def active_cache_root() -> Optional[str]:
+    """The cache root the current context's commands get, if any."""
+    ws = _active.get()
+    if ws:
+        return cache_root_for(ws)
+    own = _own_root.get()
+    return own[0] if own else None
+
+
 def apply_active(env: Mapping[str, str]) -> Dict[str, str]:
     """`env` with the current worker's caches, or `env` unchanged (as a new
     dict) when nothing is isolated."""
     ws = _active.get()
-    return isolated_env(ws, env) if ws else dict(env)
+    if ws:
+        return isolated_env(ws, env)
+    own = _own_root.get()
+    if own:
+        return isolated_env(None, env, cache_root=own[0], meta=own[1])
+    return dict(env)
 
 
 # ---------------------------------------------------------------------------
@@ -306,3 +386,205 @@ def read_cross_reads(workspace: str, *, limit: int = MAX_CROSS_READS_KEPT) -> Li
     except OSError:
         return []
     return out[-max(1, int(limit)):]
+
+
+# ---------------------------------------------------------------------------
+# Listing and clearing: what the Agents screen, REST and MCP show
+# ---------------------------------------------------------------------------
+#: Stop counting a folder after this many files; the size is then a floor.
+MAX_FILES_COUNTED = 50000
+
+
+def _write_meta(root: str, meta: Mapping[str, object]) -> None:
+    """Write ``worker.json`` once per cache root, and remember a root that
+    lives outside the workers folder. Never raises."""
+    if not meta:
+        return
+    path = os.path.join(root, META_FILE)
+    if os.path.exists(path):
+        return
+    try:
+        os.makedirs(root, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(dict(meta, root=os.path.abspath(root)), fh, ensure_ascii=False)
+        base = workers_base_dir()
+        if not _is_under(_norm(root), _norm(base)):
+            os.makedirs(base, exist_ok=True)
+            with open(os.path.join(base, EXTERNAL_INDEX), "a", encoding="utf-8") as fh:
+                fh.write(os.path.abspath(root) + "\n")
+    except OSError as exc:
+        logger.debug("[worker-caches] could not write %s: %s", path, exc)
+
+
+def _known_roots() -> List[str]:
+    """Every cache root with a ``worker.json``: the delegated workers' folders
+    plus the fan-out roots recorded in the external index."""
+    base = workers_base_dir()
+    roots: List[str] = []
+    try:
+        for name in sorted(os.listdir(base)):
+            path = os.path.join(base, name)
+            if os.path.isfile(os.path.join(path, META_FILE)):
+                roots.append(path)
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(base, EXTERNAL_INDEX), "r", encoding="utf-8") as fh:
+            for line in fh:
+                path = line.strip()
+                if path and os.path.isfile(os.path.join(path, META_FILE)):
+                    roots.append(path)
+    except OSError:
+        pass
+    seen, out = set(), []
+    for root in roots:
+        key = _norm(root)
+        if key not in seen:
+            seen.add(key)
+            out.append(root)
+    return out
+
+
+def _folder_size(path: str, budget: List[int]) -> Tuple[int, int]:
+    """(bytes, files) under `path`; `budget` is the files left to count."""
+    total = files = 0
+    for dirpath, _dirs, names in os.walk(path):
+        for name in names:
+            if budget[0] <= 0:
+                return total, files
+            budget[0] -= 1
+            try:
+                total += os.path.getsize(os.path.join(dirpath, name))
+                files += 1
+            except OSError:
+                continue
+    return total, files
+
+
+def _live_worker_ids() -> set:
+    try:
+        from src.agent_tools.subagent_tools import active_worker_ids
+        return set(active_worker_ids())
+    except Exception:  # noqa: BLE001 - no delegation module, nobody is live
+        return set()
+
+
+def _read_meta(root: str) -> Dict[str, object]:
+    try:
+        with open(os.path.join(root, META_FILE), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def describe(root: str, *, live: Optional[set] = None, budget: Optional[List[int]] = None) -> Dict[str, object]:
+    """One cache root: who it belongs to, whether that worker is running,
+    and the size of each tool's folder."""
+    meta = _read_meta(root)
+    live = _live_worker_ids() if live is None else live
+    budget = budget if budget is not None else [MAX_FILES_COUNTED]
+    tools: Dict[str, int] = {}
+    total = files = 0
+    for sub in dict.fromkeys(CACHE_VARS.values()):
+        size, count = _folder_size(os.path.join(root, sub), budget)
+        tools[sub] = size
+        total += size
+        files += count
+    sid = str(meta.get("session_id") or meta.get("worker_id") or "")
+    active = _norm(root) in _LIVE_ROOTS or (bool(sid) and sid in live)
+    return {
+        "root": os.path.abspath(root),
+        "kind": str(meta.get("kind") or "fanout"),
+        "name": str(meta.get("name") or os.path.basename(root)),
+        "session_id": sid,
+        "parent_session_id": str(meta.get("parent_session_id") or ""),
+        "agent": str(meta.get("agent") or ""),
+        "role": str(meta.get("role") or ""),
+        "workspace": str(meta.get("workspace") or ""),
+        "created": meta.get("created") or None,
+        "active": bool(active),
+        "bytes": total,
+        "files": files,
+        "tools": tools,
+        "approximate": budget[0] <= 0,
+        "cross_reads": len(read_cross_reads_root(root)),
+    }
+
+
+def read_cross_reads_root(root: str) -> List[Dict[str, object]]:
+    try:
+        with open(os.path.join(root, CROSS_READS_FILE), "r", encoding="utf-8") as fh:
+            return [json.loads(line) for line in fh if line.strip()][-MAX_CROSS_READS_KEPT:]
+    except (OSError, ValueError):
+        return []
+
+
+def list_caches(*, session_id: str = "", parent_session_id: str = "", kind: str = "") -> Dict[str, object]:
+    """Every worker's own cache folder, newest first, with sizes."""
+    live = _live_worker_ids()
+    budget = [MAX_FILES_COUNTED]
+    rows = [describe(root, live=live, budget=budget) for root in _known_roots()]
+    if session_id:
+        rows = [r for r in rows if r["session_id"] == session_id]
+    if parent_session_id:
+        rows = [r for r in rows if r["parent_session_id"] == parent_session_id]
+    if kind:
+        rows = [r for r in rows if r["kind"] == kind]
+    rows.sort(key=lambda r: float(r.get("created") or 0), reverse=True)
+    return {
+        "base": workers_base_dir(),
+        "variables": sorted(CACHE_VARS),
+        "workers": rows,
+        "total_bytes": sum(int(r["bytes"]) for r in rows),
+        "active": sum(1 for r in rows if r["active"]),
+    }
+
+
+class WorkerCacheError(ValueError):
+    """A clear request that names no known cache root, or a running one."""
+
+
+def clear(*, root: str = "", session_id: str = "", all_idle: bool = False,
+          force: bool = False, forget: bool = False) -> Dict[str, object]:
+    """Empty the tool folders of one worker's caches (by `root` or
+    `session_id`), or of every idle worker with `all_idle`. Only roots that
+    `list_caches` knows are touched: an arbitrary path is refused. A running
+    worker is skipped unless `force`. `forget` removes the folder and its
+    ``worker.json`` as well, so the worker drops off the list."""
+    import shutil
+
+    known = {_norm(r): r for r in _known_roots()}
+    live = _live_worker_ids()
+    if all_idle:
+        targets = list(known.values())
+    elif root:
+        if _norm(root) not in known:
+            raise WorkerCacheError(f"not a worker cache folder Faustus knows: {root}")
+        targets = [known[_norm(root)]]
+    elif session_id:
+        targets = [r for r in known.values()
+                   if str(_read_meta(r).get("session_id") or _read_meta(r).get("worker_id") or "") == session_id]
+        if not targets:
+            raise WorkerCacheError(f"no cache folder for worker {session_id}")
+    else:
+        raise WorkerCacheError("say which worker: root, session_id or all")
+    cleared: List[Dict[str, object]] = []
+    skipped: List[Dict[str, object]] = []
+    freed = 0
+    for target in targets:
+        row = describe(target, live=live)
+        if row["active"] and not force:
+            skipped.append({"root": row["root"], "reason": "the worker is running"})
+            continue
+        freed += int(row["bytes"])
+        if forget:
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            for sub in dict.fromkeys(CACHE_VARS.values()):
+                path = os.path.join(target, sub)
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+        cleared.append({"root": row["root"], "name": row["name"], "freed_bytes": row["bytes"],
+                        "forgotten": bool(forget)})
+    return {"cleared": cleared, "skipped": skipped, "freed_bytes": freed}

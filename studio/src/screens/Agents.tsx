@@ -6,6 +6,7 @@ import { Experts } from './agents/Experts';
 import { Runners } from './agents/Runners';
 import { Workers } from './agents/Workers';
 import { Tournament } from './agents/Tournament';
+import { WorkerCachesCard } from './agents/WorkerCaches';
 import { loadLeases, type AgentLease, type LeasesSnapshot } from '../adapters/agents';
 import { relativeTime } from '../adapters/home';
 import './projects.css';
@@ -142,6 +143,7 @@ export function AgentsScreen() {
       </div>
       <div className="fs-agents__panel" role="tabpanel">
         {tab === 'workers' && <Workers agent={agent} runner={runner} />}
+        {tab === 'workers' && <WorkerCachesCard />}
         {tab === 'runners' && <Runners onUseRunner={(key) => go('workers', { runner: key })} />}
         {tab === 'defs' && <Defs onUseAgent={(slug) => go('workers', { agent: slug })} />}
         {tab === 'experts' && <Experts />}

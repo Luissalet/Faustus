@@ -26,7 +26,8 @@ replayed call by call, where a turn's time and tokens went, orphaned workers),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
 change — and return the moment it does), workers_status,
-workers_events, workers_cancel, workers_list, slot_cache (the saved llama-server slots of pinned documents), workers_lint (what a task spec is missing, checked before it is sent), budget_period (spend against the period targets, GPU seconds, the failure breaker, provider cooldowns), models_fit (which local models
+workers_events, workers_cancel, workers_list, workers_caches / workers_cache_clear (each
+isolated worker's own pip/npm/uv/... caches, listed and emptied), slot_cache (the saved llama-server slots of pinned documents), workers_lint (what a task spec is missing, checked before it is sent), budget_period (spend against the period targets, GPU seconds, the failure breaker, provider cooldowns), models_fit (which local models
 exist, how big each one is and whether it fits the card — read before naming a
 `model`), objectives_list/objectives_apply,
 guard_explain, memory_pack (what this machine has already learned), and
@@ -1006,6 +1007,25 @@ def _iso(ts: Any) -> str:
         return "?"
 
 
+def render_worker_caches(data: Dict[str, Any]) -> str:
+    rows = data.get("workers") or []
+    head = (f"{len(rows)} worker cache folder(s), {(data.get('total_bytes') or 0) / (1024 * 1024):.1f} MB, "
+            f"{data.get('active', 0)} running · base {data.get('base')}")
+    if not rows:
+        return head + "\nno worker has run a command yet"
+    lines = [head]
+    for r in rows:
+        used = ", ".join(f"{k} {v / (1024 * 1024):.1f} MB" for k, v in (r.get("tools") or {}).items() if v)
+        lines.append(
+            f"- {r.get('name')} [{r.get('kind')}{', running' if r.get('active') else ''}] "
+            f"session {r.get('session_id') or '-'} parent {r.get('parent_session_id') or '-'}"
+            f"{' agent ' + r['agent'] if r.get('agent') else ''}: "
+            f"{(r.get('bytes') or 0) / (1024 * 1024):.1f} MB{'+' if r.get('approximate') else ''}"
+            f"{' (' + used + ')' if used else ''}"
+            f"{', ' + str(r['cross_reads']) + ' cross read(s)' if r.get('cross_reads') else ''}\n  {r.get('root')}")
+    return "\n".join(lines)
+
+
 def render_period_budget(data: Dict[str, Any]) -> str:
     """GET /api/budget/period as a few lines: spend against each target, the pace
     line, when a paused window resumes, the failure breaker and any cooldowns."""
@@ -1183,6 +1203,39 @@ TOOLS: List[Tool] = [
         name="workers_guide",
         description="How to use these workers well: what to dispatch, how to write a task, how to read a result. Read it once per session before the first dispatch.",
         inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="workers_caches",
+        description=(
+            "Each isolated worker's own package caches. Every delegated worker (dispatch_workers, "
+            "delegate_agents, an agent definition's minions, swarm workers) and every fan-out candidate "
+            "resolves pip, npm, uv, yarn, pnpm, poetry, go and nuget packages and its temp files through a "
+            "folder of its own, so two workers never share a cache. Lists those folders: worker name, child "
+            "session, parent session, whether it is running, total size and size per tool, and how many "
+            "times it named another worker's folder. Filter with session_id, parent_session_id or kind "
+            "(delegate | fanout). Read-only."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "session_id": {"type": "string", "description": "One worker's child session id."},
+            "parent_session_id": {"type": "string", "description": "All workers of one parent chat."},
+            "kind": {"type": "string", "enum": ["delegate", "fanout"]},
+        }},
+    ),
+    Tool(
+        name="workers_cache_clear",
+        description=(
+            "Empty a worker's own package caches (the folders workers_caches lists): one worker by "
+            "session_id or root, or every idle worker with all=true. A running worker is skipped unless "
+            "force=true; forget=true also removes the folder so the worker drops off the list. Answers "
+            "what was freed and what was skipped."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "session_id": {"type": "string"},
+            "root": {"type": "string", "description": "The cache folder as workers_caches printed it."},
+            "all": {"type": "boolean"},
+            "force": {"type": "boolean"},
+            "forget": {"type": "boolean"},
+        }},
     ),
     Tool(
         name="todo_assign_agent",
@@ -2246,6 +2299,20 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         if name == "budget_period":
             data = await asyncio.to_thread(_request, "GET", "/api/budget/period")
             return _text(render_period_budget(data))
+        if name == "workers_caches":
+            query = urllib.parse.urlencode({k: str(args.get(k) or "").strip()
+                                            for k in ("session_id", "parent_session_id", "kind")
+                                            if str(args.get(k) or "").strip()})
+            data = await asyncio.to_thread(_request, "GET", "/api/agents/worker-caches" + (f"?{query}" if query else ""))
+            return _text(render_worker_caches(data))
+        if name == "workers_cache_clear":
+            body = {k: args[k] for k in ("session_id", "root", "all", "force", "forget") if args.get(k)}
+            data = await asyncio.to_thread(_request, "POST", "/api/agents/worker-caches/clear", body)
+            lines = [f"freed {(data.get('freed_bytes') or 0) / (1024 * 1024):.1f} MB in "
+                     f"{len(data.get('cleared') or [])} worker cache folder(s)"]
+            lines += [f"- cleared {c.get('name')} ({c.get('root')})" for c in data.get("cleared") or []]
+            lines += [f"- skipped {s.get('root')}: {s.get('reason')}" for s in data.get("skipped") or []]
+            return _text("\n".join(lines))
         job_id = str(args.get("job_id") or "").strip()
         if name == "workers_wait":
             t = min(_MAX_WAIT, max(5.0, float(args.get("timeout_s") or 300)))
