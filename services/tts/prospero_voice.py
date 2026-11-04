@@ -90,9 +90,20 @@ def synthesize_prospero(text: str, *, url: Optional[str] = None, engine: str = D
     if language:
         spec["language"] = language
     import httpx
+
+    def _post(body_spec: Dict[str, Any]):
+        return httpx.post(f"{base}/api/voice/speak", json={"text": text, "voice": body_spec},
+                          timeout=_TIMEOUT_S, trust_env=False)
+
     try:
-        r = httpx.post(f"{base}/api/voice/speak", json={"text": text, "voice": spec},
-                       timeout=_TIMEOUT_S, trust_env=False)
+        r = _post(spec)
+        if r.status_code in (400, 422) and "voice_ref" in spec:
+            # tts_voice is shared by every provider: a name left over from Kokoro or Piper is not a
+            # reference this Hoard knows, and it answers 400. Speak with the engine's own voice instead
+            # of staying silent.
+            logger.info("Prospero TTS: voice %r refused (HTTP %s); speaking with the engine's default",
+                        spec["voice_ref"], r.status_code)
+            r = _post({k: v for k, v in spec.items() if k != "voice_ref"})
     except Exception as exc:  # noqa: BLE001
         logger.warning("Prospero TTS request failed: %s", exc)
         return None

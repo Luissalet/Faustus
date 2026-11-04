@@ -12,6 +12,7 @@ from services.tts.tts_service import TTSService
 WAV = b"RIFF\x24\x00\x00\x00WAVEfmt " + b"\x00" * 20
 
 seen = []
+reject_voice_ref = []
 
 
 class _Hoard(BaseHTTPRequestHandler):
@@ -36,6 +37,10 @@ class _Hoard(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         seen.append((self.path, json.loads(self.rfile.read(n) or b"{}")))
+        if reject_voice_ref and "voice_ref" in seen[-1][1].get("voice", {}):
+            self.send_response(400)
+            self.end_headers()
+            return
         if self.path == "/api/voice/speak":
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav")
@@ -52,6 +57,7 @@ def hoard():
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     seen.clear()
+    reject_voice_ref.clear()
     yield f"http://127.0.0.1:{srv.server_port}"
     srv.shutdown()
 
@@ -123,3 +129,11 @@ def test_capabilities_know_the_provider_for_speech_only():
     assert tts["provider"] == "prospero" and tts["execution"] == "local" and tts["dependency_installed"] is True
     stt = capabilities({"stt_provider": "prospero", "stt_enabled": True}, "stt")
     assert stt["provider"] == "disabled"
+
+
+def test_a_voice_left_over_from_another_provider_does_not_silence_the_hoard(hoard):
+    # tts_voice is shared by all providers; the Hoard answers 400 to a reference it does not know
+    reject_voice_ref.append(True)
+    audio = prospero_voice.synthesize_prospero("hola", url=hoard, engine="kittentts", voice="af_heart")
+    assert audio == WAV
+    assert "voice_ref" in seen[0][1]["voice"] and "voice_ref" not in seen[1][1]["voice"]
