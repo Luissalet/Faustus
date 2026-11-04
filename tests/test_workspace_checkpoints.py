@@ -47,7 +47,13 @@ def test_timeout_does_not_wait_for_descendant_output_handles(monkeypatch, tmp_pa
     assert elapsed < 2.5, f"timeout cleanup waited {elapsed:.2f}s for a descendant"
     assert child_pid.exists(), "the inherited-handle child must really have started"
     import psutil
-    assert not psutil.pid_exists(int(child_pid.read_text()))
+    pid = int(child_pid.read_text())
+    # Windows reports a terminated process until its last handle closes, which
+    # can trail the kill by a moment on a loaded box: wait for it, bounded.
+    deadline = time.monotonic() + 10
+    while psutil.pid_exists(pid) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert not psutil.pid_exists(pid), "the descendant of the timed-out git must be gone"
 
 
 @pytest.mark.parametrize("binary", [False, True])

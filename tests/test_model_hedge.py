@@ -931,7 +931,10 @@ def test_http_reissue_is_skipped_when_the_server_has_a_queue(hedge_env, monkeypa
 def test_http_no_reissue_after_the_first_token(hedge_env, monkeypatch):
     async def scenario():
         # first token at once, then a pause longer than the delay
-        server = await _FakeServer("answer", "first then the rest", waiting=0, pause_s=0.8).start()
+        # The delay must outlast the first (cold) request on a loaded box, or
+        # the premise "the first token came before the delay" does not hold.
+        hedge_env["cfg"]["delay_s"] = 1.5
+        server = await _FakeServer("answer", "first then the rest", waiting=0, pause_s=2.5).start()
         _wire_reissue(hedge_env, server)
         try:
             chunks = await _collect([(server.url, "m", {})])
