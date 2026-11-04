@@ -115,3 +115,16 @@ def test_delivering_a_free_desk_or_one_whose_commission_is_gone_never_fails(tmp_
     assert rd.run("alice", {"action": "deliver", "id": free["id"]})["delivered"]["version"] == 1
     orphan = rd.run("alice", {"action": "create", "title": "Huérfano", "path": str(doc), "commission": "gone-123", "milestone": "M1"}, confine=False)
     assert rd.run("alice", {"action": "deliver", "id": orphan["id"]})["delivered"]["version"] == 1
+
+
+def test_several_movements_without_a_known_amount_are_refused_and_nothing_is_saved(monkeypatch):
+    today = dt.date.today().isoformat()
+    _ledger(monkeypatch, [{"id": "k1", "date": today, "amount_cents": 30000, "counterparty": "Taller Norte", "note": ""}])
+    cid = _commission()
+    out = co.run("alice", {"action": "confirm_payment", "id": cid, "label": "Final", "tx_ids": ["u1", "u2"]})
+    assert out["error_class"] == "office.bad_args" and "unknown" in out["error"]
+    co.run("alice", {"action": "reconcile_payments", "id": cid})
+    out = co.run("alice", {"action": "confirm_payment", "id": cid, "label": "Final", "tx_ids": ["k1", "u2"]})
+    assert out["error_class"] == "office.bad_args"
+    p = co.run("alice", {"action": "show", "id": cid})["payments"][0]
+    assert not p.get("receipts") and not p.get("confirmed")        # the known movement was not half-recorded

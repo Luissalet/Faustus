@@ -88,3 +88,24 @@ def test_the_desk_opens_a_comment_where_it_was_made_even_after_a_new_version(tmp
     assert gone["found"] is False and gone["pages"] == 1          # the place no longer exists in v2, and it says so
     assert "older than v2" in rd.render(same)
     assert rd.run("alice", {"action": "view", "ref": "review:otra-000@v1#p1"})["error_class"] == "desk.not_found"
+
+
+def test_a_spreadsheet_is_closed_after_opening_it_at_a_cell(tmp_path):
+    # an open read-only workbook keeps the file locked on Windows, which blocks replacing or deleting the version later
+    from openpyxl import Workbook
+    wb = Workbook()
+    wb.active["B2"] = "hola"
+    f = tmp_path / "hoja.xlsx"
+    wb.save(f)
+    out = av.view(f, {"kind": "cell", "cell": "B2"})
+    assert out["found"] is True and out["value"] == "hola"
+    f.unlink()                      # PermissionError while the workbook handle is still open
+    assert not f.exists()
+
+
+def test_a_backwards_line_range_marks_the_same_lines_as_the_forward_one(tmp_path):
+    f = tmp_path / "a.txt"
+    f.write_text("\n".join(f"linea {i}" for i in range(1, 11)), encoding="utf-8")
+    fwd = av.view(f, {"kind": "line", "start": 3, "end": 5})
+    back = av.view(f, {"kind": "line", "start": 5, "end": 3})
+    assert [x["n"] for x in back["lines"] if x["hit"]] == [3, 4, 5] and back["lines"] == fwd["lines"]

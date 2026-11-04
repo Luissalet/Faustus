@@ -54,6 +54,8 @@ def _lines(path: Path) -> List[str]:
 
 def _line_window(lines: List[str], start: int, end: Optional[int]) -> Dict[str, Any]:
     end = end or start
+    if end < start:                 # «L9-3» written backwards: show the same lines, marked
+        start, end = end, start
     found = 1 <= start <= len(lines)
     lo, hi = max(1, start - CONTEXT), min(len(lines), end + CONTEXT)
     return {"found": found, "total_lines": len(lines), "start": start, "end": end,
@@ -102,13 +104,16 @@ def _cells(path: Path, sheet: str, cell: str) -> Dict[str, Any]:
         return _cell_grid(rows, sheet or path.stem, cell, [path.stem])
     from openpyxl import load_workbook
     wb = load_workbook(str(path), read_only=True, data_only=True)
-    names = list(wb.sheetnames)
-    pick = next((n for n in names if n.lower() == (sheet or "").lower()), None) if sheet else names[0]
-    if pick is None:
-        return {"found": False, "sheet": sheet, "sheets": names, "cell": cell.upper(), "reason": f"no sheet {sheet!r}"}
-    m = _COL.match(cell.upper())
-    need_r = int(m.group(2)) + CONTEXT
-    rows = [list(r) for _, r in zip(range(need_r), wb[pick].iter_rows(values_only=True))]
+    try:
+        names = list(wb.sheetnames)
+        pick = next((n for n in names if n.lower() == (sheet or "").lower()), None) if sheet else names[0]
+        if pick is None:
+            return {"found": False, "sheet": sheet, "sheets": names, "cell": cell.upper(), "reason": f"no sheet {sheet!r}"}
+        m = _COL.match(cell.upper())
+        need_r = int(m.group(2)) + CONTEXT
+        rows = [list(r) for _, r in zip(range(need_r), wb[pick].iter_rows(values_only=True))]
+    finally:
+        wb.close()                  # a read-only workbook keeps the file locked on Windows until it is closed
     return _cell_grid(rows, pick, cell, names)
 
 

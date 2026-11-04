@@ -518,6 +518,8 @@ def confirm_payment(rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, A
                 raise OfficeError("office.bad_args", "amount must be a number") from None
         if amount is None and len(ids) == 1 and total is not None:
             amount = round(total - _received(p), 2)
+        if amount is None:
+            raise OfficeError("office.bad_args", f"amount of movement {tid!r} is unknown: run reconcile_payments first or pass the movements it offered")
         receipts.append({"tx_id": tid, "amount": amount, "date": info.get("date") or _date(args.get("date"), "date")})
     got = _received(p)
     p["received"] = got
