@@ -30,6 +30,14 @@ GET  /api/commissions/people-lookup?name=    People's Hoard candidates through t
 POST /api/commissions/{id}/link_person | reconcile_payments | confirm_payment   (Ledger read-only)
 GET  /api/commissions/meetings              recent Faustus meetings to import (Hangar E27)
 POST /api/commissions/{id}/import_meeting | promote_meeting_item   meeting -> requirements and open questions
+
+Review desk (Hangar E32, src/review_desk.py):
+GET  /api/review-desks                       the owner's review desks
+POST /api/review-desks                       {title, path?, commission?, milestone?}
+GET  /api/review-desks/{id}                  versions, comments and status
+GET  /api/review-desks/{id}/compare?a=&b=    reader facts and text diff between two versions
+GET  /api/review-desks/{id}/versions/{n}     the snapshot of version n
+POST /api/review-desks/{id}/{action}         add_version | comment | import_feedback | set_status | deliver
 """
 from typing import Any, Dict
 
@@ -189,5 +197,55 @@ def setup_delivery_routes() -> APIRouter:
         import asyncio
         body = await _json(request)
         return _reply(await asyncio.to_thread(commission_office.run, owner, {**body, "action": action, "id": cid}))
+
+    _DESK_POST = ("add_version", "comment", "import_feedback", "set_status", "deliver")
+
+    @router.get("/api/review-desks")
+    async def list_desks(request: Request):
+        from src import review_desk
+        return _reply(review_desk.run(owner_of(request), {"action": "list"}))
+
+    @router.post("/api/review-desks")
+    async def create_desk(request: Request):
+        from src import review_desk
+        import asyncio
+        owner = owner_of(request)
+        body = await _json(request)
+        return _reply(await asyncio.to_thread(review_desk.run, owner, {**body, "action": "create"}, confine=False))
+
+    @router.get("/api/review-desks/{did}")
+    async def show_desk(did: str, request: Request):
+        from src import review_desk
+        import asyncio
+        owner = owner_of(request)
+        return _reply(await asyncio.to_thread(review_desk.run, owner, {"action": "show", "id": did}))
+
+    @router.get("/api/review-desks/{did}/compare")
+    async def compare_desk(did: str, request: Request, a: str = "", b: str = ""):
+        from src import review_desk
+        import asyncio
+        owner = owner_of(request)
+        return _reply(await asyncio.to_thread(review_desk.run, owner, {"action": "compare", "id": did, "a": a, "b": b}))
+
+    @router.get("/api/review-desks/{did}/versions/{n}")
+    async def desk_version(did: str, n: int, request: Request):
+        from src import review_desk
+        owner = owner_of(request)
+        try:
+            path = review_desk.snapshot_path(owner, did, n)
+        except review_desk.DeskError as exc:
+            return JSONResponse(status_code=404, content={"error": exc.detail, "error_class": exc.error_class})
+        return FileResponse(str(path), filename=path.name)
+
+    @router.post("/api/review-desks/{did}/{action}")
+    async def desk_action(did: str, action: str, request: Request):
+        from src import review_desk
+        import asyncio
+        owner = owner_of(request)
+        if action not in _DESK_POST:
+            return JSONResponse(status_code=400, content={"error": f"action must be one of {', '.join(_DESK_POST)}",
+                                                          "error_class": "desk.bad_args"})
+        body = await _json(request)
+        return _reply(await asyncio.to_thread(review_desk.run, owner, {**body, "action": action, "id": did}, confine=False))
 
     return router

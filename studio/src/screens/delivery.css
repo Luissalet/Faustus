@@ -70,3 +70,9 @@
 .fs-dlv__meeting td:nth-child(3) {
   white-space: nowrap;
 }
+
+.fs-dlv__diff {
+  max-height: 22rem;
+  overflow: auto;
+  font-size: 0.8rem;
+}

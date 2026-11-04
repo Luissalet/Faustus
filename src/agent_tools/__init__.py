@@ -124,7 +124,7 @@ from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool
 from .contract_tools import CriteriaCheckTool
 from .prior_art_tools import PriorArtTool
 from .uncertainty_tool import UncertaintyNextObservationTool
-from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOfficeTool
+from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOfficeTool, ReviewDeskTool
 from .ci_tools import CiFailuresTool
 from .coordination_tool import CoordinationTool
 from src.coordination.tools import NAMES as _COORDINATION_TOOLS
@@ -398,6 +398,8 @@ TOOL_HANDLERS = {
     "scope_compare": ScopeCompareTool().execute,
     # Commission office: scope versions, milestones, deliveries, contacts, files (src/commission_office.py).
     "commission_office": CommissionOfficeTool().execute,
+    # Review desk: versions as snapshots, anchored comments, one delivered version (src/review_desk.py).
+    "review_desk": ReviewDeskTool().execute,
     # CI failure analyzer (lot C): what really broke in a GitHub Actions run,
     # read from the run's own logs. See src/ci_failures.py.
     "ci_failures": CiFailuresTool().execute,
@@ -631,7 +633,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Uncertainty sensor -- src/agent_tools/uncertainty_tool.py.
              "uncertainty_next_observation",
              # Delivery package -- src/agent_tools/delivery_tool.py.
-             "delivery_package", "scope_compare", "commission_office",
+             "delivery_package", "scope_compare", "commission_office", "review_desk",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
              "inspect_image",
              # Autonomous bug hunter -- src/agent_tools/bug_hunt_tools.py.

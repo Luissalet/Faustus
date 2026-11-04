@@ -679,6 +679,9 @@ _register({"scope_compare"}, ToolEffect.WRITE_PRIVATE)
 # Commission office (src/commission_office.py): one JSON record per commission
 # under DATA_DIR; reads delivery packages and runs the scope comparator.
 _register({"commission_office"}, ToolEffect.WRITE_PRIVATE)
+# Review desk (src/review_desk.py): reads the named version files (confined like
+# read_file in chat) and keeps snapshots and comments under DATA_DIR/review_desks.
+_register({"review_desk"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE)
 _register({"derivation_graph"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
           result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,

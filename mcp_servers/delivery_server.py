@@ -38,7 +38,7 @@ except Exception:  # pragma: no cover - the server must start regardless
 server = Server("delivery")
 
 _OWNER_ENV_KEYS = ("ODYSSEUS_MCP_DELIVERY_OWNER", "ODYSSEUS_DELIVERY_OWNER")
-_NAMES = ("delivery_package", "scope_compare", "commission_office")
+_NAMES = ("delivery_package", "scope_compare", "commission_office", "review_desk")
 _OWNER_ERROR = ("Error: the delivery MCP server has no owner configured, so it cannot tell whose packages these "
                 "are. Set ODYSSEUS_MCP_DELIVERY_OWNER for this server.")
 
@@ -81,6 +81,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if name == "commission_office":
             from src import commission_office
             return _text(await asyncio.to_thread(commission_office.run, owner, args))
+        if name == "review_desk":
+            from src import review_desk
+            return _text(await asyncio.to_thread(review_desk.run, owner, args, confine=False))
         if name == "scope_compare":
             from src import scope_compare
             return _text(await asyncio.to_thread(scope_compare.run, owner, args))
@@ -96,7 +99,7 @@ def _preload() -> None:
     after the reader thread blocks on it would stall ``tools/list``."""
     try:
         _schemas()
-        from src import commission_office, delivery_package, scope_compare  # noqa: F401
+        from src import commission_office, delivery_package, review_desk, scope_compare  # noqa: F401
     except Exception:  # noqa: BLE001 - the server still starts; the call reports the error
         pass
 

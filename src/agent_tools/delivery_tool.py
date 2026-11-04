@@ -66,3 +66,18 @@ class CommissionOfficeTool:
         if data.get("error"):
             return {"error": f"commission_office: {data['error']}", "error_class": data.get("error_class"), "exit_code": 1}
         return {"output": commission_office.render(data), "exit_code": 0, "result": data}
+
+
+class ReviewDeskTool:
+    """`review_desk` {action, id?, ...} (Hangar E32): versions, anchored comments, one delivered version."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src import review_desk
+        args = _args(content)
+        if not args:
+            return {"error": "review_desk: the arguments must be a JSON object", "exit_code": 1}
+        owner = str((ctx or {}).get("owner") or "")
+        data = await asyncio.to_thread(review_desk.run, owner, args)
+        if data.get("error"):
+            return {"error": f"review_desk: {data['error']}", "error_class": data.get("error_class"), "exit_code": 1}
+        return {"output": review_desk.render(data), "exit_code": 0, "result": data}

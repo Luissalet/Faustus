@@ -10683,3 +10683,39 @@ Statement	Frase
 Not a commitment	No es un compromiso
 Requirement anyway	Requisito de todos modos
 Waiting for an answer	Pendiente de respuesta
+A comment stays on the version it was made on. Anchors: p3 or p3@x,y,w,h, t=00:01:10-00:01:25, Sheet!B4, obj:Name, L10-20, sym:name; «página 3», «min 1:10», «celda B4» or «pieza Tapa» in the text also work.	Un comentario se queda en la versión sobre la que se hizo. Anclas: p3 o p3@x,y,an,al, t=00:01:10-00:01:25, Hoja!B4, obj:Nombre, L10-20, sym:nombre; también valen «página 3», «min 1:10», «celda B4» o «pieza Tapa» dentro del texto.
+A review keeps every version of a deliverable, the comments on each one and the version that was delivered.	Una revisión guarda cada versión de un entregable, los comentarios de cada una y la versión que se entregó.
+Comments made on	Comentarios hechos sobre
+Deliver anyway	Entregar de todos modos
+Deliverable	Entregable
+Fixed	Corregido
+Full path of the first version (optional)	Ruta completa de la primera versión (opcional)
+Full path of the new version	Ruta completa de la nueva versión
+Import feedback	Importar comentarios
+Latest or named	Última o la nombrada
+Latest	Última
+Names the one version to hand over. It is refused while comments are open unless you deliver anyway.	Fija la única versión que se entrega. Se rechaza mientras haya comentarios abiertos, salvo que entregues de todos modos.
+New review	Nueva revisión
+Newer versions exist after the delivered one	Hay versiones posteriores a la entregada
+No review open	Ninguna revisión abierta
+No text differences	Sin diferencias de texto
+No text reader for this format; reader facts and hash only.	No hay lector de texto para este formato; solo datos del lector y hash.
+Not delivered yet	Aún sin entregar
+Open comments made on an older version, to check in the latest	Comentarios abiertos hechos sobre una versión anterior, a comprobar en la última
+Paste client feedback: one comment per line; a line such as «Sobre la v1:» applies to the lines below	Pega los comentarios del cliente: uno por línea; una línea como «Sobre la v1:» se aplica a las de debajo
+Reopened	Reabierto
+Reviews	Revisiones
+The source file changed after delivery; the delivered snapshot is kept.	El archivo de origen cambió después de entregar; se conserva la copia entregada.
+chosen	elegida
+fixed in	corregido en
+latest when made	la última al hacerlo
+named in the feedback	nombrada en los comentarios
+named in the text	nombrada en el texto
+older version	versión anterior
+same content	mismo contenido
+too large to keep	demasiado grande para guardar
+versions	versiones
+still open	sin resolver
+Compare from	Comparar desde
+Compare to	Comparar con
+Remark	Comentario

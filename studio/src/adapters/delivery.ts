@@ -246,3 +246,42 @@ export const createCommission = (body: { title: string; client: string; request:
   request<Commission>('/api/commissions', { method: 'POST', body: JSON.stringify(body) });
 export const commissionAction = (id: string, action: string, body: Record<string, unknown>) =>
   request<Commission>(`/api/commissions/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: JSON.stringify(body) });
+
+// Review desk (Hangar E32): versions as snapshots, anchored comments, one delivered version.
+export interface DeskAnchor { kind: string; label: string }
+export interface DeskVersion { n: number; name: string; source: string; snapshot: string | null; sha256: string; size: number; at: string; note: string;
+  reopen?: { status: string; reader?: string | null; facts?: Record<string, unknown>; reason?: string } }
+export interface DeskComment { id: string; version: number; version_from: string; text: string; author: string; anchor: DeskAnchor | null; ref: string;
+  at: string; status: string; about_older: boolean; fixed_in?: number; history: { at: string; from: string; to: string; note: string }[] }
+export interface DeskStatus { latest: number | null; versions: number; counts: Record<string, number>; open_on_latest: string[]; open_from_older: string[];
+  about_older_when_made: string[]; deliverable: string | null;
+  delivered: { version: number; name: string; sha256: string; at: string; open_comments: string[] } | null;
+  delivered_check: { snapshot_matches: boolean | null; source_still_matches: boolean | null; newer_versions: number[] } | null }
+export interface ReviewDesk { id: string; title: string; created: string; updated: string; commission: string; milestone: string;
+  versions: DeskVersion[]; comments: DeskComment[]; events: { at: string; kind: string; text: string }[]; status: DeskStatus }
+export interface DeskRow { id: string; title: string; updated: string; versions: number; open: number; delivered: number | null; commission: string }
+export interface DeskComparison { a: number; b: number; same_content: boolean; size_delta: number; facts: Record<string, [unknown, unknown]>;
+  text: { added: number; removed: number; diff: string[]; truncated: boolean } | null; comments_on_a: { id: string; status: string; anchor: string | null; text: string }[] }
+export const COMMENT_STATES = ['open', 'in_progress', 'fixed', 'wontfix', 'answered'];
+export function commentStateLabel(s: string): string {
+  const labels: Record<string, string> = { open: t('Still open'), in_progress: t('In progress'), fixed: t('Fixed'), wontfix: t("Won't fix"), answered: t('Answered') };
+  return labels[s] ?? s;
+}
+export function versionFromLabel(s: string): string {
+  const labels: Record<string, string> = { given: t('chosen'), latest: t('latest when made'), 'named in the text': t('named in the text'), 'named in the feedback': t('named in the feedback') };
+  return labels[s] ?? s;
+}
+export async function listDesks(): Promise<DeskRow[]> {
+  const r = await request<{ desks?: DeskRow[] }>('/api/review-desks');
+  return Array.isArray(r.desks) ? r.desks : [];
+}
+export const loadDesk = (id: string) => request<ReviewDesk>(`/api/review-desks/${encodeURIComponent(id)}`);
+export const createDesk = (body: { title: string; path: string }) =>
+  request<ReviewDesk>('/api/review-desks', { method: 'POST', body: JSON.stringify(body) });
+export const deskAction = (id: string, action: string, body: Record<string, unknown>) =>
+  request<ReviewDesk>(`/api/review-desks/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: JSON.stringify(body) });
+export async function compareDesk(id: string, a: string, b: string): Promise<DeskComparison> {
+  const r = await request<{ comparison: DeskComparison }>(`/api/review-desks/${encodeURIComponent(id)}/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+  return r.comparison;
+}
+export const deskVersionHref = (id: string, n: number) => `/api/review-desks/${encodeURIComponent(id)}/versions/${n}`;

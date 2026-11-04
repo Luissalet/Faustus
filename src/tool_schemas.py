@@ -3438,6 +3438,37 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "review_desk",
+            "description": "Review desk for a deliverable: every version is a snapshot (copied, hashed and reopened by the delivery readers), so a file saved over itself is still v1, v2, v3; comments are anchored to the version they were made on and keep pointing at it (anchors: p3 or p3@x,y,w,h for a page and rectangle, t=00:01:10-00:01:25 for a time range, Sheet!B4 or cell:B4, obj:Name for a 3D object, L120-140 for lines, sym:name for a symbol; everyday wording such as 'página 3', 'min 1:10', 'celda B4', 'pieza Tapa' is understood; each comment gets a ref like review:<desk>@v2#p3); feedback that names an older version or file name is recognised as about that version. Actions: create {title, path?, commission?, milestone?}, list, show/status {id}, add_version {id, path, note?} (refuses identical content), comment {id, text, version?, anchor?, author?}, import_feedback {id, text, about?, author?} (one comment per line; a heading line ending in ':' that names a version applies to the lines below), set_status {id, comment, status: open|in_progress|fixed|wontfix|answered, fixed_in?, note?}, compare {id, a?, b?} (reader facts, text diff for text, Word, Excel and PDF, comments made on a), deliver {id, version?, force?, note?} (one unambiguous version; refuses while comments are open unless force; status later tells whether the delivered file and its source still match the hash).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["create", "list", "show", "status", "add_version", "comment", "import_feedback", "set_status", "compare", "deliver"]},
+                    "id": {"type": "string", "description": "Review desk id"},
+                    "title": {"type": "string"},
+                    "path": {"type": "string", "description": "File of the new version"},
+                    "commission": {"type": "string", "description": "Commission id this deliverable belongs to"},
+                    "milestone": {"type": "string"},
+                    "note": {"type": "string"},
+                    "text": {"type": "string", "description": "Comment or feedback text"},
+                    "version": {"description": "Version number such as 2 or v2", "anyOf": [{"type": "integer"}, {"type": "string"}]},
+                    "anchor": {"type": "string", "description": "p3, p3@x,y,w,h, t=mm:ss-mm:ss, Sheet!B4, obj:Name, L10-20, sym:name"},
+                    "author": {"type": "string"},
+                    "about": {"type": "string", "description": "Version the whole feedback is about (import_feedback)"},
+                    "comment": {"type": "string", "description": "Comment id such as C3"},
+                    "status": {"type": "string", "enum": ["open", "in_progress", "fixed", "wontfix", "answered"]},
+                    "fixed_in": {"description": "Version that fixes it (default latest)", "anyOf": [{"type": "integer"}, {"type": "string"}]},
+                    "a": {"description": "Older version to compare", "anyOf": [{"type": "integer"}, {"type": "string"}]},
+                    "b": {"description": "Newer version to compare", "anyOf": [{"type": "integer"}, {"type": "string"}]},
+                    "force": {"type": "boolean"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_handoff",
             "description": "Client handoff package: install/configure/migrate/run/test/recover/demo instructions from the repo dossier, executed in a throwaway copy and written to HANDOFF.md. Only verified commands are presented as instructions; failed and not-run ones go under 'Not verified' with the reason. Runs the repository's own commands.",
             "parameters": {

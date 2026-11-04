@@ -1259,6 +1259,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "is this new request already in the agreed scope or a change order",
         "qué cambia entre la petición inicial, el acuerdo y la nueva solicitud",
     ],
+    "review_desk": [
+        "añade la versión nueva del informe y dime qué comentarios siguen abiertos",
+        "the client says page 3 has the old logo: which version was that about",
+        "entrega la versión revisada y comprueba que el archivo no ha cambiado",
+    ],
     "commission_office": [
         "abre un expediente para el encargo de la caja con el cliente y la primera petición",
         "what is due next on this commission and which deliverables are not ready",

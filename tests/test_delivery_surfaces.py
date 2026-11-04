@@ -88,7 +88,7 @@ def test_mcp_server_lists_the_tool_and_refuses_without_an_owner(monkeypatch, tmp
     pytest.importorskip("mcp")
     import mcp_servers.delivery_server as srv
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["delivery_package", "scope_compare", "commission_office"] and all(t.inputSchema["type"] == "object" for t in tools)
+    assert [t.name for t in tools] == ["delivery_package", "scope_compare", "commission_office", "review_desk"] and all(t.inputSchema["type"] == "object" for t in tools)
     monkeypatch.delenv("ODYSSEUS_MCP_DELIVERY_OWNER", raising=False)
     monkeypatch.delenv("ODYSSEUS_DELIVERY_OWNER", raising=False)
     assert "no owner configured" in asyncio.run(srv.call_tool("delivery_package", {"action": "list"}))[0].text
