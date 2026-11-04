@@ -950,7 +950,8 @@ def test_the_settings_exist_with_safe_defaults_and_a_schema_group():
     assert defaults["agent_observations_inject_session_start"] is False        # prompt-changing parts are opt-in
     assert defaults["agent_observations_file_context"] is False
     group = next(g for g in schema_mod.GROUPS if g["id"] == "observations")
-    assert {f["key"] for f in group["fields"]} == set(keys)
+    # f7056a8a shows the model-call trace retention in the same group.
+    assert {f["key"] for f in group["fields"]} == set(keys) | {"llm_trace_retention_days"}
     assert schema_mod.schema_problems() == []
     assert schema_mod.coerce_setting_value("agent_observations_queue_max", 99999) == 1000
     assert schema_mod.coerce_setting_value("agent_observations_enabled", "off") is False

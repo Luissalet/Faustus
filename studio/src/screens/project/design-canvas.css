@@ -8,10 +8,10 @@
 .fs-dc__compare { display: flex; flex-wrap: wrap; gap: var(--fs-space-2); align-items: center; }
 .fs-dc__change { display: grid; grid-template-columns: 6.5rem 9rem 1fr; gap: 6px; align-items: start; font-size: 0.86rem; }
 .fs-dc__kind { font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.04em; }
-.fs-dc__change[data-kind="added"] .fs-dc__kind { color: var(--fs-success, #3fb950); }
-.fs-dc__change[data-kind="removed"] .fs-dc__kind { color: var(--fs-danger, #f85149); }
-.fs-dc__change[data-kind="changed"] .fs-dc__kind { color: var(--fs-warning, #d29922); }
-.fs-dc__change[data-kind="moved"] .fs-dc__kind, .fs-dc__change[data-kind="reordered"] .fs-dc__kind { color: var(--fs-accent, #58a6ff); }
+.fs-dc__change[data-kind="added"] .fs-dc__kind { color: var(--fs-success); }
+.fs-dc__change[data-kind="removed"] .fs-dc__kind { color: var(--fs-danger); }
+.fs-dc__change[data-kind="changed"] .fs-dc__kind { color: var(--fs-warning); }
+.fs-dc__change[data-kind="moved"] .fs-dc__kind, .fs-dc__change[data-kind="reordered"] .fs-dc__kind { color: var(--fs-info); }
 .fs-dc__text del { opacity: 0.65; margin-inline-end: 6px; }
 .fs-dc__text ins { text-decoration: none; }
 .fs-dc__h { margin: var(--fs-space-2) 0 0; font-size: 0.9rem; }
