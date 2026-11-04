@@ -9,7 +9,10 @@ from src.async_preparation import run_preparation
 
 
 async def _started(event):
-    async with asyncio.timeout(5):
+    # Only a bound on reaching the stage, not a claim about speed: the real
+    # agent loop's preparation reached it just after 5 s on a loaded
+    # eight-worker run (the event was already set when the timeout fired).
+    async with asyncio.timeout(60):
         while not event.is_set():
             await asyncio.sleep(.005)
 

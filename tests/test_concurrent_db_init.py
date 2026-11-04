@@ -42,6 +42,17 @@ with KernelFileLock(lock_path, timeout=5.0):
     os._exit(9)
 """
 
+_FOLLOWER = r"""
+import sys, time
+from core.kernel_file_lock import KernelFileLock
+started = time.monotonic()
+with KernelFileLock(sys.argv[1], timeout=30.0):
+    pass
+print("acquired", round(time.monotonic() - started, 3), flush=True)
+import core.database  # noqa: F401  (init_db takes the same lock path)
+print("ok", flush=True)
+"""
+
 
 def test_two_processes_can_init_schema_on_empty_db(tmp_path):
     barrier = tmp_path / "go"
@@ -107,19 +118,23 @@ def test_dead_init_lock_holder_is_taken_over_quickly(tmp_path):
         "FAUSTUS_DATA_DIR": str(data),
         "PYTHONUTF8": "1",
     }
-    started = time.monotonic()
+    # The follower times the lock take-over itself: the wall clock of the whole
+    # subprocess is mostly interpreter start and `import core.database`, which
+    # took 16.8 s on a loaded eight-worker run although the lock was free at
+    # once. A lock still held by the dead process would make the acquire wait
+    # out its timeout instead.
     follower = subprocess.run(
-        [sys.executable, "-c", "import core.database; print('ok', flush=True)"],
+        [sys.executable, "-c", _FOLLOWER, lock_path],
         cwd=str(REPO),
         env=env,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=90,
     )
-    elapsed = time.monotonic() - started
     assert follower.returncode == 0, (follower.stdout, follower.stderr)
     assert "ok" in follower.stdout
-    assert elapsed < 15.0, f"dead-owner recovery took {elapsed:.1f}s"
+    waited = float(follower.stdout.split("acquired", 1)[1].split()[0])
+    assert waited < 5.0, f"dead-owner recovery took {waited:.1f}s"
     assert Path(lock_path).exists(), "init must not unlink the stable lock path"
     assert db.exists()
 

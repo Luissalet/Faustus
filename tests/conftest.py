@@ -25,6 +25,36 @@ def desktop_app_seen_open(monkeypatch):
     monkeypatch.setattr(host_tools, "_app_cache", [0.0, False])
 
 
+_CHROMA_EXPORTED = bool(os.environ.get("CHROMADB_HOST") or os.environ.get("CHROMADB_PORT"))
+
+
+@pytest.fixture(autouse=True)
+def no_live_chroma(monkeypatch):
+    """Tests never reach the ChromaDB the running instance uses (localhost:8100).
+
+    Each worker has its own temporary data folder, so the tool index named a new
+    collection after it on the running ChromaDB and embedded the whole tool
+    catalogue into it: about 45 s of CPU per worker (eight at once on a full
+    run, enough to hit the 120 s timeout and kill the worker) and one
+    abandoned collection per worker per run on the user's server. Without a
+    reachable ChromaDB the index uses its in-memory lane and the cached vectors
+    the session copies into its data folder (below). A ChromaDB the caller
+    exported (CHROMADB_HOST/PORT) is used as given; a test that wants one
+    brings its own (a fake client, a PersistentClient, a socket on another
+    port)."""
+    if _CHROMA_EXPORTED:
+        return
+    from src import chroma_client
+    real = chroma_client._port_open
+
+    def port_open(host, port, timeout=None):
+        if str(host).lower() in ("localhost", "127.0.0.1", "::1") and int(port) == 8100:
+            return False
+        return real(host, port, timeout)
+
+    monkeypatch.setattr(chroma_client, "_port_open", port_open)
+
+
 @pytest.fixture(autouse=True)
 def no_live_browser_lanes(monkeypatch):
     """Browser reads take a lane at the family Hub (#265): tests never reach the running one (a test opts in with its own stub)."""
@@ -523,6 +553,44 @@ def pytest_collection_finish(session):
     value = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
     if value and value != _BROWSERS_PATH_AT_START and not os.path.isdir(value):
         os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
+
+
+# The two switches that turn route-level auth off (src/auth_helpers.require_user,
+# src/owner_identity.auth_disabled). Anything that leaves one of them set after
+# its test makes every later owner-scope / 401 / 403 / admin-only test on that
+# xdist worker pass the wrong way round or fail, far from the cause.
+_AUTH_ENV_KEYS = ("AUTH_ENABLED", "LOCALHOST_BYPASS")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_setup(item):
+    item._faustus_auth_env = {key: os.environ.get(key) for key in _AUTH_ENV_KEYS}
+    yield
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """After every fixture of the test has been torn down (monkeypatch included),
+    put the auth switches back as they were before the test and name the test
+    that changed them, so the leak is fixed where it starts."""
+    yield
+    before = getattr(item, "_faustus_auth_env", None)
+    if before is None:
+        return
+    leaked = {}
+    for key, old in before.items():
+        new = os.environ.get(key)
+        if new == old:
+            continue
+        leaked[key] = new
+        if old is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = old
+    if leaked:
+        import warnings
+        warnings.warn(f"{item.nodeid} left {leaked} in os.environ after its teardown; "
+                      "restored so later tests keep auth on", RuntimeWarning)
 
 
 @pytest.fixture(autouse=True)
