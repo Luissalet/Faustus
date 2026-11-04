@@ -1,0 +1,18 @@
+/* Design canvas history (Darwin #989): versions, semantic diff, decision log. */
+.fs-dc { display: grid; gap: var(--fs-space-2); margin-block: var(--fs-space-3); }
+.fs-dc__list, .fs-dc__changes, .fs-dc__decisions, .fs-dc__versions { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.fs-dc__row { display: flex; gap: var(--fs-space-2); align-items: baseline; width: 100%; text-align: start; background: none; border: 0; padding: 4px 0; color: inherit; cursor: pointer; height: auto; }
+.fs-dc__detail { display: grid; gap: var(--fs-space-2); padding: var(--fs-space-2) 0 var(--fs-space-3) var(--fs-space-3); border-inline-start: 2px solid var(--fs-border); }
+.fs-dc__versions li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.fs-dc__summary { font-size: 0.82rem; opacity: 0.8; }
+.fs-dc__compare { display: flex; flex-wrap: wrap; gap: var(--fs-space-2); align-items: center; }
+.fs-dc__change { display: grid; grid-template-columns: 6.5rem 9rem 1fr; gap: 6px; align-items: start; font-size: 0.86rem; }
+.fs-dc__kind { font-weight: 600; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.04em; }
+.fs-dc__change[data-kind="added"] .fs-dc__kind { color: var(--fs-success, #3fb950); }
+.fs-dc__change[data-kind="removed"] .fs-dc__kind { color: var(--fs-danger, #f85149); }
+.fs-dc__change[data-kind="changed"] .fs-dc__kind { color: var(--fs-warning, #d29922); }
+.fs-dc__change[data-kind="moved"] .fs-dc__kind, .fs-dc__change[data-kind="reordered"] .fs-dc__kind { color: var(--fs-accent, #58a6ff); }
+.fs-dc__text del { opacity: 0.65; margin-inline-end: 6px; }
+.fs-dc__text ins { text-decoration: none; }
+.fs-dc__h { margin: var(--fs-space-2) 0 0; font-size: 0.9rem; }
+.fs-dc__form { display: grid; grid-template-columns: 2fr 2fr auto; gap: 6px; }

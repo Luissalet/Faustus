@@ -10430,3 +10430,23 @@ consults {what}	consulta {what}
 nothing is consulted or saved (memory is off in Settings)	no se consulta ni se guarda nada (la memoria está desactivada en Ajustes)
 The same switch as “Skip memory recall” in the composer: voice turns use the Second Brain like typed ones.	El mismo interruptor que «Sin recuerdos automáticos» del compositor: los turnos de voz usan el Segundo Cerebro igual que los escritos.
 Second Brain	Segundo Cerebro
+Approach	Enfoque
+Structure	Estructura
+Operations	Operaciones
+Norms	Normas
+Safeguards	Salvaguardas
+changed	cambiado
+reordered	reordenado
+same design	mismo diseño
+Only one version so far: the diff appears when the canvas is filed again.	Por ahora hay una sola versión: la comparación aparece cuando el canvas se vuelva a registrar.
+Decision log	Registro de decisiones
+No decision logged yet.	Aún no hay decisiones registradas.
+why	por qué
+What was decided	Qué se decidió
+Log on v{n}	Registrar en v{n}
+Design canvases	Canvas de diseño
+{n} canvas	{n} canvas
+{n} canvases	{n} canvas
+No design canvas filed yet. The agent files one with design_canvas before a larger change; every new filing becomes a version you can compare here.	Aún no hay ningún canvas de diseño. El agente registra uno con design_canvas antes de un cambio grande; cada nuevo registro es una versión que se puede comparar aquí.
+{n} decision	{n} decisión
+{n} decisions	{n} decisiones

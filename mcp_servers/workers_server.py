@@ -1222,6 +1222,48 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="design_canvas_history",
+        description=(
+            "Faustus design canvases (the seven-dimension designs filed before coding: requirements, entities, "
+            "approach, structure, operations, norms, safeguards). Every filing is a numbered version. Without "
+            "canvas_id: the filed canvases (filter by project_id). With canvas_id: its versions (who, when, "
+            "goal, shape) and its decision log. Read-only."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "canvas_id": {"type": "string", "description": "The canvas (its concept id)."},
+            "project_id": {"type": "string"},
+        }},
+    ),
+    Tool(
+        name="design_canvas_diff",
+        description=(
+            "Semantic diff between two versions of a design canvas: which elements were added, removed, changed "
+            "(the same entry reworded), moved to another section or reordered, the approach compared sentence "
+            "by sentence, and the decisions logged on the versions in between. Default: the previous version "
+            "against the latest. Read-only."
+        ),
+        inputSchema={"type": "object", "required": ["canvas_id"], "properties": {
+            "canvas_id": {"type": "string"},
+            "from_version": {"type": "integer"},
+            "to_version": {"type": "integer"},
+        }},
+    ),
+    Tool(
+        name="design_canvas_decide",
+        description=(
+            "Log a decision on a design canvas version: what was decided, why, and who decided it (default: the "
+            "latest version). It shows up in the canvas history, in every diff that spans that version and in "
+            "the Design canvases panel of Faustus."
+        ),
+        inputSchema={"type": "object", "required": ["canvas_id", "decision"], "properties": {
+            "canvas_id": {"type": "string"},
+            "decision": {"type": "string"},
+            "why": {"type": "string"},
+            "author": {"type": "string"},
+            "version": {"type": "integer"},
+        }},
+    ),
+    Tool(
         name="workers_cache_clear",
         description=(
             "Empty a worker's own package caches (the folders workers_caches lists): one worker by "
@@ -2305,6 +2347,32 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                                             if str(args.get(k) or "").strip()})
             data = await asyncio.to_thread(_request, "GET", "/api/agents/worker-caches" + (f"?{query}" if query else ""))
             return _text(render_worker_caches(data))
+        if name == "design_canvas_history":
+            cid = urllib.parse.quote(str(args.get("canvas_id") or "").strip(), safe="")
+            if not cid:
+                pid = urllib.parse.quote(str(args.get("project_id") or "").strip(), safe="")
+                rows = (await asyncio.to_thread(_request, "GET", f"/api/design-canvas?project_id={pid}")).get("canvases") or []
+                return _text("\n".join(f"{r.get('id')} · {r.get('name')} · v{r.get('latest')} · "
+                                       f"{r.get('decisions')} decision(s)" for r in rows) or "no design canvas filed yet")
+            data = await asyncio.to_thread(_request, "GET", f"/api/design-canvas/{cid}")
+            lines = [f"{data.get('name')} ({data.get('id')})"]
+            lines += [f"v{v.get('version')} · {v.get('author')} · {v.get('summary')}" for v in data.get("versions") or []]
+            lines += [f"decision v{d.get('version')} ({d.get('author')}): {d.get('decision')}"
+                      + (f" — why: {d['why']}" if d.get("why") else "") for d in data.get("decisions") or []]
+            return _text("\n".join(lines))
+        if name == "design_canvas_diff":
+            cid = urllib.parse.quote(str(args.get("canvas_id") or "").strip(), safe="")
+            query = urllib.parse.urlencode({("from" if k == "from_version" else "to"): int(args[k])
+                                            for k in ("from_version", "to_version") if args.get(k) not in (None, "")})
+            data = await asyncio.to_thread(_request, "GET", f"/api/design-canvas/{cid}/diff" + (f"?{query}" if query else ""))
+            return _text(str(data.get("text") or json.dumps(data.get("counts"))))
+        if name == "design_canvas_decide":
+            cid = urllib.parse.quote(str(args.get("canvas_id") or "").strip(), safe="")
+            body = {k: args[k] for k in ("decision", "why", "author", "version") if args.get(k) not in (None, "")}
+            body.setdefault("author", "agent")
+            entry = await asyncio.to_thread(_request, "POST", f"/api/design-canvas/{cid}/decisions", body)
+            return _text(f"logged on v{entry.get('version')}: {entry.get('decision')}"
+                         + (f" — why: {entry['why']}" if entry.get("why") else ""))
         if name == "workers_cache_clear":
             body = {k: args[k] for k in ("session_id", "root", "all", "force", "forget") if args.get(k)}
             data = await asyncio.to_thread(_request, "POST", "/api/agents/worker-caches/clear", body)

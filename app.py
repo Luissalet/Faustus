@@ -1572,6 +1572,9 @@ app.include_router(setup_agent_leases_routes())
 # Each isolated worker's own package caches, listed and cleared (Darwin #999).
 from routes.worker_caches_routes import setup_worker_caches_routes
 app.include_router(setup_worker_caches_routes())
+# Design canvas versions, semantic diff and decision log (Darwin #989).
+from routes.design_canvas_routes import setup_design_canvas_routes
+app.include_router(setup_design_canvas_routes())
 # Agent & automation settings schema (Settings → Agent Tools form).
 from routes.agent_settings_routes import setup_agent_settings_routes
 app.include_router(setup_agent_settings_routes())

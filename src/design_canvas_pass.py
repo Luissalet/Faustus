@@ -90,7 +90,8 @@ async def draft(goal: str, *, context: str = "", owner: Optional[str] = None,
 def file_as_concept(canvas: Dict[str, Any], goal: str, *, name: str,
                     project_id: Optional[str] = None,
                     workspace: Optional[str] = None,
-                    concept_id: Optional[str] = None) -> Dict[str, Any]:
+                    concept_id: Optional[str] = None,
+                    author: str = "agent", source: str = "agent") -> Dict[str, Any]:
     """Store a validated canvas in the project graph as a `decision`.
 
     The paths from `structure` become the concept's refs, which is what makes
@@ -101,7 +102,7 @@ def file_as_concept(canvas: Dict[str, Any], goal: str, *, name: str,
 
     canvas = design_canvas.validate(canvas)
     store = _store(project_id=project_id, workspace=workspace)
-    return store.upsert_concept(
+    concept = store.upsert_concept(
         name=name,
         kind="decision",
         summary=design_canvas.summarise(canvas, goal),
@@ -109,3 +110,16 @@ def file_as_concept(canvas: Dict[str, Any], goal: str, *, name: str,
         refs=design_canvas.referenced_paths(canvas),
         concept_id=concept_id,
     )
+    # Darwin #989: every filing is a numbered version of this canvas, so a
+    # later one can be diffed against it and decisions attached to it.
+    try:
+        from src import design_canvas_history
+        cid = str((concept or {}).get("id") or "")
+        if cid:
+            recorded = design_canvas_history.record_version(
+                cid, canvas, goal=goal, name=name, author=author, source=source,
+                project_id=str(project_id or ""), workspace=str(workspace or ""), validate=False)
+            concept = {**concept, "canvas_version": recorded.get("version")}
+    except Exception:  # noqa: BLE001 - history must never stop the filing
+        logger.debug("design canvas: could not record the version", exc_info=True)
+    return concept

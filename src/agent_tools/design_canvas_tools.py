@@ -111,6 +111,9 @@ class DesignCanvasTool:
         from src.design_canvas import DesignCanvasError
 
         args = _args(content)
+        action = str(args.get("action") or "draft").strip().lower()
+        if action != "draft":
+            return _history_action(action, args, ctx)
         goal = str(args.get("goal") or "").strip()
         if not goal:
             return {"error": "design_canvas: `goal` is required — say what is being designed",
@@ -169,6 +172,19 @@ class DesignCanvasTool:
         result["saved"] = True
         result["concept"] = concept
         result["output"] = f"{drafted['markdown']}\n\nFiled as concept `{concept.get('id')}`."
+        version = int(concept.get("canvas_version") or 0)
+        if version:
+            result["canvas_version"] = version
+            result["output"] += f" Version {version} of this canvas."
+        if version > 1:
+            # Darwin #989: what this filing changed against the previous design.
+            try:
+                from src import design_canvas_history
+                changed = design_canvas_history.diff(str(concept.get("id")))
+                result["diff"] = changed
+                result["output"] += "\n\n" + design_canvas_history.render_diff(changed)
+            except Exception:  # noqa: BLE001 - the diff is a courtesy
+                logger.debug("design_canvas_tools: diff against the previous version failed", exc_info=True)
         _arm_closure(result, ctx, goal, canvas, concept.get("id"), project_id, workspace)
         return result
 
@@ -198,3 +214,49 @@ def _arm_closure(result: Dict[str, Any], ctx: dict, goal: str, canvas: Dict[str,
         result["closure"] = "armed"
         result["output"] = (f"{result['output']}\n\nWhen the work is done the harness compares it "
                             "with this canvas and records a verdict per item.")
+
+
+def _version_arg(value: Any) -> Optional[int]:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _history_action(action: str, args: Dict[str, Any], ctx: dict) -> Dict[str, Any]:
+    """Darwin #989: `history`, `diff` and `decide` on a filed canvas — the
+    versions, what changed between two of them element by element, and the
+    decision log (who decided what, why, on which version)."""
+    from src import design_canvas_history as history
+
+    canvas_id = str(args.get("concept_id") or args.get("canvas_id") or "").strip()
+    try:
+        if action == "list":
+            rows = history.list_canvases(project_id=_project_id(ctx) or "")
+            lines = [f"- {r['id']} · {r['name']} · v{r['latest']} · {r['decisions']} decision(s)" for r in rows[:40]]
+            return {"output": "\n".join(lines) or "no design canvas has been filed yet", "exit_code": 0,
+                    "canvases": rows}
+        if not canvas_id:
+            return {"error": f"design_canvas: action={action} needs `concept_id` (the canvas id; action=list shows them)",
+                    "exit_code": 1}
+        if action == "history":
+            data = history.history(canvas_id)
+            lines = [f"{data['name']} ({canvas_id})"]
+            lines += [f"v{v['version']} · {v.get('author')} · {v.get('summary')}" + (f" · note: {v['note']}" if v.get("note") else "")
+                      for v in data["versions"]]
+            lines += [f"decision v{d['version']} ({d.get('author')}): {d['decision']}" + (f" — why: {d['why']}" if d.get("why") else "")
+                      for d in data["decisions"]]
+            return {"output": "\n".join(lines), "exit_code": 0, "history": data}
+        if action == "diff":
+            result = history.diff(canvas_id, _version_arg(args.get("from_version")), _version_arg(args.get("to_version")))
+            return {"output": history.render_diff(result), "exit_code": 0, "diff": result}
+        if action == "decide":
+            decision = str(args.get("decision") or args.get("goal") or "").strip()
+            author = str(args.get("author") or (ctx or {}).get("turn_model") or "agent")
+            entry = history.add_decision(canvas_id, decision, why=str(args.get("why") or ""), author=author,
+                                         version_number=_version_arg(args.get("version")))
+            return {"output": f"Logged on v{entry['version']} of {canvas_id}: {entry['decision']}"
+                              + (f" — why: {entry['why']}" if entry.get("why") else ""), "exit_code": 0, "decision": entry}
+    except history.CanvasHistoryError as exc:
+        return {"error": f"design_canvas: {exc}", "exit_code": 1}
+    return {"error": f"design_canvas: unknown action {action!r} (draft, list, history, diff, decide)", "exit_code": 1}

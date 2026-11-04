@@ -65,6 +65,7 @@ import { ProjectGroupChats } from './project/GroupChats';
 import { ProjectSkills } from './project/Skills';
 import { ProjectOverviewActivity, ProjectOverviewAgora } from './project/Overview';
 import { ProjectOverviewDarwin } from './project/ProjectDarwin';
+import { ProjectDesignCanvases } from './project/DesignCanvases';
 import { ProjectFloorplan } from './project/Floorplan';
 import './project/workspace.css';
 
@@ -1037,6 +1038,7 @@ export function ProjectScreen() {
 
           <ProjectOverviewAgora project={project} onOpen={openAgora} />
           <ProjectOverviewDarwin project={project} />
+          <ProjectDesignCanvases projectId={project.id} />
           <ProjectOverviewActivity projectId={project.id} liveChats={liveChats} onOpen={() => showActivity(true)} />
           <div className="fs-pj__cards">
             <section className="fs-panel fs-pj__card">

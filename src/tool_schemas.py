@@ -2782,7 +2782,13 @@ FUNCTION_TOOL_SCHEMAS = [
                     "context": {"type": "string", "description": "Constraints, existing code, anything already decided (optional)"},
                     "name": {"type": "string", "description": "Name for the stored concept (optional -- derived from the canvas otherwise)"},
                     "concept_id": {"type": "string", "description": "Existing concept id to update instead of creating a new one (optional)"},
-                    "save": {"type": "boolean", "description": "Set false to get the canvas back without filing it (optional, default true)"}
+                    "save": {"type": "boolean", "description": "Set false to get the canvas back without filing it (optional, default true)"},
+                    "action": {"type": "string", "enum": ["draft", "list", "history", "diff", "decide"], "description": "draft (default) writes and files a canvas; every filing is a numbered version. list: the filed canvases. history: a canvas's versions and decision log. diff: what changed between two versions element by element (added, removed, changed, moved to another section, reordered), with the decisions in between. decide: log who decided what and why on a version. For list/history/diff put a short label in `goal`; for decide `goal` may hold the decision."},
+                    "from_version": {"type": "integer", "description": "diff: the older version (default: the one before `to_version`)"},
+                    "to_version": {"type": "integer", "description": "diff: the newer version (default: the latest)"},
+                    "decision": {"type": "string", "description": "decide: what was decided"},
+                    "why": {"type": "string", "description": "decide: the reason"},
+                    "version": {"type": "integer", "description": "decide: the version the decision belongs to (default: the latest)"}
                 },
                 "required": ["goal"]
             }
