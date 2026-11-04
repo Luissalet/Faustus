@@ -10748,3 +10748,19 @@ older than	anterior a
 {n} movements add up	{n} movimientos suman el importe
 latest	última
 pages	páginas
+Faustus tool	Herramienta de Faustus
+Inputs seen	Entradas vistas
+Learn from the screen	Aprender de la pantalla
+Observed step	Paso observado
+Or paste a draft exported from Talos, or an event list [{ts, type, app, title, text, field}]	O pega un borrador exportado de Talos, o una lista de eventos [{ts, type, app, title, text, field}]
+Propose recipe	Proponer receta
+Read the steps	Leer los pasos
+Recipe proposed	Receta propuesta
+Talos's Hoard drafts the steps it saw on screen (windows, clipboard, screenshots, files), with secrets masked and what it could not see listed. Map each step a Faustus tool should repeat; the rest stays manual and is written into the recipe's limits. Then try the recipe on a second case.	Talos's Hoard redacta los pasos que vio en pantalla (ventanas, portapapeles, capturas, ficheros), con los secretos ocultos y lo que no pudo ver listado. Asigna a cada paso la herramienta de Faustus que debe repetirlo; el resto queda manual y se apunta en los límites de la receta. Después prueba la receta en un segundo caso.
+The arguments of a step are not valid JSON.	Los argumentos de un paso no son JSON válido.
+The pasted text is not JSON (a Talos draft or an event list).	El texto pegado no es JSON (un borrador de Talos o una lista de eventos).
+events	eventos
+inputs	entradas
+manual steps	pasos manuales
+Delete recipe	Borrar receta
+Delete the recipe "{name}" with its tries and executions? Files it delivered are not touched.	¿Borrar la receta «{name}» con sus pruebas y ejecuciones? Los ficheros que entregó no se tocan.

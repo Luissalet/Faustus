@@ -363,3 +363,26 @@ export async function executeRecipe(
   });
   return readRun(raw, 'execute');
 }
+
+/* -- from the screen (Hangar E40): a Talos procedure draft -> a learned recipe -- */
+
+export interface ScreenStep { n: number; title: string; kind: string; app: string | null; window: string | null; inputs: string[]; unknowns: string[] }
+export interface ScreenSummary {
+  title: string; shape: string | null; window: { start?: string; end?: string; duration_s?: number; events?: number };
+  steps: ScreenStep[]; inputs: { name: string; kind: string; source: string; example: string | null; masked: boolean }[];
+  unknowns: { code: string; step: number | null; message: string }[]; masked_values: number;
+}
+export interface ScreenSource { draft?: unknown; events?: unknown[]; start?: string; end?: string; title?: string }
+
+export async function screenDraft(source: ScreenSource): Promise<{ draft: unknown; summary: ScreenSummary }> {
+  return request('/api/recipes/from-screen/draft', { method: 'POST', body: JSON.stringify(source) });
+}
+
+export async function recipeFromScreen(source: ScreenSource, mapping: { step: number; tool: string; args: Record<string, unknown> }[]):
+  Promise<{ recipe: { id: string; title: string; limits: string[] }; mapped_steps: number[]; manual_steps: { n: number; title: string }[] }> {
+  return request('/api/recipes/from-screen', { method: 'POST', body: JSON.stringify({ ...source, mapping }) });
+}
+
+export async function deleteRecipe(id: string): Promise<{ deleted: string }> {
+  return request(`/api/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}

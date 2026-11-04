@@ -5,6 +5,9 @@ use. `require_admin` on every endpoint (the graph hashes files and can register
 results in Atlas); data is scoped to the signed-in owner.
 
 POST /api/recipes/learn                 {run_id | session_id | workflow_run_id | request+steps, title?, params_hint?, turn?}
+POST /api/recipes/from-screen/draft     {draft | events | start?, end?, title?, locale?}  a Talos procedure draft and its summary
+POST /api/recipes/from-screen           {draft | events | start?, end?, mapping: [{step, tool, args}], title?}  a learned
+                                        recipe from the mapped steps; unmapped steps and what was not observed become limits
 POST /api/recipes/{recipe_id}/try       {params, mode?}   mode=dry_run (default): structural dry run, nothing executed;
                                         mode=execute: same as /execute
 POST /api/recipes/{recipe_id}/execute   {params, workspace, criteria?, inputs?, job_timeout?, rerun?}  real execution
@@ -14,6 +17,7 @@ POST /api/recipes/{recipe_id}/promote   only after a clean try
 (GET /api/recipes, the list with every recipe in full, is in routes/strategy_routes.py)
 GET  /api/recipes/search                ?query=&limit=
 GET  /api/recipes/{recipe_id}           the whole recipe (steps, parameters, criteria, executions)
+DELETE /api/recipes/{recipe_id}        one of your own recipes (built-ins stay; delivered files are never touched)
 GET  /api/derivations                   graphs of the owner
 GET  /api/derivations/{graph}           nodes, state, Atlas project
 GET  /api/derivations/{graph}/plan      ?target=   (target repeatable) stale nodes and why
@@ -63,10 +67,30 @@ def setup_derivation_routes() -> APIRouter:
         body["action"] = "propose"
         return _reply(derivation_ops.run_recipe(owner, body))
 
+    @router.post("/api/recipes/from-screen/draft")
+    async def screen_draft(request: Request):
+        import asyncio
+        owner = owner_of(request)
+        body = await _body(request)
+        body["action"] = "screen_draft"
+        return _reply(await asyncio.to_thread(derivation_ops.run_recipe, owner, body))
+
+    @router.post("/api/recipes/from-screen")
+    async def from_screen(request: Request):
+        import asyncio
+        owner = owner_of(request)
+        body = await _body(request)
+        body["action"] = "from_screen"
+        return _reply(await asyncio.to_thread(derivation_ops.run_recipe, owner, body))
+
     @router.get("/api/recipes/search")
     async def search_recipes(request: Request, query: str = Query(...), limit: int = 10):
         owner = owner_of(request)
         return _reply(derivation_ops.run_recipe(owner, {"action": "search", "query": query, "limit": limit}))
+
+    @router.delete("/api/recipes/{recipe_id}")
+    async def delete_recipe(request: Request, recipe_id: str):
+        return _reply(derivation_ops.run_recipe(owner_of(request), {"action": "delete", "recipe_id": recipe_id}))
 
     @router.get("/api/recipes/{recipe_id}")
     async def show_recipe(request: Request, recipe_id: str):

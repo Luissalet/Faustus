@@ -1,10 +1,11 @@
-import { BookOpenCheck, FlaskConical, Play, RefreshCw, ShieldCheck } from 'lucide-react';
+import { BookOpenCheck, FlaskConical, Play, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, EmptyState, Skeleton } from '../components';
 import * as api from '../adapters/recipes';
 import { t, tn } from '../i18n';
 import './recipes.css';
+import { FromScreen } from './RecipesFromScreen';
 
 /**
  * Recipes: what Faustus learned to do, and what happened each time it did it for real.
@@ -389,6 +390,7 @@ export function RecipesScreen() {
         <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Reload')} onClick={() => { void reloadList(); void reloadOne(openId); }} />
       </header>
 
+      <FromScreen onCreated={(id) => { void reloadList(); open(id); }} />
       {loadError && <p className="fs-rcp__why" data-tone="bad" role="alert">{loadError}</p>}
       {recipes === null && <Skeleton label={t('Reading the recipes')} count={3} height="56px" />}
       {recipes && recipes.length === 0 && !loadError && (
@@ -405,7 +407,11 @@ export function RecipesScreen() {
             {openId && !recipe && !loadError && <Skeleton label={t('Reading the recipe')} count={3} height="56px" />}
             {recipe && (
               <>
-                <h2 className="fs-rcp__title">{recipe.title}</h2>
+                <div className="fs-rcp__row">
+                  <h2 className="fs-rcp__title">{recipe.title}</h2>
+                  {recipe.id.startsWith('draft-') && <Button variant="secondary" size="sm" icon={Trash2} label={t('Delete recipe')} testId="rcp-delete"
+                    onClick={() => { if (window.confirm(t('Delete the recipe "{name}" with its tries and executions? Files it delivered are not touched.', { name: recipe.title }))) void api.deleteRecipe(recipe.id).then(() => { const next = new URLSearchParams(params); next.delete('r'); setParams(next); void reloadList(); }).catch((e) => setLoadError((e as Error).message)); }} />}
+                </div>
                 <Summary recipe={recipe} />
                 <History recipe={recipe} cases={cases} />
                 <RunForm key={`${recipe.id}:${recipe.version}`} recipe={recipe} onDone={afterRun} />

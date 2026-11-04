@@ -178,7 +178,7 @@ def list_recipes(owner: Optional[str] = None) -> List[Recipe]:
     drafts, if any. ``owner=None`` returns only the built-ins — drafts are
     private to the owner who made them."""
     out = list(_builtin_recipes())
-    if owner:
+    if owner is not None:      # "" (single-user API token) reads the "_" folder it writes to
         out.extend(_owner_drafts(owner))
     return out
 
@@ -442,6 +442,22 @@ def from_run(run_id: str, owner: str) -> Recipe:
 def save_recipe(owner: str, recipe: Recipe) -> None:
     """Public name for the owner-scoped write the learned-recipe flow needs."""
     _save_draft(owner, recipe)
+
+
+def delete_recipe(owner: str, recipe_id: str) -> Optional[Dict[str, Any]]:
+    """Remove one of the owner's own recipes (a learned or drafted one, with its tries and executions). Built-in
+    recipes cannot be deleted. Files a real execution delivered are never touched. ``None`` when there is no such
+    recipe of this owner."""
+    if not recipe_id or _SAFE_ID_RE.search(recipe_id):
+        return None
+    path = os.path.join(_drafts_dir(owner), f"{recipe_id}.json")
+    if not os.path.isfile(path):
+        return None
+    recipe = next((r for r in _owner_drafts(owner) if r.id == recipe_id), None)
+    os.remove(path)
+    return {"deleted": recipe_id, "title": recipe.title if recipe else "",
+            "removed": {"tries": len(recipe.tries) if recipe else 0, "executions": len(recipe.executions) if recipe else 0},
+            "kept": {"delivered_files": "never touched"}}
 
 
 def _save_draft(owner: str, recipe: Recipe) -> None:

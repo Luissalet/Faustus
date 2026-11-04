@@ -20,7 +20,7 @@ from src import recipes as recipes_store
 
 logger = logging.getLogger(__name__)
 
-RECIPE_ACTIONS = ("propose", "try", "execute", "verification", "promote", "search", "show", "list")
+RECIPE_ACTIONS = ("propose", "try", "execute", "verification", "promote", "search", "show", "list", "screen_draft", "from_screen", "delete")
 GRAPH_ACTIONS = ("define", "remove", "show", "list", "plan", "rebuild", "complete", "base_dir", "atlas")
 MAP_ACTIONS = ("add", "link", "unlink", "remove", "show", "affected_by")
 
@@ -110,6 +110,19 @@ def run_recipe(owner: str, args: Mapping[str, Any], *, executor: Optional[rex.Ex
         return _err("recipes.bad_action", f"action must be one of {', '.join(RECIPE_ACTIONS)}")
 
     def go() -> Dict[str, Any]:
+        if action in ("screen_draft", "from_screen"):
+            from src import screen_recipe as sr
+            try:
+                draft = args.get("draft")
+                if not isinstance(draft, Mapping):
+                    events = args.get("events") if isinstance(args.get("events"), list) else None
+                    draft = sr.fetch_draft(start=_s(args, "start"), end=_s(args, "end"), events=events, title=_s(args, "title"),
+                                           locale=_s(args, "locale") or "es")
+                if action == "screen_draft":
+                    return {"draft": sr.check_draft(draft), "summary": sr.summary(draft)}
+                return sr.propose(owner, draft, args.get("mapping"), title=_s(args, "title"))
+            except sr.ScreenRecipeError as exc:
+                return _err(exc.error_class, exc.detail)
         if action == "propose":
             recipe = rl.propose(
                 owner, run_id=_s(args, "run_id"), session_id=_s(args, "session_id"),
@@ -148,6 +161,9 @@ def run_recipe(owner: str, args: Mapping[str, Any], *, executor: Optional[rex.Ex
             return rl.promote(_s(args, "recipe_id"), owner)
         if action == "search":
             return {"recipes": rl.search(_s(args, "query"), owner, limit=int(args.get("limit") or 10))}
+        if action == "delete":
+            gone = recipes_store.delete_recipe(owner, _s(args, "recipe_id"))
+            return gone or _err("recipes.not_found", "no recipe of yours with that id (built-in recipes cannot be deleted)")
         if action == "show":
             r = recipes_store.get_recipe(_s(args, "recipe_id"), owner)
             return {"recipe": r.to_dict()} if r else _err("recipes.not_found", "no such recipe")
