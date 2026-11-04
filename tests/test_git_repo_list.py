@@ -188,18 +188,23 @@ def test_route_answers_by_its_budget_and_says_it_is_refreshing(tmp_path, monkeyp
     def slow(real):
         def run(p):
             if p.endswith("big"):
-                gate.wait(10)
+                gate.wait(60)
             return real(p)
         return run
 
+    # The proof that the route answers by its budget is that "big" comes back
+    # pending while its read is still held at the gate (asserted below). The
+    # wall clock only has to stay clearly under the gate: a loaded
+    # eight-worker run took 12 s against the old 8 s bound with a 1 s budget,
+    # and a 1 s budget could leave even "quick" unread there.
     monkeypatch.setattr(grl, "_read_status", slow(real_status))
     monkeypatch.setattr(grl, "_read_extras", slow(real_extras))
-    monkeypatch.setattr(grl, "LIST_BUDGET_S", 1.0)
+    monkeypatch.setattr(grl, "LIST_BUDGET_S", 5.0)
     app = FastAPI()
     app.include_router(git_routes.setup_git_routes())
     t0 = time.monotonic()
     data = TestClient(app).get("/api/git/repos").json()
-    assert time.monotonic() - t0 < 8
+    assert time.monotonic() - t0 < 45
     gate.set()
     by_name = {r["name"]: r for r in data["repos"]}
     assert set(by_name) >= {"quick", "big"}
