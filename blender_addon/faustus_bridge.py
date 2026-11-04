@@ -514,6 +514,199 @@ def inspect_asset(payload):
                      'Reports base mesh data; does not claim intersection or UV-overlap detection.']}
 
 
+IMPACT_OPERATIONS = ('transform', 'mesh', 'material')
+_IMPACT_MODIFIER_OBJECT_ATTRS = ('object', 'mirror_object', 'offset_object')
+
+
+def _library_of(item):
+    library = getattr(item, 'library', None)
+    return library.filepath if library else ''
+
+
+def _object_label(obj):
+    return {'object': obj.name, 'library': _library_of(obj), 'type': obj.type}
+
+
+def _impact_find(collection, name, library, kind):
+    found = [item for item in collection if item.name == name]
+    if library is not None:
+        found = [item for item in found if _library_of(item) == library]
+    if not found:
+        raise ValueError('%s %r was not found in the open file' % (kind, name))
+    if len(found) > 1:
+        raise ValueError('%s name %r is ambiguous; pass library as one of %s' % (
+            kind, name, [_library_of(item) or '(local)' for item in found]))
+    return found[0]
+
+
+def _impact_edges(objects):
+    """Directed relations 'source moves -> dependent follows', read without evaluating anything."""
+    edges = {}
+    inactive = []
+
+    def add(src, dst, via, active=True, why=None):
+        row = {'from': src.name, 'via': via, 'to': dst.name}
+        if active:
+            edges.setdefault(src.as_pointer(), []).append((dst, row))
+        else:
+            inactive.append({**row, 'reason': why})
+
+    for obj in objects:
+        if obj.parent:
+            add(obj.parent, obj, 'parent')
+        for con in obj.constraints:
+            targets = [getattr(con, 'target', None)] + [getattr(item, 'target', None) for item in getattr(con, 'targets', [])]
+            for target in [item for item in targets if item]:
+                label = 'constraint:' + con.name
+                if con.mute:
+                    add(target, obj, label, False, 'muted')
+                elif con.influence <= 0:
+                    add(target, obj, label, False, 'influence 0')
+                else:
+                    add(target, obj, label)
+        for mod in obj.modifiers:
+            for attr in _IMPACT_MODIFIER_OBJECT_ATTRS:
+                target = getattr(mod, attr, None)
+                if isinstance(target, bpy.types.Object):
+                    label = 'modifier:%s.%s' % (mod.name, attr)
+                    if mod.show_viewport or mod.show_render:
+                        add(target, obj, label)
+                    else:
+                        add(target, obj, label, False, 'disabled')
+    return edges, inactive
+
+
+def _impact_walk(origin, edges):
+    paths = {origin.as_pointer(): (origin, [])}
+    queue = [origin]
+    for node in queue:
+        for child, row in sorted(edges.get(node.as_pointer(), []), key=lambda item: (item[0].name, item[1]['via'])):
+            if child.as_pointer() not in paths:
+                paths[child.as_pointer()] = (child, [*paths[node.as_pointer()][1], row])
+                queue.append(child)
+    return paths
+
+
+def _impact_unread(objects, reached):
+    """Relations that exist but that this reader does not follow; they make the answer partial."""
+    names = {obj.as_pointer(): obj.name for obj in reached}
+    unread = []
+    for obj in objects:
+        data = getattr(obj, 'animation_data', None)
+        for curve in (data.drivers if data else []):
+            for var in curve.driver.variables:
+                for target in var.targets:
+                    if target.id is not None and target.id.as_pointer() in names:
+                        unread.append({'kind': 'driver', 'owner': obj.name, 'data_path': curve.data_path,
+                                       'references': names[target.id.as_pointer()]})
+        if obj.instance_type == 'COLLECTION' and obj.instance_collection:
+            inside = [item.name for item in obj.instance_collection.all_objects if item.as_pointer() in names]
+            if inside:
+                unread.append({'kind': 'collection_instance', 'owner': obj.name,
+                               'collection': obj.instance_collection.name, 'references': inside})
+        for mod in obj.modifiers:
+            if mod.type == 'NODES':
+                used = [mod[key].name for key in mod.keys() if isinstance(mod[key], bpy.types.Object)
+                        and mod[key].as_pointer() in names]
+                if used:
+                    unread.append({'kind': 'geometry_nodes', 'owner': obj.name, 'modifier': mod.name, 'references': used})
+    return unread
+
+
+def inspect_impact(payload):
+    """What an edit may touch, from explicit relations only. Read-only: no edit, selection, frame or file change.
+
+    The answer is a potential impact. A locked axis, a space, animation or a driver can still cancel it,
+    so a before/after snapshot diff is what measures the real effect.
+    """
+    operation = payload.get('operation', 'transform')
+    if operation not in IMPACT_OPERATIONS:
+        raise ValueError('operation must be one of %s' % (IMPACT_OPERATIONS,))
+    scene = bpy.context.scene
+    if payload.get('scene') not in (None, scene.name):
+        raise ValueError('Scene %r is not the open scene (%r)' % (payload['scene'], scene.name))
+    layer = bpy.context.view_layer
+    if payload.get('view_layer') not in (None, layer.name):
+        raise ValueError('View layer %r is not the active one (%r)' % (payload['view_layer'], layer.name))
+    if payload.get('frame') not in (None, scene.frame_current):
+        raise ValueError('Only the current frame (%d) is read; the query never changes the frame' % scene.frame_current)
+    if not payload.get('object'):
+        raise ValueError('Expected object')
+    origin = _impact_find(bpy.data.objects, payload['object'], payload.get('library'), 'Object')
+    members = list(scene.objects)
+    member_pointers = {obj.as_pointer() for obj in members}
+    if origin.as_pointer() not in member_pointers:
+        raise ValueError('Object %r is not in scene %r' % (origin.name, scene.name))
+    limit = max(1, int(payload.get('max_results') or 200))
+    edges, inactive = _impact_edges(members)
+    shared, notes, outside = [], [], []
+    if operation == 'transform':
+        paths = _impact_walk(origin, edges)
+        reached = [item[0] for item in paths.values()]
+        dependents = [{**_object_label(obj), 'path': path, 'basis': 'explicit relation'}
+                      for obj, path in paths.values() if obj != origin]
+    elif operation == 'mesh':
+        data = origin.data
+        if data is None:
+            raise ValueError('Object %r has no object data to edit' % origin.name)
+        users = [obj for obj in members if obj.data == data and obj != origin]
+        outside = sorted(obj.name for obj in bpy.data.objects if obj.data == data and obj.as_pointer() not in member_pointers)
+        shared.append({'kind': type(data).__name__.lower(), 'name': data.name_full, 'library': _library_of(data),
+                       'users': sorted(obj.name for obj in members if obj.data == data), 'users_total': data.users})
+        dependents = [{**_object_label(obj), 'path': [{'from': origin.name, 'via': 'shared_data', 'to': obj.name}],
+                       'basis': 'shares ' + data.name_full} for obj in sorted(users, key=lambda item: item.name)]
+        seen = {origin.as_pointer(), *(obj.as_pointer() for obj in users)}
+        reached = [origin, *users]
+        for obj in [origin, *users]:  # an object that a modifier of another one reads follows the edit too
+            for child, row in sorted(edges.get(obj.as_pointer(), []), key=lambda item: item[0].name):
+                if row['via'].startswith('modifier:') and child.as_pointer() not in seen:
+                    seen.add(child.as_pointer())
+                    reached.append(child)
+                    dependents.append({**_object_label(child), 'path': [row], 'basis': 'evaluated through a modifier'})
+        notes.append('Edit-mode changes to a shared mesh reach every object using it; make it single user to restrict them.')
+    else:
+        slots = [slot for slot in origin.material_slots if slot.material]
+        wanted = payload.get('material')
+        if wanted:
+            choices = [slot.material for slot in slots if slot.material.name == wanted
+                       and payload.get('material_library') in (None, _library_of(slot.material))]
+            if not choices:
+                raise ValueError('Object %r has no material %r' % (origin.name, wanted))
+            material = choices[0]
+        else:
+            unique = {slot.material.as_pointer(): slot.material for slot in slots}
+            if len(unique) != 1:
+                raise ValueError('Pass material: %r has %d distinct materials %s' % (
+                    origin.name, len(unique), sorted(item.name_full for item in unique.values())))
+            material = next(iter(unique.values()))
+        users = [obj for obj in members if any(slot.material == material for slot in obj.material_slots)]
+        outside = sorted(obj.name for obj in bpy.data.objects if obj.as_pointer() not in member_pointers
+                         and any(slot.material == material for slot in obj.material_slots))
+        shared.append({'kind': 'material', 'name': material.name_full, 'library': _library_of(material),
+                       'users': sorted(obj.name for obj in users), 'users_total': material.users})
+        dependents = [{**_object_label(obj), 'path': [{'from': origin.name, 'via': 'shared_material', 'to': obj.name}],
+                       'basis': 'shares ' + material.name_full,
+                       'slot_links': [slot.link for slot in obj.material_slots if slot.material == material]}
+                      for obj in sorted(users, key=lambda item: item.name) if obj != origin]
+        reached = users
+        notes.append('Same name or same colour is not the same datablock; only the exact material is listed.')
+    unanalyzed = _impact_unread(members, reached)
+    if outside:
+        unanalyzed.append({'kind': 'objects_outside_scene', 'references': outside})
+    kept = {obj.name for obj in reached}
+    return {
+        'operation': operation, 'status': 'potential', 'measured': None,
+        'origin': _object_label(origin), 'scene': scene.name, 'view_layer': layer.name, 'frame': scene.frame_current,
+        'dependents': dependents[:limit], 'truncated': max(0, len(dependents) - limit), 'shared_datablocks': shared,
+        'inactive_relations': [row for row in inactive if row['to'] in kept or row['from'] in kept],
+        'coverage': {'complete': not unanalyzed,
+                     'analyzed': ['parent', 'constraint targets', 'modifier object references',
+                                  'shared object data', 'shared materials'],
+                     'unanalyzed': unanalyzed},
+        'notes': ['A relation shows potential impact. Locked axes, spaces and animation can still cancel it; '
+                  'capture a snapshot before the edit and diff after it to measure the real effect.', *notes]}
+
+
 @contextlib.contextmanager
 def export_clips(payload):
     """Bind explicit clips to their owner using temporary NLA tracks.
@@ -767,8 +960,9 @@ class Job:
                 self.progress(job["id"], result)
                 raise RuntimeError(result["error"])
             return result
-        if action in ("api", "nodes", "animation", "asset_check"):
-            result = {"api": inspect_api, "nodes": edit_nodes, "animation": inspect_animation, "asset_check": inspect_asset}[action](args)
+        if action in ("api", "nodes", "animation", "asset_check", "impact"):
+            result = {"api": inspect_api, "nodes": edit_nodes, "animation": inspect_animation, "asset_check": inspect_asset,
+                      "impact": inspect_impact}[action](args)
             if result.get("ok") is False:
                 self.progress(job["id"], result)
                 raise RuntimeError(result["error"])
@@ -872,6 +1066,43 @@ class FAUSTUS_OT_diff(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def impact_summary(result):
+    """Short sidebar lines for an impact result; the full JSON stays in the impact folder."""
+    lines = ['%s: %d dependientes (potencial)' % (result['origin']['object'], len(result['dependents']) + result['truncated'])]
+    lines += ['%s · %s' % (row['object'], row['path'][-1]['via'] if row['path'] else row['basis'])
+              for row in result['dependents'][:5]]
+    if result['inactive_relations']:
+        lines.append('%d relaciones inactivas' % len(result['inactive_relations']))
+    if not result['coverage']['complete']:
+        lines.append('Cobertura parcial: %d sin analizar' % len(result['coverage']['unanalyzed']))
+    return '\n'.join(lines)
+
+
+class FAUSTUS_OT_impact(bpy.types.Operator):
+    bl_idname = "faustus.query_impact"
+    bl_label = "Consultar impacto"
+    bl_description = "Ver qué seguiría o compartiría la edición del objeto activo, sin modificar nada"
+
+    def execute(self, context):
+        wm = context.window_manager
+        obj = context.view_layer.objects.active
+        if obj is None:
+            self.report({'ERROR'}, 'Selecciona un objeto')
+            return {'CANCELLED'}
+        request = {'object': obj.name, 'library': _library_of(obj), 'operation': wm.faustus_impact_operation}
+        if request['operation'] == 'material' and obj.active_material:
+            request.update(material=obj.active_material.name, material_library=_library_of(obj.active_material))
+        try:
+            result = inspect_impact(request)
+            write_json(data_directory() / 'impact' / 'last.json', result)
+        except (OSError, ValueError) as exc:
+            wm.faustus_impact_result = str(exc)
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+        wm.faustus_impact_result = impact_summary(result)
+        return {'FINISHED'}
+
+
 _checkpoint_items = []
 _checkpoint_enum_numbers = {}
 
@@ -966,6 +1197,12 @@ class FAUSTUS_PT_scene(bpy.types.Panel):
         if context.window_manager.faustus_snapshot_result:
             layout.label(text=context.window_manager.faustus_snapshot_result)
         layout.separator()
+        layout.prop(context.window_manager, 'faustus_impact_operation', text='Edición')
+        layout.operator('faustus.query_impact')
+        for line in context.window_manager.faustus_impact_result.split('\n'):
+            if line:
+                layout.label(text=line)
+        layout.separator()
         layout.prop(context.window_manager, 'faustus_checkpoint_label', text='Nombre')
         layout.operator('faustus.save_checkpoint')
         layout.prop(context.window_manager, 'faustus_checkpoint', text='Checkpoint')
@@ -979,7 +1216,7 @@ class FAUSTUS_PT_scene(bpy.types.Panel):
         layout.label(text='Restaurar guarda el archivo de trabajo.')
 
 
-CLASSES = (FAUSTUS_OT_start, FAUSTUS_OT_stop, FAUSTUS_OT_chat, FAUSTUS_OT_snapshot, FAUSTUS_OT_diff,
+CLASSES = (FAUSTUS_OT_start, FAUSTUS_OT_stop, FAUSTUS_OT_chat, FAUSTUS_OT_snapshot, FAUSTUS_OT_diff, FAUSTUS_OT_impact,
            FAUSTUS_OT_checkpoint, FAUSTUS_OT_restore, FAUSTUS_OT_checkpoint_chat, FAUSTUS_PT_scene)
 
 
@@ -1025,6 +1262,11 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.faustus_snapshot_id = bpy.props.StringProperty(options={'SKIP_SAVE'})
     bpy.types.WindowManager.faustus_snapshot_result = bpy.props.StringProperty(options={'SKIP_SAVE'})
+    bpy.types.WindowManager.faustus_impact_operation = bpy.props.EnumProperty(
+        items=[('transform', 'Mover', 'Mover o transformar el objeto activo'),
+               ('mesh', 'Malla', 'Editar la malla del objeto activo'),
+               ('material', 'Material', 'Editar el material activo del objeto')], options={'SKIP_SAVE'})
+    bpy.types.WindowManager.faustus_impact_result = bpy.props.StringProperty(options={'SKIP_SAVE'})
     bpy.types.WindowManager.faustus_checkpoint_label = bpy.props.StringProperty(default='Checkpoint', options={'SKIP_SAVE'})
     bpy.types.WindowManager.faustus_checkpoint = bpy.props.EnumProperty(items=checkpoint_choices, options={'SKIP_SAVE'})
     bpy.types.WindowManager.faustus_recovery = bpy.props.StringProperty(options={'SKIP_SAVE'})
@@ -1040,6 +1282,8 @@ def unregister():
         bpy.utils.unregister_class(cls)
     del bpy.types.WindowManager.faustus_snapshot_id
     del bpy.types.WindowManager.faustus_snapshot_result
+    del bpy.types.WindowManager.faustus_impact_operation
+    del bpy.types.WindowManager.faustus_impact_result
     del bpy.types.WindowManager.faustus_checkpoint_label
     del bpy.types.WindowManager.faustus_checkpoint
     del bpy.types.WindowManager.faustus_recovery
