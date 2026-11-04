@@ -114,15 +114,34 @@ def run_recipe(owner: str, args: Mapping[str, Any], *, executor: Optional[rex.Ex
             from src import screen_recipe as sr
             try:
                 draft = args.get("draft")
+                locale = _s(args, "locale") or "es"
                 if not isinstance(draft, Mapping):
                     events = args.get("events") if isinstance(args.get("events"), list) else None
-                    draft = sr.fetch_draft(start=_s(args, "start"), end=_s(args, "end"), events=events, title=_s(args, "title"),
-                                           locale=_s(args, "locale") or "es")
+                    if _s(args, "source") == "baird" and not events:
+                        draft = sr.fetch_baird_draft(start=_s(args, "start"), end=_s(args, "end"), title=_s(args, "title"),
+                                                     locale=locale)
+                    else:
+                        draft = sr.fetch_draft(start=_s(args, "start"), end=_s(args, "end"), events=events,
+                                               title=_s(args, "title"), locale=locale)
+                # other observations of the same procedure: drafts, or event logs Talos segments
+                observations = []
+                for ob in args.get("observations") or []:
+                    if isinstance(ob, Mapping) and ob.get("schema") == sr.SCHEMA:
+                        observations.append(ob)
+                    elif isinstance(ob, Mapping) and isinstance(ob.get("draft"), Mapping):
+                        observations.append(ob["draft"])
+                    elif isinstance(ob, Mapping) and isinstance(ob.get("events"), list):
+                        observations.append(sr.fetch_draft(events=ob["events"], title=_s(args, "title"), locale=locale))
+                    else:
+                        return _err("screen.bad_observations", "each observation is a Talos draft or {events: [...]}")
                 if action == "screen_draft":
-                    return {"draft": sr.check_draft(draft), "summary": sr.summary(draft)}
-                return sr.propose(owner, draft, args.get("mapping"), title=_s(args, "title"))
+                    out = {"draft": sr.check_draft(draft), "summary": sr.summary(draft), "suggestions": sr.suggest_mapping(draft)}
+                    if observations:
+                        out["comparison"] = sr.compare_drafts([draft, *observations])
+                    return out
+                return sr.propose(owner, draft, args.get("mapping"), title=_s(args, "title"), observations=observations or None)
             except sr.ScreenRecipeError as exc:
-                return _err(exc.error_class, exc.detail)
+                return {**_err(exc.error_class, exc.detail), **exc.data}
         if action == "propose":
             recipe = rl.propose(
                 owner, run_id=_s(args, "run_id"), session_id=_s(args, "session_id"),

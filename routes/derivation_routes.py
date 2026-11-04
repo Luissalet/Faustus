@@ -5,9 +5,12 @@ use. `require_admin` on every endpoint (the graph hashes files and can register
 results in Atlas); data is scoped to the signed-in owner.
 
 POST /api/recipes/learn                 {run_id | session_id | workflow_run_id | request+steps, title?, params_hint?, turn?}
-POST /api/recipes/from-screen/draft     {draft | events | start?, end?, title?, locale?}  a Talos procedure draft and its summary
-POST /api/recipes/from-screen           {draft | events | start?, end?, mapping: [{step, tool, args}], title?}  a learned
-                                        recipe from the mapped steps; unmapped steps and what was not observed become limits
+POST /api/recipes/from-screen/draft     {draft | events | start?, end?, title?, locale?, source?: talos|baird, observations?}
+                                        a Talos procedure draft, its summary, a suggested tool per step and, with
+                                        observations (other drafts or {events}), what varies, what stays and the branches
+POST /api/recipes/from-screen           {draft | events | start?, end?, source?, observations?, mapping: [{step, tool, args}],
+                                        title?}  a learned recipe from the mapped steps; unmapped steps and what was not
+                                        observed become limits; with observations only what changed becomes a parameter
 POST /api/recipes/{recipe_id}/try       {params, mode?}   mode=dry_run (default): structural dry run, nothing executed;
                                         mode=execute: same as /execute
 POST /api/recipes/{recipe_id}/execute   {params, workspace, criteria?, inputs?, job_timeout?, rerun?}  real execution

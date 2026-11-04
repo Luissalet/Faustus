@@ -325,7 +325,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const o = obj(body);
     const reason = str(o.error) || str(o.detail) || `${path} ${t('responded')} ${response.status}`;
-    throw new ApiError(reason, response.status);
+    const err = new ApiError(reason, response.status) as ApiError & { body?: Record<string, unknown> };
+    err.body = o;   // extra fields of the answer (Baird's screenshot events when Talos cannot segment them)
+    throw err;
   }
   return body as T;
 }
@@ -372,9 +374,29 @@ export interface ScreenSummary {
   steps: ScreenStep[]; inputs: { name: string; kind: string; source: string; example: string | null; masked: boolean }[];
   unknowns: { code: string; step: number | null; message: string }[]; masked_values: number;
 }
-export interface ScreenSource { draft?: unknown; events?: unknown[]; start?: string; end?: string; title?: string }
+export interface ScreenSource {
+  draft?: unknown; events?: unknown[]; start?: string; end?: string; title?: string;
+  /** 'baird': screenshots of the other computer (HDMI capture) instead of Talos's own recording */
+  source?: 'talos' | 'baird';
+  /** other observations of the same procedure: Talos drafts or {events} */
+  observations?: unknown[];
+}
+export interface ScreenSuggestion {
+  step: number; action: 'map' | 'skip' | 'manual'; tool: string | null; args: Record<string, unknown>;
+  confidence: 'high' | 'medium' | 'low'; why: string; app_family: string; file: string | null;
+}
+export interface ScreenComparison {
+  observations: number; same_shape: boolean; parameters: string[]; constants: string[];
+  steps: { n: number; title: string; seen_in: number }[];
+  inputs: { name: string; step: number; values: unknown[]; status: 'varies' | 'constant' | 'masked' | 'single' }[];
+  branches: { observation: number; title: string; after_step: number | null }[]; limits: string[];
+}
 
-export async function screenDraft(source: ScreenSource): Promise<{ draft: unknown; summary: ScreenSummary }> {
+export async function screenDraft(source: ScreenSource): Promise<{
+  draft: unknown; summary: ScreenSummary;
+  suggestions?: { suggestions: ScreenSuggestion[]; mapping: { step: number; tool: string; args: Record<string, unknown> }[]; note: string };
+  comparison?: ScreenComparison;
+}> {
   return request('/api/recipes/from-screen/draft', { method: 'POST', body: JSON.stringify(source) });
 }
 

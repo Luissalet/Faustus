@@ -10764,3 +10764,21 @@ inputs	entradas
 manual steps	pasos manuales
 Delete recipe	Borrar receta
 Delete the recipe "{name}" with its tries and executions? Files it delivered are not touched.	¿Borrar la receta «{name}» con sus pruebas y ejecuciones? Los ficheros que entregó no se tocan.
+This computer (Talos)	Este ordenador (Talos)
+Other computer over HDMI (Baird)	Otro ordenador por HDMI (Baird)
+Baird's screenshots of the other computer in that range become the steps. Only pictures: no window titles, keystrokes or clipboard, and nothing is done on that computer.	Las capturas de Baird del otro ordenador en ese intervalo se convierten en los pasos. Solo imágenes: sin títulos de ventana, teclas ni portapapeles, y en ese ordenador no se hace nada.
+Other observations of the same procedure (optional): a JSON list of Talos drafts or event lists. What changes between them becomes a parameter.	Otras observaciones del mismo procedimiento (opcional): una lista JSON de borradores de Talos o de listas de eventos. Lo que cambia entre ellas pasa a ser un parámetro.
+Put the screenshot events in the box	Poner los eventos de las capturas en el cuadro
+Use the suggested tools	Usar las herramientas sugeridas
+Suggestions come from the app and the kind of each step; check every tool and its arguments before proposing the recipe.	Las sugerencias salen de la aplicación y del tipo de cada paso; revisa cada herramienta y sus argumentos antes de proponer la receta.
+Suggested	Sugerida
+sure	segura
+likely	probable
+check it	revísala
+No tool needed	No hace falta herramienta
+Stays manual	Queda manual
+seen in	visto en
+observations	observaciones
+Become parameters	Pasan a parámetros
+Stay as seen	Se quedan como se vieron
+observation	observación

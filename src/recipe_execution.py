@@ -219,7 +219,61 @@ def _resolve(path: Any, workspace: str) -> str:
     return full
 
 
+_SHEET_EXT = (".xlsx", ".xlsm")
+
+
+def _sheet_rows(full: str, sheet: str = "") -> List[List[str]]:
+    """The non-empty rows of an Excel workbook's sheet (the first one unless named), as text, cached values for formulas."""
+    try:
+        import openpyxl
+    except ImportError as exc:  # pragma: no cover - openpyxl ships with Faustus
+        raise ValueError("reading .xlsx needs openpyxl") from exc
+    wb = openpyxl.load_workbook(full, read_only=True, data_only=True)
+    try:
+        if sheet and sheet not in wb.sheetnames:
+            raise ValueError(f"no sheet {sheet!r} in {os.path.basename(full)} ({', '.join(wb.sheetnames)})")
+        ws = wb[sheet] if sheet else wb.worksheets[0]
+        rows = [["" if v is None else str(v) for v in row] for row in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
+    rows = [r for r in rows if any(c.strip() for c in r)]
+    width = max((max((i + 1 for i, c in enumerate(r) if c.strip()), default=0) for r in rows), default=0)
+    return [r[:width] for r in rows]
+
+
+def _office_text(full: str) -> Optional[str]:
+    """Readable text of an Excel workbook (every sheet, a tab between cells) or a Word document (paragraphs and table
+    cells), so text criteria can check office deliverables; None for other files."""
+    ext = os.path.splitext(full)[1].lower()
+    if ext in _SHEET_EXT:
+        import openpyxl
+        wb = openpyxl.load_workbook(full, read_only=True, data_only=True)
+        try:
+            names = wb.sheetnames
+        finally:
+            wb.close()
+        return "\n".join("\t".join(r) for name in names for r in _sheet_rows(full, name))
+    if ext == ".docx":
+        try:
+            import docx  # python-docx
+        except ImportError as exc:  # pragma: no cover
+            raise ValueError("reading .docx needs python-docx") from exc
+        d = docx.Document(full)
+        lines = [p.text for p in d.paragraphs]
+        lines += ["\t".join(c.text for c in row.cells) for t in d.tables for row in t.rows]
+        return "\n".join(lines)
+    return None
+
+
 def _read_text(full: str) -> str:
+    try:
+        office = _office_text(full)
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a damaged workbook or document fails its criterion, never the run
+        raise ValueError(f"could not open {os.path.basename(full)}: {type(exc).__name__}: {exc}") from exc
+    if office is not None:
+        return office
     with open(full, "rb") as fh:
         data = fh.read(_READ_LIMIT + 1)
     if len(data) > _READ_LIMIT:
@@ -257,10 +311,19 @@ def _html_table(text: str) -> Tuple[List[str], List[List[str]]]:
     return header, rows
 
 
-def read_table(full: str) -> Tuple[List[str], List[List[str]]]:
-    """(header, body rows) of a CSV/TSV file, the first Markdown table of a
-    .md/.txt file or the first table of an HTML file."""
+def read_table(full: str, sheet: str = "") -> Tuple[List[str], List[List[str]]]:
+    """(header, body rows) of a CSV/TSV file, an Excel sheet (the first one unless
+    ``sheet`` names another), the first Markdown table of a .md/.txt file or the
+    first table of an HTML file."""
     ext = os.path.splitext(full)[1].lower()
+    if ext in _SHEET_EXT:
+        try:
+            rows = _sheet_rows(full, sheet)
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"could not open {os.path.basename(full)}: {type(exc).__name__}: {exc}") from exc
+        return ([c.strip() for c in rows[0]], rows[1:]) if rows else ([], [])
     text = _read_text(full)
     if ext in (".csv", ".tsv"):
         rows = list(csv.reader(io.StringIO(text), delimiter="\t" if ext == ".tsv" else ","))
@@ -331,7 +394,7 @@ def _check_one(c: Mapping[str, Any], workspace: str) -> Dict[str, Any]:
             want = int(c.get("min_count", 1))
             row.update(expected=f">= {want} match(es)", observed=n, passed=n >= want)
         elif kind == "row_count":
-            n = len(read_table(full)[1])
+            n = len(read_table(full, str(c.get("sheet") or ""))[1])
             row["observed"] = n
             if "equals" in c:
                 want = int(_number(_expected(c["equals"], workspace)))
@@ -343,7 +406,7 @@ def _check_one(c: Mapping[str, Any], workspace: str) -> Dict[str, Any]:
                 row.update(expected={"min": lo, "max": hi},
                            passed=(lo is None or n >= int(lo)) and (hi is None or n <= int(hi)))
         elif kind == "columns":
-            header = read_table(full)[0]
+            header = read_table(full, str(c.get("sheet") or ""))[0]
             row["observed"] = header
             if "equals" in c:
                 want = [str(x) for x in _expected(c["equals"], workspace)]
