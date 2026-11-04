@@ -536,7 +536,13 @@ def test_require_user_rejects_unauthenticated(monkeypatch):
     didn't attach a user AND auth is configured. Mirrors the
     defense-in-depth check on /api/contacts/*, /api/personal/*,
     /api/email/*."""
-    sys.modules.pop("src.auth_helpers", None)
+    # require_user reads AUTH_ENABLED / LOCALHOST_BYPASS when called, so these
+    # tests set the environment and call it; they used to drop src.auth_helpers
+    # from sys.modules and import a second copy, which left every module that
+    # already held the first copy (routes' Depends(require_user)) mismatched
+    # with any later test's dependency_overrides[require_user].
+    monkeypatch.delenv("AUTH_ENABLED", raising=False)
+    monkeypatch.delenv("LOCALHOST_BYPASS", raising=False)
     from fastapi import HTTPException
 
     from src import auth_helpers  # noqa: WPS433
@@ -593,7 +599,6 @@ def test_require_user_accepts_loopback_when_unconfigured(monkeypatch):
     """First-run mode (no users set up yet) must still let loopback
     callers through — otherwise the install can't bootstrap. Public
     callers in the same mode are rejected."""
-    sys.modules.pop("src.auth_helpers", None)
     from src import auth_helpers  # noqa: WPS433
 
     class _State:
@@ -624,7 +629,6 @@ def test_require_user_accepts_anyone_when_auth_disabled(monkeypatch):
     the frontend's global 401 redirect doesn't bounce the user to /login
     despite the operator turning auth off (issue #622)."""
     monkeypatch.setenv("AUTH_ENABLED", "false")
-    sys.modules.pop("src.auth_helpers", None)
     from src import auth_helpers  # noqa: WPS433
 
     class _State:
@@ -658,7 +662,6 @@ def test_require_user_localhost_bypass_admits_loopback(monkeypatch):
     through."""
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("LOCALHOST_BYPASS", "true")
-    sys.modules.pop("src.auth_helpers", None)
     from src import auth_helpers  # noqa: WPS433
 
     class _State:
@@ -689,7 +692,6 @@ def test_require_user_localhost_bypass_still_rejects_lan(monkeypatch):
     from fastapi import HTTPException
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("LOCALHOST_BYPASS", "true")
-    sys.modules.pop("src.auth_helpers", None)
     from src import auth_helpers  # noqa: WPS433
 
     class _State:

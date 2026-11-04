@@ -60,6 +60,39 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+def _hermetic_dotenv():
+    """Keep the checkout's own .env out of the test process.
+
+    app.py calls ``load_dotenv()`` at import, which finds the developer's .env
+    beside it and writes every key into os.environ for the rest of the worker.
+    A .env with AUTH_ENABLED=false turned auth off for every later test in that
+    worker: owner-scope and 401/403 tests passed alone and failed under xdist as
+    soon as an earlier test on the same worker had imported app. A discovery
+    call (no path, no stream) is a no-op here; an explicit path or stream (a
+    test's own .env, setup.py with a patched BASE_DIR) still loads.
+    """
+    try:
+        import dotenv
+        import dotenv.main
+    except ImportError:
+        return
+    real = dotenv.main.load_dotenv
+    if getattr(real, "_faustus_hermetic", False):
+        return
+
+    def load_dotenv(dotenv_path=None, stream=None, *args, **kwargs):
+        if dotenv_path is None and stream is None:
+            return False
+        return real(dotenv_path, stream, *args, **kwargs)
+
+    load_dotenv._faustus_hermetic = True
+    dotenv.load_dotenv = load_dotenv
+    dotenv.main.load_dotenv = load_dotenv
+
+
+_hermetic_dotenv()
+
 # Importing core.database below runs init_db() at import time, and its default
 # (sqlite:///./data/app.db) can't be opened in a clean worktree because SQLite
 # won't create the missing ./data parent dir - pytest then dies during
@@ -471,6 +504,25 @@ def pytest_collection_modifyitems(config, items):
         path = getattr(item, "path", None) or item.fspath
         for marker_name in markers_for_path(path):
             item.add_marker(getattr(pytest.mark, marker_name))
+
+
+_BROWSERS_PATH_AT_START = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+
+
+def pytest_collection_finish(session):
+    """Drop a Playwright browsers path that a test module set while it was being
+    collected and that does not exist on this machine.
+
+    tests/acceptance/test_a21_embed_two_sessions.py sets
+    PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers (the container layout) at import.
+    Every xdist worker collects every module, so on Windows every later
+    Playwright launch in the run looked for chromium under \\opt\\pw-browsers
+    and failed, although the browsers sit in the default per-user folder. A
+    path the caller exported, or one that exists, is kept.
+    """
+    value = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if value and value != _BROWSERS_PATH_AT_START and not os.path.isdir(value):
+        os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
 
 
 @pytest.fixture(autouse=True)
