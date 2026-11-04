@@ -64,3 +64,12 @@ def test_reconcile_with_the_ledger_down_keeps_the_error(monkeypatch):
     co.run("alice", {"action": "add_payment", "id": cid, "label": "Final", "amount": 100})
     rec = co.run("alice", {"action": "reconcile_payments", "id": cid})
     assert rec["reconcile"]["error"] == "hub not reachable" and rec["payments"][0]["ledger_check"]["error"]
+
+
+def test_a_full_ledger_page_is_reported_as_truncated(monkeypatch):
+    rows = [{"id": f"t{i}", "amount_cents": 100, "date": "2026-11-01", "counterparty": "x"} for i in range(co.LEDGER_PAGE)]
+    monkeypatch.setattr(co, "_hub_call", lambda app, tool, args: {"ok": True, "result": {"items": rows}})
+    rec = {"id": "c", "client": "", "events": [], "payments": [{"label": "Anticipo", "amount": 360.0, "due": "2026-11-10"}]}
+    out = co.reconcile_payments(rec)
+    assert out["truncated"] is True and rec["payments"][0]["ledger_check"]["truncated"] is True
+    assert "proves nothing" in rec["events"][-1]["text"]

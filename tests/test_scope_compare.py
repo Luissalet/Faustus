@@ -117,3 +117,17 @@ def test_list_show_and_errors():
     assert sc.run("alice", {"action": "show", "id": "../x"})["error_class"] == "scope.not_found"
     assert sc.run("alice", {"agreement": "x"})["error_class"] == "scope.bad_args"
     assert sc.run("alice", {"action": "zzz"})["error_class"] == "scope.bad_args"
+
+
+def test_a_clause_that_adds_a_new_item_is_not_already_included():
+    base = "Entregar informe en PDF."
+    rows = sc.run("u", {"action": "compare", "agreement": base, "new_request": "Entregar el informe con gráficos."})["rows"]
+    assert rows[0]["status"] == "ambiguous" and rows[0]["reason"] == "partial"
+    same = sc.run("u", {"action": "compare", "agreement": base, "new_request": "Entregar el informe en PDF."})["rows"]
+    assert same[0]["status"] == "included"
+
+
+def test_without_and_drop_are_not_removals():
+    rows = sc.run("u", {"action": "compare", "agreement": "Entregar el prototipo de la caja.",
+                        "new_request": "Entregar el prototipo de la caja without scratches."})["rows"]
+    assert rows[0]["status"] != "removed"

@@ -61,3 +61,11 @@ def test_empty_sections_say_so_and_files_are_served_by_name():
         pb.proposal_file("alice", cid, "../x", "md")
     with pytest.raises(FileNotFoundError):
         pb.proposal_file("alice", cid, "propuesta-1", "exe")
+
+
+def test_paths_with_spaces_and_slashes_are_masked_whole():
+    leaks = []
+    text = pb._mask(r"Ver C:\Users\luis m\Desktop\Mis proyectos\x.pdf y C:/Users/luism/a.txt y ~/privado/a.md", set(), [], leaks)
+    for secret in ("luis m", "Mis proyectos", "luism", "privado"):
+        assert secret not in text
+    assert len(leaks) == 3

@@ -54,7 +54,7 @@ _VAGUE = re.compile(r"\b(etc|algo|mejor(?:ar|as|a)?|bonit[oa]s?|flexible|similar
                     r"lo necesario|cuanto antes|rapid[oa]|some|better|nicer|whatever|as needed|asap|flexible|"
                     r"similar|improve[ds]?|etcetera|y demas|tipo)\b")
 _REMOVE = re.compile(r"\b(quitar|quita|quitad|eliminar|elimina|retirar|retira|ya no|no hace falta|no hacen falta|"
-                     r"no incluir|sin incluir|prescindir|remove|drop|no longer|leave out|without)\b")
+                     r"no incluir|sin incluir|prescindir|remove|no longer|leave out)\b")
 _FORMATS = {"pdf", "docx", "doc", "xlsx", "xls", "csv", "pptx", "ppt", "stl", "step", "stp", "glb", "gltf", "obj",
             "3mf", "png", "jpg", "jpeg", "svg", "html", "json", "mp4", "dxf", "ifc", "md", "odt", "ods"}
 _UNIT_WORDS = {"milimetros": "milimetros", "milimetro": "milimetros", "millimeters": "milimetros",
@@ -220,7 +220,13 @@ def _classify(new_clauses: List[str], base_clauses: List[str], replace: bool) ->
                 row.update(status="ambiguous", reason="removal", match=None)
         elif best >= 0.5:
             d = _diff(base_clauses[j], c)
-            row.update(status="changed" if d.get("attributes") or d.get("quantities") else "included", match=j, diff=d)
+            extra = _stems(probe) - _stems(base_clauses[j])
+            if not (d.get("attributes") or d.get("quantities")) and extra and best < 0.8:
+                # the request names something the agreed clause does not: sharing most words
+                # with it is not enough to call it "already included" (no change order)
+                row.update(status="ambiguous", reason="partial", match=j, extra_words=sorted(extra))
+            else:
+                row.update(status="changed" if d.get("attributes") or d.get("quantities") else "included", match=j, diff=d)
             matched_base.add(j)
         elif best >= 0.34:                  # at least a third of the words in common
             d = _diff(base_clauses[j], c)

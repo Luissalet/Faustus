@@ -102,3 +102,12 @@ def test_review_desk_surfaces(tmp_path, monkeypatch):
     monkeypatch.setenv("ODYSSEUS_MCP_DELIVERY_OWNER", "alice")
     res = json.loads(asyncio.run(srv.call_tool("review_desk", {"action": "list"}))[0].text)
     assert res["desks"][0]["id"] == did
+
+
+def test_ordinary_words_are_not_anchors():
+    for text in ("The first part needs work", "This class of problem is wrong", "la pieza grande se ve mal",
+                 "Please fix function names"):
+        assert anchors.parse(text) is None, text
+    assert anchors.parse("la pieza Tapa roza")["label"] == "obj:Tapa"
+    assert anchors.parse("revisar la clase `Informe` entera")["label"] == "sym:Informe"
+    assert anchors.parse("the part: lid is loose")["label"] == "obj:lid"

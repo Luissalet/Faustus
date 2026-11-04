@@ -178,3 +178,21 @@ def test_bad_arguments_are_errors_not_exceptions(tmp_path):
     bad = dp.run("alice", {"action": "build", "name": "x", "items": [{"path": str(tmp_path), "role": "boss"}]})
     assert bad["error_class"] == "delivery.bad_role"
     assert ".glb" in dp.run("alice", {"action": "readers"})["readers"]
+
+
+def test_package_documents_carry_no_local_paths(tmp_path):
+    work = tmp_path / "Mis datos privados"
+    work.mkdir()
+    (work / "nota.txt").write_text("hola\n", encoding="utf-8")
+    (work / "datos.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    r = dp.run("u", {"name": "T", "instructions": "x", "limitations": ["y"], "items": [
+        {"path": str(work / "nota.txt"), "role": "editable"},
+        {"path": str(work / "datos.csv"), "role": "data"},
+        {"path": str(work / "falta.stl"), "role": "export"}]}, confine=False)
+    assert "Mis datos privados" in r["items"][0]["source_path"]          # the owner still sees where it came from
+    with zipfile.ZipFile(r["zip"]["path"]) as z:
+        texts = [z.read(n).decode("utf-8") for n in z.namelist() if n.endswith((".md", ".json"))]
+    assert texts
+    for text in texts:
+        assert "Mis datos privados" not in text and tmp_path.name not in text
+    assert any("datos.csv" in t for t in texts)                          # the exclusion is still listed, by name

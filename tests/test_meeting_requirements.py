@@ -59,3 +59,11 @@ def test_commission_imports_a_meeting_and_promotes_only_on_request():
     assert bad["error_class"] == "office.not_firm"
     assert co.run("alice", {"action": "promote_meeting_item", "id": cid, "meeting": "R1", "n": 2, "as": "requirement", "force": True})["scope"][-1]["kind"] == "change"
     assert rec["status"]["meeting_items_pending"] == 3
+
+
+def test_common_spanish_obligations_are_requirements():
+    from src import meeting_requirements as mr
+    assert mr.classify_line("Hay que entregar en PDF") == "requirement"
+    assert mr.classify_line("El cliente necesita el plano en DWG.") == "requirement"
+    assert mr.classify_line("Hay que entregar en PDF, ¿no?") == "question"
+    assert mr.classify_line("Quizá hay que entregar en PDF") == "proposal"

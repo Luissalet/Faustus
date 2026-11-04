@@ -30,7 +30,10 @@ _INTERNAL = ["Faustus", "Hoard", "HoardLink", "Hoard Hub", "Odysseus", "Ágora",
              "Nightingale", "Dantzig", "Maxwell", "Shannon", "Atlas", "Ledger", "People's", "Prometheus", "Sparks",
              "Theseus", "Heron", "Gulliver", "Daedalus", "Babel", "Darwin", "Kafka", "Cicero", "Writer's", "Coase",
              "MCP", "Ollama", "derivation graph", "decision map"]
-_PATH = re.compile(r"(?:[A-Za-z]:\\[^\s,;)]+|\\\\[^\s,;)]+|(?<![\w.])/(?:home|Users|mnt|tmp|var|opt)/[^\s,;)]+)")
+_PATH = re.compile(r"(?:[A-Za-z]:[\\/](?:(?:(?!\.\w{1,5}\s)[^\\/\r\n\"<>|*?;:]){1,40}[\\/])*[^\\/\s\"<>|*?;:,)]*"
+                   r"|\\\\[^\s,;)]+"
+                   r"|~[\\/][^\s,;)]+"
+                   r"|(?<![\w.])/(?:home|Users|mnt|tmp|var|opt|srv|root|etc|usr|media|data)/[^\s,;)]+)")
 _PKG = re.compile(r"\b\d{8}-\d{6}-[0-9a-f]{6}\b")
 _MAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 

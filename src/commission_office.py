@@ -52,6 +52,7 @@ ACTIONS = ("create", "update", "list", "show", "add_scope", "add_milestone", "up
            "people_lookup", "link_person", "reconcile_payments", "confirm_payment",
            "list_meetings", "import_meeting", "promote_meeting_item")
 PROMOTE_AS = ("decision", "requirement", "milestone")
+LEDGER_PAGE = 200
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _ID = re.compile(r"[a-z0-9-]{3,80}")
 
@@ -354,12 +355,13 @@ def reconcile_payments(rec: Dict[str, Any]) -> Dict[str, Any]:
     dates = [_dt.date.fromisoformat(p["due"]) for p in pending if p.get("due")] or [today]
     start = min(dates) - _dt.timedelta(days=60)
     end = max(max(dates) + _dt.timedelta(days=60), today)
-    res = _hub_call("ledger", "list_entries", {"from": start.isoformat(), "to": end.isoformat(), "limit": 200, "order": "asc"})
+    res = _hub_call("ledger", "list_entries", {"from": start.isoformat(), "to": end.isoformat(), "limit": LEDGER_PAGE, "order": "asc"})
     if not res["ok"]:
         for p in pending:
             p["ledger_check"] = {"at": _now(), "error": res["error"]}
         return {"checked": 0, "error": res["error"]}
     entries = _rows(res["result"], "items", "entries", "results")
+    truncated = len(entries) >= LEDGER_PAGE
     client_words = _words_of(rec.get("client") or "")
     for p in pending:
         cents = round(float(p["amount"]) * 100)
@@ -386,10 +388,12 @@ def reconcile_payments(rec: Dict[str, Any]) -> Dict[str, Any]:
             cands.append({"tx_id": e.get("id"), "date": e.get("date"), "amount": ec / 100,
                           "counterparty": e.get("counterparty") or "", "score": round(score, 2)})
         cands.sort(key=lambda c: -c["score"])
-        p["ledger_check"] = {"at": _now(), "candidates": cands[:3], "entries_scanned": len(entries)}
+        p["ledger_check"] = {"at": _now(), "candidates": cands[:3], "entries_scanned": len(entries),
+                             **({"truncated": True} if truncated else {})}
     _event(rec, "payment", f"Ledger checked for {len(pending)} payment(s): "
-           + ", ".join(f"{p['label']} {'candidates ' + str(len(p['ledger_check']['candidates'])) if p['ledger_check']['candidates'] else 'no match'}" for p in pending))
-    return {"checked": len(pending), "entries_scanned": len(entries)}
+           + ", ".join(f"{p['label']} {'candidates ' + str(len(p['ledger_check']['candidates'])) if p['ledger_check']['candidates'] else 'no match'}" for p in pending)
+           + (f" (only the first {LEDGER_PAGE} movements of the window were read; a missing match proves nothing)" if truncated else ""))
+    return {"checked": len(pending), "entries_scanned": len(entries), **({"truncated": True} if truncated else {})}
 
 
 def confirm_payment(rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:

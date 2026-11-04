@@ -588,6 +588,29 @@ def _reverify_zip(zip_path: Path, items: List[Dict[str, Any]]) -> Dict[str, Any]
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _base_name(p: str) -> str:
+    return re.split(r"[\\/]", p.rstrip("\\/"))[-1] or p
+
+
+def _public(manifest: Any, private_paths: List[str]) -> Any:
+    """Copy of the manifest for what travels to the client: every local path the
+    owner gave or that was resolved from it is cut down to its file name."""
+    ps = sorted({p for p in private_paths if p and len(p) > 3}, key=len, reverse=True)
+
+    def walk(v: Any) -> Any:
+        if isinstance(v, str):
+            for p in ps:
+                if p in v:
+                    v = v.replace(p, _base_name(p))
+            return v
+        if isinstance(v, dict):
+            return {k: walk(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [walk(x) for x in v]
+        return v
+    return walk(manifest)
+
+
 def _zip_dir(folder: Path, zip_path: Path) -> None:
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for p in sorted(folder.rglob("*")):
@@ -610,11 +633,13 @@ def build(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[
     excluded: List[Dict[str, str]] = []
     resolved: List[Dict[str, Any]] = []
     total = 0
+    private_paths: List[str] = []
     for it in items:
         role = str(it.get("role") or "other").lower()
         if role not in ROLES:
             raise PackageError("delivery.bad_role", f"role {role!r} is not one of {', '.join(ROLES)}")
         raw = str(it.get("path") or "")
+        private_paths.append(raw)
         try:
             p = _path(raw, confine)
         except ValueError as exc:
@@ -630,10 +655,16 @@ def build(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[
             excluded.append({"path": str(p), "reason": "data source without explicit authorization to share it"})
             continue
         total += p.stat().st_size
+        private_paths.append(str(p))
         resolved.append({"path": p, "role": role, "note": str(it.get("note") or "")[:300]})
     if total > MAX_TOTAL_BYTES:
         raise PackageError("delivery.too_large", f"{total} bytes exceed the {MAX_TOTAL_BYTES} package limit")
     software = _software(args, gaps, confine)
+    private_paths.append(str(args.get("software_root") or "").strip())
+    private_paths.append(str(args.get("out_dir") or "").strip())
+    if software:
+        private_paths.append(str(software.get("root") or ""))
+        private_paths += [str(f) for f in software.get("files") or []]
     if software and software.get("files"):
         for f in software["files"]:
             if Path(f).is_file():
@@ -654,6 +685,7 @@ def build(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[
         dest = _unique(dest_dir, src.name)
         shutil.copy2(src, dest)
         digest = _sha256(dest)
+        private_paths.append(str(src))
         rows.append({"role": r["role"], "name": src.name, "source_path": str(src),
                      "package_path": str(dest.relative_to(folder)).replace("\\", "/"),
                      "sha256": digest, "size": dest.stat().st_size, "note": r["note"],
@@ -678,10 +710,12 @@ def build(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[
         "gaps": gaps, "ready": False,
     }
     manifest["ready"] = not gaps
-    (folder / "ENTREGA.md" if lang == "es" else folder / "DELIVERY.md").write_text(_render_md(manifest, lang), encoding="utf-8")
+    (folder / "ENTREGA.md" if lang == "es" else folder / "DELIVERY.md").write_text(
+        _render_md(_public(manifest, private_paths), lang), encoding="utf-8")
     if lang != "es":
         shutil.copy2(folder / "DELIVERY.md", folder / "ENTREGA.md")
-    (folder / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    (folder / "manifest.json").write_text(json.dumps(_public(manifest, private_paths), indent=2, ensure_ascii=False),
+                                          encoding="utf-8")
     zip_path = home / f"{folder.name}.zip"
     _zip_dir(folder, zip_path)
     reimport = _reverify_zip(zip_path, rows)
@@ -691,10 +725,11 @@ def build(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[
         gaps.append("the zip did not reopen with the same results as the sources")
         manifest["ready"] = False
         md_name = "ENTREGA.md"
-        (folder / md_name).write_text(_render_md(manifest, lang), encoding="utf-8")
+        (folder / md_name).write_text(_render_md(_public(manifest, private_paths), lang), encoding="utf-8")
         if lang != "es":
-            (folder / "DELIVERY.md").write_text(_render_md(manifest, lang), encoding="utf-8")
-        (folder / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+            (folder / "DELIVERY.md").write_text(_render_md(_public(manifest, private_paths), lang), encoding="utf-8")
+        (folder / "manifest.json").write_text(json.dumps(_public(manifest, private_paths), indent=2, ensure_ascii=False),
+                                              encoding="utf-8")
         zip_path.unlink()
         _zip_dir(folder, zip_path)
     manifest["reimport"] = reimport

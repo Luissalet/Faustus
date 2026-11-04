@@ -17605,3 +17605,13 @@ Herramienta `commission_office` y pestaña **Commissions** de Studio → Deliver
 - **Prueba en vivo (04-11)**: un .docx real guardado dos veces en la misma ruta quedó como v1 y v2 (la tercera vez, mismo contenido, se rechazó); comentario «página 1…» anclado a v1 (`review:…@v1#p1`), comentarios del cliente «Sobre la v1:» reconocidos como de la versión anterior, diferencias de texto (+3 −2 líneas), entrega rechazada con 2 comentarios abiertos (REST), estado cambiado por MCP stdio, y en pantalla comentario con celda `Resumen!B4`, estados y entrega de v2 (captura `E32-UI-REVISION.png`).
 - **Límites**: las anclas se guardan y se muestran, pero Faustus aún no abre el visor en ese punto (página, segundo, celda u objeto); no hay comentarios dibujados sobre la página ni enlace automático con el hito del encargo; archivos de más de 512 MB solo guardan hash. Siguen en el seguimiento de E22/E32.
 - **Pruebas**: `tests/test_review_desk.py` (3) y el caso de herramientas del servidor en `tests/test_delivery_surfaces.py`.
+
+## 04-11-2026 · Revisión independiente de la oficina de encargos (E27, E29-E33)
+
+Correcciones tras revisar y probar en vivo la entrega del día:
+- El paquete de entrega (E33) ya no lleva rutas locales al cliente: `ENTREGA.md` y `manifest.json` del zip solo nombran los ficheros (antes incluían la ruta de origen y la de los datos excluidos). El manifiesto que recibe quien construye el paquete conserva las rutas completas.
+- Las anclas (E22/E32) ya no toman prosa corriente como ancla: «the first part needs work» o «la pieza grande» no crean `obj:`/`sym:`; el nombre de pieza o símbolo debe ir marcado (`:`, comillas, acentos graves), tener forma de identificador o empezar por mayúscula.
+- La propuesta (E31) enmascara rutas con espacios, con barras normales, `~/` y más raíces Unix.
+- El comparador de alcance (E30) no da por «ya incluida» una cláusula que añade algo nuevo (pregunta en vez de «sin orden de cambio») y «without»/«drop» ya no cuentan como retirada.
+- Reuniones (E27): «hay que», «tenemos que», «necesita(n)», «requiere(n)», «we need» cuentan como requisito.
+- Cobros (E29): si Ledger devuelve la página completa (200 movimientos) la comprobación se marca `truncated` y el evento avisa de que la ausencia de coincidencia no prueba nada.

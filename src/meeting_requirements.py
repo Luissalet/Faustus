@@ -40,7 +40,8 @@ _DECISION = re.compile(r"\b(decidimos|hemos decidido|se decide|queda(?:mos)? (?:
 _PROMISE = re.compile(r"\b(te (?:envio|mando|paso|preparo)|os (?:envio|mando|paso)|le (?:envio|mando|paso)|enviare|mandare|"
                       r"entregare|preparare|me encargo|me comprometo|lo tengo para|lo tendre|nos encargamos|"
                       r"entregaremos|enviaremos|i'll|i will|we'll|we will|i can send|i'll send)\b")
-_REQUIREMENT = re.compile(r"\b(tiene que|tienen que|debe|deben|deberia|necesitamos|necesito|hace falta|es imprescindible|"
+_REQUIREMENT = re.compile(r"\b(tiene que|tienen que|hay que|tenemos que|tengo que|necesita|necesitan|requiere|requieren|"
+                          r"we need|i need|they need|debe|deben|deberia|necesitamos|necesito|hace falta|es imprescindible|"
                           r"obligatorio|must|needs? to|has to|have to|required|should)\b")
 _HEADING = re.compile(r"^\s*#{1,6}\s")
 

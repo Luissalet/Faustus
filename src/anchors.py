@@ -33,9 +33,9 @@ _PAGE = re.compile(r"(?:^|(?<=[\s(,;]))(?:p\.?\s*|p[áa]g(?:ina)?\.?\s*|page\s+|
 _TIME_RE = re.compile(r"(?:t\s*=\s*|\bmin(?:uto)?\.?\s+|\bat\s+|\ben el\s+|\bsegundo\s+)(" + _TIME + r")(?:\s*(?:-|–|a|to|al)\s*(" + _TIME + r"))?"
                       r"|(?<![\d:])(" + _TIME + r")\s*(?:-|–)\s*(" + _TIME + r")(?![\d:])", re.I)
 _CELL = re.compile(r"(?:\b(?:celda|cell)\s*:?\s*)(?:([\w ]{1,40})!)?([A-Z]{1,3}[1-9]\d{0,6})\b|\b([A-Za-z_][\w]{0,40})!([A-Z]{1,3}[1-9]\d{0,6})\b")
-_OBJECT = re.compile(r"\b(?:obj|objeto|object|pieza|part|mesh|malla)\s*[:\s]\s*[«\"']?([\w.\-]{1,80})", re.I)
+_OBJECT = re.compile(r"\b(obj|objeto|object|pieza|part|mesh|malla)(\s*:\s*|\s+)([«\"']?)([\w.\-]{1,80})", re.I)
 _LINE = re.compile(r"(?:\bL|\bl[íi]neas?\s+|\blines?\s+)(\d{1,6})(?:\s*(?:-|–|a|to)\s*(\d{1,6}))?\b")
-_SYMBOL = re.compile(r"\b(?:sym|s[íi]mbolo|symbol|funci[óo]n|function|clase|class)\s*[:\s]\s*`?([A-Za-z_][\w.]{0,120})`?", re.I)
+_SYMBOL = re.compile(r"\b(sym|s[íi]mbolo|symbol|funci[óo]n|function|clase|class)(\s*:\s*|\s+)(`?)([A-Za-z_][\w.]{0,120})`?", re.I)
 _REF = re.compile(r"^review:([a-z0-9-]{3,80})@v(\d{1,4})(?:#(.+))?$")
 
 
@@ -68,12 +68,28 @@ def label(a: Dict[str, Any]) -> str:
     return ""
 
 
+def _named(m: "re.Match[str]") -> bool:
+    """Words such as "part", "class" or "pieza" are ordinary prose ("the first part
+    needs work"): in everyday wording they only anchor when the name is marked
+    (colon, quotes, backticks), looks like an identifier or starts with a capital."""
+    kw, sep, quote, name = m.group(1), m.group(2), m.group(3), m.group(4)
+    if kw.lower() in ("obj", "sym") or ":" in sep or quote:
+        return True
+    return name[:1].isupper() or any(ch in name for ch in "_.0123456789")
+
+
+def _search(kind: str, rx: "re.Pattern[str]", text: str):
+    if kind not in ("object", "symbol"):
+        return rx.search(text)
+    return next((m for m in rx.finditer(text) if _named(m)), None)
+
+
 def parse(text: str) -> Optional[Dict[str, Any]]:
     """The first anchor written in ``text`` (canonical or everyday wording), or None."""
     text = str(text or "")
     found = []
     for kind, rx in (("page", _PAGE), ("time", _TIME_RE), ("cell", _CELL), ("object", _OBJECT), ("line", _LINE), ("symbol", _SYMBOL)):
-        m = rx.search(text)
+        m = _search(kind, rx, text)
         if m:
             found.append((m.start(), kind, m))
     if not found:
@@ -92,11 +108,11 @@ def parse(text: str) -> Optional[Dict[str, Any]]:
         sheet, cell = (m.group(1), m.group(2)) if m.group(2) else (m.group(3), m.group(4))
         a = {"kind": "cell", "sheet": (sheet or "").strip(), "cell": cell}
     elif kind == "object":
-        a = {"kind": "object", "name": m.group(1).rstrip(".,;")}
+        a = {"kind": "object", "name": m.group(4).rstrip(".,;")}
     elif kind == "line":
         a = {"kind": "line", "start": int(m.group(1)), "end": int(m.group(2)) if m.group(2) else None}
     else:
-        a = {"kind": "symbol", "name": m.group(1).rstrip(".")}
+        a = {"kind": "symbol", "name": m.group(4).rstrip(".")}
     a["label"] = label(a)
     return a
 
