@@ -544,6 +544,31 @@ parciales, no cumplidos y sin verificar, con evidencias. La prueba con modelo
 simulado comprueba el flujo completo; no establece una puntuación de calidad
 autónoma del modelo elegido.
 
+Cada registro de un canvas es una versión numerada (`src/design_canvas_history.py`).
+Dos versiones se comparan elemento a elemento, no como JSON: entradas añadidas,
+quitadas, reformuladas (misma sección, texto parecido), movidas a otra sección o
+reordenadas, y el enfoque frase a frase. Un registro de decisiones guarda quién
+decidió qué y por qué sobre una versión, y toda comparación que abarca esa
+versión lo muestra. Proyecto → Resumen → **Canvas de diseño** los lista con
+selector de versiones, la comparación y un formulario para registrar una
+decisión; REST en `/api/design-canvas` (`GET /{id}/diff?from=&to=`,
+`POST /{id}/decisions`, `POST /{id}/versions`); la herramienta de agente acepta
+`action=list|history|diff|decide` y el servidor MCP de workers tiene
+`design_canvas_history`, `design_canvas_diff` y `design_canvas_decide`.
+
+### Cachés de paquetes propias de cada worker
+
+Cada worker delegado —`delegate_agents`, los minions de una definición de
+agente, los workers de dispatch y de swarm— resuelve los paquetes de pip, npm,
+uv, yarn, pnpm, poetry, go y nuget y sus temporales en una carpeta propia
+(`data/worker_caches/<sesión hija>`); un candidato de fan-out conserva su carpeta
+`_caches` junto a su copia. Dos agentes aislados no pueden pasarse un paquete a
+través de una caché compartida. Agentes → Workers → **Cachés de los workers**
+lista cada carpeta con su tamaño por herramienta y vacía un worker o todos los
+parados; cada tarjeta de subagente tiene un botón **Cachés**. REST:
+`GET /api/agents/worker-caches`, `POST /api/agents/worker-caches/clear`; MCP
+(servidor de workers): `workers_caches`, `workers_cache_clear`.
+
 En el otro extremo, un turno que es claramente conversación se responde sin el
 razonamiento del modelo y sin el juego de herramientas adjunto. Medido en un 27B
 local con la caché de prompt fría: 7,5 s llevando las herramientas contra
@@ -642,6 +667,8 @@ La esfera y el subtítulo de Jarvis siguen las palabras y las formas de la boca,
 Proveedores de voz: navegador (Web Speech API), sistema (voces de Windows instaladas, sin conexión), local (Kokoro TTS / faster-whisper STT), **Piper** (síntesis neuronal totalmente local, licencia MIT, con voces en español — instala el motor y descarga una voz desde Configuración → Voz, sin modelo incluido de fábrica; la síntesis siempre corre en un proceso hijo aislado, nunca dentro del servidor), **command** (ejecuta tu propio ejecutable local de TTS/STT mediante una plantilla configurable), o un endpoint de API configurado. Ver [docs/ui/voice.md](docs/ui/voice.md).
 
 La voz entra en la misma conversación y el mismo flujo de permisos de herramientas que el texto. Una sesión de voz no autoriza de forma general acciones sobre archivos, escritorio o servicios externos.
+
+**Voz y Segundo Cerebro:** un turno de voz consulta y alimenta el Segundo Cerebro igual que uno escrito: recuerdos automáticos, las notas y entidades del cerebro a través del Context Engine cuando está activo, y la captura de recuerdos tras el turno, que la extracción del cerebro convierte en entidades. El panel de voz muestra una línea **Segundo Cerebro** con lo que se consulta y se guarda y un interruptor ligado al de «Sin recuerdos automáticos» del compositor. Las sesiones de voz en streaming aceptan la opción `brain` (activada por defecto; desactivada envía el turno con la marca `no_memory` del chat); `GET /api/voice/brain?session_id=` informa del enlace y el servidor MCP `voice` tiene `voice_brain` y `brain` al iniciar `voice_session`.
 
 Toda transcripción —tanto la voz de entrada como las notas de reunión— pasa por una limpieza determinista (`src/stt_cleanup.py`) antes de llegar a la conversación o a las notas: los segmentos repetidos se colapsan en uno, las frases conocidas de silencio/alucinación (español/inglés) y los marcadores de música se descartan, y un bucle de palabra o frase dentro de un segmento ("la la la la…") se colapsa, manteniendo coherentes las marcas de tiempo.
 

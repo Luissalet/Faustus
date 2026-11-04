@@ -915,6 +915,30 @@ card and saved concept distinguish met, partially met, unmet and unverified
 requirements, with evidence. A scripted-model check proves the complete flow;
 it does not establish an autonomous quality score for the selected model.
 
+Every filing of a canvas is a numbered version (`src/design_canvas_history.py`).
+Two versions are compared element by element, not as JSON: entries added,
+removed, reworded (same section, close text), moved to another section or
+reordered, and the approach sentence by sentence. A decision log records who
+decided what and why on a version, and every diff that spans that version shows
+it. Project → Overview → **Design canvases** lists them with a version picker,
+the diff and a form to log a decision; REST under `/api/design-canvas`
+(`GET /{id}/diff?from=&to=`, `POST /{id}/decisions`, `POST /{id}/versions`); the
+agent tool takes `action=list|history|diff|decide`, and the workers MCP server
+has `design_canvas_history`, `design_canvas_diff` and `design_canvas_decide`.
+
+### Each worker's own package caches
+
+Every delegated worker — `delegate_agents`, the minions of an agent definition,
+dispatch and swarm workers — resolves pip, npm, uv, yarn, pnpm, poetry, go and
+nuget packages and its temp files through a folder of its own
+(`data/worker_caches/<child session>`); a fan-out candidate keeps its own
+`_caches` folder next to its copy. Two isolated agents cannot hand each other a
+package through a shared cache. Agents → Workers → **Worker caches** lists every
+folder with its size per tool and empties one worker or every idle one; each
+sub-agent card has a **Caches** button. REST: `GET /api/agents/worker-caches`,
+`POST /api/agents/worker-caches/clear`; MCP (workers server): `workers_caches`,
+`workers_cache_clear`.
+
 ### Upkeep of 04-11-2026
 
 - **Vision on a LAN OpenAI-compatible server.** Vision auto-detection now asks a
@@ -1076,6 +1100,8 @@ Speech providers: browser (Web Speech API), system (installed Windows voices, of
 Voice input enters the same conversation and tool-permission flow as typed input. A voice session is not blanket authorization for filesystem, desktop or external actions.
 
 **Streaming voice (on by default in Studio's voice panel):** a voice session wraps the ordinary chat, so history, project, tools, memory and model stay exactly the same. The microphone streams 16 kHz audio over one WebSocket with a pre-roll ring (a barge-in keeps its first words); a pause of ~350 ms starts a speculative transcript that is withdrawn if you keep talking; the reply is spoken sentence by sentence (the first piece may end at a comma) with the next sentence already synthesized, so speech has no gaps. Interrupting stops the voice at once without cancelling the agent's work; cancelling the turn is a separate action. Each turn records where its time went (speech end → transcript → request → first text → first audio ready → first audio heard). The same sessions are available over REST/WebSocket (`/api/voice`, see [docs/api/voice-stream.md](docs/api/voice-stream.md)) and to agents through the built-in `voice` MCP server (`voice_capabilities`, `voice_session`). Turning the option off returns to the previous record-then-transcribe path.
+
+**Voice and the Second Brain:** a voice turn consults and feeds the Second Brain exactly like a typed one — memory recall, the brain's notes and entities through the Context Engine when it is on, and memory capture after the turn, which brain extraction turns into entities. The voice panel shows a **Second Brain** line saying what is consulted and saved, with a toggle bound to the composer's "Skip memory recall" switch. Streaming voice sessions take a `brain` option (default on; off sends the turn with the chat's `no_memory` flag); `GET /api/voice/brain?session_id=` reports the link, and the `voice` MCP server has `voice_brain` and `brain` on `voice_session` start.
 
 Every transcript — voice input and meeting notes alike — passes through a deterministic cleanup pass (`src/stt_cleanup.py`) before it reaches the conversation or the notes: repeated segments collapse to one, known silence/hallucination phrases (English/Spanish) and bare music markers are dropped, and an in-segment word/phrase loop ("the the the the…") is collapsed, with timestamps kept coherent throughout.
 
