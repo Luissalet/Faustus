@@ -9,6 +9,41 @@ export interface Anchor3DProps { url: string; ext: string; target: string; onSta
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s.:\[\]\\/]+/g, '_');
 
+const dataBytes = (uri: string): { bytes: Uint8Array; mime: string } | null => {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(uri);
+  if (!m) return null;
+  const raw = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  return { bytes: Uint8Array.from(raw, (c) => c.charCodeAt(0)), mime: m[1] };
+};
+
+/**
+ * A .gltf keeps its buffers (and often its textures) as data: URIs, which the app's CSP does not let a loader fetch. Fold them into
+ * one binary chunk and hand the loader a .glb instead, so the CSP stays as strict as it was. Files that point at other files are left alone.
+ */
+function gltfToGlb(text: string): ArrayBuffer | string {
+  const j = JSON.parse(text);
+  const bufs: Array<Uint8Array | null> = (j.buffers || []).map((b: { uri?: string }) => (b.uri ? dataBytes(b.uri)?.bytes ?? null : null));
+  const imgs: Array<{ bytes: Uint8Array; mime: string } | null> = (j.images || []).map((i: { uri?: string }) => (i.uri ? dataBytes(i.uri) : null));
+  if (!bufs.length || bufs.some((b) => !b)) return text;
+  const parts: Uint8Array[] = []; const offsets: number[] = []; let size = 0;
+  const push = (b: Uint8Array) => { const at = size; parts.push(b); size += b.length; const pad = (4 - (size % 4)) % 4; if (pad) { parts.push(new Uint8Array(pad)); size += pad; } return at; };
+  bufs.forEach((b) => offsets.push(push(b as Uint8Array)));
+  (j.bufferViews || []).forEach((v: { buffer: number; byteOffset?: number }) => { v.byteOffset = (v.byteOffset || 0) + offsets[v.buffer]; v.buffer = 0; });
+  j.bufferViews = j.bufferViews || [];
+  imgs.forEach((im, i) => {
+    if (!im) return;
+    j.bufferViews.push({ buffer: 0, byteOffset: push(im.bytes), byteLength: im.bytes.length });
+    j.images[i] = { name: j.images[i].name, mimeType: im.mime || 'image/png', bufferView: j.bufferViews.length - 1 };
+  });
+  j.buffers = [{ byteLength: size }];
+  const js = new TextEncoder().encode(JSON.stringify(j)); const jsLen = js.length + ((4 - (js.length % 4)) % 4);
+  const out = new Uint8Array(12 + 8 + jsLen + 8 + size); const dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, out.length, true);
+  dv.setUint32(12, jsLen, true); dv.setUint32(16, 0x4e4f534a, true); out.set(js, 20); out.fill(0x20, 20 + js.length, 20 + jsLen);
+  dv.setUint32(20 + jsLen, size, true); dv.setUint32(24 + jsLen, 0x004e4942, true);
+  let at = 28 + jsLen; parts.forEach((b) => { out.set(b, at); at += b.length; });
+  return out.buffer;
+}
 export default function Anchor3D({ url, ext, target }: Anchor3DProps) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<{ highlighted: number; total: number } | null>(null);
@@ -30,7 +65,7 @@ export default function Anchor3D({ url, ext, target }: Anchor3DProps) {
           root = new OBJLoader().parse(new TextDecoder().decode(buf));
         } else if (e === '.glb' || e === '.gltf') {
           const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-          root = (await new Promise<{ scene: import('three').Object3D }>((ok, bad) => new GLTFLoader().parse(e === '.gltf' ? new TextDecoder().decode(buf) : buf, '', ok, bad))).scene;
+          root = (await new Promise<{ scene: import('three').Object3D }>((ok, bad) => new GLTFLoader().parse(e === '.gltf' ? gltfToGlb(new TextDecoder().decode(buf)) : buf, '', ok, bad))).scene;
         } else if (e === '.stl') {
           const { STLLoader } = await import('three/examples/jsm/loaders/STLLoader.js');
           const mesh = new THREE.Mesh(new STLLoader().parse(buf), new THREE.MeshStandardMaterial({ color: 0x9aa4b2 }));
