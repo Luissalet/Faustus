@@ -8,13 +8,24 @@ import pytest
 from src import workspace_checkpoints as wc
 
 
-def _git_helper(monkeypatch, tmp_path, source):
+def _git_helper(monkeypatch, tmp_path, source, *, ready_file=None, spawned=None):
     helper = tmp_path / "git_helper.py"
     helper.write_text(source, encoding="utf-8")
     real_popen = subprocess.Popen
 
     def spawn(_command, **kwargs):
-        return real_popen([sys.executable, str(helper)], **kwargs)
+        proc = real_popen([sys.executable, str(helper)], **kwargs)
+        if ready_file is not None:
+            # Hand the process back only once its descendant is running, so the
+            # timeout under test starts after interpreter start-up. Under a
+            # loaded xdist run two Python start-ups took longer than the 0.6 s
+            # timeout and the launcher was killed before it spawned anything.
+            deadline = time.monotonic() + 60
+            while not ready_file.exists() and proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+        if spawned is not None:
+            spawned.append(time.monotonic())
+        return proc
 
     monkeypatch.setattr(wc.subprocess, "Popen", spawn)
 
@@ -23,15 +34,15 @@ def test_timeout_does_not_wait_for_descendant_output_handles(monkeypatch, tmp_pa
     # Measure process teardown, not the first import of the application's core.
     from src import process_ownership  # noqa: F401
     child_pid = tmp_path / "child.pid"
+    spawned = []
     _git_helper(monkeypatch, tmp_path,
         "import subprocess, sys, time\n"
         "from pathlib import Path\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(4)'])\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
         f"Path({str(child_pid)!r}).write_text(str(child.pid))\n"
-        "time.sleep(10)\n")
-    started = time.monotonic()
+        "time.sleep(60)\n", ready_file=child_pid, spawned=spawned)
     result = wc._run(str(tmp_path), ["add", "-A"], timeout=0.6)
-    elapsed = time.monotonic() - started
+    elapsed = time.monotonic() - spawned[0]
     assert result is None
     assert elapsed < 2.5, f"timeout cleanup waited {elapsed:.2f}s for a descendant"
     assert child_pid.exists(), "the inherited-handle child must really have started"

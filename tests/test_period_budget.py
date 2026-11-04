@@ -599,7 +599,11 @@ def test_an_interactive_turn_holds_an_unattended_job_but_never_a_manual_one(box,
 
     async def manual():
         job = await dispatch.start("luis", {"tasks": ["x"], "workspace": box["ws"]})
-        await dispatch.wait(job, 5)
+        # The job snapshots the workspace first; under a loaded xdist run that
+        # alone took 5.7 s, the old 5 s wait gave up and asyncio.run cancelled
+        # the job. wait() returns as soon as the job ends, so a wide bound
+        # costs nothing when the machine is idle.
+        assert await dispatch.wait(job, 60), job.status
         return job
     assert asyncio.run(manual()).status in ("done", "partial")
 
