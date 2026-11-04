@@ -38,7 +38,7 @@ look-ups, a separate Hoard.
 ## People and Ledger, read live (follow-up)
 
 - `people_lookup {name}` / `GET /api/commissions/people-lookup?name=`: People's Hoard `find_people` through the Hub; `link_person {id, name, people_id}` stores only the id.
-- `reconcile_payments {id}`: Ledger's `list_entries` (read-only) around the expected payments; incoming movements of exactly the amount, scored by date and by client or label in the counterparty or note. `confirm_payment {id, label, tx_id}` records the movement id.
+- `reconcile_payments {id}`: Ledger's `list_entries` (read-only) around the expected payments; incoming movements of exactly the amount, scored by date and by client or label in the counterparty or note. Besides exact amounts it offers two or three incoming movements that add up to what is still owed (`kind: combined`) and smaller movements whose counterparty or note names the client or the label (`kind: partial`); movements already recorded for a payment are left out. `confirm_payment {id, label, tx_id | tx_ids, amount?}` adds the movements to `receipts`, keeps `received` and confirms the payment only when they cover it (`status.payments_partly_paid` lists the rest); a movement cannot pay two payments. `link_review {id, milestone, review_id}` files a review desk under a milestone; `status.reviews` gives each desk's milestone, latest and delivered version and open comments, and delivering in the desk adds a `delivery` event to the commission. 
 - Studio: Delivery → Commissions → **People and payments**.
 
 ## Meetings to requirements and open questions (Hangar E27)

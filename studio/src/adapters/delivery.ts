@@ -183,6 +183,7 @@ export interface CommissionStatus {
   deliverables_without_ready_package: string[]; billing_expected: number | null;
   payments_received?: number | null; payments_to_confirm?: string[]; people_linked?: number;
   meeting_items_pending?: number; meeting_open_questions?: string[];
+  payments_partly_paid?: { label: string; received: number; amount: number }[]; reviews?: CommissionReview[];
 }
 export interface Commission {
   id: string; title: string; client: string; stage: string; summary: string; created: string; updated: string;
@@ -190,7 +191,8 @@ export interface Commission {
   contacts: { name: string; role: string; email: string; people_id: string }[]; files: { path: string; role: string; note: string }[];
   decisions: { date: string; text: string; by: string }[];
   payments: { label: string; amount: number | null; due: string; ledger_ref: string; confirmed?: boolean; received_on?: string;
-    ledger_check?: { at: string; error?: string; entries_scanned?: number; candidates?: LedgerCandidate[] } }[];
+    received?: number; receipts?: { tx_id: string; amount: number | null; date: string | null }[];
+    ledger_check?: { at: string; error?: string; entries_scanned?: number; owed?: number; candidates?: LedgerCandidate[] } }[];
   events: { at: string; kind: string; text: string }[]; status: CommissionStatus;
   proposals?: { name: string; date: string; counts: Record<string, number>; masked: number }[];
   meetings?: OfficeMeeting[];
@@ -222,7 +224,9 @@ export async function recentMeetings(): Promise<{ id: string; title: string; dat
   const r = await request<{ meetings?: { id: string; title: string; date: string }[] }>('/api/commissions/meetings');
   return Array.isArray(r.meetings) ? r.meetings : [];
 }
-export interface LedgerCandidate { tx_id: string; date: string; amount: number; counterparty: string; score: number }
+export interface LedgerCandidate { tx_id: string; date: string; amount: number; counterparty: string; score: number;
+  kind?: 'exact' | 'combined' | 'partial'; tx_ids?: string[]; amounts?: number[]; dates?: string[] }
+export interface CommissionReview { id: string; title: string; milestone: string; latest: number | null; delivered: number | null; open: number; versions: number }
 export interface PersonCandidate { id: string; name: string; score: number | null; relation: string }
 export async function peopleLookup(name: string): Promise<{ people: PersonCandidate[]; error?: string }> {
   return request(`/api/commissions/people-lookup?name=${encodeURIComponent(name)}`);
@@ -259,7 +263,20 @@ export interface DeskStatus { latest: number | null; versions: number; counts: R
   delivered_check: { snapshot_matches: boolean | null; source_still_matches: boolean | null; newer_versions: number[] } | null }
 export interface ReviewDesk { id: string; title: string; created: string; updated: string; commission: string; milestone: string;
   versions: DeskVersion[]; comments: DeskComment[]; events: { at: string; kind: string; text: string }[]; status: DeskStatus }
-export interface DeskRow { id: string; title: string; updated: string; versions: number; open: number; delivered: number | null; commission: string }
+export interface DeskRow { id: string; title: string; updated: string; versions: number; open: number; delivered: number | null; commission: string;
+  milestone?: string; latest?: number | null }
+// A version opened at an anchor (Hangar E22): `/api/review-desks/{id}/view`.
+export interface AnchorView { version: number; name: string; ref: string; latest: number; from_snapshot: boolean; kind: string | null; found: boolean;
+  reason?: string; anchor: DeskAnchor | null; page?: number; pages?: number; rect?: number[] | null; text?: string[]; text_in_rect?: string; image?: string;
+  start?: number; end?: number | null; media?: 'video' | 'audio' | null; fragment?: string; sheet?: string; sheets?: string[]; cell?: string; value?: string | null;
+  columns?: string[]; grid?: { row: number; cells: { ref: string; value: string | null; hit: boolean }[] }[];
+  lines?: { n: number; text: string; hit: boolean }[]; declared_at?: number; object?: string; objects?: string[] }
+export async function viewDesk(id: string, q: { version?: number; anchor?: string; comment?: string; ref?: string }): Promise<AnchorView> {
+  const p = new URLSearchParams({ image: 'true' });
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '') p.set(k, String(v));
+  const r = await request<{ view: AnchorView }>(`/api/review-desks/${encodeURIComponent(id)}/view?${p.toString()}`);
+  return r.view;
+}
 export interface DeskComparison { a: number; b: number; same_content: boolean; size_delta: number; facts: Record<string, [unknown, unknown]>;
   text: { added: number; removed: number; diff: string[]; truncated: boolean } | null; comments_on_a: { id: string; status: string; anchor: string | null; text: string }[] }
 export const COMMENT_STATES = ['open', 'in_progress', 'fixed', 'wontfix', 'answered'];

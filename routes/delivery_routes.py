@@ -24,10 +24,11 @@ GET  /api/commissions                        the owner's commissions
 POST /api/commissions                        {title, client?, stage?, summary?, request?, budget?}
 GET  /api/commissions/{id}                   the record with its computed status
 POST /api/commissions/{id}/{action}          update | add_scope | add_milestone | update_milestone | link_package |
-                                             add_contact | add_file | add_decision | add_payment | proposal
+                                             link_review {milestone, review_id} | add_contact | add_file | add_decision |
+                                             add_payment | proposal
 GET  /api/commissions/{id}/proposals/{name}.{docx|md}   a drafted proposal (Hangar E31)
 GET  /api/commissions/people-lookup?name=    People's Hoard candidates through the Hub (read-only)
-POST /api/commissions/{id}/link_person | reconcile_payments | confirm_payment   (Ledger read-only)
+POST /api/commissions/{id}/link_person | reconcile_payments | confirm_payment {label, tx_id | tx_ids}   (Ledger read-only)
 GET  /api/commissions/meetings              recent Faustus meetings to import (Hangar E27)
 POST /api/commissions/{id}/import_meeting | promote_meeting_item   meeting -> requirements and open questions
 
@@ -37,6 +38,8 @@ POST /api/review-desks                       {title, path?, commission?, milesto
 GET  /api/review-desks/{id}                  versions, comments and status
 GET  /api/review-desks/{id}/compare?a=&b=    reader facts and text diff between two versions
 GET  /api/review-desks/{id}/versions/{n}     the snapshot of version n
+GET  /api/review-desks/{id}/view?version=&anchor=|comment=|ref=&image=   that version opened at the anchor (Hangar E22)
+GET  /api/review-desks/view?ref=review:<id>@vN#anchor               the same from a shared reference
 POST /api/review-desks/{id}/{action}         add_version | comment | import_feedback | set_status | deliver
 
 Delete (Faustus' own records only; source files are never touched):
@@ -153,7 +156,7 @@ def setup_delivery_routes() -> APIRouter:
         from src import scope_compare
         return _reply(scope_compare.run(owner_of(request), {"action": "delete", "id": cid}))
 
-    _OFFICE_POST = ("update", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact",
+    _OFFICE_POST = ("update", "add_scope", "add_milestone", "update_milestone", "link_package", "link_review", "add_contact",
                     "add_file", "add_decision", "add_payment", "proposal", "link_person", "reconcile_payments",
                     "confirm_payment", "import_meeting", "promote_meeting_item")
 
@@ -242,6 +245,13 @@ def setup_delivery_routes() -> APIRouter:
         body = await _json(request)
         return _reply(await asyncio.to_thread(review_desk.run, owner, {**body, "action": "create"}, confine=False))
 
+    @router.get("/api/review-desks/view")
+    async def view_ref(request: Request, ref: str = "", image: bool = False):
+        from src import review_desk
+        import asyncio
+        owner = owner_of(request)
+        return _reply(await asyncio.to_thread(review_desk.run, owner, {"action": "view", "ref": ref, "image": image}))
+
     @router.get("/api/review-desks/{did}")
     async def show_desk(did: str, request: Request):
         from src import review_desk
@@ -255,6 +265,15 @@ def setup_delivery_routes() -> APIRouter:
         import asyncio
         owner = owner_of(request)
         return _reply(await asyncio.to_thread(review_desk.run, owner, {"action": "compare", "id": did, "a": a, "b": b}))
+
+    @router.get("/api/review-desks/{did}/view")
+    async def view_desk(did: str, request: Request, version: str = "", anchor: str = "", comment: str = "", ref: str = "",
+                        image: bool = False):
+        from src import review_desk
+        import asyncio
+        owner = owner_of(request)
+        args = {"action": "view", "id": did, "version": version or None, "anchor": anchor, "comment": comment, "ref": ref, "image": image}
+        return _reply(await asyncio.to_thread(review_desk.run, owner, args))
 
     @router.get("/api/review-desks/{did}/versions/{n}")
     async def desk_version(did: str, n: int, request: Request):

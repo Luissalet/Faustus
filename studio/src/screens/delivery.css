@@ -86,3 +86,10 @@
 .fs-dlv__del:hover:not(:disabled) { color: var(--fs-danger, #e5484d); border-color: var(--fs-danger, #e5484d); }
 .fs-dlv__del:disabled { opacity: 0.45; cursor: default; }
 .fs-dlv__row > .fs-dlv__del { block-size: 32px; }
+
+/* Hangar E22: a version opened at an anchor */
+.fs-dlv__anchor-img { display: block; max-width: 100%; height: auto; border: 1px solid var(--fs-border); border-radius: 6px; }
+.fs-dlv__anchor-media { display: block; max-width: 100%; max-height: 360px; }
+.fs-dlv__lines > div[data-hit], .fs-dlv__grid td[data-hit] { background: color-mix(in srgb, var(--fs-brand) 22%, transparent); }
+.fs-dlv__grid td[data-hit] { font-weight: 600; outline: 2px solid var(--fs-brand); }
+.fs-dlv__lines { white-space: pre; overflow-x: auto; }

@@ -30,7 +30,7 @@ from src import anchors
 logger = logging.getLogger(__name__)
 
 ACTIONS = ("create", "list", "show", "status", "add_version", "comment", "import_feedback", "set_status",
-           "compare", "deliver", "delete")
+           "compare", "deliver", "delete", "view")
 STATES = ("open", "in_progress", "fixed", "wontfix", "answered")
 OPEN_STATES = ("open", "in_progress")
 SNAPSHOT_LIMIT = 512 * 1024 * 1024
@@ -297,6 +297,35 @@ def compare(rec: Mapping[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def view_at(rec: Mapping[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
+    """Open a version at an anchor (Hangar E22): ``comment`` (its version and anchor), ``ref`` (review:<id>@vN#anchor)
+    or ``version`` + ``anchor``. Reads the snapshot kept for that version, so it still shows what was commented."""
+    from src import anchor_view
+    anchor = None
+    n: Any = args.get("version")
+    if _s(args, "comment", 20):
+        c = next((x for x in rec.get("comments") or [] if x["id"] == _s(args, "comment", 20)), None)
+        if c is None:
+            raise DeskError("desk.not_found", f"no comment {_s(args, 'comment', 20)!r}")
+        n, anchor = c["version"], c.get("anchor")
+    elif _s(args, "ref", 300):
+        parsed = anchors.parse_ref(_s(args, "ref", 300))
+        if not parsed or parsed["desk"] != rec["id"]:
+            raise DeskError("desk.bad_args", f"{_s(args, 'ref', 300)!r} is not a reference to this desk")
+        n, anchor = parsed["version"], parsed["anchor"]
+    elif _s(args, "anchor", 200):
+        anchor = anchors.parse(_s(args, "anchor", 200))
+        if anchor is None:
+            raise DeskError("desk.bad_args", f"no anchor found in {_s(args, 'anchor', 200)!r}")
+    v = _version(rec, n)
+    path = Path(v["snapshot"]) if v.get("snapshot") and Path(v["snapshot"]).is_file() else Path(v["source"])
+    if not path.is_file():
+        raise DeskError("desk.not_found", f"v{v['n']} is no longer on disk")
+    shown = anchor_view.view(path, anchor, image=args.get("image") in (True, "true", 1, "1"))
+    return {"version": v["n"], "name": v["name"], "ref": anchors.ref(rec["id"], v["n"], anchor), "latest": rec["versions"][-1]["n"],
+            "from_snapshot": path != Path(v["source"]), **shown}
+
+
 def deliver(rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
     v = _version(rec, args.get("version"))
     still_open = [c["id"] for c in rec["comments"] if c["status"] in OPEN_STATES]
@@ -341,8 +370,32 @@ def list_desks(owner: str) -> List[Dict[str, Any]]:
                 continue
             out.append({"id": r["id"], "title": r["title"], "updated": r.get("updated"), "versions": len(r.get("versions") or []),
                         "open": sum(1 for c in r.get("comments") or [] if c["status"] in OPEN_STATES),
-                        "delivered": (r.get("delivered") or {}).get("version"), "commission": r.get("commission") or ""})
+                        "delivered": (r.get("delivered") or {}).get("version"), "commission": r.get("commission") or "",
+                        "milestone": r.get("milestone") or "", "latest": (r.get("versions") or [{}])[-1].get("n"),
+                        "delivered_name": (r.get("delivered") or {}).get("name"), "delivered_at": (r.get("delivered") or {}).get("at")})
     return sorted(out, key=lambda r: r.get("updated") or "", reverse=True)
+
+
+def attach(owner: str, did: str, commission: str, milestone: str) -> Dict[str, Any]:
+    """File the desk under a commission milestone (``commission_office`` link_review); it was free or under another one."""
+    rec = _load(owner, did)
+    before = (rec.get("commission") or "", rec.get("milestone") or "")
+    rec["commission"], rec["milestone"] = commission[:80], milestone[:20]
+    if before != (rec["commission"], rec["milestone"]):
+        _event(rec, "filed", f"commission {commission} {milestone}" + (f" (was {before[0]} {before[1]})" if before[0] else ""))
+        _save(owner, rec)
+    return rec
+
+
+def _tell_commission(owner: str, rec: Mapping[str, Any]) -> None:
+    """A delivery made here leaves an event on the commission the desk is filed under; never blocks the delivery."""
+    if not rec.get("commission"):
+        return
+    try:
+        from src import commission_office
+        commission_office.note_review_delivery(owner, rec)
+    except Exception:  # noqa: BLE001
+        logger.debug("review desk: could not tell the commission", exc_info=True)
 
 
 def render(m: Dict[str, Any]) -> str:
@@ -351,6 +404,22 @@ def render(m: Dict[str, Any]) -> str:
     if "desks" in m:
         return "\n".join(f"- {r['id']}: {r['title']} · {r['versions']} versions · {r['open']} open"
                          + (f" · delivered v{r['delivered']}" if r.get("delivered") else "") for r in m["desks"]) or "No review desks."
+    if "view" in m:
+        v = m["view"]
+        head = f"{v['ref']} ({v['name']}{', older than v' + str(v['latest']) if v['version'] < v['latest'] else ''}): "
+        if not v.get("found"):
+            return head + "not found" + (f" — {v['reason']}" if v.get("reason") else "")
+        if v.get("lines"):
+            return head + "\n" + "\n".join(f"{'>' if ln['hit'] else ' '} {ln['n']:>5} {ln['text']}" for ln in v["lines"])
+        if v.get("grid"):
+            return head + f"{v['sheet']}!{v['cell']} = {v.get('value')}"
+        if v.get("kind") == "page":
+            return head + f"page {v['page']} of {v['pages']}" + (f"; in the rectangle: {v['text_in_rect']}" if v.get("text_in_rect") else "")
+        if v.get("kind") == "object":
+            return head + f"object {v['object']} among {', '.join(v['objects'][:20])}"
+        if v.get("kind") == "time":
+            return head + f"{v['media']} from {v['start']} s" + (f" to {v['end']} s" if v.get("end") is not None else "")
+        return head + "whole file"
     if "comparison" in m:
         c = m["comparison"]
         lines = [f"v{c['a']} -> v{c['b']}: {'same content' if c['same_content'] else 'different'}, size {c['size_delta']:+d} bytes"]
@@ -388,11 +457,18 @@ def run(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[st
             return {**rec, "status": status(rec)}
         if action == "delete":
             return delete(owner, _s(args, "id"))
+        if action == "view" and not _s(args, "id") and _s(args, "ref", 300):
+            parsed = anchors.parse_ref(_s(args, "ref", 300))
+            if not parsed:
+                raise DeskError("desk.bad_args", "ref must look like review:<desk>@v<N>#<anchor>")
+            args = {**args, "id": parsed["desk"]}
         rec = _load(owner, _s(args, "id"))
         if action in ("show", "status"):
             return {**rec, "status": status(rec)}
         if action == "compare":
             return {"id": rec["id"], "comparison": compare(rec, args)}
+        if action == "view":
+            return {"id": rec["id"], "view": view_at(rec, args)}
         extra: Dict[str, Any] = {}
         if action == "add_version":
             extra["version"] = add_version(owner, rec, args, confine=confine)
@@ -405,6 +481,8 @@ def run(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[st
         elif action == "deliver":
             extra["delivered"] = deliver(rec, args)
         _save(owner, rec)
+        if action == "deliver":
+            _tell_commission(owner, rec)
         return {**rec, "status": status(rec), **extra}
     except DeskError as exc:
         return _err(exc.error_class, exc.detail)

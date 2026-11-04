@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 STAGES = ("opportunity", "proposal", "agreed", "in_progress", "delivered", "closed", "lost")
 SCOPE_KINDS = ("initial", "agreement", "change")
-ACTIONS = ("create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package",
+ACTIONS = ("create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package", "link_review",
            "add_contact", "add_file", "add_decision", "add_payment", "status", "proposal",
            "people_lookup", "link_person", "reconcile_payments", "confirm_payment",
            "list_meetings", "import_meeting", "promote_meeting_item", "delete", "delete_meeting")
@@ -274,6 +274,44 @@ def link_package(owner: str, rec: Dict[str, Any], args: Mapping[str, Any]) -> Di
     return m
 
 
+def link_review(owner: str, rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
+    """File a review desk (E32) under a milestone. The desk keeps the link (its ``commission`` and ``milestone``);
+    the milestone then shows «delivered vN / open comments» read live from the desk."""
+    from src import review_desk
+    m = _milestone(rec, _s(args, "milestone"))
+    did = _s(args, "review_id", 80)
+    try:
+        desk = review_desk.attach(owner, did, rec["id"], m["id"])
+    except review_desk.DeskError:
+        raise OfficeError("office.unknown_review", f"no review desk {did!r}") from None
+    _event(rec, "delivery", f"{m['id']} ← review {desk['title']}")
+    return m
+
+
+def note_review_delivery(owner: str, desk: Mapping[str, Any]) -> None:
+    """Called by the review desk when it delivers a version: leaves an event on the commission it is filed under."""
+    d = desk.get("delivered") or {}
+    try:
+        rec = _load(owner, str(desk.get("commission") or ""))
+    except OfficeError:
+        return
+    open_n = len(d.get("open_comments") or [])
+    _event(rec, "delivery", f"{desk.get('milestone') or '—'} review «{desk.get('title')}» delivered v{d.get('version')} {d.get('name') or ''}"
+           + (f" with {open_n} open comment(s)" if open_n else ""))
+    _save(owner, rec)
+
+
+def _reviews(owner: str, rec: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    try:
+        from src import review_desk
+        return [{"id": d["id"], "title": d["title"], "milestone": d.get("milestone") or "", "latest": d.get("latest"),
+                 "delivered": d.get("delivered"), "open": d.get("open", 0), "versions": d.get("versions", 0)}
+                for d in review_desk.list_desks(owner) if d.get("commission") == rec.get("id")]
+    except Exception:  # noqa: BLE001
+        logger.debug("commission office: review desks not readable", exc_info=True)
+        return []
+
+
 def _append(rec: Dict[str, Any], key: str, item: Dict[str, Any], label: str) -> Dict[str, Any]:
     rec[key].append(item)
     _event(rec, key.rstrip("s"), label)
@@ -347,7 +385,49 @@ def _words_of(text: str) -> set:
     return {w for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())}
 
 
+MAX_COMBINED = 3          # a payment received in at most this many incoming movements
+COMBO_POOL = 40           # movements considered for combinations (the closest in date and wording)
+
+
+def _received(p: Mapping[str, Any]) -> float:
+    return round(sum(float(r.get("amount") or 0) for r in p.get("receipts") or []), 2)
+
+
+def _used_tx(rec: Mapping[str, Any]) -> set:
+    used = {str(r.get("tx_id")) for p in rec.get("payments") or [] for r in p.get("receipts") or []}
+    used |= {str(p.get("ledger_ref")) for p in rec.get("payments") or [] if p.get("confirmed") and p.get("ledger_ref") and not p.get("receipts")}
+    return used
+
+
+def _score(e: Mapping[str, Any], due: Optional[_dt.date], words: set) -> float:
+    score = 0.0
+    if words & _words_of(f"{e.get('counterparty') or ''} {e.get('note') or ''}"):
+        score += 0.2
+    try:
+        ed = _dt.date.fromisoformat(str(e.get("date"))[:10])
+        if due and abs((ed - due).days) <= 7:
+            score += 0.2
+    except ValueError:
+        pass
+    return score
+
+
+def _combinations(pool: List[Dict[str, Any]], cents: int) -> List[List[Dict[str, Any]]]:
+    """Groups of 2..MAX_COMBINED movements whose amounts add up to ``cents`` (±1 cent)."""
+    from itertools import combinations
+    out = []
+    for k in range(2, MAX_COMBINED + 1):
+        for group in combinations(pool, k):
+            if abs(sum(e["_c"] for e in group) - cents) <= 1:
+                out.append(list(group))
+                if len(out) >= 20:
+                    return out
+    return out
+
+
 def reconcile_payments(rec: Dict[str, Any]) -> Dict[str, Any]:
+    """Look in Ledger (read-only) for each pending payment: one incoming movement of exactly what is still owed,
+    two or three movements that add up to it, or a single smaller movement from the same client (a partial payment)."""
     pending = [p for p in rec.get("payments") or [] if p.get("amount") is not None and not p.get("confirmed")]
     if not pending:
         return {"checked": 0, "entries_scanned": 0}
@@ -363,33 +443,36 @@ def reconcile_payments(rec: Dict[str, Any]) -> Dict[str, Any]:
     entries = _rows(res["result"], "items", "entries", "results")
     truncated = len(entries) >= LEDGER_PAGE
     client_words = _words_of(rec.get("client") or "")
+    used = _used_tx(rec)
+    incoming = []
+    for e in entries:
+        try:
+            ec = int(e.get("amount_cents"))
+        except (TypeError, ValueError):
+            continue
+        if ec > 0 and e.get("id") is not None and str(e.get("id")) not in used:
+            incoming.append({**e, "_c": ec})
+
+    def cand(group: List[Dict[str, Any]], kind: str, score: float) -> Dict[str, Any]:
+        return {"kind": kind, "tx_id": str(group[0].get("id")), "tx_ids": [str(e.get("id")) for e in group],
+                "date": group[-1].get("date"), "dates": [e.get("date") for e in group],
+                "amount": round(sum(e["_c"] for e in group) / 100, 2), "amounts": [e["_c"] / 100 for e in group],
+                "counterparty": ", ".join(dict.fromkeys(str(e.get("counterparty") or "") for e in group)), "score": round(score, 2)}
+
     for p in pending:
-        cents = round(float(p["amount"]) * 100)
+        owed = round(float(p["amount"]) - _received(p), 2)
+        cents = round(owed * 100)
         due = _dt.date.fromisoformat(p["due"]) if p.get("due") else None
-        label_words = _words_of(p["label"]) | client_words
-        cands = []
-        for e in entries:
-            try:
-                ec = int(e.get("amount_cents"))
-            except (TypeError, ValueError):
-                continue
-            if ec <= 0 or abs(ec - cents) > 1:
-                continue
-            score = 0.6
-            text = f"{e.get('counterparty') or ''} {e.get('note') or ''}"
-            if label_words & _words_of(text):
-                score += 0.2
-            try:
-                ed = _dt.date.fromisoformat(str(e.get("date"))[:10])
-                if due and abs((ed - due).days) <= 7:
-                    score += 0.2
-            except ValueError:
-                pass
-            cands.append({"tx_id": e.get("id"), "date": e.get("date"), "amount": ec / 100,
-                          "counterparty": e.get("counterparty") or "", "score": round(score, 2)})
-        cands.sort(key=lambda c: -c["score"])
-        p["ledger_check"] = {"at": _now(), "candidates": cands[:3], "entries_scanned": len(entries),
-                             **({"truncated": True} if truncated else {})}
+        words = _words_of(p["label"]) | client_words
+        scored = [(e, _score(e, due, words)) for e in incoming]
+        exact = sorted((cand([e], "exact", 0.6 + s) for e, s in scored if abs(e["_c"] - cents) <= 1), key=lambda c: -c["score"])
+        smaller = sorted(((e, s) for e, s in scored if e["_c"] < cents - 1), key=lambda x: -x[1])[:COMBO_POOL]
+        combos = sorted((cand(sorted(g, key=lambda e: str(e.get("date"))), "combined", 0.5 + min(_score(e, due, words) for e in g))
+                         for g in _combinations([e for e, _ in smaller], cents)), key=lambda c: -c["score"])
+        partial = sorted((cand([e], "partial", 0.3 + s) for e, s in smaller                    # only from the same client or label
+                          if words & _words_of(f"{e.get('counterparty') or ''} {e.get('note') or ''}")), key=lambda c: -c["score"])
+        p["ledger_check"] = {"at": _now(), "owed": owed, "candidates": exact[:3] + combos[:3] + partial[:3],
+                             "entries_scanned": len(entries), **({"truncated": True} if truncated else {})}
     _event(rec, "payment", f"Ledger checked for {len(pending)} payment(s): "
            + ", ".join(f"{p['label']} {'candidates ' + str(len(p['ledger_check']['candidates'])) if p['ledger_check']['candidates'] else 'no match'}" for p in pending)
            + (f" (only the first {LEDGER_PAGE} movements of the window were read; a missing match proves nothing)" if truncated else ""))
@@ -397,16 +480,53 @@ def reconcile_payments(rec: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def confirm_payment(rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
-    label, tx = _s(args, "label", 160), _s(args, "tx_id", 120)
-    if not label or not tx:
-        raise OfficeError("office.bad_args", "label and tx_id are required")
-    for p in rec.get("payments") or []:
-        if p["label"] == label:
-            cand = next((c for c in (p.get("ledger_check") or {}).get("candidates") or [] if c["tx_id"] == tx), None)
-            p.update({"ledger_ref": tx, "confirmed": True, "received_on": (cand or {}).get("date") or _date(args.get("date"), "date")})
-            _event(rec, "payment", f"{label} confirmed with Ledger movement {tx}")
-            return p
-    raise OfficeError("office.not_found", f"no payment {label!r}")
+    """Record the Ledger movement(s) received for a payment. ``tx_ids`` (or one ``tx_id``) are added to what was
+    already received; the payment is confirmed when the movements cover its amount, otherwise it stays partly paid.
+    The amount of each movement comes from the last Ledger check; ``amount`` gives it for a single movement that was
+    not among the candidates (without it, a lone unknown movement is taken as the whole payment, as before)."""
+    label = _s(args, "label", 160)
+    raw = args.get("tx_ids")
+    ids = [str(x).strip()[:120] for x in (raw if isinstance(raw, list) else str(raw or "").split(",")) if str(x).strip()]
+    if _s(args, "tx_id", 120) and _s(args, "tx_id", 120) not in ids:
+        ids.insert(0, _s(args, "tx_id", 120))
+    if not label or not ids:
+        raise OfficeError("office.bad_args", "label and tx_id (or tx_ids) are required")
+    p = next((x for x in rec.get("payments") or [] if x["label"] == label), None)
+    if p is None:
+        raise OfficeError("office.not_found", f"no payment {label!r}")
+    known: Dict[str, Dict[str, Any]] = {}
+    for c in (p.get("ledger_check") or {}).get("candidates") or []:
+        for i, tid in enumerate(c.get("tx_ids") or [c.get("tx_id")]):
+            amounts, dates = c.get("amounts") or [c.get("amount")], c.get("dates") or [c.get("date")]
+            known[str(tid)] = {"amount": amounts[i] if i < len(amounts) else None, "date": dates[i] if i < len(dates) else None}
+    used = _used_tx(rec) - {str(r.get("tx_id")) for r in p.get("receipts") or []}
+    clash = [i for i in ids if i in used]
+    if clash:
+        raise OfficeError("office.bad_args", f"movement(s) {', '.join(clash)} already recorded for another payment")
+    receipts = p.setdefault("receipts", [])
+    have = {str(r["tx_id"]) for r in receipts}
+    total = float(p["amount"]) if p.get("amount") is not None else None
+    for tid in ids:
+        if tid in have:
+            continue
+        info = known.get(tid) or {}
+        amount = info.get("amount")
+        if amount is None and args.get("amount") is not None and len(ids) == 1:
+            try:
+                amount = float(args["amount"])
+            except (TypeError, ValueError):
+                raise OfficeError("office.bad_args", "amount must be a number") from None
+        if amount is None and len(ids) == 1 and total is not None:
+            amount = round(total - _received(p), 2)
+        receipts.append({"tx_id": tid, "amount": amount, "date": info.get("date") or _date(args.get("date"), "date")})
+    got = _received(p)
+    p["received"] = got
+    p["ledger_ref"] = ", ".join(str(r["tx_id"]) for r in receipts)
+    full = total is None or got >= total - 0.01
+    p["confirmed"] = full
+    p["received_on"] = max((str(r.get("date") or "") for r in receipts), default="") or None
+    _event(rec, "payment", f"{label}: {', '.join(ids)} from Ledger" + (" — paid" if full else f" — {got:g} of {total:g} received"))
+    return p
 
 
 # ---------------------------------------------------------------------------
@@ -514,8 +634,11 @@ def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
     open_questions = (last or {}).get("comparison", {}).get("questions", []) if last and last.get("kind") == "change" else []
     expected = sum(float(m["amount"]) for m in rec.get("milestones") or [] if m.get("amount") is not None)
     pays = rec.get("payments") or []
-    received = sum(float(p["amount"]) for p in pays if p.get("confirmed") and p.get("amount") is not None)
+    received = round(sum(_received(p) if p.get("receipts") else float(p["amount"]) for p in pays
+                         if (p.get("receipts") or p.get("confirmed")) and p.get("amount") is not None), 2)
     to_confirm = [p["label"] for p in pays if not p.get("confirmed") and ((p.get("ledger_check") or {}).get("candidates"))]
+    partly = [{"label": p["label"], "received": _received(p), "amount": p["amount"]} for p in pays
+              if not p.get("confirmed") and p.get("receipts")]
     return {"stage": rec["stage"], "today": today.isoformat(),
             "agreement_version": agreed["version"] if agreed else None,
             "pending_change": bool(last and last["kind"] == "change"),
@@ -528,6 +651,8 @@ def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
             "billing_expected": expected if rec.get("milestones") else None,
             "payments_received": received if pays else None,
             "payments_to_confirm": to_confirm,
+            "payments_partly_paid": partly,
+            "reviews": _reviews(owner, rec),
             "people_linked": sum(1 for c in rec.get("contacts") or [] if c.get("people_id")),
             "meeting_items_pending": sum(1 for mt in rec.get("meetings") or [] for i in mt["items"] if not i.get("promoted")),
             "meeting_open_questions": [f"{mt['id']}#{i['n']} {i['text']}" for mt in rec.get("meetings") or []
@@ -695,6 +820,8 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             update_milestone(rec, args)
         elif action == "link_package":
             link_package(owner, rec, args)
+        elif action == "link_review":
+            link_review(owner, rec, args)
         elif action == "add_contact":
             name = _s(args, "name", 120)
             if not name:

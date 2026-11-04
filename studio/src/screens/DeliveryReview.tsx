@@ -1,4 +1,5 @@
-import { Check, FileSearch, GitCompare, MessageSquarePlus, PackageCheck, Plus, Upload } from 'lucide-react';
+import { Check, Crosshair, FileSearch, GitCompare, MessageSquarePlus, PackageCheck, Plus, Upload } from 'lucide-react';
+import { useSearchParams } from 'react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState } from '../components';
 import * as api from '../adapters/delivery';
@@ -27,7 +28,59 @@ function NewDesk({ onCreated }: { onCreated: (d: api.ReviewDesk) => void }) {
   );
 }
 
-function DeskDetail({ d, onChange }: { d: api.ReviewDesk; onChange: (d: api.ReviewDesk) => void }) {
+/** The kept snapshot of a version opened exactly at an anchor (Hangar E22). */
+function AnchorPanel({ deskId, q, onClose }: { deskId: string; q: { comment?: string; version?: number; anchor?: string }; onClose: () => void }) {
+  const [v, setV] = useState<api.AnchorView | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setV(null); setError('');
+    api.viewDesk(deskId, q).then(setV).catch((e) => setError((e as Error).message));
+  }, [deskId, q.comment, q.version, q.anchor]);
+  return (
+    <section className="fs-dlv__block" aria-label={t('Opened at the anchor')} data-testid="review-anchor-view">
+      <div className="fs-dlv__title-row">
+        <h3 className="fs-dlv__h">{t('Opened at the anchor')}</h3>
+        <Button size="sm" label={t('Close')} onClick={onClose} testId="review-anchor-close" />
+      </div>
+      {error && <p className="fs-dlv__why" data-tone="bad" role="alert">{error}</p>}
+      {!v && !error && <p className="fs-dlv__muted">{t('Opening…')}</p>}
+      {v && (
+        <>
+          <p className="fs-dlv__muted"><span className="fs-dlv__mono">{v.ref}</span> · {v.name}{v.version < v.latest ? ` · ${t('older than')} v${v.latest}` : ''}{v.from_snapshot ? ` · ${t('kept snapshot')}` : ''}</p>
+          {!v.found && <p className="fs-dlv__why" data-tone="warn" data-testid="review-anchor-missing">{t('That place is not in this version')}{v.reason ? `: ${v.reason}` : ''}{v.pages ? ` (${v.pages} ${t('pages')})` : ''}</p>}
+          {v.found && v.kind === 'page' && (
+            <div data-testid="review-anchor-page">
+              <p className="fs-dlv__muted">{t('Page')} {v.page} / {v.pages}{v.text_in_rect ? ` · ${t('In the marked area')}: «${v.text_in_rect}»` : ''}</p>
+              {v.image && <img src={v.image} alt={`${t('Page')} ${v.page}`} className="fs-dlv__anchor-img" />}
+            </div>
+          )}
+          {v.found && v.kind === 'time' && (
+            v.media === 'video'
+              ? <video controls preload="metadata" className="fs-dlv__anchor-media" src={api.deskVersionHref(deskId, v.version) + (v.fragment ?? '')} data-testid="review-anchor-media" />
+              : <audio controls preload="metadata" src={api.deskVersionHref(deskId, v.version) + (v.fragment ?? '')} data-testid="review-anchor-media" />
+          )}
+          {v.found && v.kind === 'cell' && v.grid && (
+            <table className="fs-dlv__table fs-dlv__grid" data-testid="review-anchor-cells">
+              <thead><tr><th>{v.sheet}</th>{(v.columns ?? []).map((c) => <th key={c}>{c}</th>)}</tr></thead>
+              <tbody>{v.grid.map((r) => <tr key={r.row}><th>{r.row}</th>{r.cells.map((c) => <td key={c.ref} data-hit={c.hit || undefined}>{c.value ?? ''}</td>)}</tr>)}</tbody>
+            </table>
+          )}
+          {v.found && (v.kind === 'line' || v.kind === 'symbol') && v.lines && (
+            <pre className="fs-dlv__pre fs-dlv__lines" data-testid="review-anchor-lines">{v.lines.map((l) => <div key={l.n} data-hit={l.hit || undefined}><span className="fs-dlv__muted">{String(l.n).padStart(5)} </span>{l.text}</div>)}</pre>
+          )}
+          {v.kind === 'object' && (v.objects ?? []).length > 0 && (
+            <ul className="fs-dlv__plain fs-dlv__small" data-testid="review-anchor-objects">{(v.objects ?? []).map((o) => <li key={o} data-hit={o === v.object || undefined}>{o === v.object ? <strong>▶ {o}</strong> : o}</li>)}</ul>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function DeskDetail({ d, onChange, initialComment }: { d: api.ReviewDesk; onChange: (d: api.ReviewDesk) => void; initialComment?: string }) {
+  const [at, setAt] = useState<{ comment?: string; version?: number; anchor?: string } | null>(initialComment ? { comment: initialComment } : null);
+  const [atVersion, setAtVersion] = useState('');
+  const [atAnchor, setAtAnchor] = useState('');
   const [error, setError] = useState('');
   const [path, setPath] = useState('');
   const [note, setNote] = useState('');
@@ -97,6 +150,14 @@ function DeskDetail({ d, onChange }: { d: api.ReviewDesk; onChange: (d: api.Revi
         )}
       </section>
 
+      <div className="fs-dlv__row" data-testid="review-open-at">
+        <select className="fs-field" value={atVersion} onChange={(e) => setAtVersion(e.target.value)} aria-label={t('Version')}><option value="">{t('Latest')}</option>{d.versions.map((v) => <option key={v.n} value={v.n}>v{v.n}</option>)}</select>
+        <input className="fs-field fs-dlv__grow" placeholder={t('Anchor to open: p3@x,y,w,h, t=00:01:10, Sheet!B4, L10-20, sym:name, obj:Name')} value={atAnchor} onChange={(e) => setAtAnchor(e.target.value)} data-testid="review-open-anchor" />
+        <Button size="sm" icon={Crosshair} label={t('Open at anchor')} disabled={!atAnchor.trim() || d.versions.length === 0} testId="review-open-go"
+          onClick={() => setAt({ anchor: atAnchor, ...(atVersion ? { version: Number(atVersion) } : {}) })} />
+      </div>
+      {at && <AnchorPanel deskId={d.id} q={at} onClose={() => setAt(null)} />}
+
       <section className="fs-dlv__block" aria-label={t('Comments')} data-testid="review-comments">
         <h3 className="fs-dlv__h">{t('Comments')}</h3>
         <p className="fs-dlv__muted">{t('A comment stays on the version it was made on. Anchors: p3 or p3@x,y,w,h, t=00:01:10-00:01:25, Sheet!B4, obj:Name, L10-20, sym:name; «página 3», «min 1:10», «celda B4» or «pieza Tapa» in the text also work.')}</p>
@@ -108,7 +169,8 @@ function DeskDetail({ d, onChange }: { d: api.ReviewDesk; onChange: (d: api.Revi
               <tr key={c.id} data-testid={`review-${c.id}`}>
                 <td>{c.id}</td>
                 <td>v{c.version}{c.about_older ? <div><span className="fs-dlv__pill" data-tone="warn">{t('older version')}</span></div> : null}<div className="fs-dlv__muted fs-dlv__small">{api.versionFromLabel(c.version_from)}</div></td>
-                <td className="fs-dlv__mono" title={c.ref}>{c.anchor?.label ?? '—'}</td>
+                <td className="fs-dlv__mono" title={c.ref}>{c.anchor?.label ?? '—'}
+                  {c.anchor ? <div><Button size="sm" icon={Crosshair} label={t('Open here')} testId={`review-open-${c.id}`} onClick={() => setAt({ comment: c.id })} /></div> : null}</td>
                 <td>{c.text}{c.author ? <div className="fs-dlv__muted">{c.author}</div> : null}</td>
                 <td>
                   <select className="fs-field" value={c.status} aria-label={t('State')} data-testid={`review-state-${c.id}`} onChange={(e) => act('set_status', { comment: c.id, status: e.target.value })}>
@@ -154,8 +216,12 @@ export function ReviewPanel() {
   const [rows, setRows] = useState<api.DeskRow[]>([]);
   const [open, setOpen] = useState<api.ReviewDesk | null>(null);
   const [creating, setCreating] = useState(false);
+  const [params] = useSearchParams();
+  const linkDesk = params.get('d') ?? '';
+  const linkComment = params.get('c') ?? '';
   const reload = useCallback(() => { api.listDesks().then(setRows).catch(() => undefined); }, []);
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { if (linkDesk) void api.loadDesk(linkDesk).then(setOpen).catch(() => undefined); }, [linkDesk]);
   return (
     <div className="fs-dlv__layout" data-testid="review" data-single={rows.length === 0 || undefined}>
       <div className="fs-dlv__detail">
@@ -176,7 +242,7 @@ export function ReviewPanel() {
       </div>
       <div>
         {creating && <NewDesk onCreated={(d) => { setCreating(false); setOpen(d); reload(); }} />}
-        {!creating && open && <DeskDetail key={open.id + open.updated} d={open} onChange={(d) => { setOpen(d); reload(); }} />}
+        {!creating && open && <DeskDetail key={open.id + open.updated} d={open} initialComment={open.id === linkDesk ? linkComment : undefined} onChange={(d) => { setOpen(d); reload(); }} />}
         {!creating && !open && <EmptyState icon={FileSearch} title={t('No review open')} body={t('A review keeps every version of a deliverable, the comments on each one and the version that was delivered.')} />}
       </div>
     </div>

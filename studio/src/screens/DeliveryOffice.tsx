@@ -55,7 +55,10 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
   const [meetingId, setMeetingId] = useState('');
   const [meetingText, setMeetingText] = useState('');
   const [meetingSource, setMeetingSource] = useState('');
+  const [desks, setDesks] = useState<api.DeskRow[]>([]);
+  const [reviewPick, setReviewPick] = useState<Record<string, string>>({});
   useEffect(() => { api.recentMeetings().then(setMeetingList).catch(() => setMeetingList([])); }, []);
+  useEffect(() => { api.listDesks().then(setDesks).catch(() => setDesks([])); }, []);
   const act = (action: string, body: Record<string, unknown>, after?: () => void) => {
     setError('');
     api.commissionAction(c.id, action, body).then((r) => { onChange(r); after?.(); }).catch((e) => setError((e as Error).message));
@@ -123,6 +126,22 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
                         return <li key={d.title}>{d.title} {live?.package_id ? <span className="fs-dlv__pill" data-tone={live.ready ? 'good' : 'bad'}>{live.ready ? t('Ready to deliver') : t('Not ready')}</span> : <span className="fs-dlv__muted">({t('no package')})</span>}</li>;
                       })}
                     </ul>
+                    {(st.reviews ?? []).filter((r) => r.milestone === m.id).map((r) => (
+                      <div key={r.id} className="fs-dlv__row fs-dlv__small" data-testid={`office-review-${m.id}-${r.id}`}>
+                        <a href={`/delivery?view=review&d=${encodeURIComponent(r.id)}`}>{t('Review')}: {r.title}</a>
+                        {r.delivered ? <span className="fs-dlv__pill" data-tone="good">{t('Delivered')} v{r.delivered}{r.latest && r.latest > r.delivered ? ` · ${t('latest')} v${r.latest}` : ''}</span>
+                          : <span className="fs-dlv__pill" data-tone="unknown">{t('Not delivered yet')} · v{r.latest ?? '—'}</span>}
+                        <span className="fs-dlv__pill" data-tone={r.open ? 'warn' : 'good'}>{r.open ? t('{n} open comments', { n: r.open }) : t('No open comments')}</span>
+                      </div>
+                    ))}
+                    <div className="fs-dlv__row">
+                      <select className="fs-field" value={reviewPick[m.id] ?? ''} aria-label={t('Review')} onChange={(e) => setReviewPick({ ...reviewPick, [m.id]: e.target.value })} data-testid={`office-review-pick-${m.id}`}>
+                        <option value="">{desks.length ? t('Review…') : t('No reviews yet')}</option>
+                        {desks.map((d) => <option key={d.id} value={d.id}>{d.title}{d.commission && d.commission !== c.id ? ` · ${t('in another commission')}` : ''}</option>)}
+                      </select>
+                      <Button size="sm" icon={Link2} label={t('Link review')} disabled={!reviewPick[m.id]} testId={`office-review-link-${m.id}`}
+                        onClick={() => act('link_review', { milestone: m.id, review_id: reviewPick[m.id] }, () => setReviewPick({ ...reviewPick, [m.id]: '' }))} />
+                    </div>
                     <div className="fs-dlv__row">
                       <select className="fs-field" value={link[m.id] ?? ''} aria-label={t('Delivery package')} onChange={(e) => setLink({ ...link, [m.id]: e.target.value })} data-testid={`office-link-${m.id}`}>
                         <option value="">{t('Delivery package…')}</option>
@@ -245,13 +264,22 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
           <tbody>
             {c.payments.map((p) => (
               <tr key={p.label}>
-                <td>{p.label}</td><td>{p.amount ?? '—'}</td><td>{p.due || '—'}</td>
+                <td>{p.label}</td><td>{p.amount ?? '—'}{!p.confirmed && p.received ? <div className="fs-dlv__muted" data-testid={`office-pay-partial-${p.label}`}>{t('Received {got} of {total}', { got: p.received, total: p.amount ?? '—' })}</div> : null}</td><td>{p.due || '—'}</td>
                 <td>
-                  {p.confirmed ? <span className="fs-dlv__pill" data-tone="good">{t('Received')} {p.received_on || ''}</span>
+                  {p.confirmed ? <span className="fs-dlv__pill" data-tone="good">{t('Received')} {p.received_on || ''}{(p.receipts ?? []).length > 1 ? ` · ${(p.receipts ?? []).length} ${t('movements')}` : ''}</span>
                     : p.ledger_check?.error ? <span className="fs-dlv__muted">{p.ledger_check.error}</span>
                     : p.ledger_check ? ((p.ledger_check.candidates ?? []).length === 0 ? <span className="fs-dlv__muted">{t('No incoming movement of that amount')} ({p.ledger_check.entries_scanned ?? 0} {t('read')})</span> : (
-                      <ul className="fs-dlv__plain fs-dlv__small">
-                        {(p.ledger_check.candidates ?? []).map((m) => <li key={m.tx_id}>{m.date} · {m.amount} · {m.counterparty} · {m.score} <Button size="sm" icon={Check} label={t('Confirm')} onClick={() => act('confirm_payment', { label: p.label, tx_id: m.tx_id })} /></li>)}
+                      <ul className="fs-dlv__plain fs-dlv__small" data-testid={`office-pay-cands-${p.label}`}>
+                        {(p.ledger_check.candidates ?? []).map((m) => {
+                          const ids = m.tx_ids ?? [m.tx_id];
+                          return (
+                            <li key={ids.join('+')}>
+                              <span className="fs-dlv__pill" data-tone={m.kind === 'partial' ? 'warn' : 'good'}>{m.kind === 'combined' ? t('{n} movements add up', { n: ids.length }) : m.kind === 'partial' ? t('Partial payment') : t('Exact amount')}</span>{' '}
+                              {ids.length > 1 ? (m.dates ?? []).map((d, i) => `${d} ${(m.amounts ?? [])[i]}`).join(' + ') : m.date} · {m.amount} · {m.counterparty} · {m.score}{' '}
+                              <Button size="sm" icon={Check} label={m.kind === 'partial' ? t('Record as partial') : t('Confirm')} onClick={() => act('confirm_payment', { label: p.label, tx_ids: ids })} />
+                            </li>
+                          );
+                        })}
                       </ul>
                     )) : <span className="fs-dlv__muted">{t('Not checked yet')}</span>}
                 </td>
