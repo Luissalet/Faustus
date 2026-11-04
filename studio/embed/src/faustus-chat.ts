@@ -787,6 +787,17 @@ export class FaustusChatElement extends HTMLElement {
     else setTimeout(flush, 16);
   }
 
+  /** Render a bubble's pending deltas now. The per-frame throttle above can
+   *  leave the last deltas unrendered when the turn ends — and a hidden tab
+   *  never runs animation frames — so the finished answer is drawn before
+   *  `faustus:turn-end` reaches the host. */
+  #flushDeltas(node: HTMLDivElement | null): void {
+    if (!node || !node.dataset.pending) return;
+    delete node.dataset.pending;
+    this.#renderAgent(node, node.dataset.raw || '');
+    this.#transcript.scrollTop = this.#transcript.scrollHeight;
+  }
+
   #appendTool(label: string, receipt?: Record<string, unknown>): HTMLDivElement {
     const node = el('div', { class: 'fc-tool' });
     this.#fillTool(node, label, receipt);
@@ -998,6 +1009,7 @@ export class FaustusChatElement extends HTMLElement {
       if (sawAnswer) continue;
       break;
     }
+    this.#flushDeltas(agentBubble);
 
     const end = await turn.done.catch((err) => ({ reason: 'error' as const, lastSequence: 0, error: err }));
     if (this.#activeTurn !== turn) return;
