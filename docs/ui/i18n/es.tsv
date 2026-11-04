@@ -10481,3 +10481,17 @@ Asking Prospero's Hoard for its voice engines…	Preguntando a Prospero's Hoard 
 Prospero's Hoard is not answering. Start it from the Hoard Hub.	Prospero's Hoard no responde. Arráncalo desde el Hoard Hub.
 This engine is not installed in Prospero's Hoard.	Este motor no está instalado en Prospero's Hoard.
 Reading aloud uses the engine and voice installed in Prospero's Hoard.	La lectura en voz alta usa el motor y la voz instalados en Prospero's Hoard.
+Calibrate a typed decision	Calibrar una decisión tipada
+Closed-question decisions accept an answer above a confidence threshold. Give labelled examples and get the lowest threshold whose accepted answers are wrong less often than the rate you choose, with a statistical bound.	Las decisiones de pregunta cerrada aceptan una respuesta por encima de un umbral de confianza. Da ejemplos etiquetados y obtén el umbral más bajo cuyas respuestas aceptadas fallan menos que la tasa que elijas, con una cota estadística.
+Question name	Nombre de la pregunta
+Examples (confidence, 1 right or 0 wrong)	Ejemplos (confianza, 1 acierto o 0 fallo)
+Highest error rate	Tasa de error máxima
+Risk of the bound being wrong	Riesgo de que la cota sea falsa
+Calibrate and store	Calibrar y guardar
+Stored.	Guardado.
+{n} examples	{n} ejemplos
+Could not calibrate.	No se pudo calibrar.
+No threshold gives that guarantee.	Ningún umbral da esa garantía.
+Write one example per line: the confidence, then 1 if the answer was right or 0 if it was wrong.	Escribe un ejemplo por línea: la confianza y luego 1 si la respuesta fue correcta o 0 si fue errónea.
+Name the question to store its threshold.	Pon nombre a la pregunta para guardar su umbral.
+Threshold {threshold}: {accepted} of {samples} examples accepted ({coverage}%), {errors} wrong, error rate below {bound} with {conf}% confidence.	Umbral {threshold}: {accepted} de {samples} ejemplos aceptados ({coverage}%), {errors} erróneos, tasa de error por debajo de {bound} con {conf}% de confianza.

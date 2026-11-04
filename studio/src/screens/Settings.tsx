@@ -81,6 +81,7 @@ import { ChatBridgeStatus } from './settings/ChatBridgeStatus';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { PiperVoices } from './settings/PiperVoices';
 import { ProsperoVoice } from './settings/ProsperoVoice';
+import { DecisionCalibration } from './settings/DecisionCalibration';
 import { SparksSection } from './settings/Sparks';
 import { authStatus, isLocalInstallation } from '../adapters/account';
 import { listActiveApprovals, listFolderGrants, revokeApproval, revokeFolderGrant, type Approval, type FolderGrant } from '../adapters/approvals';
@@ -1560,6 +1561,7 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
           </details>
         );
       })}
+      <DecisionCalibration />
       <SaveBar dirty={Object.keys(changed).length > 0} saving={saving} onSave={() => void save(changed)} note={t('{count} options in {groups} groups.', {count: total, groups: schema.groups.length})} />
     </section>
   );

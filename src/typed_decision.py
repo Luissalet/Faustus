@@ -739,7 +739,17 @@ async def decide(context: str, fields: Sequence[Field], *, owner: Optional[str] 
                         _THINK_PREFILL_URLS.discard(url)
                         logger.debug("typed_decision: think prefill retry failed (%s)", exc)
             ms = (time.monotonic() - t0) * 1000
-            _finish(interpret(f, data, wire, min_confidence=min_conf, min_mass=min_m,
+            # A question calibrated with a statistical bound (src/decision_calibration.py) uses its own
+            # threshold unless the caller passed one explicitly.
+            f_conf = min_conf
+            if min_confidence is None:
+                try:
+                    from src.decision_calibration import threshold_for as _calibrated
+                    f_conf = _calibrated(f.name)
+                    f_conf = min_conf if f_conf is None else f_conf
+                except Exception:  # noqa: BLE001 - a calibration problem never blocks a decision
+                    f_conf = min_conf
+            _finish(interpret(f, data, wire, min_confidence=f_conf, min_mass=min_m,
                               ms=ms, model=model))
     except Exception as exc:  # noqa: BLE001 - the promise is "never raises"
         logger.debug("typed_decision: decide failed (%s)", exc, exc_info=True)

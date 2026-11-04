@@ -41,6 +41,15 @@ class TypedDecisionRequest(BaseModel):
     min_confidence: Optional[float] = None
 
 
+class CalibrateRequest(BaseModel):
+    field: str = ""
+    samples: List[Any] = []
+    max_error: float = 0.05
+    delta: float = 0.05
+    audit_rate: float = 0.02
+    apply: bool = False
+
+
 def _owner(request: Request) -> Optional[str]:
     try:
         return effective_user(request) or None
@@ -95,6 +104,33 @@ def setup_typed_decision_routes() -> APIRouter:
     async def get_typed_decision_stats(_u: str = Depends(require_user)) -> Dict[str, Any]:
         from src import typed_decision
         return typed_decision.stats()
+
+    @router.get("/calibration")
+    async def get_calibration(_u: str = Depends(require_user)) -> Dict[str, Any]:
+        """The stored per-question thresholds (src/decision_calibration.py)."""
+        from src import decision_calibration
+        return {"calibrations": decision_calibration.all_calibrations()}
+
+    @router.post("/calibrate")
+    async def post_calibrate(body: CalibrateRequest, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Lowest confidence threshold whose accepted answers stay under `max_error` wrong with a
+        Clopper-Pearson bound at level 1 - `delta`, from labelled examples. `apply` stores it for the
+        question so `decide` uses it by default."""
+        from src import decision_calibration
+        if len(body.samples or []) > decision_calibration.MAX_SAMPLES:
+            raise HTTPException(413, f"at most {decision_calibration.MAX_SAMPLES} samples")
+        result = decision_calibration.calibrate(body.samples, max_error=body.max_error, delta=body.delta,
+                                                audit_rate=body.audit_rate)
+        if body.apply:
+            if not (body.field or "").strip():
+                raise HTTPException(400, "'field' is needed to apply a calibration")
+            result["saved"] = decision_calibration.save(body.field, result)
+        return result
+
+    @router.delete("/calibration/{field}")
+    async def delete_calibration(field: str, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        from src import decision_calibration
+        return {"removed": decision_calibration.forget(field)}
 
     return router
 

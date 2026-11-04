@@ -114,6 +114,8 @@ _BUILTIN_SERVERS = {
     # Source authority (src/source_authority.py): what kind of site each cited URL
     # is and whether it is an official one. Host-only, read-only, no owner data.
     "source_authority": ("mcp_servers/source_authority_server.py", "Built-in: Source authority"),
+    # Calibrated thresholds for typed decisions (src/decision_calibration.py).
+    "decision_calibration": ("mcp_servers/decision_calibration_server.py", "Built-in: Decision calibration"),
     # Typed 3D scenes rendered headless with Blender (src/blender_scene): probe,
     # schema, validate, run, smoke. Writes only inside its own scenes folder
     # (BLENDER_SCENES_DIR/mcp); no owner-scoped data.
