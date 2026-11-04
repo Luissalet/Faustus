@@ -55,10 +55,31 @@ CACHE_VARS: Dict[str, str] = {
     "GOCACHE": "go-build",
     "GOMODCACHE": "go-mod",
     "NUGET_PACKAGES": "nuget",
+    # Caches that live under HOME by default. HOME itself stays where it is
+    # (git, ssh and the toolchains read it); only the cache paths move.
+    "GRADLE_USER_HOME": "gradle",
+    "DENO_DIR": "deno",
+    "BUN_INSTALL_CACHE_DIR": "bun",
+    "COMPOSER_CACHE_DIR": "composer",
+    "PIPENV_CACHE_DIR": "pipenv",
+    "PRE_COMMIT_HOME": "pre-commit",
+    "CCACHE_DIR": "ccache",
+    "SCCACHE_DIR": "sccache",
+    "CYPRESS_CACHE_FOLDER": "cypress",
+    "ELECTRON_CACHE": "electron",
+    "CARGO_HOME": "cargo",
     "TMP": "tmp",
     "TEMP": "tmp",
     "TMPDIR": "tmp",
 }
+
+#: Maven has no cache variable: its local repository is a ``-D`` option,
+#: appended to MAVEN_OPTS (whatever the user already put there is kept).
+MAVEN_SUB = "maven"
+#: Every folder a worker's cache root can hold, for sizes and clearing.
+CACHE_SUBS = tuple(dict.fromkeys([*CACHE_VARS.values(), MAVEN_SUB]))
+#: Variables that are only set when it is safe: see `cargo_has_toolchain`.
+CONDITIONAL_VARS = frozenset({"CARGO_HOME"})
 
 CACHES_DIRNAME = "_caches"
 CROSS_READS_FILE = "cross_reads.jsonl"
@@ -114,6 +135,21 @@ def cache_root_for(workspace: str) -> str:
     return os.path.join(parent, CACHES_DIRNAME, name or "root")
 
 
+def cargo_has_toolchain(env: Optional[Mapping[str, str]] = None) -> bool:
+    """True when the CARGO_HOME this environment would use also holds the
+    installed binaries (``bin/cargo``, rustup proxies, ``cargo install``
+    tools). That folder is a toolchain as much as a cache, so a worker keeps
+    it: moving CARGO_HOME there would hide the user's cargo from the worker."""
+    env = os.environ if env is None else env
+    home = env.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo")
+    return any(os.path.isfile(os.path.join(home, "bin", name)) for name in ("cargo", "cargo.exe"))
+
+
+def _with_maven_repo(opts: str, repo: str) -> str:
+    kept = [tok for tok in str(opts or "").split() if not tok.startswith("-Dmaven.repo.local=")]
+    return " ".join(kept + [f'-Dmaven.repo.local={repo}'])
+
+
 def isolated_env(workspace: Optional[str], base: Optional[Mapping[str, str]] = None, *,
                  cache_root: Optional[str] = None,
                  meta: Optional[Mapping[str, object]] = None) -> Dict[str, str]:
@@ -126,19 +162,32 @@ def isolated_env(workspace: Optional[str], base: Optional[Mapping[str, str]] = N
     root = cache_root or cache_root_for(str(workspace or ""))
     _write_meta(root, meta or ({"kind": "fanout", "name": os.path.basename(str(workspace).rstrip("\\/")),
                                 "workspace": os.path.abspath(str(workspace))} if workspace else {}))
+    skip = {"CARGO_HOME"} if cargo_has_toolchain(env) else set()
     if os.name == "nt":
         # Windows variable names are case-insensitive: an inherited `Tmp` or
         # `NPM_CONFIG_CACHE` would otherwise sit next to ours in the block
         # and which one wins would be up to the child.
-        wanted = {name.upper() for name in CACHE_VARS}
+        wanted = {name.upper() for name in CACHE_VARS if name not in skip}
+        wanted.add("MAVEN_OPTS")
+        maven_opts = next((v for k, v in env.items() if k.upper() == "MAVEN_OPTS"), "")
         env = {k: v for k, v in env.items() if k.upper() not in wanted}
+        if maven_opts:
+            env["MAVEN_OPTS"] = maven_opts
     for name, sub in CACHE_VARS.items():
+        if name in skip:
+            continue
         path = os.path.join(root, sub)
         try:
             os.makedirs(path, exist_ok=True)
         except OSError as exc:  # a read-only parent must not break the run
             logger.warning("[worker-caches] could not create %s: %s", path, exc)
         env[name] = path
+    maven = os.path.join(root, MAVEN_SUB)
+    try:
+        os.makedirs(maven, exist_ok=True)
+    except OSError as exc:
+        logger.warning("[worker-caches] could not create %s: %s", maven, exc)
+    env["MAVEN_OPTS"] = _with_maven_repo(env.get("MAVEN_OPTS", ""), maven)
     return env
 
 
@@ -229,7 +278,7 @@ def shared_cache_dirs(env: Optional[Mapping[str, str]] = None) -> Tuple[str, ...
     local = env.get("LOCALAPPDATA") or ""
     found: List[str] = []
     for name, sub in CACHE_VARS.items():
-        if sub == "tmp":
+        if sub == "tmp" or name in CONDITIONAL_VARS:
             continue  # the host temp folder is everybody's; too noisy to flag
         value = env.get(name) or env.get(name.upper())
         if value:
@@ -486,7 +535,7 @@ def describe(root: str, *, live: Optional[set] = None, budget: Optional[List[int
     budget = budget if budget is not None else [MAX_FILES_COUNTED]
     tools: Dict[str, int] = {}
     total = files = 0
-    for sub in dict.fromkeys(CACHE_VARS.values()):
+    for sub in CACHE_SUBS:
         size, count = _folder_size(os.path.join(root, sub), budget)
         tools[sub] = size
         total += size
@@ -580,7 +629,7 @@ def clear(*, root: str = "", session_id: str = "", all_idle: bool = False,
         if forget:
             shutil.rmtree(target, ignore_errors=True)
         else:
-            for sub in dict.fromkeys(CACHE_VARS.values()):
+            for sub in CACHE_SUBS:
                 path = os.path.join(target, sub)
                 if os.path.isdir(path):
                     shutil.rmtree(path, ignore_errors=True)

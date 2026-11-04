@@ -22,6 +22,7 @@ def base(tmp_path, monkeypatch):
     path = tmp_path / "worker_caches"
     monkeypatch.setenv("FAUSTUS_WORKER_CACHES_DIR", str(path))
     monkeypatch.setattr(worker_caches, "_live_worker_ids", lambda: set())
+    monkeypatch.setattr(worker_caches, "cargo_has_toolchain", lambda env=None: False)
     return path
 
 
@@ -164,3 +165,58 @@ def test_clear_counts_only_what_is_really_gone(monkeypatch):
     assert out["cleared"][0]["freed_bytes"] == 0 and out["cleared"][0]["remaining_bytes"] == 4096
     out = worker_caches.clear(session_id="w8")
     assert out["freed_bytes"] == 4096 and "remaining_bytes" not in out["cleared"][0]
+
+
+HOME_CACHES = {
+    "GRADLE_USER_HOME": "gradle", "DENO_DIR": "deno", "BUN_INSTALL_CACHE_DIR": "bun",
+    "COMPOSER_CACHE_DIR": "composer", "PIPENV_CACHE_DIR": "pipenv", "PRE_COMMIT_HOME": "pre-commit",
+    "CCACHE_DIR": "ccache", "SCCACHE_DIR": "sccache", "CYPRESS_CACHE_FOLDER": "cypress",
+    "ELECTRON_CACHE": "electron",
+}
+
+
+@pytest.mark.parametrize("name,sub", sorted(HOME_CACHES.items()))
+def test_home_based_caches_move_into_the_worker_folder(name, sub, tmp_path):
+    env = worker_caches.isolated_env(None, {"HOME": "/home/x", name: "/shared/" + name},
+                                     cache_root=str(tmp_path / "root"), meta={"kind": "delegate"})
+    assert env[name] == os.path.join(str(tmp_path / "root"), sub) and os.path.isdir(env[name])
+    assert env["HOME"] == "/home/x"  # HOME itself stays: git, ssh and toolchains read it
+
+
+def test_maven_repo_is_appended_not_clobbered(tmp_path):
+    root = str(tmp_path / "root")
+    env = worker_caches.isolated_env(None, {"MAVEN_OPTS": "-Xmx1g -Dmaven.repo.local=/shared/m2"},
+                                     cache_root=root, meta={"kind": "delegate"})
+    assert env["MAVEN_OPTS"] == f"-Xmx1g -Dmaven.repo.local={os.path.join(root, 'maven')}"
+    assert os.path.isdir(os.path.join(root, "maven"))
+    bare = worker_caches.isolated_env(None, {}, cache_root=root, meta={"kind": "delegate"})
+    assert bare["MAVEN_OPTS"] == f"-Dmaven.repo.local={os.path.join(root, 'maven')}"
+
+
+def test_cargo_home_moves_only_when_it_holds_no_toolchain(tmp_path, monkeypatch):
+    monkeypatch.undo()  # the real check, not the autouse stub
+    cargo = tmp_path / "cargo"
+    root = str(tmp_path / "root")
+    bare = worker_caches.isolated_env(None, {"CARGO_HOME": str(cargo)}, cache_root=root, meta={"k": 1})
+    assert bare["CARGO_HOME"] == os.path.join(root, "cargo")
+    (cargo / "bin").mkdir(parents=True)
+    (cargo / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")).write_bytes(b"")
+    kept = worker_caches.isolated_env(None, {"CARGO_HOME": str(cargo)}, cache_root=str(tmp_path / "r2"),
+                                      meta={"k": 1})
+    assert kept["CARGO_HOME"] == str(cargo)
+
+
+def test_sizes_and_clear_cover_the_new_folders(tmp_path):
+    async def run():
+        root, env = await asyncio.create_task(_as_worker("w9", name="jvm", session_id="w9"))
+        for path in (os.path.join(env["GRADLE_USER_HOME"], "a.bin"),
+                     os.path.join(root, "maven", "b.jar")):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as fh:
+                fh.write(b"x" * 100)
+        return root
+    root = asyncio.run(run())
+    row = worker_caches.list_caches(session_id="w9")["workers"][0]
+    assert row["tools"]["gradle"] == 100 and row["tools"]["maven"] == 100 and row["bytes"] == 200
+    assert worker_caches.clear(session_id="w9")["freed_bytes"] == 200
+    assert not os.path.exists(os.path.join(root, "maven", "b.jar"))

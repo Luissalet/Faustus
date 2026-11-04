@@ -28,7 +28,8 @@ def _ws(tmp_path, name="cand_a"):
     return str(path)
 
 
-def test_isolated_env_points_every_cache_outside_the_workspace(tmp_path):
+def test_isolated_env_points_every_cache_outside_the_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(worker_caches, "cargo_has_toolchain", lambda env=None: False)
     ws = _ws(tmp_path)
     env = worker_caches.isolated_env(ws, {"PATH": "x", "PIP_CACHE_DIR": "/shared/pip", "KEEP": "1"})
     root = worker_caches.cache_root_for(ws)
