@@ -21,13 +21,14 @@ _NEG = r"(?:sin|no|without|never|nunca|ni)"
 _NO_FILES_RE = re.compile(
     r"\b" + _NEG + r"\s+(?:crear\s+|create\s+|write\s+|escribir\s+|guardar\s+|save\s+)?"
     r"(?:archivos?|ficheros?|files?|copias?|copies|copy|temporales?|temp(?:orary)?\s+files?|disk|disco)\b"
-    r"|\b(?:en|in)\s+(?:la\s+)?(?:RAM|memoria|memory)\b(?:\s+only)?"
+    r"|\b(?:en|in)\s+(?:la\s+)?RAM\b"
+    r"|\b(?:en|in)\s+(?:la\s+)?(?:memoria|memory)\s+(?:only|solo|solamente|[uú]nicamente)\b"
     r"|\bin[- ]memory\s+only\b|\bmemory[- ]only\b|\bsolo\s+en\s+(?:RAM|memoria)\b",
     re.IGNORECASE,
 )
 _NO_PLAN_RE = re.compile(
     r"\b" + _NEG + r"\s+(?:crear\s+|hacer\s+|make\s+|create\s+|write\s+)?"
-    r"(?:(?:un\s+)?planes?|plans?|todos?|todowrite|lista\s+de\s+tareas|task\s+list)\b",
+    r"(?:(?:un\s+)?planes?|plans?|to-?do[- ]?(?:list|lists)|todowrite|lista\s+de\s+tareas|task\s+list)\b",
     re.IGNORECASE,
 )
 # An explicit ask for a file or a plan overrides the matching reminder.

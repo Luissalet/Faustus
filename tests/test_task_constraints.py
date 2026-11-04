@@ -14,6 +14,16 @@ def test_negative_phrases_are_found_in_both_languages():
     assert tc.extract("Compare the two trainers and answer.") == set()
 
 
+def test_ordinary_phrases_are_not_constraints():
+    # Spanish "no todos" means "not all", and saving to the assistant's memory
+    # is not a request to avoid files.
+    assert tc.extract("No todos los tests pasan, arréglalos.") == set()
+    assert tc.extract("No todo está bien con el informe.") == set()
+    assert tc.extract("Recuerda esto en memoria y crea el módulo nuevo.") == set()
+    assert tc.extract("Keep that in memory and write the module.") == set()
+    assert tc.extract("Hazlo en memoria solo, sin tocar disco.") == {tc.NO_FILES}
+
+
 def test_an_explicit_file_request_cancels_the_file_reminder():
     assert tc.NO_FILES not in tc.extract("Sin copias del repo, pero guarda el informe en report.md")
 
