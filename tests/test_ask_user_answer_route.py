@@ -69,7 +69,7 @@ class _RouteRequest:
         if extra_form:
             self._form.update(extra_form)
 
-    async def form(self):
+    async def form(self, **_parser_limits):
         return self._form
 
 

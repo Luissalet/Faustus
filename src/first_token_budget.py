@@ -87,7 +87,15 @@ async def scoped_stream(source, seconds):
 
 async def _request_input(request: Request):
     if "application/json" in request.headers.get("content-type", "").lower():
-        return await request.json()
+        # Same answers as the chat route's own parser: a bad body is the
+        # caller's 400, never a 500 from reading it here first.
+        try:
+            body = await request.json()
+        except ValueError as exc:  # json.JSONDecodeError is a ValueError
+            raise HTTPException(400, f"Invalid JSON: {exc}") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "The chat request must be a JSON object.")
+        return body
     # Chat text is bounded by the selected model's context budget. Starlette's
     # default 1 MiB text-part limit otherwise rejects it before that calculation.
     # Keep the parser's file/field counts and upload-file validation unchanged.
@@ -112,6 +120,12 @@ def request_budget(endpoint):
     """
     @functools.wraps(endpoint)
     async def wrapped(request: Request, *args, **kwargs):
+        # ARCH-01: an incompatible client is refused before the body is read,
+        # the same answer the endpoint gives, so no parsing runs for it.
+        from src import api_version
+        client_version = request.headers.get(api_version.CLIENT_VERSION_HEADER)
+        if not api_version.is_supported(client_version):
+            raise HTTPException(426, api_version.upgrade_required_detail(client_version))
         body = await _request_input(request)
         seconds = await request_seconds(request)
         from src.project_execution_defaults import for_session, merge

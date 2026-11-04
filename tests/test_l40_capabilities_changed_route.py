@@ -53,7 +53,7 @@ class _RouteRequest:
         self.state = SimpleNamespace(current_user="alice")
         self._form = {"message": "hello", "session": "session-cap-changed", "mode": "agent"}
 
-    async def form(self):
+    async def form(self, **_parser_limits):  # chat_stream passes max_part_size (a7aa4dc4)
         return self._form
 
 
