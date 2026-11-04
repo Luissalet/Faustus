@@ -10383,39 +10383,6 @@ async def _stream_agent_loop_body(
         if _hot_seed is not None:
             _hot_seed |= _named
 
-    # Tools the user NAMED are offered (OBJ-4, seen live: "usa la herramienta
-    # git_status" got "no tengo git_status en esta sesión" because retrieval
-    # never ranked it). A literal tool name in the request is the strongest
-    # relevance signal there is; disabled_tools still has the last word.
-    _named = set()
-    if not guide_only and _relevant_tools is not None and _last_user:
-        try:
-            from src.agent_tools import TOOL_HANDLERS as _all_tool_names
-            from src.named_tool_names import named_tools_in_request
-            _available_names = set(_all_tool_names)
-            if mcp_mgr:
-                from src.connector_policy import resolve_allowed_servers_for_session, is_tool_allowed
-                _named_connectors = resolve_allowed_servers_for_session(session_id, owner)
-                for _named_schema in mcp_mgr.get_all_openai_schemas(_mcp_disabled_map or {}):
-                    _candidate_name = (_named_schema.get("function") or {}).get("name") or _named_schema.get("name")
-                    if _candidate_name and is_tool_allowed(_candidate_name, _named_connectors):
-                        _available_names.add(_candidate_name)
-            _named = named_tools_in_request(_last_user, _available_names, disabled_tools)
-        except Exception:  # noqa: BLE001 - never let this block a turn
-            _named = set()
-        # A non-empty set passed by the caller (approval replay, scheduler) is
-        # a scope ceiling, not a retrieval hint. A literal name may pin a
-        # schema within that scope, but must not add a new executable tool.
-        if relevant_tools:
-            _named &= set(relevant_tools)
-        if _named - set(_relevant_tools):
-            logger.info("[tool-rag] tools named in the request offered: %s", sorted(_named - set(_relevant_tools)))
-            _relevant_tools.update(_named)
-        # A caller/retriever may already have selected this name but left its
-        # schema deferred. Literal names must be hot on that path as well.
-        if _hot_seed is not None:
-            _hot_seed |= _named
-
     # A workspace that is (or contains) a git repository gets the read-only
     # git tools; a request that talks about git/commits/branches/pushing gets
     # the mutating ones too. Bash is not the way to drive git here: the git_*
