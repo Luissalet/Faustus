@@ -377,7 +377,17 @@ def test_the_endpoint_is_cached_server_side():
 
 def test_the_fit_route_is_registered_on_the_router():
     router = mr.setup_model_routes(None)
-    assert "/api/models/fit" in {r.path for r in router.routes}
+
+    # The router now includes the global model routes as a sub-router, which
+    # FastAPI keeps as one _IncludedRouter entry with no `path` of its own.
+    def _paths(routes):
+        for r in routes:
+            inner = getattr(r, "original_router", None)
+            if inner is not None:
+                yield from _paths(inner.routes)
+            elif hasattr(r, "path"):
+                yield r.path
+    assert "/api/models/fit" in set(_paths(router.routes))
 
 
 # ── End to end: the measured case ────────────────────────────────────────

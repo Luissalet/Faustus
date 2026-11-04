@@ -81,7 +81,9 @@ const assert = (cond, msg) => {
   assert(src.includes("id=\"gen-top-p\"") || src.includes("id: 'gen-top-p'"), 'a real top_p control');
   assert(src.includes("id=\"gen-top-k\"") || src.includes("id: 'gen-top-k'"), 'a real top_k control');
   assert(src.includes("id=\"gen-max-tokens\"") || src.includes("id: 'gen-max-tokens'"), 'a real max_tokens control');
-  assert(src.includes('thinkApplies') && src.includes('supportsThinking(modelName)'),
+  // Since 36bb0b07 the gate also reads the levels the API verified for the
+  // model (`thinkingControlsAvailable`), with the name check as fallback.
+  assert(src.includes('thinkApplies') && (src.includes('supportsThinking(modelName)') || src.includes('thinkingControlsAvailable(modelName')),
     'the think switch is gated by the same capability check as the backend, not always shown');
   assert(src.includes('onClearGen') && src.includes('fs-studio__chip-x'),
     'the outer X still clears every override at once');

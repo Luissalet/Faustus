@@ -218,6 +218,9 @@ def _auth_route_endpoint(path, method):
     from routes.auth_routes import setup_auth_routes
 
     auth_manager = MagicMock()
+    # A bare MagicMock attribute is truthy: without this the routes take the
+    # desktop's account-less path (34e8ea4c) instead of the signed-in user.
+    auth_manager.local_only = False
     router = setup_auth_routes(auth_manager)
     for route in router.routes:
         if getattr(route, "path", "") == path and method in getattr(route, "methods", set()):

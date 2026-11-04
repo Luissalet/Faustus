@@ -36,6 +36,8 @@ def test_the_card_offers_buttons_a_checklist_and_a_free_answer():
 def test_the_tool_tells_the_model_when_to_ask_and_not_to_invent_other():
     source = (ROOT / "src/agent_loop.py").read_text(encoding="utf-8")
     line = next(l for l in source.splitlines() if l.strip().startswith('"ask_user":'))
-    assert "implement X" in line and "recommended" in line
+    # d3475e1c: a choice between reasonable designs is no longer a question;
+    # the agent builds the one it recommends and says so.
+    assert "pick the one you would recommend and build it" in line and "recommended" in line
     assert "multi" in line and "checklist" in line
     assert 'never add an \\"Other\\" option' in line

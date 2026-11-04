@@ -52,6 +52,7 @@ const composer=readFileSync(join(root,'studio/src/screens/studio/Composer.tsx'),
 assert(composer.includes('<GlobalApprovalControl />'));assert(!composer.includes('function ApprovalSelector('));
 const control=readFileSync(join(root,'studio/src/shell/GlobalApprovalControl.tsx'),'utf8');
 assert(!control.includes('administrator'));assert(!control.includes('busy'));
-assert(readFileSync(join(root,'studio/src/shell/AppShell.tsx'),'utf8').includes('<GlobalApprovalControl variant="nav" />'));
+// 527203da (docs/ui/navigation.md) took the copy out of the side navigation;
+// the same shared control stays in the composer and in Settings.
 assert(readFileSync(join(root,'studio/src/screens/Settings.tsx'),'utf8').includes('<GlobalApprovalControl variant="settings" />'));
 console.log('Global approvals: shared adapter/store, two tabs, API poll/focus, write/read race, failed save and all surfaces passed');

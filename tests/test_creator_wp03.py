@@ -422,7 +422,11 @@ def test_route_proxy_video_without_ffmpeg_is_409(route_client, tmp_path, monkeyp
     src = _make(tmp, "r1", "clip.mp4", body, owner="__odysseus_local__")
 
     import src.creator.library as library_mod
+    # Since e9527d1f the library finds ffmpeg through the family's media
+    # binaries (src.media_bins.which: PATH plus the bundled copies), so that is
+    # the lookup to make come back empty.
     monkeypatch.setattr(library_mod.shutil, "which", lambda name: None)
+    monkeypatch.setattr(library_mod, "_family_media_which", lambda name: None)
     resp = client.post(f"/api/creator/library/{src.id}/proxy")
     assert resp.status_code == 409
 

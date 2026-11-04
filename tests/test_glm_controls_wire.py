@@ -88,7 +88,7 @@ async def test_explicit_budget_and_effort_reach_the_http_wire(wire, route, think
     assert url == BASE + "/chat/completions"
     assert payload["thinking_token_budget"] == budget
     assert payload["reasoning_effort"] == ("high" if think else "low")
-    assert payload["chat_template_kwargs"] == {"enable_thinking": True, "clear_thinking": True}
+    assert payload["chat_template_kwargs"] == {"enable_thinking": True, "clear_thinking": False}
     assert "reasoning_budget" not in payload and "thinking_budget_tokens" not in payload
 
 
@@ -149,7 +149,7 @@ async def test_reasoning_retries_do_not_keep_native_or_nested_stale_fields(wire)
     assert bodies[0]["thinking_token_budget"] == bodies[1]["thinking_token_budget"] == 128
     assert "thinking_token_budget" not in bodies[2]
     assert all("reasoning_effort" not in payload["chat_template_kwargs"] for payload in bodies)
-    assert bodies[2]["chat_template_kwargs"] == {"enable_thinking": False, "clear_thinking": True}
+    assert bodies[2]["chat_template_kwargs"] == {"enable_thinking": False, "clear_thinking": False}
 
 
 async def test_stream_transport_retry_preserves_explicit_zero(wire):
@@ -159,7 +159,7 @@ async def test_stream_transport_retry_preserves_explicit_zero(wire):
     for _, payload in wire.sent:
         assert payload["thinking_token_budget"] == 0
         assert payload["reasoning_effort"] == "high"
-        assert payload["chat_template_kwargs"] == {"enable_thinking": True, "clear_thinking": True}
+        assert payload["chat_template_kwargs"] == {"enable_thinking": True, "clear_thinking": False}
 
 
 def test_strip_reasoning_removes_old_native_fields_but_preserves_history_choice():

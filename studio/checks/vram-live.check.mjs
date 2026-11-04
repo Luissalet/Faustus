@@ -24,8 +24,10 @@ await build({ entryPoints: [join(root, 'studio/src/screens/studio/model.ts')], b
 const model = await import(pathToFileURL(modelOut).href);
 
 // model_state → a sentence, never the raw fields
-assert.equal(chat.modelStateLabel({ resident: false }), 'Loading the model into memory');
-assert.equal(chat.modelStateLabel({ resident: true, spill: false }), 'The model is reading the context');
+// 6c32aab4: residency alone does not say this request is in prefill, so the
+// labels name what is known (loading, or in memory and waiting).
+assert.equal(chat.modelStateLabel({ resident: false }), 'Waiting for the model to load into memory');
+assert.equal(chat.modelStateLabel({ resident: true, spill: false }), 'Model in memory; waiting for output');
 assert.match(chat.modelStateLabel({ resident: true, spill: true, vram_bytes: 29 * 2 ** 30, size_bytes: 33 * 2 ** 30 }), /29\.0 of 33\.0 GB/);
 assert.equal(chat.modelStateLabel(undefined), '');
 assert.equal(chat.modelStateLabel({}), '');
@@ -34,10 +36,10 @@ assert.equal(chat.modelStateLabel({}), '');
 const turn0 = model.blankTurn('assistant', '');
 const hb = chat.decode({ type: 'run_activity', data: { phase: 'waiting_model', phase_since: 1, model_state: { resident: false } } }, null);
 assert.equal(hb.type, 'heartbeat');
-assert.equal(hb.detail, 'Loading the model into memory');
+assert.equal(hb.detail, 'Waiting for the model to load into memory');
 const turn1 = model.apply(turn0, hb);
 assert.equal(turn1.live.phase, 'waiting');
-assert.equal(turn1.live.label, 'Loading the model into memory');
+assert.equal(turn1.live.label, 'Waiting for the model to load into memory');
 // no model_state and no detail: the label goes away, "waiting" stays generic
 const quiet = model.apply(turn1, chat.decode({ type: 'run_activity', data: { phase: 'waiting_model', phase_since: 1 } }, null));
 assert.equal(quiet.live.label, undefined);

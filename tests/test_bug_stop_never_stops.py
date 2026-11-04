@@ -240,9 +240,17 @@ def test_stop_with_reason_reports_truth_not_bare_false():
     agent_runs._RUNS.clear()
 
 
+def _ended_by_the_ceiling(events):
+    """Since ae465d12 a runtime stop is advisory: the wall-clock ceiling ends
+    the turn with a `harness_check` advisory (reason turn_wall_clock_ceiling,
+    requires_user_input False) instead of inventing a question card."""
+    return any(e.get("type") == "harness_check" and e.get("status") == "advisory"
+               and e.get("reason") == "turn_wall_clock_ceiling" for e in events)
+
+
 # ── item 5e: wall-clock ceiling ends the turn ─────────────────────────────
 
-def test_wall_clock_ceiling_ends_turn_with_a_question(monkeypatch):
+def test_wall_clock_ceiling_ends_turn_with_an_advisory(monkeypatch):
     """Individually-cheap rounds that never trip the round-budget/progress
     checks must still be bounded in real time (item 4)."""
     _patch_common(monkeypatch, {
@@ -265,7 +273,7 @@ def test_wall_clock_ceiling_ends_turn_with_a_question(monkeypatch):
         relevant_tools={"bash"},
     )
     events = _types(_collect(gen))
-    assert any(e.get("type") == "ask_user" for e in events), events
+    assert _ended_by_the_ceiling(events), events
     # Never ran to the (absurd) round cap -- the wall clock stopped it long
     # before that, even though nothing else would have.
     assert counter["n"] < 1000, counter
@@ -293,7 +301,7 @@ def test_turn_ceiling_cancels_a_silent_inference_and_closes_its_stream(monkeypat
     ))
     events = _types(chunks)
     assert state == {"started": True, "closed": True}
-    assert any(event.get("type") == "ask_user" for event in events), events
+    assert _ended_by_the_ceiling(events), events
     assert not any(event.get("type") == "round_info" for event in events), events
 
 
@@ -328,7 +336,7 @@ def test_turn_ceiling_stops_a_continuous_stream_without_running_buffered_tools(m
     events = _types(chunks)
     assert state["closed"] is True
     assert state["executed"] == 0
-    assert any(event.get("type") == "ask_user" for event in events), events
+    assert _ended_by_the_ceiling(events), events
     assert any(event.get("type") == "response_replace" and "Partial progress." in event.get("text", "")
                for event in events), events
 
@@ -452,7 +460,7 @@ def test_turn_ceiling_closes_a_real_http_sse_stream(monkeypatch):
         assert state["request"].is_set(), "the real stream client never reached the local SSE server"
         assert state["disconnected"].wait(2), "the client left the pending HTTP response open"
         assert executed["count"] == 0
-        assert any(event.get("type") == "ask_user" for event in events), events
+        assert _ended_by_the_ceiling(events), events
         assert any(event.get("type") == "response_replace" and "Partial progress." in event.get("text", "")
                    for event in events), events
         assert elapsed < 15, f"deadline did not stop the live HTTP stream promptly: {elapsed:.2f}s"

@@ -3,7 +3,11 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 const src = readFileSync(new URL('../src/screens/Studio.tsx', import.meta.url), 'utf8');
-assert.match(src, /missing:\s*true/, 'the ghost route is flagged missing');
+// Since 9c0b5f8c the remembered/configured route is resolved, and flagged, in
+// adapters/model-selection.ts (chooseStudioRoute), which Studio.tsx uses.
+const selection = readFileSync(new URL('../src/adapters/model-selection.ts', import.meta.url), 'utf8');
+assert.match(selection, /missing:\s*true/, 'the ghost route is flagged missing');
+assert.match(src, /chooseStudioRoute/, 'Studio resolves its route through the shared selection');
 assert.match(src, /if \(route\?\.missing\)/, 'run() refuses to send with a missing route');
 assert.match(src, /setModelSignal\(\(n\) => n \+ 1\)/, 'and opens the picker instead');
 // The point is that the endpoint travels with the id, so a model that no

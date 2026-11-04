@@ -11,7 +11,7 @@ from src import plugin_runtime as runtime, launch_profiles
 def world(monkeypatch):
     plugin = SimpleNamespace(id="image_fixture", name="Synthetic image plugin", purpose="Fixture only",
         capabilities=["image"], notes="", source="builtin", app_url_default="http://default.invalid",
-        health_path="/health")
+        health_path="/health", data_language=["en"])  # field added by 1fca622a
     other = {"id": "other-connection", "connector_id": "other-alias", "preset_id": plugin.id,
         "owner": "other", "app_url": "http://other.invalid", "ui_url": "http://other.invalid/ui",
         "launch_profile_id": "other-profile"}

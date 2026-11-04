@@ -33,4 +33,14 @@ def test_english_narration_before_a_question_card_is_dropped(tmp_path, monkeypat
     replaced = [e for e in events if e.get("type") == "response_replace"]
     assert replaced, [e.get("type") for e in events]
     assert ENGLISH not in replaced[-1]["text"]
-    assert "¿Qué carpeta uso?" in replaced[-1]["text"]
+    # Since 7c4a96f9 the narration is retracted as soon as the round ends,
+    # before the card's question is streamed; what the client shows is the
+    # last replacement plus the text streamed after it.
+    visible = ""
+    for e in events:
+        if e.get("type") == "response_replace":
+            visible = e.get("text") or ""
+        elif e.get("delta") and not e.get("thinking"):
+            visible += e["delta"]
+    assert ENGLISH not in visible
+    assert "¿Qué carpeta uso?" in visible

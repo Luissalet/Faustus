@@ -521,7 +521,8 @@ def _sealed_grant(content, *, decision="approve_task"):
 def _run_block(block, grant, monkeypatch, executed):
     from src import tool_execution
 
-    async def fake_mcp(tool, content, progress_cb=None):
+    async def fake_mcp(tool, content, progress_cb=None, **_call_context):
+        # _call_mcp_tool also receives the session/owner context now.
         executed.append((tool, content))
         return {"output": "ok", "exit_code": 0}
 

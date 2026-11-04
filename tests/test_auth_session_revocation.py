@@ -95,6 +95,9 @@ def _change_password_endpoint(auth_manager):
     _real_core_package()
     from routes.auth_routes import ChangePasswordRequest, setup_auth_routes
 
+    # A bare MagicMock attribute is truthy: without this the route takes the
+    # desktop's account-less path (34e8ea4c) instead of the signed-in user.
+    auth_manager.local_only = False
     router = setup_auth_routes(auth_manager)
     for route in router.routes:
         if getattr(route, "path", None) == "/api/auth/change-password":

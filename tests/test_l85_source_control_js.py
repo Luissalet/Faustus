@@ -84,7 +84,9 @@ def test_layout_widens_without_touching_the_shared_shell():
         "the screen must widen itself (no fs-screen--wide modifier exists yet) without a shell.css/AppShell.tsx change"
     )
     shell_css = _read("studio/src/styles/shell.css")
-    assert "fs-sc" not in shell_css, "the shared shell.css must stay untouched by this lot"
+    # The screen's own `.fs-sc…` classes, not a substring of `.fs-screen`
+    # (which shell.css has used since 527203da).
+    assert not re.search(r"\.fs-sc(?![a-z])", shell_css), "the shared shell.css must stay untouched by this lot"
 
     hex_colors = re.findall(r"#[0-9a-fA-F]{3,8}\b", css)
     assert not hex_colors, f"source-control.css must use --fs-* tokens, not literal colors: {hex_colors}"

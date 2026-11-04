@@ -457,7 +457,10 @@ def test_run_code_schema_declares_allowed_hosts():
     fn = next(e["function"] for e in FUNCTION_TOOL_SCHEMAS if e["function"]["name"] == "run_code")
     prop = fn["parameters"]["properties"]["allowed_hosts"]
     assert prop["type"] == "array" and prop["items"] == {"type": "string"}
-    assert "allowed_hosts" in fn["description"] and "hard boundary" in fn["description"]
+    # e735f70f trimmed the description to the tool-footprint budget: whether
+    # the list is a hard boundary is now reported per run in `network`.
+    assert "allowed_hosts" in fn["description"]
+    assert "network field reports enforcement" in fn["description"]
     assert fn["parameters"]["required"] == ["code"]
 
 

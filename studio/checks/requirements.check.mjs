@@ -207,18 +207,13 @@ for (const p of [
   assert.ok((src.match(/<EmptyState/g) ?? []).length >= 2, 'must use EmptyState for at least the empty list and the no-selection state');
 }
 
-// ── Project.tsx: registered as a real tab next to Board/Objectives,
-// following the exact `?tab=` pattern those already use ──
+// ── Project.tsx: since b9335aea (docs/api/project-tasks.md) Projects → Tasks
+// is the single project board; prior requirements are imported into it and
+// an old `?tab=requisitos` link opens that board focused on requirements ──
 {
   const src = read('studio/src/screens/Project.tsx');
-  assert.ok(src.includes("import { ProjectRequirements } from './project/Requirements';"), 'Project.tsx must import ProjectRequirements');
-  assert.ok(/\{\s*id:\s*'requisitos',\s*label:\s*'Requirements'/.test(src), 'TABS must list a requisitos/Requirements entry');
-  assert.ok(src.includes("tab === 'requisitos'") && src.includes('<ProjectRequirements projectId={project.id} say={say} />'), 'the requisitos tab must render <ProjectRequirements>');
-  // Registered the same way as the neighbouring tabs -- same TABS array,
-  // same ?tab= state, not a second routing mechanism.
-  const tabsBlock = src.slice(src.indexOf('const TABS = ['), src.indexOf('] as const;'));
-  assert.ok(tabsBlock.includes("id: 'board'") && tabsBlock.includes("id: 'objetivos'") && tabsBlock.includes("id: 'requisitos'"),
-    'requisitos must live in the same TABS array as board/objetivos, not a separate mechanism');
+  assert.ok(src.includes("tab === 'tasks' && <ProjectTasks"), 'Project.tsx must render the shared tasks board');
+  assert.ok(src.includes("rawTab === 'requisitos' ? 'requirements'"), 'an old requisitos link must still land on the board, focused on requirements');
 }
 
 // ── i18n: every new string this lot introduces has a Spanish row ──

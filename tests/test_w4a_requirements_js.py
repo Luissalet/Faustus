@@ -51,13 +51,14 @@ def test_the_files_this_lot_owns_exist():
 
 
 def test_project_tsx_registers_the_tab_next_to_board_and_objectives():
+    """b9335aea made Projects → Tasks the single project board
+    (docs/api/project-tasks.md): prior requirements, objectives and issues
+    are imported into it, and old `?tab=requisitos` / `?tab=objetivos` links
+    open that board with the matching focus instead of separate tabs."""
     project_tsx = (_REPO / "studio" / "src" / "screens" / "Project.tsx").read_text(encoding="utf-8")
-    assert "import { ProjectRequirements } from './project/Requirements';" in project_tsx
-    assert "id: 'requisitos'" in project_tsx
-    assert "<ProjectRequirements projectId={project.id} say={say} />" in project_tsx
-    tabs_block = project_tsx.split("const TABS = [", 1)[1].split("] as const;", 1)[0]
-    for entry in ("id: 'board'", "id: 'objetivos'", "id: 'requisitos'"):
-        assert entry in tabs_block, f"{entry} must be in the same TABS array"
+    assert "tab === 'tasks' && <ProjectTasks" in project_tsx
+    assert "rawTab === 'objetivos' ? 'objectives'" in project_tsx
+    assert "rawTab === 'requisitos' ? 'requirements'" in project_tsx
 
 
 def test_no_inline_svg_and_no_direct_fetch_in_the_screen():

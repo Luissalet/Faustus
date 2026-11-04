@@ -84,7 +84,8 @@ assert.match(screen, /whatsapp-unlink-confirm/, 'Unlink has an inline confirm st
 assert.match(screen, /This unlinks the phone; you will need to scan again\./, 'Unlink warns about re-scanning');
 assert.match(screen, /window\.setInterval\(reloadStatus,\s*fast \? 2000 : 15000\)/, 'polls status every 2s (starting/qr/disconnected) or 15s otherwise');
 assert.match(screen, /window\.setInterval\(reload,\s*10000\)/, 'refreshes the open chat every 10s');
-assert.match(screen, /window\.setInterval\(reloadChats,\s*10000\)/, 'refreshes the chat list every 10s');
+// Every 10s, or every 3s while a history sync is running.
+assert.match(screen, /window\.setInterval\(reloadChats,\s*(?:status\?\.sync\?\.active \? 3000 : )?10000\)/, 'refreshes the chat list every 10s');
 assert.match(screen, /fs-wa__panes/, 'renders the two-pane layout');
 assert.match(screen, /Pick a chat/, 'empty state: no chat selected');
 assert.match(screen, /No messages in this chat yet/, 'empty state: no messages (full history, not just 48h)');

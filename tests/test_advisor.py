@@ -365,7 +365,12 @@ def test_loop_nudge_falls_back_to_the_generic_nudge_when_the_advisor_fails(monke
 WRITE = '```write_file\na.py\nx = 1\n```'
 
 
-def test_loop_final_answer_after_writes_gets_one_more_round_when_there_is_advice(monkeypatch, tmp_path):
+# Since 7bfba264 (docs/design/HARNESS-EVIDENCE.md) the final advisor no longer
+# spends a model call, or another round, to accept the agent's report: the
+# advisor still runs on plans/writes and loops, and the turn ends at the
+# final answer.
+
+def test_loop_final_answer_after_writes_ends_without_a_final_advisor_round(monkeypatch, tmp_path):
     _patch_loop(monkeypatch)
     _settings(monkeypatch, advisor_enabled=True, advisor_max_uses=3)
     asked = []
@@ -373,13 +378,10 @@ def test_loop_final_answer_after_writes_gets_one_more_round_when_there_is_advice
     seen, events = _drive(monkeypatch, [WRITE, "Finished: I edited a.py.", "Finished: I edited a.py and ran the tests."],
                           max_rounds=6, tools={"read_file", "write_file"}, workspace=str(tmp_path))
     triggers = [e["trigger"] for e in events if e.get("type") == "advisor_advice"]
-    assert triggers == ["plan_or_write", "final"], triggers
-    # the final-answer call was shown the answer the agent was about to give
-    assert "Finished: I edited a.py." in asked[-1]["messages"][1]["content"]
-    # and the model got one more round with the note
-    last = seen[-1]
-    assert any("Runtime advisor note" in str(m.get("content")) and "final" in str(m.get("content")) for m in last)
-    assert len(seen) == 3
+    assert triggers == ["plan_or_write"], triggers
+    # the advisor was not asked about the final answer, and no round was added
+    assert not any("Finished: I edited a.py." in str(call["messages"][1]["content"]) for call in asked)
+    assert len(seen) == 2
 
 
 def test_loop_final_answer_with_no_advice_ends_the_turn_without_another_round(monkeypatch, tmp_path):
@@ -389,7 +391,7 @@ def test_loop_final_answer_with_no_advice_ends_the_turn_without_another_round(mo
     seen, events = _drive(monkeypatch, [WRITE, "Finished: I edited a.py."],
                           max_rounds=6, tools={"read_file", "write_file"}, workspace=str(tmp_path))
     advice = [e for e in events if e.get("type") == "advisor_advice"]
-    assert [e["trigger"] for e in advice] == ["plan_or_write", "final"]
+    assert [e["trigger"] for e in advice] == ["plan_or_write"]
     assert all(e["no_advice"] for e in advice) and all("text" not in e for e in advice)
     assert len(seen) == 2, "NO_ADVICE must not cost an extra round"
 

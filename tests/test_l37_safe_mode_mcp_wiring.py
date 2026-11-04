@@ -87,12 +87,26 @@ def test_start_http_connect_timeout_marks_needs_auth_and_records_it():
         await asyncio.sleep(10)
         return True
 
-    with patch.object(McpManager, "_connect_http", side_effect=_never_finishes):
+    # Since 7768b96b (docs/design/REMOTE-MCP-RECOVERY.md) a connect that is
+    # still running is `needs_auth` only once the authorization URL is known;
+    # without one it is still `connecting` and nothing is counted against it.
+    from src import mcp_oauth
+    with patch.object(McpManager, "_connect_http", side_effect=_never_finishes), \
+            patch.object(mcp_oauth, "pop_auth_url", return_value="https://x/authorize"):
         result = asyncio.run(mgr._start_http_connect("oauth-1", "OAuth Server", "https://x/mcp", wait=0.05))
 
     assert result is False
     assert mgr._connections["oauth-1"]["status"] == "needs_auth"
+    assert mgr._connections["oauth-1"]["auth_url"] == "https://x/authorize"
     assert safe_mode._mcp_fail_counts().get("oauth-1") == 1
+
+    with patch.object(McpManager, "_connect_http", side_effect=_never_finishes), \
+            patch.object(mcp_oauth, "pop_auth_url", return_value=None):
+        result = asyncio.run(mgr._start_http_connect("slow-1", "Slow Server", "https://y/mcp", wait=0.05))
+
+    assert result is False
+    assert mgr._connections["slow-1"]["status"] == "connecting"
+    assert not safe_mode._mcp_fail_counts().get("slow-1")
 
 
 def test_start_http_connect_task_exception_records_error():

@@ -234,8 +234,10 @@ def test_the_execution_mcp_server_lists_the_tools():
     import importlib
     server = importlib.import_module("mcp_servers.execution_server")
     tools = run(server.list_tools())
+    # a09407d0 added the external-event queue tools to the same server.
     assert {t.name for t in tools} == {"process_start", "process_read", "process_write_stdin",
-                                       "process_stop", "process_list", "sandbox_probe", "run_code"}
+                                       "process_stop", "process_list", "sandbox_probe", "run_code",
+                                       "event_ingest", "event_receipts", "event_retry_delivery"}
     out = run(server.call_tool("sandbox_probe", {"operations": ["files"]}))
     assert "verified" in out[0].text
 

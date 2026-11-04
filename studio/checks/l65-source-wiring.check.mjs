@@ -76,7 +76,9 @@ const read = (p) => readFileSync(join(root, p), 'utf8');
   assert.ok(/event\.type === 'steer'/.test(studio) || /appendSteer\(list, event\.text/.test(studio),
     'the live stream must apply steer events, not drop them on the assistant turn');
   const send = studio.slice(studio.indexOf('const send = useCallback'), studio.indexOf('/* Notas'));
-  assert.ok(/if \(busy\)/.test(send) && /steerLive\(/.test(send),
+  // Group conversations open their own turn (`&& !groupMode`); every other
+  // live turn is steered.
+  assert.ok(/if \(busy(?: && !groupMode)?\)/.test(send) && /steerLive\(/.test(send),
     'send() while a turn is live must steer instead of returning');
 }
 

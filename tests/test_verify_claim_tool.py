@@ -67,8 +67,10 @@ def test_the_description_says_layer_five_is_not_on_offer():
 
     schema = next(s["function"] for s in FUNCTION_TOOL_SCHEMAS
                   if s["function"]["name"] == "verify_claim")
-    assert "NO LAYER 5" in schema["description"]
-    assert "'not shown', not 'false'" in schema["description"]
+    # e735f70f trimmed the native description to the tool-footprint budget;
+    # the two facts a model needs survive in the shorter wording.
+    assert "No model-judgement layer" in schema["description"]
+    assert "layer null = not shown, not false" in schema["description"]
     assert "no model-judgement layer here" in TOOL_SECTIONS["verify_claim"]
     assert "not the same as false" in TOOL_SECTIONS["verify_claim"]
 
