@@ -80,6 +80,7 @@ import { ThisDeviceSection } from './settings/ThisDevice';
 import { ChatBridgeStatus } from './settings/ChatBridgeStatus';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { PiperVoices } from './settings/PiperVoices';
+import { ProsperoVoice } from './settings/ProsperoVoice';
 import { SparksSection } from './settings/Sparks';
 import { authStatus, isLocalInstallation } from '../adapters/account';
 import { listActiveApprovals, listFolderGrants, revokeApproval, revokeFolderGrant, type Approval, type FolderGrant } from '../adapters/approvals';
@@ -577,7 +578,7 @@ function useSaver(onSave: (patch: Settings) => Promise<void>, say: (t: string) =
   return { saving, save };
 }
 
-const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'tts_command_template', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language', 'stt_device', 'stt_command_template', 'voice_stop_phrases', 'dictation_anywhere_enabled', 'dictation_global_hotkey', 'dictation_paste_method'];
+const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'tts_command_template', 'tts_prospero_engine', 'tts_prospero_url', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language', 'stt_device', 'stt_command_template', 'voice_stop_phrases', 'dictation_anywhere_enabled', 'dictation_global_hotkey', 'dictation_paste_method'];
 
 function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings | null; endpoints: ModelEndpoint[]; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, VOICE_KEYS);
@@ -600,9 +601,14 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
       <Field label={t('Read aloud')}>
         <div className="fs-set__inline">
           <Toggle id="tts-on" checked={bool(draft.tts_enabled)} onChange={(v) => set('tts_enabled', v)} label={t('On')} />
-          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'system', label: t('Windows · installed voices (offline)') }, { value: 'local', label: 'Local (Kokoro)' }, { value: 'piper', label: t('Local (Piper)') }, { value: 'command', label: t('Command (advanced)') }, ...apiOpts]} />
+          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'system', label: t('Windows · installed voices (offline)') }, { value: 'local', label: 'Local (Kokoro)' }, { value: 'piper', label: t('Local (Piper)') }, { value: 'prospero', label: t('Prospero\'s Hoard (KittenTTS and more)') }, { value: 'command', label: t('Command (advanced)') }, ...apiOpts]} />
         </div>
       </Field>
+      {str(draft.tts_provider) === 'prospero' && (
+        <Field label={t('Prospero voice engine')}>
+          <ProsperoVoice engine={str(draft.tts_prospero_engine)} onSelectEngine={(id) => set('tts_prospero_engine', id)} />
+        </Field>
+      )}
       {str(draft.tts_provider) === 'piper' && (
         <Field label={t('Piper voice')}>
           <PiperVoices voice={str(draft.tts_voice)} onSelectVoice={(v) => set('tts_voice', v)} say={say} />

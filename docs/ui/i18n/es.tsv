@@ -10475,3 +10475,9 @@ Read the schema	Leer el esquema
 changes data	modifica datos
 GraphQL API on this PC	API GraphQL en este PC
 A GraphQL API running on this PC becomes one tool per query, read from its own schema. Enter its address and press Read the schema; mutations stay off unless you turn them on.	Una API GraphQL que corre en este PC se convierte en una herramienta por consulta, leída de su propio esquema. Indica su dirección y pulsa Leer el esquema; las mutaciones quedan apagadas salvo que las actives.
+Prospero's Hoard (KittenTTS and more)	Prospero's Hoard (KittenTTS y más)
+Prospero voice engine	Motor de voz de Prospero
+Asking Prospero's Hoard for its voice engines…	Preguntando a Prospero's Hoard por sus motores de voz…
+Prospero's Hoard is not answering. Start it from the Hoard Hub.	Prospero's Hoard no responde. Arráncalo desde el Hoard Hub.
+This engine is not installed in Prospero's Hoard.	Este motor no está instalado en Prospero's Hoard.
+Reading aloud uses the engine and voice installed in Prospero's Hoard.	La lectura en voz alta usa el motor y la voz instalados en Prospero's Hoard.

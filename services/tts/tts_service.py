@@ -61,6 +61,8 @@ class TTSService:
             "tts_voice": saved.get("tts_voice", "alloy"),
             "tts_speed": saved.get("tts_speed", "1"),
             "tts_command_template": saved.get("tts_command_template", ""),
+            "tts_prospero_url": saved.get("tts_prospero_url", ""),
+            "tts_prospero_engine": saved.get("tts_prospero_engine", ""),
         }
 
     @property
@@ -83,6 +85,9 @@ class TTSService:
             return active_runtime() is not None and len(list_voices()) > 0
         if provider == "command":
             return bool(settings.get("tts_command_template", "").strip())
+        if provider == "prospero":
+            from .prospero_voice import base_url
+            return bool(base_url(settings.get("tts_prospero_url")))
         if isinstance(provider, str) and provider.startswith("endpoint:"):
             return True  # assume reachable; errors surface at synthesis time
         return False
@@ -281,6 +286,14 @@ class TTSService:
                 return synthesize_command_detailed(text, template, voice, speed, language)
             return synthesize_command(text, template, voice, speed, language), None
 
+        if provider == "prospero":
+            # The Hoard's own engine and voice state decide the audio; not cached here.
+            from .prospero_voice import DEFAULT_ENGINE, synthesize_prospero
+            return synthesize_prospero(
+                text, url=settings.get("tts_prospero_url"),
+                engine=settings.get("tts_prospero_engine") or DEFAULT_ENGINE,
+                voice=voice, speed=speed, language=language), None
+
         if use_cache:
             key = self._cache_key(text, provider, model, voice, speed)
             cached = self._get_cached(key)
@@ -357,6 +370,8 @@ class TTSService:
             from .piper_voice import active_runtime
             runtime = active_runtime()
             stats["model"] = f"Piper ({runtime})" if runtime else "Piper (no runtime installed)"
+        elif provider == "prospero":
+            stats["engine_id"] = settings.get("tts_prospero_engine") or "kittentts"
         elif provider == "command":
             stats["model"] = "Command (local)"
         elif isinstance(provider, str) and provider.startswith("endpoint:"):

@@ -175,6 +175,13 @@ def setup_tts_routes(tts_service):
             logger.error(f"Piper engine install failed: {e}")
             raise HTTPException(status_code=502, detail=f"Engine install failed: {e}")
 
+    @router.get("/prospero/engines")
+    async def list_prospero_engines():
+        """Voice engines Prospero's Hoard reports (for Settings → Voice and the `voice_capabilities` MCP tool)."""
+        from services.tts.prospero_voice import engines
+        settings = tts_service._load_settings()
+        return await run_in_threadpool(engines, settings.get("tts_prospero_url"))
+
     @router.post("/clear-cache")
     async def clear_tts_cache():
         """Clear TTS cache"""

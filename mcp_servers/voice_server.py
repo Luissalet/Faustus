@@ -41,6 +41,12 @@ TOOLS = [
                       "Capacidades de voz de Faustus."),
          inputSchema={"type": "object", "properties": {}},
          annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)),
+    Tool(name="voice_prospero_engines",
+         description=("Voice engines installed in Prospero's Hoard (KittenTTS on the CPU, Piper, cloning engines), "
+                      "the ones Faustus speaks with when tts_provider is 'prospero'. Reports whether the Hoard "
+                      "answers; never loads a model. Motores de voz de Prospero's Hoard."),
+         inputSchema={"type": "object", "properties": {}},
+         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)),
     Tool(name="voice_session",
          # Wait (600), last event read (120), initial status + send + final
          # status (3 * 120). These are existing observer/read budgets.
@@ -248,6 +254,8 @@ async def call_tool(name, arguments):
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=120.0), trust_env=False) as client:
             if name == "voice_capabilities":
                 payload = await _request(client, "GET", "/capabilities")
+            elif name == "voice_prospero_engines":
+                payload = await _request(client, "GET", "/prospero/engines", api="/api/tts")
             elif name == "voice_session":
                 payload = await _voice_session(client, args)
             elif name == "dictation_workspace":

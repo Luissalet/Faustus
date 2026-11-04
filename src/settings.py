@@ -426,6 +426,11 @@ DEFAULT_SETTINGS = {
     # (services/tts/command_voice.py). Empty means the provider has nothing
     # to run.
     "tts_command_template": "",
+    # Prospero's Hoard voice (tts_provider = "prospero", services/tts/prospero_voice.py):
+    # its loopback address (empty = http://127.0.0.1:8815) and the voice engine it
+    # speaks with (empty = kittentts, the CPU engine). tts_voice picks the voice.
+    "tts_prospero_url": "",
+    "tts_prospero_engine": "",
     "stt_enabled": False,
     "stt_provider": "disabled",
     "stt_model": "base",
