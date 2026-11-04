@@ -26,7 +26,10 @@ def _canonical(name: str) -> str:
     return name.removesuffix(":latest")
 
 
-async def decide_native(context, fields, *, budget, min_confidence, instructions="", owner=None):
+async def decide_native(context, fields, *, budget, min_confidence, instructions="", owner=None,
+                        field_threshold=None):
+    """``field_threshold(name)`` (optional) returns a calibrated threshold for one question or None; it
+    replaces ``min_confidence`` for that question only."""
     from src import typed_decision as td
     from src.privacy_policy import assert_outbound
     started = time.monotonic()
@@ -105,7 +108,12 @@ async def decide_native(context, fields, *, budget, min_confidence, instructions
             if answer.get("choice") != best:
                 raise ValueError("choice disagrees with probabilities")
             confidence = min(confidence, dist[best])
-            known = confidence >= min_confidence and list(dist.values()).count(dist[best]) == 1
+            try:
+                cut = field_threshold(fld.name) if field_threshold else None
+            except Exception:  # noqa: BLE001 - a calibration problem never blocks a decision
+                cut = None
+            cut = min_confidence if cut is None else cut
+            known = confidence >= cut and list(dist.values()).count(dist[best]) == 1
             decision = td.Decision(field=fld.name, value=best if known else None, best=best,
                                    confidence=confidence, mass=1.0, distribution=dist,
                                    method="systemone", reason="" if known else "low_confidence",

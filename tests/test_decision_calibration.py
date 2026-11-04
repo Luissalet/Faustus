@@ -118,3 +118,45 @@ def test_mcp_server_tools(tmp_path, monkeypatch):
     listed = json.loads(asyncio.run(srv.call_tool("decision_calibrations", {}))[0].text)
     assert "f" in listed["calibrations"]
     assert "needs samples" in asyncio.run(srv.call_tool("decision_calibrate", {}))[0].text
+
+
+def test_a_large_noisy_sample_is_calibrated_in_reasonable_time():
+    import random
+    import time
+    rnd = random.Random(3)
+    samples = [(rnd.random(), rnd.random() > 0.2) for _ in range(3000)]  # 20 % wrong everywhere
+    t0 = time.monotonic()
+    out = dc.calibrate(samples)
+    assert time.monotonic() - t0 < 3.0  # it took 37 s with a bisection per threshold
+    assert out["ok"] is False
+
+
+def test_bound_check_agrees_with_the_bisected_bound():
+    for errors, n in ((0, 59), (0, 58), (1, 100), (3, 200), (10, 500), (7, 40)):
+        for max_error in (0.02, 0.05, 0.1, 0.3):
+            holds = dc._bound_holds(errors, n, max_error, 0.05)
+            assert holds == (dc.clopper_pearson_upper(errors, n, 0.05) <= max_error + 1e-6) or \
+                abs(dc.clopper_pearson_upper(errors, n, 0.05) - max_error) < 1e-5
+
+
+def test_the_native_provider_also_uses_the_calibrated_threshold(monkeypatch):
+    import asyncio
+    from src import systemone_decision as sd
+    from src import typed_decision as td
+
+    seen = {}
+
+    async def fake_native(context, fields, *, budget, min_confidence, instructions="", owner=None,
+                          field_threshold=None):
+        seen["cut"] = field_threshold("q") if field_threshold else None
+        return {}
+
+    monkeypatch.setattr(sd, "decide_native", fake_native)
+    monkeypatch.setattr(td, "_setting", lambda k: "ollaya" if k == "typed_decision_provider" else td.DEFAULTS.get(k))
+    monkeypatch.setattr(td, "enabled", lambda: True)
+    monkeypatch.setattr(td, "_calibrated_threshold", lambda name: 0.42)
+    asyncio.run(td.decide("ctx", [td.Field("q", "which?", ["a", "b"])]))
+    assert seen["cut"] == 0.42
+    seen.clear()
+    asyncio.run(td.decide("ctx", [td.Field("q", "which?", ["a", "b"])], min_confidence=0.9))
+    assert seen["cut"] is None  # the caller's own threshold wins

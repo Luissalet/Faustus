@@ -43,7 +43,8 @@ _LOCK = threading.Lock()
 
 
 def _log_binom_cdf(k: int, n: int, p: float) -> float:
-    """log P(X <= k) for X ~ Binomial(n, p), summed in log space."""
+    """log P(X <= k) for X ~ Binomial(n, p), summed in log space. Meant for p >= k / n (the mode is at or
+    above k), which is the only range the bound search uses."""
     if k >= n:
         return 0.0
     if p <= 0.0:
@@ -51,10 +52,19 @@ def _log_binom_cdf(k: int, n: int, p: float) -> float:
     if p >= 1.0:
         return float("-inf")
     lp, lq = math.log(p), math.log1p(-p)
-    terms = [math.lgamma(n + 1) - math.lgamma(i + 1) - math.lgamma(n - i + 1) + i * lp + (n - i) * lq
-             for i in range(0, k + 1)]
-    top = max(terms)
-    return top + math.log(sum(math.exp(t - top) for t in terms))
+    # Term k in log space, then walk DOWN with the ratio t(i-1)/t(i) = i / (n - i + 1) * q / p. When k is
+    # at or under the mode the terms fall geometrically, so the sum stops after a few dozen of them
+    # instead of k + 1 log-gamma triples (3 000 samples took 37 s that way).
+    log_t = math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1) + k * lp + (n - k) * lq
+    ratio_log = lq - lp
+    total, term, i = 1.0, 1.0, k
+    while i > 0:
+        term *= math.exp(math.log(i) - math.log(n - i + 1) + ratio_log)
+        total += term
+        i -= 1
+        if term < 1e-18 * total:
+            break
+    return log_t + math.log(total)
 
 
 def clopper_pearson_upper(errors: int, n: int, delta: float = DEFAULT_DELTA) -> float:
@@ -76,6 +86,15 @@ def clopper_pearson_upper(errors: int, n: int, delta: float = DEFAULT_DELTA) -> 
         else:
             hi = mid
     return round(hi, 6)
+
+
+def _bound_holds(errors: int, n: int, max_error: float, delta: float) -> bool:
+    """True when ``clopper_pearson_upper(errors, n, delta) <= max_error``, without the bisection: the CDF
+    falls as p grows, so the bound is under ``max_error`` exactly when the CDF AT ``max_error`` is under
+    ``delta``. A point estimate already above ``max_error`` can never pass (the bound is above it)."""
+    if n <= 0 or errors < 0 or errors >= n or errors / n > max_error:
+        return False
+    return _log_binom_cdf(errors, n, max_error) <= math.log(delta)
 
 
 def _clean_samples(samples: Iterable[Any]) -> List[Tuple[float, bool]]:
@@ -130,9 +149,9 @@ def calibrate(samples: Iterable[Any], *, max_error: float = DEFAULT_MAX_ERROR,
             accepted += 1
             errors += 0 if data[i][1] else 1
             i += 1
-        upper = clopper_pearson_upper(errors, accepted, delta)
-        if upper <= max_error:
-            best = {"threshold": round(conf, 6), "accepted": accepted, "errors": errors, "upper_bound": upper}
+        if _bound_holds(errors, accepted, max_error, delta):
+            best = {"threshold": round(conf, 6), "accepted": accepted, "errors": errors,
+                    "upper_bound": clopper_pearson_upper(errors, accepted, delta)}
         elif best is not None:
             break  # the first threshold that fails ends the search: a lower one is not trusted on luck
     if best is None:

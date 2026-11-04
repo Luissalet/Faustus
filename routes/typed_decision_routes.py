@@ -119,8 +119,9 @@ def setup_typed_decision_routes() -> APIRouter:
         from src import decision_calibration
         if len(body.samples or []) > decision_calibration.MAX_SAMPLES:
             raise HTTPException(413, f"at most {decision_calibration.MAX_SAMPLES} samples")
-        result = decision_calibration.calibrate(body.samples, max_error=body.max_error, delta=body.delta,
-                                                audit_rate=body.audit_rate)
+        import asyncio
+        result = await asyncio.to_thread(decision_calibration.calibrate, body.samples, max_error=body.max_error,
+                                         delta=body.delta, audit_rate=body.audit_rate)
         if body.apply:
             if not (body.field or "").strip():
                 raise HTTPException(400, "'field' is needed to apply a calibration")

@@ -638,6 +638,15 @@ def interpret(fld: Field, data: Any, wire: str, *, min_confidence: Optional[floa
                     method="letter", ms=ms, reason="unparsed", model=model)
 
 
+def _calibrated_threshold(name: str) -> Optional[float]:
+    """The threshold calibrated for a question (src/decision_calibration.py), or None."""
+    try:
+        from src.decision_calibration import threshold_for
+        return threshold_for(name)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def decide(context: str, fields: Sequence[Field], *, owner: Optional[str] = None,
                  purpose: str = "utility", instructions: str = "",
                  timeout_s: Optional[float] = None, min_confidence: Optional[float] = None,
@@ -679,7 +688,9 @@ async def decide(context: str, fields: Sequence[Field], *, owner: Optional[str] 
             try:
                 native = await asyncio.wait_for(decide_native(
                     context, flds, budget=budget, min_confidence=min_conf,
-                    instructions=instructions, owner=owner), timeout=budget)
+                    instructions=instructions, owner=owner,
+                    field_threshold=_calibrated_threshold if min_confidence is None else None),
+                    timeout=budget)
             except asyncio.TimeoutError:
                 native = {f.name: _unavailable(f, "timeout") for f in flds}
             for f in flds:

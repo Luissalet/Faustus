@@ -46,7 +46,12 @@ function resultFrom(j: Record<string, unknown>): CalibrationResult {
 export function parseSamples(text: string): CalibrationSample[] {
   const out: CalibrationSample[] = [];
   for (const line of text.split(/\r?\n/)) {
-    const parts = line.split(/[,;\t ]+/).filter(Boolean);
+    // A decimal comma ("0,93 1", "0,93;1") must not be read as a separator: with `;` or a tab the commas
+    // are decimals, a single "0.93, 1" is comma-separated, anything else splits on blanks.
+    const trimmed = line.trim();
+    const parts = (/[;\t]/.test(trimmed) ? trimmed.split(/\s*[;\t]\s*/)
+      : /^[\d.]+\s*,\s*\S+$/.test(trimmed) ? trimmed.split(/\s*,\s*/)
+      : trimmed.split(/\s+/)).filter(Boolean);
     if (parts.length < 2) continue;
     const confidence = Number(parts[0].replace(',', '.'));
     const flag = parts[1].toLowerCase();
