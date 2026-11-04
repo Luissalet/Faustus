@@ -50,7 +50,7 @@ SCOPE_KINDS = ("initial", "agreement", "change")
 ACTIONS = ("create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package",
            "add_contact", "add_file", "add_decision", "add_payment", "status", "proposal",
            "people_lookup", "link_person", "reconcile_payments", "confirm_payment",
-           "list_meetings", "import_meeting", "promote_meeting_item")
+           "list_meetings", "import_meeting", "promote_meeting_item", "delete", "delete_meeting")
 PROMOTE_AS = ("decision", "requirement", "milestone")
 LEDGER_PAGE = 200
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -535,6 +535,92 @@ def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
             "budget": rec.get("budget")}
 
 
+# ---------------------------------------------------------------------------
+# Delete (the record and what is derived from it; never the user's files)
+
+def _records(owner: str) -> List[Dict[str, Any]]:
+    d = _dir(owner)
+    out = []
+    if d.is_dir():
+        for p in d.glob("*.json"):
+            try:
+                out.append(json.loads(p.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError):
+                continue
+    return out
+
+
+def _package_ids(rec: Mapping[str, Any]) -> List[str]:
+    return sorted({d["package_id"] for m in rec.get("milestones") or [] for d in m.get("deliverables") or [] if d.get("package_id")})
+
+
+def _comparison_ids(rec: Mapping[str, Any]) -> List[str]:
+    return sorted({v["comparison"]["id"] for v in rec.get("scope") or [] if (v.get("comparison") or {}).get("id")})
+
+
+def commissions_linking_package(owner: str, pkg_id: str) -> List[Dict[str, str]]:
+    return [{"id": r["id"], "title": r["title"]} for r in _records(owner) if pkg_id in _package_ids(r)]
+
+
+def commissions_linking_comparison(owner: str, cid: str) -> List[Dict[str, str]]:
+    return [{"id": r["id"], "title": r["title"]} for r in _records(owner) if cid in _comparison_ids(r)]
+
+
+def delete(owner: str, rec: Mapping[str, Any], with_linked: bool = False) -> Dict[str, Any]:
+    """Delete a commission. Always removed: the record, its drafted proposals and the
+    scope comparisons made from its own scope versions. Kept unless ``with_linked``:
+    its delivery packages (unless another commission links them) and the review desks
+    filed under it. Never touched: imported Faustus meetings (the record only holds
+    copies of their statements), the files listed in it and any source file."""
+    import shutil
+    from src import delivery_package, review_desk, scope_compare
+    cid = rec["id"]
+    others = [r for r in _records(owner) if r["id"] != cid]
+    shared = {p for r in others for p in _package_ids(r)}
+    pkgs = _package_ids(rec)
+    desks = [d["id"] for d in review_desk.list_desks(owner) if d.get("commission") == cid]
+    removed: Dict[str, Any] = {"record": cid, "proposals": 0, "scope_comparisons": [], "packages": [], "review_desks": []}
+    kept: Dict[str, Any] = {"packages": [], "review_desks": [], "imported_meetings": len(rec.get("meetings") or []),
+                            "listed_files": len(rec.get("files") or []), "source_files": "never touched"}
+    folder = _dir(owner) / cid
+    if folder.is_dir():
+        removed["proposals"] = sum(1 for p in (folder / "proposals").glob("propuesta-*.docx")) if (folder / "proposals").is_dir() else 0
+        shutil.rmtree(folder)
+    (_dir(owner) / f"{cid}.json").unlink()
+    for cmp_id in _comparison_ids(rec):
+        res = scope_compare.run(owner, {"action": "delete", "id": cmp_id})
+        if not res.get("error"):
+            removed["scope_comparisons"].append(cmp_id)
+    for pid in pkgs:
+        if pid in shared:
+            kept["packages"].append({"id": pid, "reason": "linked from another commission"})
+        elif with_linked and not delivery_package.run(owner, {"action": "delete", "id": pid}).get("error"):
+            removed["packages"].append(pid)
+        else:
+            kept["packages"].append({"id": pid, "reason": "kept (with_linked not set)" if not with_linked else "already gone"})
+    for did in desks:
+        if with_linked and not review_desk.run(owner, {"action": "delete", "id": did}).get("error"):
+            removed["review_desks"].append(did)
+        else:
+            kept["review_desks"].append({"id": did, "reason": "kept (with_linked not set)"})
+    return {"deleted": cid, "title": rec.get("title"), "removed": removed, "kept": kept}
+
+
+def delete_meeting(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
+    """Delete the notes of a Faustus meeting. Commissions that imported it keep their copy of the statements."""
+    from src import meetings
+    mid = _s(args, "meeting_id", 120)
+    if not mid:
+        raise OfficeError("office.bad_args", "meeting_id is required")
+    res = meetings.delete_meeting(mid, owner=_meeting_owner(owner))
+    if res is None:
+        raise OfficeError("office.not_found", f"no meeting {mid!r}")
+    imported = [{"id": r["id"], "title": r["title"]} for r in _records(owner)
+                if any(m.get("meeting_id") == mid for m in r.get("meetings") or [])]
+    return {"deleted_meeting": mid, "title": res["title"], "removed": res["removed"],
+            "kept": {"recording_and_job_folder": "never touched", "copies_in_commissions": imported}}
+
+
 def list_commissions(owner: str) -> List[Dict[str, Any]]:
     d = _dir(owner)
     out = []
@@ -589,10 +675,14 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             return people_lookup(args)
         if action == "list_meetings":
             return recent_meetings(owner)
+        if action == "delete_meeting":
+            return delete_meeting(owner, args)
         if action == "create":
             rec = create(owner, args)
             return {**rec, "status": status(owner, rec)}
         rec = _load(owner, _s(args, "id"))
+        if action == "delete":
+            return delete(owner, rec, args.get("with_linked") in (True, "true", 1, "1"))
         if action in ("show", "status"):
             return {**rec, "status": status(owner, rec)}
         if action == "update":

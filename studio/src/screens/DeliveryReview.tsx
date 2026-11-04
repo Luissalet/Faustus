@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState } from '../components';
 import * as api from '../adapters/delivery';
 import { t } from '../i18n';
+import { DeleteItem } from './DeliveryDelete';
 
 /**
  * Review desk (Hangar E32): one deliverable, its versions as snapshots, comments
@@ -162,11 +163,12 @@ export function ReviewPanel() {
         {rows.length > 0 && (
           <ul className="fs-dlv__list" aria-label={t('Reviews')}>
             {rows.map((r) => (
-              <li key={r.id}>
+              <li className="fs-dlv__li" key={r.id}>
                 <button type="button" className="fs-dlv__item" data-active={open?.id === r.id} onClick={() => { setCreating(false); void api.loadDesk(r.id).then(setOpen); }}>
                   <span className="fs-dlv__item-title">{r.title}</span>
                   <span className="fs-dlv__muted">{r.versions} {t('versions')}{r.open ? ` · ${r.open} ${t('still open')}` : ''}{r.delivered ? ` · ${t('Delivered')} v${r.delivered}` : ''}</span>
                 </button>
+                <DeleteItem label={r.title} confirm={t('Delete the review "{name}" with all its versions and comments? The snapshots kept by Faustus are removed; the original files are not touched.', { name: r.title })} onDelete={async () => { await api.deleteDesk(r.id); if (open?.id === r.id) setOpen(null); reload(); }} testId={`review-delete-${r.id}`} />
               </li>
             ))}
           </ul>

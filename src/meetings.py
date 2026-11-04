@@ -462,6 +462,24 @@ def _run_job(job_id: str, src_path: str, job_dir: str, filename: str, title: str
             pass
 
 
+# ── Delete ───────────────────────────────────────────────────────────────
+
+def delete_meeting(meeting_id: str, *, owner: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Remove the notes of one meeting (its .json sidecar and .md). The recording
+    and the job folder are left alone. Returns what was removed, or None if the
+    meeting does not exist (or belongs to someone else)."""
+    data = get_meeting(meeting_id, owner=owner)
+    if data is None:
+        return None
+    removed = []
+    for ext in (".json", ".md"):
+        p = os.path.join(MEETINGS_DIR, meeting_id + ext)
+        if os.path.isfile(p):
+            os.remove(p)
+            removed.append(meeting_id + ext)
+    return {"id": meeting_id, "title": data.get("title") or meeting_id, "removed": removed}
+
+
 # ── Read side ────────────────────────────────────────────────────────────
 
 def _read_sidecar(json_path: str) -> Optional[Dict[str, Any]]:

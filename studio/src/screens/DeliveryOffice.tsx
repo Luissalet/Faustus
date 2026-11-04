@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState } from '../components';
 import * as api from '../adapters/delivery';
 import { t } from '../i18n';
+import { DeleteItem } from './DeliveryDelete';
 
 /**
  * Commissions (Hangar E29, first cut): scope -> milestone -> delivery for one
@@ -178,6 +179,7 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
           </select>
           <Button size="sm" icon={Plus} label={t('Import meeting')} disabled={!meetingId} testId="office-meeting-import-id"
             onClick={() => act('import_meeting', { meeting_id: meetingId }, () => setMeetingId(''))} />
+          <DeleteItem label={t('Faustus meeting')} disabled={!meetingId} confirm={t('Delete the notes of the meeting "{name}"? Commissions that imported it keep their copy; the recording is not touched.', { name: meetingList.find((x) => x.id === meetingId)?.title ?? meetingId })} onDelete={async () => { await api.deleteMeeting(meetingId); setMeetingId(''); setMeetingList(await api.recentMeetings()); }} testId="office-meeting-delete" />
         </div>
         <div className="fs-dlv__row">
           <textarea className="fs-field fs-dlv__grow" rows={3} value={meetingText} onChange={(e) => setMeetingText(e.target.value)} placeholder={t('Or paste notes or a transcript: one statement per line, «[00:12:30] Name: text»')} data-testid="office-meeting-text" />
@@ -326,12 +328,13 @@ export function OfficePanel() {
         {rows.length > 0 && (
           <ul className="fs-dlv__list" aria-label={t('Commissions')}>
             {rows.map((r) => (
-              <li key={r.id}>
+              <li className="fs-dlv__li" key={r.id}>
                 <button type="button" className="fs-dlv__item" data-active={open?.id === r.id} onClick={() => { setCreating(false); void api.loadCommission(r.id).then(setOpen); }}>
                   <span className="fs-dlv__item-title">{r.title}</span>
                   <span className="fs-dlv__muted">{r.client || '—'} · {api.stageLabel(r.stage)}{r.next_due ? ` · ${t('Next')} ${r.next_due}` : ''}</span>
                   {r.overdue > 0 && <span className="fs-dlv__pill" data-tone="bad">{t('Overdue')} · {r.overdue}</span>}
                 </button>
+                <DeleteItem label={r.title} confirm={t('Delete the commission "{name}"? Its record, drafted proposals and scope comparisons are removed. Its delivery packages, review desks and imported meetings stay, and your own files are never touched.', { name: r.title })} onDelete={async () => { const linked = window.confirm(t('Also delete the delivery packages and review desks filed under it? Cancel keeps them.')); await api.deleteCommission(r.id, linked); if (open?.id === r.id) setOpen(null); reload(); }} testId={`office-delete-${r.id}`} />
               </li>
             ))}
           </ul>

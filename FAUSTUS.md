@@ -17615,3 +17615,12 @@ Correcciones tras revisar y probar en vivo la entrega del día:
 - El comparador de alcance (E30) no da por «ya incluida» una cláusula que añade algo nuevo (pregunta en vez de «sin orden de cambio») y «without»/«drop» ya no cuentan como retirada.
 - Reuniones (E27): «hay que», «tenemos que», «necesita(n)», «requiere(n)», «we need» cuentan como requisito.
 - Cobros (E29): si Ledger devuelve la página completa (200 movimientos) la comprobación se marca `truncated` y el evento avisa de que la ausencia de coincidencia no prueba nada.
+
+## 04-11-2026 · Borrar registros de Delivery (paquetes, comparaciones, revisiones, encargos y reuniones)
+
+Delivery podía crear pero no borrar. Ahora cada lista de `/delivery` tiene un botón de papelera con confirmación que dice qué se elimina y qué se queda, y lo mismo existe por REST y por el MCP integrado `delivery` (acción `delete` en `delivery_package`, `scope_compare`, `review_desk` y `commission_office`; `delete_meeting` en `commission_office`).
+- Solo se borran registros y copias de Faustus: carpeta, zip y manifiesto del paquete; la comparación guardada; el registro de la revisión y sus copias de versión; las notas de la reunión (`.json` y `.md`). Los ficheros de origen, un zip copiado a `out_dir` y la grabación de una reunión no se tocan nunca.
+- Un encargo borra siempre su expediente, las propuestas redactadas y las comparaciones de alcance de sus versiones. Sus paquetes de entrega y sus mesas de revisión se quedan salvo `with_linked` (REST `?with_linked=true`; la interfaz lo pregunta aparte) y, aun así, un paquete que otro encargo enlaza se conserva. Las reuniones importadas no se borran: el expediente solo guarda copias de sus frases. La respuesta lista `removed` y `kept`.
+- Borrar un paquete o una comparación indica en `was_linked_in` qué encargos los enlazaban; el encargo los sigue contando como entregable sin paquete listo.
+- Rutas: `DELETE /api/delivery-packages/{id}`, `/api/scope-comparisons/{id}`, `/api/review-desks/{id}`, `/api/commissions/{id}`, `/api/commissions/meetings/{id}`.
+- Corrección de paso: dos comparaciones del mismo texto en el mismo segundo compartían id y se pisaban.

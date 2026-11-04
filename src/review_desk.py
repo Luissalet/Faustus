@@ -30,7 +30,7 @@ from src import anchors
 logger = logging.getLogger(__name__)
 
 ACTIONS = ("create", "list", "show", "status", "add_version", "comment", "import_feedback", "set_status",
-           "compare", "deliver")
+           "compare", "deliver", "delete")
 STATES = ("open", "in_progress", "fixed", "wontfix", "answered")
 OPEN_STATES = ("open", "in_progress")
 SNAPSHOT_LIMIT = 512 * 1024 * 1024
@@ -346,6 +346,8 @@ def list_desks(owner: str) -> List[Dict[str, Any]]:
 
 
 def render(m: Dict[str, Any]) -> str:
+    if "deleted" in m:
+        return f"Deleted review desk {m['deleted']} ({m.get('title')}); source files untouched."
     if "desks" in m:
         return "\n".join(f"- {r['id']}: {r['title']} · {r['versions']} versions · {r['open']} open"
                          + (f" · delivered v{r['delivered']}" if r.get("delivered") else "") for r in m["desks"]) or "No review desks."
@@ -384,6 +386,8 @@ def run(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[st
                 add_version(owner, rec, args, confine=confine)
             _save(owner, rec)
             return {**rec, "status": status(rec)}
+        if action == "delete":
+            return delete(owner, _s(args, "id"))
         rec = _load(owner, _s(args, "id"))
         if action in ("show", "status"):
             return {**rec, "status": status(rec)}
@@ -409,6 +413,20 @@ def run(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[st
     except Exception as exc:  # noqa: BLE001
         logger.warning("review desk failed", exc_info=True)
         return _err("desk.error", f"{type(exc).__name__}: {exc}")
+
+
+def delete(owner: str, did: str) -> Dict[str, Any]:
+    """Remove the desk record and Faustus' snapshots of its versions; the files the
+    versions were taken from are never touched."""
+    rec = _load(owner, did)
+    base = _dir(owner).resolve()
+    snaps = (base / did).resolve()
+    if snaps.parent == base and snaps.is_dir():
+        shutil.rmtree(snaps)
+    (base / f"{did}.json").unlink()
+    return {"deleted": did, "title": rec.get("title"), "removed": {"versions": len(rec.get("versions") or []),
+                                                                 "comments": len(rec.get("comments") or [])},
+            "kept": {"source_files": "never touched"}, "commission": rec.get("commission") or None}
 
 
 def snapshot_path(owner: str, did: str, n: int) -> Path:

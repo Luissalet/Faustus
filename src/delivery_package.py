@@ -44,7 +44,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 logger = logging.getLogger(__name__)
 
 ROLES = ("editable", "export", "data", "instructions", "example", "other")
-ACTIONS = ("build", "list", "show", "reverify", "readers")
+ACTIONS = ("build", "list", "show", "reverify", "readers", "delete")
 _ROLE_DIRS = {"editable": "editables", "export": "exports", "data": "data", "instructions": "instructions",
               "example": "examples", "other": "other"}
 _CHECKED_ROLES = ("editable", "export")
@@ -793,8 +793,28 @@ def reverify(owner: str, pkg_id: str) -> Dict[str, Any]:
     return {"id": pkg_id, "name": m["name"], "ready_when_built": m["ready"], "reverify": res}
 
 
+def delete(owner: str, pkg_id: str) -> Dict[str, Any]:
+    """Remove Faustus' own copy of a package (folder, zip, manifest). The files the
+    package was built from, and a zip copied to ``out_dir``, are never touched."""
+    m = _load(owner, pkg_id)
+    base = _owner_dir(owner).resolve()
+    home = (base / pkg_id).resolve()
+    if home.parent != base or not home.is_dir():
+        raise PackageError("delivery.not_found", f"unknown package {pkg_id!r}")
+    from src import commission_office
+    linked = commission_office.commissions_linking_package(owner, pkg_id)
+    size = sum(p.stat().st_size for p in home.rglob("*") if p.is_file())
+    shutil.rmtree(home)
+    copied = (m.get("zip") or {}).get("copied_to")
+    return {"deleted": pkg_id, "name": m.get("name"), "removed": {"files": len(m.get("items") or []), "bytes": size},
+            "kept": {"source_files": "never touched", **({"zip_copy_outside_faustus": copied} if copied else {})},
+            "was_linked_in": linked}
+
+
 def render(m: Dict[str, Any]) -> str:
     """One-screen text summary for the chat."""
+    if "deleted" in m:
+        return f"Deleted package {m['deleted']} ({m.get('name')}); source files untouched."
     if "reverify" in m:
         r = m["reverify"]
         return (f"Package {m['id']} ({m['name']}): zip {'reopens identically' if r['ok'] else 'does NOT reopen identically'}; "
@@ -832,6 +852,8 @@ def run(owner: str, args: Mapping[str, Any], *, confine: bool = True) -> Dict[st
             return _load(owner, str(args.get("id") or ""))
         if action == "reverify":
             return reverify(owner, str(args.get("id") or ""))
+        if action == "delete":
+            return delete(owner, str(args.get("id") or ""))
         return build(owner, args, confine=confine)
     except PackageError as exc:
         return _err(exc.error_class, exc.detail)

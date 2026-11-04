@@ -38,6 +38,14 @@ GET  /api/review-desks/{id}                  versions, comments and status
 GET  /api/review-desks/{id}/compare?a=&b=    reader facts and text diff between two versions
 GET  /api/review-desks/{id}/versions/{n}     the snapshot of version n
 POST /api/review-desks/{id}/{action}         add_version | comment | import_feedback | set_status | deliver
+
+Delete (Faustus' own records only; source files are never touched):
+DELETE /api/delivery-packages/{id}           folder, zip and manifest of the package
+DELETE /api/scope-comparisons/{id}           one saved comparison
+DELETE /api/review-desks/{id}                the desk record and its version snapshots
+DELETE /api/commissions/{id}[?with_linked=true]  the record, its proposals and its scope comparisons; with_linked also its
+                                             delivery packages (unless another commission links them) and review desks
+DELETE /api/commissions/meetings/{id}        the notes of a Faustus meeting (recording kept)
 """
 from typing import Any, Dict
 
@@ -93,6 +101,10 @@ def setup_delivery_routes() -> APIRouter:
         import asyncio
         return _reply(await asyncio.to_thread(delivery_package.run, owner_of(request), {"action": "reverify", "id": pkg_id}))
 
+    @router.delete("/api/delivery-packages/{pkg_id}")
+    async def delete_package(pkg_id: str, request: Request):
+        return _reply(delivery_package.run(owner_of(request), {"action": "delete", "id": pkg_id}))
+
     @router.get("/api/delivery-packages/{pkg_id}/download")
     async def download(pkg_id: str, request: Request):
         owner = owner_of(request)
@@ -136,6 +148,11 @@ def setup_delivery_routes() -> APIRouter:
         from src import scope_compare
         return _reply(scope_compare.run(owner_of(request), {"action": "show", "id": cid}))
 
+    @router.delete("/api/scope-comparisons/{cid}")
+    async def delete_scope(cid: str, request: Request):
+        from src import scope_compare
+        return _reply(scope_compare.run(owner_of(request), {"action": "delete", "id": cid}))
+
     _OFFICE_POST = ("update", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact",
                     "add_file", "add_decision", "add_payment", "proposal", "link_person", "reconcile_payments",
                     "confirm_payment", "import_meeting", "promote_meeting_item")
@@ -169,6 +186,18 @@ def setup_delivery_routes() -> APIRouter:
     async def commission_meetings(request: Request):
         from src import commission_office
         return _reply(commission_office.run(owner_of(request), {"action": "list_meetings"}))
+
+    @router.delete("/api/commissions/meetings/{meeting_id}")
+    async def delete_commission_meeting(meeting_id: str, request: Request):
+        from src import commission_office
+        return _reply(commission_office.run(owner_of(request), {"action": "delete_meeting", "meeting_id": meeting_id}))
+
+    @router.delete("/api/commissions/{cid}")
+    async def delete_commission(cid: str, request: Request, with_linked: bool = False):
+        from src import commission_office
+        import asyncio
+        return _reply(await asyncio.to_thread(commission_office.run, owner_of(request),
+                                              {"action": "delete", "id": cid, "with_linked": with_linked}))
 
     @router.get("/api/commissions/{cid}")
     async def show_commission(cid: str, request: Request):
@@ -236,6 +265,11 @@ def setup_delivery_routes() -> APIRouter:
         except review_desk.DeskError as exc:
             return JSONResponse(status_code=404, content={"error": exc.detail, "error_class": exc.error_class})
         return FileResponse(str(path), filename=path.name)
+
+    @router.delete("/api/review-desks/{did}")
+    async def delete_desk(did: str, request: Request):
+        from src import review_desk
+        return _reply(review_desk.run(owner_of(request), {"action": "delete", "id": did}))
 
     @router.post("/api/review-desks/{did}/{action}")
     async def desk_action(did: str, action: str, request: Request):

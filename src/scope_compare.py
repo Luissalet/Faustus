@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-ACTIONS = ("compare", "list", "show")
+ACTIONS = ("compare", "list", "show", "delete")
 STATUSES = ("included", "changed", "added", "removed", "ambiguous")
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -413,7 +413,7 @@ def compare(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             if r["status"] != "included":
                 negotiated.append({"clause": r["clause"], "status": r["status"], **({"diff": r["diff"]} if r.get("diff") else {})})
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in STATUSES}
-    cid = time.strftime("%Y%m%d-%H%M%S") + "-" + hashlib.sha1((agreement + new_request).encode()).hexdigest()[:6]
+    cid = time.strftime("%Y%m%d-%H%M%S") + "-" + hashlib.sha1(f"{agreement}{new_request}{args.get('title')}{time.time()}".encode()).hexdigest()[:6]
     result = {"schema": "scope-comparison/1", "id": cid, "title": str(args.get("title") or "").strip()[:120],
               "created": time.strftime("%Y-%m-%dT%H:%M:%S"), "lang": lang, "mode": "replace" if replace else "delta",
               "graph": graph or None, "graph_found": gmap is not None if graph else None,
@@ -450,7 +450,17 @@ def show(owner: str, cid: str) -> Dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def delete(owner: str, cid: str) -> Dict[str, Any]:
+    """Remove one saved comparison (Faustus' own record; nothing else)."""
+    m = show(owner, cid)
+    (_owner_dir(owner) / f"{cid}.json").unlink()
+    from src import commission_office
+    return {"deleted": cid, "title": m.get("title") or "", "was_linked_in": commission_office.commissions_linking_comparison(owner, cid)}
+
+
 def render(m: Dict[str, Any]) -> str:
+    if "deleted" in m:
+        return f"Deleted scope comparison {m['deleted']}."
     if "rows" not in m:
         return json.dumps(m, ensure_ascii=False)
     c = m["counts"]
@@ -473,6 +483,8 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             return {"comparisons": list_comparisons(owner)}
         if action == "show":
             return show(owner, str(args.get("id") or ""))
+        if action == "delete":
+            return delete(owner, str(args.get("id") or ""))
         return compare(owner, args)
     except ScopeError as exc:
         return _err(exc.error_class, exc.detail)

@@ -285,3 +285,13 @@ export async function compareDesk(id: string, a: string, b: string): Promise<Des
   return r.comparison;
 }
 export const deskVersionHref = (id: string, n: number) => `/api/review-desks/${encodeURIComponent(id)}/versions/${n}`;
+
+/* -- delete (Faustus' own records only; source files are never touched) -- */
+
+const del = (path: string) => request<Record<string, unknown>>(path, { method: 'DELETE' });
+export const deletePackage = (id: string) => del(`/api/delivery-packages/${encodeURIComponent(id)}`);
+export const deleteComparison = (id: string) => del(`/api/scope-comparisons/${encodeURIComponent(id)}`);
+export const deleteDesk = (id: string) => del(`/api/review-desks/${encodeURIComponent(id)}`);
+export const deleteCommission = (id: string, withLinked: boolean) =>
+  del(`/api/commissions/${encodeURIComponent(id)}${withLinked ? '?with_linked=true' : ''}`);
+export const deleteMeeting = (id: string) => del(`/api/commissions/meetings/${encodeURIComponent(id)}`);

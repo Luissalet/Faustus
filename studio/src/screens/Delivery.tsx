@@ -7,6 +7,7 @@ import { t, tn } from '../i18n';
 import { ScopePanel } from './DeliveryScope';
 import { OfficePanel } from './DeliveryOffice';
 import { ReviewPanel } from './DeliveryReview';
+import { DeleteItem } from './DeliveryDelete';
 import './delivery.css';
 
 /**
@@ -233,12 +234,13 @@ export function DeliveryScreen() {
           {rows && rows.length > 0 && (
             <ul className="fs-dlv__list" aria-label={t('Delivery packages')}>
               {rows.map((r) => (
-                <li key={r.id}>
+                <li className="fs-dlv__li" key={r.id}>
                   <button type="button" className="fs-dlv__item" data-active={r.id === openId} onClick={() => open(r.id)}>
                     <span className="fs-dlv__item-title">{r.name}</span>
                     <span className="fs-dlv__muted">{r.created} · {tn(r.items, '{n} file', '{n} files')}{r.gaps ? ` · ${tn(r.gaps, '{n} gap', '{n} gaps')}` : ''}</span>
                     <span className="fs-dlv__pill" data-tone={r.ready ? 'good' : 'bad'}>{r.ready ? t('Ready to deliver') : t('Not ready')}</span>
                   </button>
+                  <DeleteItem label={r.name} confirm={t('Delete the package "{name}"? The copy kept by Faustus (folder and zip) is removed; the files it was built from are not touched.', { name: r.name })} onDelete={async () => { await api.deletePackage(r.id); if (r.id === openId) { const next = new URLSearchParams(params); next.delete('p'); setParams(next, { replace: true }); setPkg(null); } await reloadList(); }} testId={`delivery-delete-${r.id}`} />
                 </li>
               ))}
             </ul>

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState } from '../components';
 import * as api from '../adapters/delivery';
 import { t } from '../i18n';
+import { DeleteItem } from './DeliveryDelete';
 
 /**
  * Scope changes (Hangar E30): the new request clause by clause against the
@@ -132,11 +133,12 @@ export function ScopePanel() {
         {history.length > 0 && (
           <ul className="fs-dlv__list" aria-label={t('Earlier comparisons')}>
             {history.slice(0, 8).map((h) => (
-              <li key={h.id}>
+              <li className="fs-dlv__li" key={h.id}>
                 <button type="button" className="fs-dlv__item" data-active={cmp?.id === h.id} onClick={() => { void api.loadComparison(h.id).then(setCmp); }}>
                   <span className="fs-dlv__item-title">{h.title || h.id}</span>
                   <span className="fs-dlv__muted">{h.created} · {Object.entries(h.counts).filter(([, n]) => n).map(([s, n]) => `${api.scopeLabel(s)} ${n}`).join(' · ')}</span>
                 </button>
+                <DeleteItem label={h.title || h.id} confirm={t('Delete this saved comparison? Commissions that used it keep their scope versions.')} onDelete={async () => { await api.deleteComparison(h.id); if (cmp?.id === h.id) setCmp(null); reload(); }} testId={`scope-delete-${h.id}`} />
               </li>
             ))}
           </ul>

@@ -131,3 +131,8 @@ def test_without_and_drop_are_not_removals():
     rows = sc.run("u", {"action": "compare", "agreement": "Entregar el prototipo de la caja.",
                         "new_request": "Entregar el prototipo de la caja without scratches."})["rows"]
     assert rows[0]["status"] != "removed"
+
+def test_two_comparisons_of_the_same_texts_in_one_second_do_not_overwrite_each_other():
+    args = {"action": "compare", "agreement": "Entregar informe en PDF.", "new_request": "Entregar informe en DOCX."}
+    a, b = sc.run("u", args), sc.run("u", args)
+    assert a["id"] != b["id"] and len(sc.run("u", {"action": "list"})["comparisons"]) == 2

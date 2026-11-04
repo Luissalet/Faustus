@@ -76,3 +76,12 @@
   overflow: auto;
   font-size: 0.8rem;
 }
+
+.fs-dlv__li { display: flex; gap: var(--fs-space-2); align-items: stretch; }
+.fs-dlv__li > .fs-dlv__item { flex: 1; min-inline-size: 0; }
+.fs-dlv__del {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; inline-size: 36px; height: auto; padding: 0;
+  background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 8px; color: var(--fs-text-2); cursor: pointer;
+}
+.fs-dlv__del:hover:not(:disabled) { color: var(--fs-danger, #e5484d); border-color: var(--fs-danger, #e5484d); }
+.fs-dlv__del:disabled { opacity: 0.45; cursor: default; }
