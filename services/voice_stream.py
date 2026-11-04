@@ -359,7 +359,8 @@ class VoiceSession:
 
     def __init__(self, manager: "VoiceSessionManager", *, sid: str, owner: Optional[str], language: str = "auto",
                  read_aloud: bool = True, partials: bool = True, send_mode: str = "server",
-                 wake_word: bool = False, follow_current: bool = False, language_hint: str = "") -> None:
+                 wake_word: bool = False, follow_current: bool = False, language_hint: str = "",
+                 brain: bool = True) -> None:
         self.manager = manager
         self.id = uuid.uuid4().hex
         self.token = secrets.token_urlsafe(24)
@@ -372,6 +373,11 @@ class VoiceSession:
         self.partials = bool(partials)
         self.send_mode = send_mode if send_mode in SEND_MODES else "server"
         self.wake_word = bool(wake_word)
+        #: Darwin #992: a voice turn reads and feeds the Second Brain exactly as a
+        #: typed one (memory recall, the brain context source, memory capture).
+        #: False sends the turn with the chat's own `no_memory` flag, the same
+        #: switch as the composer's "Skip memory recall".
+        self.brain = bool(brain)
         self.created_at = time.time()
         self.last_activity = self.created_at
         self.state = "idle"
@@ -426,6 +432,7 @@ class VoiceSession:
             "language": self.language, "language_hint": self.language_hint,
             "heard_language": self.heard_language, "read_aloud": self.read_aloud,
             "partials": self.partials, "send_mode": self.send_mode, "wake_word": self.wake_word,
+            "brain": self.brain,
             "created_at": self.created_at, "last_activity": self.last_activity, "last_seq": self._seq,
             "speaking_run_id": self._speaking_run, "queued_sentences": self._tts_queue.qsize(),
             "utterances": len(self.history), "metrics": list(self.history[-10:]),
@@ -666,7 +673,8 @@ class VoiceSession:
         self._set_state("thinking")
         self._sending += 1  # the follow loop leaves this run to us, with its timings
         try:
-            run_id = await self.manager.start_turn(self.turn_owner, self.sid, text, client_message_id)
+            run_id = await self.manager.start_turn(self.turn_owner, self.sid, text, client_message_id,
+                                                   no_memory=not self.brain)
         except VoiceTurnError as exc:
             self._sending -= 1
             await self.emit("error", {"stage": "turn", "status": exc.status, "message": str(exc.detail)[:500]})
@@ -956,9 +964,14 @@ class VoiceSessionManager:
             return None
         return self.tts.synthesize(text, use_cache=False, language=language)
 
-    async def start_turn(self, owner: Optional[str], sid: str, text: str, client_message_id: str) -> str:
+    async def start_turn(self, owner: Optional[str], sid: str, text: str, client_message_id: str,
+                         *, no_memory: bool = False) -> str:
         if self._start_turn is None:
             raise VoiceTurnError(503, "Sending to the chat is not configured on this server")
+        if no_memory:
+            # Only passed when set, so a starter written for the four
+            # positional arguments keeps working for every ordinary turn.
+            return await self._start_turn(owner, sid, text, client_message_id, no_memory=True)
         return await self._start_turn(owner, sid, text, client_message_id)
 
     # discovery
@@ -1045,10 +1058,13 @@ class VoiceSessionManager:
 def native_turn_starter(app: Any, chat_endpoint: Callable[..., Awaitable[Any]]) -> StartTurn:
     """Start an ordinary chat turn in-process as ``owner`` (the call groups use) and return its run id."""
 
-    async def start(owner: Optional[str], sid: str, text: str, client_message_id: str) -> str:
+    async def start(owner: Optional[str], sid: str, text: str, client_message_id: str,
+                    no_memory: bool = False) -> str:
         from fastapi import HTTPException
         from src.group_orchestrator import native_request
         body = {"session": sid, "message": text, "client_message_id": client_message_id, "mode": "agent"}
+        if no_memory:
+            body["no_memory"] = "true"
         request = native_request(app, owner, body)
         try:
             response = await chat_endpoint(request, initial_response_timeout_s=None)

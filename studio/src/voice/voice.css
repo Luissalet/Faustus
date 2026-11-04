@@ -62,3 +62,8 @@
   .fs-voice__context { margin-bottom: 12px; }
   .fs-voice button { min-height: 44px; }
 }
+
+/* Darwin #992: the Second Brain line of the voice panel. */
+.fs-voice__brain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-block: 4px; }
+.fs-voice__brain label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.fs-voice__brain:not([data-on]) label { opacity: 0.75; }

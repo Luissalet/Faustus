@@ -4133,7 +4133,8 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         {voiceSession && voiceSession === sessionId && <Suspense fallback={<div className="fs-studio__notice" role="status">{t('Opening voice mode…')}</div>}>
           <VoicePanel key={voiceSession} sessionId={sessionId} projectId={project?.id} sessionName={project?.name || title || t('Conversation')} busy={busy}
             turn={turns?.slice().reverse().find(turn => turn.role === 'assistant')}
-            onSend={text => void send(text)} onStop={stop} onClose={() => setVoiceSession(null)} />
+            onSend={text => void send(text)} onStop={stop} onClose={() => setVoiceSession(null)}
+            brain={!knobs.noMemory && !knobs.incognito} onBrain={on => setKnobs(k => ({ ...k, noMemory: !on }))} />
         </Suspense>}
         <CoordinationStatus sessionId={sessionId} projectId={project?.id} busy={busy} />
         {executionBlocked && <div className="fs-studio__notice" role="status" data-testid="execution-preferences-status">

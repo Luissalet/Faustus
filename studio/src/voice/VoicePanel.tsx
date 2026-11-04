@@ -7,6 +7,7 @@ import { capabilities, capture, openMic, playSpeech, watchForSpeech, type Captur
 import { SentenceBuffer, isEcho, isHallucination, isStopPhrase, speechLanguage, stripWakeWord, dictationEditTimeout, type VoicePhase } from './engine';
 import { VoiceOrb } from './VoiceOrb';
 import { VoiceSubtitle } from './VoiceSubtitle';
+import { VoiceBrain } from './VoiceBrain';
 import type { Playback } from './visemes';
 import { postTimeline, timelineDetail, timelineLine, type VoiceMarks } from './timeline';
 import { PcmTap, StreamPlayer, VoiceStream, streamCapture, voiceStreamCapabilities, type StreamAudio, type VoiceStreamCapabilities } from './stream';
@@ -17,7 +18,9 @@ const labels: Record<VoicePhase, string> = {
   transcribing: 'Turning your voice into text…', review: 'Is this what you meant?',
   thinking: 'Faustus is working', speaking: 'Faustus is speaking', approval: 'Your approval is needed', error: 'Let’s reconnect',
 };
-interface Props { busy: boolean; turn?: Turn; sessionName: string; sessionId?: string | null; projectId?: string; onSend(text: string): void; onStop(): void; onClose(): void }
+interface Props { busy: boolean; turn?: Turn; sessionName: string; sessionId?: string | null; projectId?: string; onSend(text: string): void; onStop(): void; onClose(): void;
+  /** Darwin #992: voice turns use the Second Brain (the composer's memory knob, inverted). */
+  brain?: boolean; onBrain?(on: boolean): void }
 
 /* A conversation, not a dictation form: by default the panel listens as
    soon as it opens, sends what it heard when you stop talking, reads the
@@ -504,6 +507,7 @@ export default function VoicePanel(props: Props) {
     <div className="fs-voice__body">
       <div className="fs-voice__heading"><h2>{t('Talk to Faustus')}</h2><button type="button" className="fs-voice__icon" onClick={props.onClose} aria-label={t('Close voice mode')}><X size={18} /></button></div>
       <p className="fs-voice__context">{props.sessionName} · {t('Same chat, same tools')}</p>
+      <VoiceBrain sessionId={props.sessionId} brain={props.brain ?? true} onBrain={props.onBrain} />
       {configs && <p className="fs-voice__hint">{t('Input')}: {providerLabel(configs.stt)} · {t('Output')}: {providerLabel(configs.tts)}</p>}
       <label className="fs-voice__language">{t('Conversation language')}<select value={configs?.stt.provider === 'parakeet' ? 'auto' : language} disabled={configs?.stt.provider === 'parakeet' || captureActive || props.busy || phase === 'speaking'} onChange={e => setLanguage(e.target.value)}>
         <option value="auto">{t('Automatic · English / Spanish')}</option><option value="es">Español</option><option value="en">English</option>

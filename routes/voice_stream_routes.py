@@ -29,6 +29,8 @@ class VoiceSessionCreate(BaseModel):
     send_mode: str = Field(default="server", pattern=r"^(server|client)$")
     wake_word: bool = False
     follow_current: bool = False
+    #: Darwin #992: read and feed the Second Brain like a typed turn (default).
+    brain: bool = True
 
 
 class VoiceSay(BaseModel):
@@ -46,6 +48,7 @@ class VoiceOptions(BaseModel):
     language: Optional[str] = Field(default=None, max_length=20, pattern=r"^[a-zA-Z-]*$")
     language_hint: Optional[Literal["", "es", "en"]] = None
     wake_word: Optional[bool] = None
+    brain: Optional[bool] = None
 
 
 def _owner(request: Request) -> Optional[str]:
@@ -54,7 +57,7 @@ def _owner(request: Request) -> Optional[str]:
 
 
 def _apply_options(session: Any, options: Dict[str, Any]) -> None:
-    for key in ("read_aloud", "partials", "wake_word"):
+    for key in ("read_aloud", "partials", "wake_word", "brain"):
         if options.get(key) is not None:
             setattr(session, key, bool(options[key]))
     if options.get("language"):
@@ -86,11 +89,24 @@ def setup_voice_stream_routes(manager: VoiceSessionManager) -> APIRouter:
             session = await manager.create(_owner(request), body.session_id, language=body.language,
                                            read_aloud=body.read_aloud, partials=body.partials,
                                            send_mode=body.send_mode, wake_word=body.wake_word,
-                                           follow_current=body.follow_current, language_hint=body.language_hint)
+                                           follow_current=body.follow_current, language_hint=body.language_hint,
+                                           brain=body.brain)
         except KeyError as exc:
             raise HTTPException(404, str(exc).strip("'"))
         return {**session.snapshot(), "token": session.token,
                 "stream_url": f"/api/voice/sessions/{session.id}/stream?token={session.token}"}
+
+    @router.get("/brain")
+    async def voice_brain_link(request: Request, session_id: str = "", no_memory: bool = False):
+        """Darwin #992: how a voice turn on this chat reaches the Second Brain —
+        whether it is consulted (memory recall, the brain context source) and
+        fed (memory capture, extraction into entities), and what the brain holds."""
+        from src import voice_brain
+        sessions = [s for s in manager.list(_owner(request)) if not session_id or s.get("session_id") == session_id]
+        voice_on = all(bool(s.get("brain", True)) for s in sessions) if sessions else True
+        return await asyncio.to_thread(voice_brain.link_status, _owner(request), session_id,
+                                       voice_brain=voice_on and not no_memory,
+                                       voice_sessions=len(sessions))
 
     @router.get("/sessions/{voice_id}")
     async def get_voice_session(voice_id: str, request: Request):

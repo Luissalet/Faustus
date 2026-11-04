@@ -65,6 +65,9 @@ TOOLS = [
              "send_mode": {"type": "string", "enum": ["server", "client"],
                            "description": "server: the session sends final transcripts to the chat (default)."},
              "follow_current": {"type": "boolean", "description": "Also speak a turn already running at start."},
+             "brain": {"type": "boolean", "description": "Consult and feed the Second Brain like a typed turn "
+                                                        "(memory recall + capture; start; default true). false "
+                                                        "sends the turns with the chat's no_memory flag."},
              "audio_path": {"type": "string", "description": "Local audio file for utterance."},
              "audio_b64": {"type": "string", "description": "Base64 audio for utterance."},
              "sample_rate": {"type": "integer", "description": "For raw PCM16 input; default 16000."},
@@ -76,6 +79,17 @@ TOOLS = [
              "save_audio_dir": {"type": "string", "description": "With wait: write each spoken chunk to this folder."},
          }},
          annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False)),
+    Tool(name="voice_brain",
+         description=("How voice turns on a chat reach the Second Brain. A voice turn is an ordinary chat turn, so "
+                      "it is consulted (personal memory recall; the brain's notes and entities through the Context "
+                      "Engine when that is on) and fed (memory capture after the turn, extracted into entities) "
+                      "exactly like a typed one. Reports each of those switches, whether the open voice sessions "
+                      "on that chat have the brain on, and what the brain holds. To turn it off for a voice "
+                      "session use voice_session start with brain=false. Segundo Cerebro y voz."),
+         inputSchema={"type": "object", "properties": {
+             "session_id": {"type": "string", "description": "Chat session id (optional)."},
+         }},
+         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)),
 ]
 
 
@@ -156,7 +170,8 @@ async def _voice_session(client, a):
         body = {"session_id": str(a.get("session_id") or ""), "language": a.get("language") or "auto",
                 "language_hint": a.get("language_hint") or "", "wake_word": bool(a.get("wake_word", False)),
                 "read_aloud": a.get("read_aloud", True), "send_mode": a.get("send_mode") or "server",
-                "follow_current": bool(a.get("follow_current", False)), "partials": False}
+                "follow_current": bool(a.get("follow_current", False)), "partials": False,
+                "brain": bool(a.get("brain", True))}
         result = await _request(client, "POST", "/sessions", json=body)
         result.pop("token", None)
         result.pop("stream_url", None)
@@ -237,6 +252,9 @@ async def call_tool(name, arguments):
                 payload = await _voice_session(client, args)
             elif name == "dictation_workspace":
                 payload = await _dictation_workspace(client, args)
+            elif name == "voice_brain":
+                payload = await _request(client, "GET", "/brain",
+                                         params={"session_id": str(args.get("session_id") or "")})
             else:
                 payload = {"exit_code": 1, "error": f"Unknown voice tool {name}"}
     except (httpx.HTTPError, ValueError, OSError) as error:
