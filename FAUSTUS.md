@@ -16,7 +16,7 @@ Las revisiones de auditoría y criterios sustituyen su borrador en la respuesta 
 
 read_artifact permite seleccionar filas JSON exactas y consultar una aparición concreta con su contexto; mantiene los tipos, el orden y el alcance del propietario. Las operaciones de coordinación que sólo registran actividad conservan la evidencia vigente del workspace. reach_read admite archivos UTF-8 y directorios de GitHub a una ref explícita; conserva el texto recibido para consultarlo como artefacto, en lugar de perder el final al resumirlo. Un listado que alcanza el límite de 1.000 entradas queda marcado como truncado. Son capacidades del producto y del catálogo normal de herramientas.
 
-[Selección JSON](docs/ARTIFACT-JSON-SELECTION.md), [apariciones y contexto](docs/ARTIFACT-QUERY-OCCURRENCE.md), [evidencia y coordinación](docs/CONTRACT-COORDINATION-EVIDENCE.md) y [fuentes GitHub](docs/GITHUB-SOURCE-READER.md) detallan su contrato y límites. Las capacidades pasan sus pruebas y tienen revisión independiente. El ensayo 1745 empleó 295,75 s y 12 herramientas; el 1750, 577,37 s y 46. El backend 1755 encontró el conversor real en dos peticiones y 1,562 s, una medida distinta del turno del modelo.
+[Selección JSON](docs/design/ARTIFACT-JSON-SELECTION.md), [apariciones y contexto](docs/design/ARTIFACT-QUERY-OCCURRENCE.md), [evidencia y coordinación](docs/design/CONTRACT-COORDINATION-EVIDENCE.md) y [fuentes GitHub](docs/design/GITHUB-SOURCE-READER.md) detallan su contrato y límites. Las capacidades pasan sus pruebas y tienen revisión independiente. El ensayo 1745 empleó 295,75 s y 12 herramientas; el 1750, 577,37 s y 46. El backend 1755 encontró el conversor real en dos peticiones y 1,562 s, una medida distinta del turno del modelo.
 
 El ensayo nativo 1755 sobre Ruta 203 produjo tres tablas útiles y distinguió sus movimientos explícitos de los generados; Root contrastó las seis filas con las fuentes. Tardó 774,05 s de CLI, con 57 herramientas y 40 rondas. Publicó una confusión entre dos miembros y combate doble, corregida después en el Ágora; los ordinales numéricos de los entrenadores siguen pendientes. Se acepta el informe corregido como apoyo supervisado. La eficiencia y fiabilidad completas siguen sin satisfacer el objetivo: no se atribuye un factor global ni ahorro de facturación.
 
@@ -94,14 +94,14 @@ checkpoints en una subcarpeta vetada de su raíz principal. Sin selección se us
 la raíz; una selección explícita inválida devuelve HTTP 400. La identidad y las
 raíces adjuntas de herramientas se conservan. Al reanudar una acción aprobada
 manda su carpeta sellada y se actualiza sólo trusted_workspace, conservando
-las otras opciones del turno. Véase [selección](docs/CLI-WORKSPACE-SCOPE.md).
+las otras opciones del turno. Véase [selección](docs/design/CLI-WORKSPACE-SCOPE.md).
 
 En Windows, el detector de la app enumera primero nombres y consulta exe/cmdline
 sólo para candidatos Electron/Faustus. Conserva heartbeat, identificación,
 overrides, errores y permisos. La caché de cinco segundos empieza al terminar
 el sondeo. Antes, leer todos los comandos bloqueaba el hilo principal durante
 la preparación; el perfilador lo observó sin leer variables locales.
-[Sondeo y límites](docs/HOST-PROCESS-PROBE.md).
+[Sondeo y límites](docs/design/HOST-PROCESS-PROBE.md).
 
 Fuente 8b3a97ff aprobada e integrada; oráculo causal de 7 casos,15 regresiones y9 casos
 adicionales del revisor pasan. Main repite 7+15. En dos ensayos nativos similares,
@@ -118,7 +118,7 @@ El contraste previo de cuatro contratos de HoardDex obtuvo 303 comprobaciones co
 a paridad general ni a pruebas Android de Faustus. Continúa el uso acotado para
 contrastar intercambios y zonas en la tarea 1737. Datos e históricos se conservan; el
 vigilante estuvo en pausa normal durante los ensayos, sin resetear sus resultados
-inciertos. [Presupuesto CLI](docs/CLI-TURN-BUDGET.md).
+inciertos. [Presupuesto CLI](docs/design/CLI-TURN-BUDGET.md).
 
 ## Motor de juego, idioma de búsqueda y escucha del servidor — 28-10-2026, #1710/#1697/#1707
 
@@ -795,7 +795,7 @@ ejecución inmediata y actividad reciente. Los resultados vuelven al mismo chat;
 quitar conserva su historial y restaurar mantiene la programación pausada.
 Faustus debe estar en marcha. Referencias inspeccionadas OpenDots, nanobot y
 Codync, sin dependencia operativa de sus apps. [Contrato](docs/api/personal-assistants.md)
-· [referencias](docs/ASSISTANT_REFERENCES.md). Memory/Brain en Biblioteca →
+· [referencias](docs/design/ASSISTANT_REFERENCES.md). Memory/Brain en Biblioteca →
 Conocimiento queda registrado por separado en Ágora #723, aún sin implementar.
 
 **Inicio unificado en Studio (17-10-2026, #739):**
@@ -14457,7 +14457,7 @@ inactivo antes y justo antes, con las 18 tablas, ajustes, token y medios exactos
 No se reiniciaron Hub, Faustus, modelos ni GPU; sin push. El fallback remoto
 preexistente de imágenes ausentes en HTML se detectó y se corrige aparte en 840;
 no se declara aún que todas las páginas antiguas sean completamente offline.
-Detalles: [mejoras de Silver](docs/silver-offline-20261018.md).
+Detalles: [mejoras de Silver](docs/design/silver-offline-20261018.md).
 
 
 ## Silver: páginas autónomas con caché local — 18-10-2026, 06:45

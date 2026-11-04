@@ -6,20 +6,20 @@ context. The GitHub reader accepts source files and directories at an explicit
 ref, retaining received text before summarizing and reporting upstream limits.
 Coordination preserves evidence when the workspace is unchanged. End-to-end
 model efficiency remains under evaluation.
-[Source reading](docs/GITHUB-SOURCE-READER.md) · [Artifacts](docs/ARTIFACT-JSON-SELECTION.md).
+[Source reading](docs/design/GITHUB-SOURCE-READER.md) · [Artifacts](docs/design/ARTIFACT-JSON-SELECTION.md).
 
 Terminal turns accept --input-token-budget (4096–200000), or
 FAUSTUS_RUN_INPUT_TOKEN_BUDGET, for an estimated per-turn context budget.
 A project chat can select a vetted task subdirectory with --workspace for
 execution and checkpoints while retaining its project identity and attached
 tool-access roots. Invalid explicit project selections return HTTP 400.
-[CLI budget](docs/CLI-TURN-BUDGET.md) · [Task folders](docs/CLI-WORKSPACE-SCOPE.md).
+[CLI budget](docs/design/CLI-TURN-BUDGET.md) · [Task folders](docs/design/CLI-WORKSPACE-SCOPE.md).
 
 Windows desktop-app discovery reads process names before inspecting details
 of candidate app processes, and caches its result for five seconds after the
 probe completes. This removes repeated command-line reads of unrelated
 processes while retaining the existing desktop availability rules.
-[Discovery and observed limits](docs/HOST-PROCESS-PROBE.md).
+[Discovery and observed limits](docs/design/HOST-PROCESS-PROBE.md).
 
 Navigation now follows the work: chat actions and document workspaces in Studio, repositories inside each project, specialist apps under Hoards, and five searchable settings areas. All existing tools and saved data remain accessible. See [navigation](docs/ui/navigation.md).
 
@@ -72,12 +72,12 @@ Agora uses the regular Studio chat: Project → Chats → Agora opens its conver
 
 New Studio rooms collect model replies in an expandable **Debate**, show live participants and necessary decisions, and publish one separate final answer from the chosen reporter. **Group chat** remains selectable in the room editor. Stopping keeps queued instructions visible; @mentions use a distinct color.
 
-The existing output guard also detects strongly collapsed vocabulary without an identical repeated phrase and uses the normal typed error and recovery. This is a narrow output-pattern check, not a semantic quality guarantee or a diagnosis of the model server. [Output collapse](docs/OUTPUT_COLLAPSE.md).
+The existing output guard also detects strongly collapsed vocabulary without an identical repeated phrase and uses the normal typed error and recovery. This is a narrow output-pattern check, not a semantic quality guarantee or a diagnosis of the model server. [Output collapse](docs/design/OUTPUT_COLLAPSE.md).
 </p>
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>
 
-Dictation shares the Studio editor, saves recoverable text before pasting and keeps general/project vocabulary with conservative learning from spelling corrections. Manage vocabulary and recent dictations in Voice settings or MCP. Studio's personal assistants keep ordinary persistent chats, with configurable working instructions, selected published skills and native proactive schedules. Chat and Agent apply the same profile; scheduled results return to that chat. Configure mission, recurrence, timezone, notifications and silence without updates; pause, run now or inspect recent activity from the assistant editor. Removing an assistant pauses its schedule and preserves the chat; restoring it keeps proactivity paused. Faustus must be running for scheduled work. [Dictation](docs/api/dictation.md) · [Personal assistants](docs/api/personal-assistants.md) · [Inspected references](docs/ASSISTANT_REFERENCES.md).
+Dictation shares the Studio editor, saves recoverable text before pasting and keeps general/project vocabulary with conservative learning from spelling corrections. Manage vocabulary and recent dictations in Voice settings or MCP. Studio's personal assistants keep ordinary persistent chats, with configurable working instructions, selected published skills and native proactive schedules. Chat and Agent apply the same profile; scheduled results return to that chat. Configure mission, recurrence, timezone, notifications and silence without updates; pause, run now or inspect recent activity from the assistant editor. Removing an assistant pauses its schedule and preserves the chat; restoring it keeps proactivity paused. Faustus must be running for scheduled work. [Dictation](docs/api/dictation.md) · [Personal assistants](docs/api/personal-assistants.md) · [Inspected references](docs/design/ASSISTANT_REFERENCES.md).
 
 A temporary retryable Sparks service outage before output keeps the task alive
 on the same configured model. Completed tool results are retained; Stop and
@@ -730,7 +730,7 @@ What the model sees next is exactly what is wired to the conversation — a rule
 - **An agent turn never ends in silence.** With real progress (tool calls that advance the task), the round budget auto-extends up to a configurable ceiling, with a visible progress line instead of a blank card; with no progress, or a genuinely empty round, the turn ends with a concrete question to the user instead. For long, repetitive tasks, a standing strategy block in the prompt (agent mode only) guides the model to break the work into units, save a progress cursor, and resume from it.
 - **A design check on the UI files the agent edits.** Switched on per project (Project settings → Design check), it runs the design workshop's rule registry in two levels: after each edit of a `.tsx`, `.jsx`, `.css`, `.html` or `.vue` file only the unambiguous static rules (no browser) and a short note in the tool result; when the turn closes, one full pass with a render of the pages the turn touched, with at most one fix round and no repeat until the files or the exceptions change. The workshop is only asked, never started (stopped or module off: silent); the project keeps its exceptions, each with a reason of 24+ characters. API `/api/design-hook/*` and MCP tools `design_hook_status`, `design_hook_start`, `design_hook_run`.
 - **The server's event loop is watched.** A watchdog (`src/loop_watchdog.py`) records every stall of two seconds or more with the stack of the blocking call (`data/logs/loop_stalls.jsonl`, `GET /api/diag/loop`, MCP `loop_stalls`). It found and removed three sources of multi-second stalls inside long turns: the process scan behind the desktop-tool check, the blocking context-window probe and the TLS context httpx rebuilt per call.
-- **The web server reopens its own port.** A watchdog probes the listening port every 5 s and, after two misses, opens a fresh listener on the same port with the same protocol factory; accepted connections and running turns are untouched, and a busy event loop only queues the rebuild instead of reporting a failure. A launcher that finds an old owned server refusing connections for 12 s drains it and starts a replacement. Complements the Windows accept-reset retry. [Details](docs/WINDOWS-RUNTIME.md).
+- **The web server reopens its own port.** A watchdog probes the listening port every 5 s and, after two misses, opens a fresh listener on the same port with the same protocol factory; accepted connections and running turns are untouched, and a busy event loop only queues the rebuild instead of reporting a failure. A launcher that finds an old owned server refusing connections for 12 s drains it and starts a replacement. Complements the Windows accept-reset retry. [Details](docs/design/WINDOWS-RUNTIME.md).
 - **An empty search caused by the query language is explained once and then stopped.** Plugin manifests may declare `data_language`; when a data search returns nothing for a query written in another language the result carries a short note (with the alias equivalents when the Hoard Link alias service exists), and a second empty search in a row hides the tool for the rest of the turn. The turn counts its empty searches (`harness_check` status `empty_search`).
 - **Game-engine skills ranked by the project's engine.** `scripts/import_github_skills.py` imports skills from a public repository at a pinned commit (licence kept beside each skill); 27 Godot, Unity and general game-dev skills are installed. The selector detects Unity, Godot or Unreal from the workspace layout and boosts that engine's skills while demoting the others.
 
@@ -1378,27 +1378,27 @@ Silver's team builder can analyse generation-specific type weaknesses, ordinary
 attack coverage and unmodified Speed locally through the UI, API and MCP.
 Eleven Dragon/Poison move motifs add 117 supplied PMD frames, shared by real-time
 battles, mass battles, portable HTML and MP4, with visible reduced-motion frames.
-[Verified scope and limits](docs/silver-offline-20261018.md).
+[Verified scope and limits](docs/design/silver-offline-20261018.md).
 
 
 New standalone Silver HTML exports now carry the existing presentation cache
 and resolve missing art locally. They need no sprite server while playing;
 ordinary cries/music remain unembedded, and HTML size grows with cached assets.
 Re-export older pages. Task 840 is active at Silver Main18c66ab (608 Python and
-534 Node tests passed). [Scope and limits](docs/silver-offline-20261018.md).
+534 Node tests passed). [Scope and limits](docs/design/silver-offline-20261018.md).
 
 
 Silver's finished real-time replays now have frame seeking, five-second jumps
 and a read-only native inspection tool with paused deep links. Seeking pauses
 and retains speed, without changing records. Active at Silver Main4eed0be;
-191tools. [Verified scope and limits](docs/silver-offline-20261018.md).
+191tools. [Verified scope and limits](docs/design/silver-offline-20261018.md).
 
 
 Silver now also draws four locally supplied Rock attack motifs and freezes
 procedural particle emission during pause across realtime, classic and mass
 battles. The overnight improvements add 15 attack motifs / 146 frames, local
 team analysis, offline portable pages and replay seeking. No new packages,
-external APIs or online features. [Verified scope](docs/silver-offline-20261018.md).
+external APIs or online features. [Verified scope](docs/design/silver-offline-20261018.md).
 
 
 ### Auditorías de skills en la actividad general (21-10-2026, actividad verificada)
@@ -1543,7 +1543,7 @@ Faustus can query a literal source string inside a saved result with read_artifa
 
 ### Saved-source research
 
-Artifact queries and publication of their results can finish from observed evidence without forcing a local-edit completion audit when no local work or deliverable was requested. Real workspace changes retain their checks. A native Route 209 query published three independently checked identifiers with eight tools and no forced progress or completion audit. Useful bounded research still needs review; broad model autonomy remains under evaluation. [Behavior, tests and limits](docs/SAVED-SOURCE-RESEARCH.md).
+Artifact queries and publication of their results can finish from observed evidence without forcing a local-edit completion audit when no local work or deliverable was requested. Real workspace changes retain their checks. A native Route 209 query published three independently checked identifiers with eight tools and no forced progress or completion audit. Useful bounded research still needs review; broad model autonomy remains under evaluation. [Behavior, tests and limits](docs/design/SAVED-SOURCE-RESEARCH.md).
 
 The Progress panel labels the conversation’s last saved checklist, latest recorded plan and latest recorded changes. They may come from earlier turns; their content remains available and updates with later records.
 
@@ -1552,7 +1552,7 @@ A valid explicit chat coordination binding takes precedence over the project tem
 
 ## Public source research
 
-Faustus can read web/GitHub sources and answer or publish without inventing local editing work, a progress plan or a local completion audit. Observed remote MCP source receipts and explicitly negated local actions are distinguished from positive requests, actual local effects and deliverables. Approved source 1782 passes 46 external contracts on Main and 427 source regression checks. The useful R5 trial ends with five tools and four rounds without shell or local audit; a second post corrects a species token typo. Factual research still requires independent checks; this does not establish general autonomy or latency gains. [Scope and contracts](docs/SAVED-SOURCE-RESEARCH.md).
+Faustus can read web/GitHub sources and answer or publish without inventing local editing work, a progress plan or a local completion audit. Observed remote MCP source receipts and explicitly negated local actions are distinguished from positive requests, actual local effects and deliverables. Approved source 1782 passes 46 external contracts on Main and 427 source regression checks. The useful R5 trial ends with five tools and four rounds without shell or local audit; a second post corrects a species token typo. Factual research still requires independent checks; this does not establish general autonomy or latency gains. [Scope and contracts](docs/design/SAVED-SOURCE-RESEARCH.md).
 
 
 ## Verified trainer guide release

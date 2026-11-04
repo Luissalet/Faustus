@@ -18,6 +18,6 @@ distinct from our own functional verification; none of the reference application
 was benchmarked. OpenDots is the CopilotKit repository; no verified separate
 “GrokBots” repository is claimed.
 
-The product contract and limits are in [personal assistants](api/personal-assistants.md).
+The product contract and limits are in [personal assistants](../api/personal-assistants.md).
 No general event planner, automatic goal decomposition, messaging bridge or
 third-party integration parity is implied by adding scheduled proactive turns.

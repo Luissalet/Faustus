@@ -6,20 +6,20 @@ con su contexto. El lector de GitHub acepta archivos y carpetas a una ref
 explícita y conserva el texto completo recibido antes de resumirlo; indica los
 límites de origen. La coordinación conserva la evidencia cuando no cambia el
 workspace. La eficacia completa del modelo sigue bajo evaluación.
-[Lectura de fuentes](docs/GITHUB-SOURCE-READER.md) · [Artefactos](docs/ARTIFACT-JSON-SELECTION.md).
+[Lectura de fuentes](docs/design/GITHUB-SOURCE-READER.md) · [Artefactos](docs/design/ARTIFACT-JSON-SELECTION.md).
 
 Los turnos de terminal aceptan --input-token-budget (4096–200000), o
 FAUSTUS_RUN_INPUT_TOKEN_BUDGET, como presupuesto estimado de contexto por turno.
 Una conversación de proyecto puede elegir con --workspace una subcarpeta
 vetada para ejecutar y crear checkpoints, conservando identidad y raíces
 adjuntas de acceso. Una selección explícita inválida devuelve HTTP 400.
-[Presupuesto CLI](docs/CLI-TURN-BUDGET.md) · [Carpetas de tarea](docs/CLI-WORKSPACE-SCOPE.md).
+[Presupuesto CLI](docs/design/CLI-TURN-BUDGET.md) · [Carpetas de tarea](docs/design/CLI-WORKSPACE-SCOPE.md).
 
 En Windows se consultan primero los nombres de los procesos y sólo después los
 detalles de candidatos a la app. El resultado se conserva cinco segundos desde
 el final del sondeo; se evitan lecturas repetidas de comandos ajenos y se
 mantienen las reglas de disponibilidad del escritorio.
-[Sondeo y límites observados](docs/HOST-PROCESS-PROBE.md).
+[Sondeo y límites observados](docs/design/HOST-PROCESS-PROBE.md).
 
 La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
 
@@ -67,12 +67,12 @@ Studio es la entrada única al trabajo. Una conversación nueva muestra asistent
 
 Las salas nuevas agrupan las intervenciones en un **Debate** desplegable, muestran quién sigue trabajando y las decisiones necesarias, y publican una única respuesta final del portavoz elegido. **Chat en grupo** sigue disponible en el editor de la sala. Cancelar conserva las instrucciones en cola; las @menciones tienen un color distinto.
 
-El detector de salida existente reconoce también vocabulario muy colapsado aunque varíen las frases y usa el error y la recuperación habituales. Comprueba un patrón concreto, sin garantizar calidad semántica ni diagnosticar el servidor de modelos. [Salida degenerada](docs/OUTPUT_COLLAPSE.md).
+El detector de salida existente reconoce también vocabulario muy colapsado aunque varíen las frases y usa el error y la recuperación habituales. Comprueba un patrón concreto, sin garantizar calidad semántica ni diagnosticar el servidor de modelos. [Salida degenerada](docs/design/OUTPUT_COLLAPSE.md).
 </p>
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>
 
-El dictado comparte el editor de Studio, guarda texto recuperable antes de pegar y conserva vocabulario general o por proyecto con aprendizaje conservador de correcciones de nombres. Se gestiona en los ajustes de Voz y por MCP. Los asistentes personales de Studio conservan chats normales persistentes y permiten configurar instrucciones, skills publicadas y programación proactiva nativa. Chat y Agente aplican el mismo perfil; los resultados programados vuelven a ese chat. En su editor se eligen misión, frecuencia, zona horaria, avisos y silencio sin novedades, se pausa o ejecuta la misión y se consulta actividad reciente. Quitar un asistente pausa su programación y conserva el chat; restaurarlo mantiene la proactividad pausada. Faustus debe estar en marcha para ejecutar la programación. [Dictado](docs/api/dictation.md) · [Asistentes personales](docs/api/personal-assistants.md) · [Referencias consultadas](docs/ASSISTANT_REFERENCES.md).
+El dictado comparte el editor de Studio, guarda texto recuperable antes de pegar y conserva vocabulario general o por proyecto con aprendizaje conservador de correcciones de nombres. Se gestiona en los ajustes de Voz y por MCP. Los asistentes personales de Studio conservan chats normales persistentes y permiten configurar instrucciones, skills publicadas y programación proactiva nativa. Chat y Agente aplican el mismo perfil; los resultados programados vuelven a ese chat. En su editor se eligen misión, frecuencia, zona horaria, avisos y silencio sin novedades, se pausa o ejecuta la misión y se consulta actividad reciente. Quitar un asistente pausa su programación y conserva el chat; restaurarlo mantiene la proactividad pausada. Faustus debe estar en marcha para ejecutar la programación. [Dictado](docs/api/dictation.md) · [Asistentes personales](docs/api/personal-assistants.md) · [Referencias consultadas](docs/design/ASSISTANT_REFERENCES.md).
 
 Un fallo temporal de las Sparks antes de responder mantiene el trabajo con el
 mismo modelo configurado y los resultados de herramientas ya obtenidos. Se
@@ -371,7 +371,7 @@ Lo que el modelo ve a continuación es exactamente lo que está conectado a la c
 - **Un turno de agente nunca termina en silencio.** Con progreso real (llamadas a herramienta que avanzan la tarea), el presupuesto de rondas se extiende solo hasta un techo configurable, con una línea de progreso visible en vez de una tarjeta vacía; sin progreso, o ante una ronda realmente vacía, el turno termina con una pregunta concreta al usuario. En tareas largas y repetitivas, un bloque de estrategia permanente en el prompt (solo en modo agente) guía a trocear en unidades, guardar un cursor de progreso y reanudar desde ahí.
 - **Control de diseño de los ficheros de interfaz que edita el agente.** Se activa por proyecto (Ajustes del proyecto → Control de diseño) y aplica el registro de reglas del taller de diseño en dos niveles: tras cada edición de un `.tsx`, `.jsx`, `.css`, `.html` o `.vue`, solo las reglas estáticas inequívocas (sin navegador) y una nota corta en el resultado de la herramienta; al cerrar el turno, un único pase completo con render de las páginas tocadas, con como mucho una ronda de arreglo y sin repetir hasta que cambien los ficheros o las excepciones. Al taller solo se le pregunta, nunca se arranca (parado o con el módulo apagado, calla); el proyecto guarda sus excepciones, cada una con un motivo de 24 caracteres o más. API `/api/design-hook/*` y herramientas MCP `design_hook_status`, `design_hook_start`, `design_hook_run`.
 - **El bucle de eventos del servidor está vigilado.** Un vigía (`src/loop_watchdog.py`) registra cada parada de dos segundos o más con la pila de la llamada que la causa (`data/logs/loop_stalls.jsonl`, `GET /api/diag/loop`, MCP `loop_stalls`). Encontró y eliminó tres fuentes de paradas de varios segundos en turnos largos: el recorrido de procesos de la comprobación de herramientas de escritorio, la consulta bloqueante de la ventana de contexto y el contexto TLS que httpx reconstruía en cada llamada.
-- **El servidor web reabre su propio puerto.** Un vigilante comprueba cada 5 s que el puerto escucha y, tras dos fallos, abre un listener nuevo en el mismo puerto con la misma fábrica de protocolo; las conexiones aceptadas y los turnos en marcha no se tocan, y un bucle de eventos ocupado solo encola la reapertura en vez de dar un fallo. Un lanzador que encuentra un servidor propio viejo rechazando conexiones 12 s lo drena y arranca un relevo. Complementa el reintento de accept de Windows. [Detalles](docs/WINDOWS-RUNTIME.md).
+- **El servidor web reabre su propio puerto.** Un vigilante comprueba cada 5 s que el puerto escucha y, tras dos fallos, abre un listener nuevo en el mismo puerto con la misma fábrica de protocolo; las conexiones aceptadas y los turnos en marcha no se tocan, y un bucle de eventos ocupado solo encola la reapertura en vez de dar un fallo. Un lanzador que encuentra un servidor propio viejo rechazando conexiones 12 s lo drena y arranca un relevo. Complementa el reintento de accept de Windows. [Detalles](docs/design/WINDOWS-RUNTIME.md).
 - **Una búsqueda vacía por el idioma de la consulta se explica una vez y se corta.** Los manifiestos de plugin pueden declarar `data_language`; si una búsqueda de datos no devuelve nada con una consulta en otro idioma, el resultado lleva una nota breve (con los alias equivalentes cuando exista el servicio de alias de Hoard Link) y una segunda búsqueda vacía seguida oculta la herramienta el resto del turno. El turno cuenta sus búsquedas vacías (`harness_check` con estado `empty_search`).
 - **Habilidades de motor de juego ordenadas por el motor del proyecto.** `scripts/import_github_skills.py` importa habilidades de un repositorio público en un commit fijado (con la licencia junto a cada una); hay 27 de Godot, Unity y desarrollo de juegos instaladas. El selector detecta Unity, Godot o Unreal por la estructura del workspace y sube las del motor detectado y baja las de los demás.
 
@@ -881,7 +881,7 @@ Ensayo nativo1760: Ruta203 de Platino US, ordinales247/248/249 correctos desde u
 
 ### Consulta de fuentes guardadas
 
-Las consultas de artefactos y la publicación de sus resultados pueden terminar con su evidencia sin imponer una auditoría de edición local cuando no hay trabajo local observado ni un entregable pedido. Conserva las comprobaciones de cambios reales. La prueba nativa de Ruta 209 publicó tres identificadores contrastados con ocho herramientas y sin progreso ni auditoría forzados. Ayuda útil para investigación acotada con revisión; la autonomía general sigue bajo evaluación. [Comportamiento, pruebas y límites](docs/SAVED-SOURCE-RESEARCH.md).
+Las consultas de artefactos y la publicación de sus resultados pueden terminar con su evidencia sin imponer una auditoría de edición local cuando no hay trabajo local observado ni un entregable pedido. Conserva las comprobaciones de cambios reales. La prueba nativa de Ruta 209 publicó tres identificadores contrastados con ocho herramientas y sin progreso ni auditoría forzados. Ayuda útil para investigación acotada con revisión; la autonomía general sigue bajo evaluación. [Comportamiento, pruebas y límites](docs/design/SAVED-SOURCE-RESEARCH.md).
 
 El panel Progreso identifica la última lista, el último plan y los últimos cambios guardados de la conversación. Pueden proceder de turnos anteriores; se conservan y se actualizan con nuevos registros.
 
@@ -890,7 +890,7 @@ Un enlace explícito de coordinación válido del chat tiene prioridad sobre la 
 
 ## Consultas de fuentes públicas
 
-Faustus puede leer fuentes web/GitHub y responder o publicar sin añadir un plan ni una auditoría de cambios locales cuando no hay trabajo local ni entregable. Reconoce recibos remotos MCP y la negación explícita de acciones locales, conservando acciones positivas y efectos reales. La fuente 1782 aprobada en revisión 4 pasa 46 contratos en Main y 427 regresiones. R5 termina con cinco herramientas y cuatro rondas, sin shell ni auditoría local, pero necesita una segunda publicación para corregir una errata. La ayuda factual requiere contraste independiente; no acredita autonomía ni eficiencia global. [Alcance y contratos](docs/SAVED-SOURCE-RESEARCH.md).
+Faustus puede leer fuentes web/GitHub y responder o publicar sin añadir un plan ni una auditoría de cambios locales cuando no hay trabajo local ni entregable. Reconoce recibos remotos MCP y la negación explícita de acciones locales, conservando acciones positivas y efectos reales. La fuente 1782 aprobada en revisión 4 pasa 46 contratos en Main y 427 regresiones. R5 termina con cinco herramientas y cuatro rondas, sin shell ni auditoría local, pero necesita una segunda publicación para corregir una errata. La ayuda factual requiere contraste independiente; no acredita autonomía ni eficiencia global. [Alcance y contratos](docs/design/SAVED-SOURCE-RESEARCH.md).
 
 
 ## Entrega comprobada de la guía de entrenadores
