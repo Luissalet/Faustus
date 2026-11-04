@@ -572,7 +572,12 @@ través de una caché compartida. Agentes → Workers → **Cachés de los worke
 lista cada carpeta con su tamaño por herramienta y vacía un worker o todos los
 parados; cada tarjeta de subagente tiene un botón **Cachés**. REST:
 `GET /api/agents/worker-caches`, `POST /api/agents/worker-caches/clear`; MCP
-(servidor de workers): `workers_caches`, `workers_cache_clear`.
+(servidor de workers): `workers_caches`, `workers_cache_clear`. También se mueven las cachés que viven bajo HOME,
+sin mover `HOME`: Gradle, Maven (`-Dmaven.repo.local` añadido a `MAVEN_OPTS`), Deno, Bun,
+Composer, pipenv, pre-commit, ccache, sccache, Cypress y Electron. `CARGO_HOME` solo
+se mueve si el actual no contiene el toolchain (`bin/cargo`), porque ahí viven
+también los binarios instalados. Al vaciar, `remaining_bytes` indica lo que un
+fichero abierto por otro proceso impidió borrar.
 
 En el otro extremo, un turno que es claramente conversación se responde sin el
 razonamiento del modelo y sin el juego de herramientas adjunto. Medido en un 27B
@@ -673,7 +678,7 @@ Proveedores de voz: navegador (Web Speech API), sistema (voces de Windows instal
 
 La voz entra en la misma conversación y el mismo flujo de permisos de herramientas que el texto. Una sesión de voz no autoriza de forma general acciones sobre archivos, escritorio o servicios externos.
 
-**Voz y Segundo Cerebro:** un turno de voz consulta y alimenta el Segundo Cerebro igual que uno escrito: recuerdos automáticos, las notas y entidades del cerebro a través del Context Engine cuando está activo, y la captura de recuerdos tras el turno, que la extracción del cerebro convierte en entidades. El panel de voz muestra una línea **Segundo Cerebro** con lo que se consulta y se guarda y un interruptor ligado al de «Sin recuerdos automáticos» del compositor. Las sesiones de voz en streaming aceptan la opción `brain` (activada por defecto; desactivada envía el turno con la marca `no_memory` del chat); `GET /api/voice/brain?session_id=` informa del enlace y el servidor MCP `voice` tiene `voice_brain` y `brain` al iniciar `voice_session`.
+**Voz y Segundo Cerebro:** un turno de voz consulta y alimenta el Segundo Cerebro igual que uno escrito: recuerdos automáticos, las notas y entidades del cerebro a través del Context Engine cuando está activo, y la captura de recuerdos tras el turno, que la extracción del cerebro convierte en entidades. El panel de voz muestra una línea **Segundo Cerebro** con lo que se consulta y se guarda y un interruptor ligado al de «Sin recuerdos automáticos» del compositor. Las sesiones de voz en streaming aceptan la opción `brain` (activada por defecto; desactivada envía el turno con la marca `no_memory` del chat); `GET /api/voice/brain?session_id=` informa del enlace y el servidor MCP `voice` tiene `voice_brain` y `brain` al iniciar `voice_session`. Un turno enviado con `no_memory` (`/api/chat` y `/api/chat_stream`) ni recupera recuerdos ni se mina después para guardarlos.
 
 Toda transcripción —tanto la voz de entrada como las notas de reunión— pasa por una limpieza determinista (`src/stt_cleanup.py`) antes de llegar a la conversación o a las notas: los segmentos repetidos se colapsan en uno, las frases conocidas de silencio/alucinación (español/inglés) y los marcadores de música se descartan, y un bucle de palabra o frase dentro de un segmento ("la la la la…") se colapsa, manteniendo coherentes las marcas de tiempo.
 

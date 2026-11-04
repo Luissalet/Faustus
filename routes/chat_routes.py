@@ -1838,6 +1838,10 @@ def setup_chat_routes(
         # the session/global default resolve to", exactly as before this
         # existed.
         behavior_mode = str((_raw_body or {}).get("behavior_mode") or "").strip() or None
+        # Same skip-memory request as /api/chat_stream: no recall before the
+        # turn, no memory capture after it. Read off the raw body like the
+        # fields above.
+        no_memory = str((_raw_body or {}).get("no_memory", "")).strip().lower() == "true"
 
         # Verify the caller owns this session before loading it.
         # Without this, any authenticated user can post into another user's chat.
@@ -1938,6 +1942,7 @@ def setup_chat_routes(
                 time_filter=time_filter,
                 webhook_manager=webhook_manager,
                 no_skills=chat_request.no_skills,
+                no_memory=no_memory,
                 allow_tool_preprocessing=allow_tool_preprocessing,
                 defer_context_shaping=foreground_policy.enabled,
                 behavior_mode=behavior_mode,
@@ -2117,7 +2122,7 @@ def setup_chat_routes(
                 sess, session_manager, session, message, reply, None,
                 ctx.uprefs, memory_manager, memory_vector, webhook_manager,
                 character_name=ctx.preset.character_name,
-                owner=ctx.user,
+                owner=ctx.user, no_memory=no_memory,
                 allow_background_extraction=not tool_policy.block_all_tool_calls,
             )
 

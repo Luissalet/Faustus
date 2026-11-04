@@ -942,7 +942,12 @@ package through a shared cache. Agents → Workers → **Worker caches** lists e
 folder with its size per tool and empties one worker or every idle one; each
 sub-agent card has a **Caches** button. REST: `GET /api/agents/worker-caches`,
 `POST /api/agents/worker-caches/clear`; MCP (workers server): `workers_caches`,
-`workers_cache_clear`.
+`workers_cache_clear`. The caches that live under HOME move too, without moving
+`HOME`: Gradle, Maven (`-Dmaven.repo.local` appended to `MAVEN_OPTS`), Deno, Bun,
+Composer, pipenv, pre-commit, ccache, sccache, Cypress and Electron. `CARGO_HOME`
+moves only when the current one holds no toolchain (`bin/cargo`), since it also
+holds installed binaries. Clearing reports `remaining_bytes` when a file another
+process holds open survives.
 
 ### Upkeep of 04-11-2026
 
@@ -1106,7 +1111,7 @@ Voice input enters the same conversation and tool-permission flow as typed input
 
 **Streaming voice (on by default in Studio's voice panel):** a voice session wraps the ordinary chat, so history, project, tools, memory and model stay exactly the same. The microphone streams 16 kHz audio over one WebSocket with a pre-roll ring (a barge-in keeps its first words); a pause of ~350 ms starts a speculative transcript that is withdrawn if you keep talking; the reply is spoken sentence by sentence (the first piece may end at a comma) with the next sentence already synthesized, so speech has no gaps. Interrupting stops the voice at once without cancelling the agent's work; cancelling the turn is a separate action. Each turn records where its time went (speech end → transcript → request → first text → first audio ready → first audio heard). The same sessions are available over REST/WebSocket (`/api/voice`, see [docs/api/voice-stream.md](docs/api/voice-stream.md)) and to agents through the built-in `voice` MCP server (`voice_capabilities`, `voice_session`). Turning the option off returns to the previous record-then-transcribe path.
 
-**Voice and the Second Brain:** a voice turn consults and feeds the Second Brain exactly like a typed one — memory recall, the brain's notes and entities through the Context Engine when it is on, and memory capture after the turn, which brain extraction turns into entities. The voice panel shows a **Second Brain** line saying what is consulted and saved, with a toggle bound to the composer's "Skip memory recall" switch. Streaming voice sessions take a `brain` option (default on; off sends the turn with the chat's `no_memory` flag); `GET /api/voice/brain?session_id=` reports the link, and the `voice` MCP server has `voice_brain` and `brain` on `voice_session` start.
+**Voice and the Second Brain:** a voice turn consults and feeds the Second Brain exactly like a typed one — memory recall, the brain's notes and entities through the Context Engine when it is on, and memory capture after the turn, which brain extraction turns into entities. The voice panel shows a **Second Brain** line saying what is consulted and saved, with a toggle bound to the composer's "Skip memory recall" switch. Streaming voice sessions take a `brain` option (default on; off sends the turn with the chat's `no_memory` flag); `GET /api/voice/brain?session_id=` reports the link, and the `voice` MCP server has `voice_brain` and `brain` on `voice_session` start. A turn sent with `no_memory` (`/api/chat` and `/api/chat_stream`) is neither recalled for nor mined for memories afterwards.
 
 Every transcript — voice input and meeting notes alike — passes through a deterministic cleanup pass (`src/stt_cleanup.py`) before it reaches the conversation or the notes: repeated segments collapse to one, known silence/hallucination phrases (English/Spanish) and bare music markers are dropped, and an in-segment word/phrase loop ("the the the the…") is collapsed, with timestamps kept coherent throughout.
 

@@ -176,3 +176,31 @@ def test_a_no_memory_turn_does_not_feed_memory_capture(monkeypatch):
         return len(queued)
     assert fire() == 1
     assert fire(no_memory=True) == 0
+
+
+import pytest  # noqa: E402
+
+from tests.test_chat_idempotency import _JsonRequest, _chat_endpoint_harness, outbox_dir  # noqa: E402,F401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag,expected", [("true", True), (True, True), ("false", False), (None, False)])
+async def test_non_streaming_chat_honours_no_memory(monkeypatch, outbox_dir, flag, expected):
+    """/api/chat takes the same no_memory request as /api/chat_stream: no
+    recall before the turn and no memory capture after it."""
+    import routes.chat_routes as chat_routes
+    from src.request_models import ChatRequest
+
+    endpoint, _calls, _added = _chat_endpoint_harness(monkeypatch)
+    seen = {}
+    real_build = chat_routes.build_chat_context
+
+    async def build(*a, **k):
+        seen["build"] = k.get("no_memory", False)
+        return await real_build(*a, **k)
+    monkeypatch.setattr(chat_routes, "build_chat_context", build)
+    monkeypatch.setattr(chat_routes, "run_post_response_tasks",
+                        lambda *a, **k: seen.__setitem__("post", k.get("no_memory", False)))
+    body = {} if flag is None else {"no_memory": flag}
+    await endpoint(_JsonRequest(body), ChatRequest(message="hola", session="session-1"))
+    assert seen == {"build": expected, "post": expected}
