@@ -246,6 +246,7 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/global-model/v1/chat/completions",  # global LLM prefill/nonstream may take minutes
     "/api/shell/stream",    # SSE
     "/api/research",        # multi-minute jobs
+    "/api/delivery-packages",  # copies, zips and reopens every file twice; large 3D/video deliveries take minutes
     "/api/model/download",  # tmux setup may run pip installs
     "/api/model/probe",     # SSE; iterates models with up to 8s timeout each
     "/api/model-endpoints", # /probe sub-route also iterates models
@@ -1336,6 +1337,9 @@ app.include_router(setup_strategy_routes())
 # Learned recipes, derived results with selective rebuild, decision map (src/derivation_ops.py).
 from routes.derivation_routes import setup_derivation_routes
 app.include_router(setup_derivation_routes())
+# Reproducible delivery packages (Hangar E33, src/delivery_package.py).
+from routes.delivery_routes import setup_delivery_routes
+app.include_router(setup_delivery_routes())
 
 # Isolated, comparable alternatives (W2-G / CMP-13): worktree/snapshot_dir/
 # doc_version experiments, three-way apply/combine against the main copy
@@ -1989,6 +1993,12 @@ async def serve_workflows(request: Request):
 async def serve_recipes(request: Request):
     """Studio Recipes: learned procedures, a structural dry run (never a
     verification) and the real execution with its per-step and criteria results."""
+    return await serve_index(request)
+
+@app.get("/delivery")
+async def serve_delivery(request: Request):
+    """Studio Delivery (Hangar E33): packages whose editables and exports were
+    reopened from the sources and again from the finished zip."""
     return await serve_index(request)
 
 @app.get("/alternatives")

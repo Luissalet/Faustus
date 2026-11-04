@@ -667,6 +667,12 @@ _register({"graph_ask"}, ToolEffect.READ_PRIVATE,
 # caller names inside the workspace and may register results in Atlas's Hoard
 # through the local Hub. None of them runs a tool or a transformation.
 _register({"recipe_learn", "decision_map"}, ToolEffect.WRITE_PRIVATE)
+# Delivery package (src/delivery_package.py): reads the files the caller names
+# (confined like read_file), copies them into DATA_DIR/delivery_packages and,
+# with out_dir, writes the zip there. It runs nothing: a software root only
+# contributes the report code_graph_handoff already wrote.
+_register({"delivery_package"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE, ToolEffect.WRITE_WORKSPACE,
+          result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"derivation_graph"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
           result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,

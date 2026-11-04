@@ -159,6 +159,9 @@ _BUILTIN_SERVERS = {
     # decision/effect map (src/derivation_ops.py): the same three tools as the chat.
     # Owner-scoped through ODYSSEUS_MCP_DERIVATIONS_OWNER; runs nothing itself.
     "derivations": ("mcp_servers/derivations_server.py", "Built-in: Recipes and derivations"),
+    # Reproducible delivery packages (src/delivery_package.py): the same `delivery_package` tool as the chat.
+    # Owner-scoped through ODYSSEUS_MCP_DELIVERY_OWNER; reads the named files and writes under DATA_DIR.
+    "delivery": ("mcp_servers/delivery_server.py", "Built-in: Delivery packages"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool
@@ -167,7 +170,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"derivations", "code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "godot", "github"})
+NATIVE_TWIN_SERVERS = frozenset({"delivery", "derivations", "code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "godot", "github"})
 
 # Single tools of other built-in servers that copy a native tool of the same name and accept nothing the native one
 # does not (checked against the live schemas by tests/test_native_twin_tools.py). Same treatment as the servers above:

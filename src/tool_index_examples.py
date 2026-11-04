@@ -1249,6 +1249,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "rebuild only the results affected by the new parameter and reuse the rest",
         "resume the rebuild from where it failed without repeating the finished steps",
     ],
+    "delivery_package": [
+        "prepara el paquete de entrega para el cliente con los editables y las exportaciones",
+        "package the editable files, exports and instructions and check they open before delivering",
+        "comprueba que el zip de la entrega se abre igual que los originales",
+    ],
     "decision_map": [
         "si cambia la unidad de medida, qué entregables hay que rehacer",
         "link this requirement to the decision and the deliverable it affects",

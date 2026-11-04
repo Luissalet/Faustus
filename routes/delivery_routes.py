@@ -1,0 +1,91 @@
+"""routes/delivery_routes.py -- HTTP surface for reproducible delivery packages
+(Hangar E33). Thin wrappers over `src/delivery_package.run`, the dispatcher the
+chat tool and the MCP server also use. `require_admin` on every endpoint: the
+admin may name any local file except the sensitive ones read_file refuses
+(the chat tool stays confined to the active workspace); packages are scoped to
+the signed-in owner.
+
+POST /api/delivery-packages                  {name, items, instructions?, limitations?, software_root?,
+                                              out_dir?, lang?}  build and verify
+GET  /api/delivery-packages                  the owner's packages, newest first
+GET  /api/delivery-packages/readers          formats with a reader, and the roles
+GET  /api/delivery-packages/{id}             the manifest (items, checks, gaps, reimport)
+POST /api/delivery-packages/{id}/reverify    extract the stored zip again and reopen every item
+GET  /api/delivery-packages/{id}/download    the zip
+GET  /api/delivery-packages/{id}/document    ENTREGA.md as text
+"""
+from typing import Any, Dict
+
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+
+from core.middleware import require_admin
+from src import delivery_package
+from src.auth_helpers import effective_user
+
+
+def _reply(result: Dict[str, Any]):
+    if result.get("error_class"):
+        status = 404 if str(result["error_class"]).endswith("not_found") else 400
+        return JSONResponse(status_code=status, content=result)
+    result.pop("exit_code", None)
+    return result
+
+
+def setup_delivery_routes() -> APIRouter:
+    router = APIRouter(tags=["delivery"])
+
+    def owner_of(request: Request) -> str:
+        require_admin(request)
+        return effective_user(request) or ""
+
+    @router.post("/api/delivery-packages")
+    async def build_package(request: Request):
+        owner = owner_of(request)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        import asyncio
+        return _reply(await asyncio.to_thread(delivery_package.run, owner, {**body, "action": "build"}, confine=False))
+
+    @router.get("/api/delivery-packages")
+    async def list_packages(request: Request):
+        return _reply(delivery_package.run(owner_of(request), {"action": "list"}))
+
+    @router.get("/api/delivery-packages/readers")
+    async def readers(request: Request):
+        return _reply(delivery_package.run(owner_of(request), {"action": "readers"}))
+
+    @router.get("/api/delivery-packages/{pkg_id}")
+    async def show(pkg_id: str, request: Request):
+        return _reply(delivery_package.run(owner_of(request), {"action": "show", "id": pkg_id}))
+
+    @router.post("/api/delivery-packages/{pkg_id}/reverify")
+    async def reverify(pkg_id: str, request: Request):
+        import asyncio
+        return _reply(await asyncio.to_thread(delivery_package.run, owner_of(request), {"action": "reverify", "id": pkg_id}))
+
+    @router.get("/api/delivery-packages/{pkg_id}/download")
+    async def download(pkg_id: str, request: Request):
+        owner = owner_of(request)
+        try:
+            path = delivery_package.zip_path(owner, pkg_id)
+        except delivery_package.PackageError as exc:
+            return JSONResponse(status_code=404, content={"error": exc.detail, "error_class": exc.error_class})
+        return FileResponse(str(path), media_type="application/zip", filename=path.name)
+
+    @router.get("/api/delivery-packages/{pkg_id}/document")
+    async def document(pkg_id: str, request: Request):
+        owner = owner_of(request)
+        try:
+            path = delivery_package.zip_path(owner, pkg_id)
+        except delivery_package.PackageError as exc:
+            return JSONResponse(status_code=404, content={"error": exc.detail, "error_class": exc.error_class})
+        folder = path.with_suffix("")
+        doc = folder / "ENTREGA.md"
+        return PlainTextResponse(doc.read_text(encoding="utf-8") if doc.is_file() else "", media_type="text/markdown")
+
+    return router

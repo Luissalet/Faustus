@@ -37,7 +37,7 @@ export function ProjectNavigation({ selected, onChange, projectId, liveChats, li
     </div><Menu testId="project-tools-menu" trigger={<button type="button" className="fs-tab" data-testid="project-tools">
       {t('Project tools')}<ChevronDown size={13} aria-hidden="true" />
     </button>} items={[
-      ...TOOLS.filter(tool => ['/alternatives', '/deltas', '/completion', '/state'].includes(tool.path)).map(tool => ({ label: t(tool.label), icon: tool.icon,
+      ...TOOLS.filter(tool => ['/alternatives', '/deltas', '/completion', '/state', '/delivery'].includes(tool.path)).map(tool => ({ label: t(tool.label), icon: tool.icon,
         onSelect: () => navigate(toolHref(tool.path, projectId)) })),
     ]} />
   </div>;

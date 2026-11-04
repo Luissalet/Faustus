@@ -3338,6 +3338,38 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "delivery_package",
+            "description": "Reproducible delivery package for a client: collects editable sources, exports, data sources explicitly authorised to share, instructions, examples and stated limitations into one folder plus zip with ENTREGA.md and manifest.json (SHA-256 per file). Every editable and export is reopened by a reader for its format (STL, OBJ, GLB/glTF, 3MF, PLY, STEP, PDF, PPTX, DOCX, XLSX, CSV, images, HTML, JSON, notebooks, Python, text, ZIP; container signature for .blend/video/audio/FBX) before copying and again from the extracted zip; ready=true only if all of them open, instructions and limitations exist and the zip reopens identically. Data without authorized=true is left out and listed. software_root attaches the verified client handoff (the report code_graph_handoff wrote; run that first). action=build (default) / list / show {id} / reverify {id} / readers. Readers check structure, not visual quality or correctness.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["build", "list", "show", "reverify", "readers"]},
+                    "name": {"type": "string", "description": "Package name (build)"},
+                    "items": {
+                        "description": "Files with their role: a list of {path, role, authorized?, note?} or one 'role: path' per line; role is editable, export, data, instructions, example or other; data needs authorized=true (or '(authorized)' at the end of the line) to be included",
+                        "anyOf": [
+                            {"type": "array", "items": {"type": "object", "properties": {
+                                "path": {"type": "string"},
+                                "role": {"type": "string", "enum": ["editable", "export", "data", "instructions", "example", "other"]},
+                                "authorized": {"type": "boolean"}, "note": {"type": "string"}}, "required": ["path"]}},
+                            {"type": "string"}
+                        ]
+                    },
+                    "instructions": {"type": "string", "description": "How to open, use or rebuild the delivery"},
+                    "limitations": {"description": "What the delivery does not do or was not checked (list or one per line)",
+                                    "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}]},
+                    "software_root": {"type": "string", "description": "Repository whose verified handoff (.handoff/handoff-report.json) travels with the package"},
+                    "out_dir": {"type": "string", "description": "Also copy the zip to this folder"},
+                    "lang": {"type": "string", "enum": ["es", "en"], "description": "Language of ENTREGA.md (default es)"},
+                    "id": {"type": "string", "description": "Package id (show, reverify)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_handoff",
             "description": "Client handoff package: install/configure/migrate/run/test/recover/demo instructions from the repo dossier, executed in a throwaway copy and written to HANDOFF.md. Only verified commands are presented as instructions; failed and not-run ones go under 'Not verified' with the reason. Runs the repository's own commands.",
             "parameters": {
