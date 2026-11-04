@@ -10375,3 +10375,29 @@ No hedge	Sin cobertura
 {n} recipe parameters	{n} parámetros
 {n} exit criterion	{n} criterio de salida
 {n} exit criteria	{n} criterios de salida
+Paused model probes	Sondeos de modelos en pausa
+A model server that refuses {n} connections in a row is skipped by automatic detection (vision helper, context window, model capabilities, hedge targets) for {base} s, doubling on each further refusal up to {max} min. Any answer from it ends the pause. The endpoints stay as they are.	Un servidor de modelos que rechaza {n} conexiones seguidas se salta en la detección automática (modelo de visión auxiliar, ventana de contexto, capacidades del modelo, destinos de cobertura) durante {base} s, el doble con cada rechazo más, hasta {max} min. Cualquier respuesta suya acaba la pausa. Los endpoints se quedan como están.
+No server is paused: every model server answered its last probe.	Ningún servidor está en pausa: todos los servidores de modelos respondieron a su último sondeo.
+Refusals	Rechazos
+Next probe	Próximo sondeo
+in {s} s	en {s} s
+next use	en el próximo uso
+Probe now	Sondear ahora
+Probe all now	Sondear todos ahora
+Probes resumed for {n} server(s)	Sondeos reanudados en {n} servidor(es)
+Darwin does not recognise this project as a Hoard: showing the whole family.	Darwin no reconoce este proyecto como un Hoard: se muestra la familia entera.
+Darwin's Hoard is not answering: {error}	Darwin's Hoard no responde: {error}
+Gaps	Carencias
+Loading Darwin	Cargando Darwin
+Next radar searches	Siguientes búsquedas del radar
+Nothing open.	Nada abierto.
+Open Darwin	Abrir Darwin
+Recent changes	Cambios recientes
+The whole family	Toda la familia
+Worth a look	Para mirar
+says an image was edited, but no image tool ran	dice que se editó una imagen, pero no se ejecutó ninguna herramienta de imagen
+edited the script it used to check its own work	editó el script que usaba para comprobar su propio trabajo
+This repository is still being read; its counts appear when it finishes.	Este repositorio aún se está leyendo; sus recuentos aparecen al terminar.
+reading…	leyendo…
+Last known status, {s} s old; it is being read again.	Último estado conocido, de hace {s} s; se está leyendo de nuevo.
+{s} s ago	hace {s} s

@@ -938,6 +938,34 @@ it does not establish an autonomous quality score for the selected model.
   during repo discovery, and the walk reads entry types from the directory listing
   (89 repos found in ~3 s instead of ~17 s on Windows). Model-call trace retention (`llm_trace_retention_days`,
   7 by default) is a field in Settings › Agent.
+- **Repo list within a time budget.** `GET /api/git/repos` (`src/git_repo_list.py`)
+  reads every repo's `git status` on one shared pool of 8 workers, slowest repos
+  first, never twice at once for the same repo (overlapping loads and the rail's
+  15 s light poll share the read). A status stays fresh for 5 s, or three times
+  what that repo's last read took (up to a minute), and the full mode's config
+  reads (`user.*`, `remote -v`, the chosen SSH identity) are cached until a config
+  file's modification time changes; the identity list is read once per request,
+  alongside the statuses, and the folder walk older than its 30 s TTL is served
+  while a new walk runs behind it. The list answers within 12 s (6 s light,
+  discovery included): a repo still being read keeps its last row
+  (`status_state: "stale"`, `status_age_s`; a repo whose last read took longer
+  than the time left is not waited for) or, never read yet, a row with the branch
+  from `.git/HEAD` (`"pending"`); the read goes on in the background, the response
+  says `refreshing: true` with `status_counts` and `timing_s`, and Source control
+  asks again every 3 s until every row is read. The rail marks those rows
+  "reading…" or "N s ago". Untracked files are still counted in full.
+- **Paused model probes.** A model server that refuses two connections in a row
+  (an endpoint whose server is not running) is skipped by every auto-detection
+  probe -- vision helper, context window, Ollama/LM Studio/llama.cpp/OpenAI-compatible
+  capability probes, hedge targets -- for 60 s, doubling on each further refusal up
+  to 15 min (`src/probe_backoff.py`); a connect timeout to loopback counts as the
+  refusal Windows reports late. Any answer, or a real request reaching it, ends the
+  pause. Settings › Models › Paused model probes lists each paused server, the
+  endpoints on it, the refusals and the next probe, with "Probe now" and "Probe all
+  now"; REST `GET /api/model-endpoints/probe-backoff` and
+  `POST /api/model-endpoints/probe-backoff/clear`; MCP `probe_backoff`. The two
+  llama.cpp endpoints on 8081/8082 (model files deleted on 15-10) are disabled,
+  still listed, so they can be enabled again.
 
 ### Hedged first token
 
