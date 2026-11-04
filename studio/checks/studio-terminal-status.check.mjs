@@ -100,6 +100,7 @@ const identitySync = section('  const syncIds = useCallback(', '  const sendToGr
 const harnessFile = join(scratch, 'harness.mjs');
 await build({ stdin: { contents: `
 import React, {useState,useEffect,useRef,useCallback} from '${pathToFileURL(join(root, 'node_modules/react/index.js')).href}';
+import {createExternalFollowGate,mayApplyExternalFollow} from './studio/src/screens/studio/externalFollow.ts';
 export function Harness({sessionId,fixture}) {
  const {loadHistory,loadTurnStatus,blankTurn,cleanUserText,restoreFromMetadata,restoreTerminalStatus,
    metricsFrom,apply,appendSteer,readAttachmentsFor,loadAgentProgress,panelDispatch,
@@ -114,10 +115,14 @@ export function Harness({sessionId,fixture}) {
  const uiEventRef=useRef(()=>{}),groupId=null,routes=[],knobs={autonomyPreset:'full'},executionPicks={};
  const t=x=>x,pickedRouteId=()=>'',routeForSession=()=>null;
  // Following an external turn (26c3a805) shares this section; it stays idle
- // here (no follow mark), so its inputs are inert stand-ins.
+ // here (no follow mark), so the follow inputs are inert stand-ins. Since
+ // 26c3a805 every post-run history refresh (rejoin, outbox) is gated by the
+ // follow generation gate, so the gate and its predicate are the real ones:
+ // an always-false stand-in would drop those refreshes and hide the restored
+ // terminal error the checks below assert.
  const bumpExternalFollow=()=>{},chatActivity={runs:{},details:{}},openFollowMark=null,externalFollowKick=0;
- const externalFollowPrevRef=useRef(undefined),externalFollowGateRef=useRef({invalidate(){},begin(){return 0;}});
- const planExternalFollowTransition=()=>({kind:'none'}),mayApplyExternalFollow=()=>false;
+ const externalFollowPrevRef=useRef(undefined),externalFollowGateRef=useRef(createExternalFollowGate());
+ const planExternalFollowTransition=()=>({kind:'none'});
  const patchLast=useCallback(fn=>setTurns(list=>list?.map((turn,i)=>i===list.length-1?fn(turn):turn)),[]);
  ${mapping}
  ${identitySync}
