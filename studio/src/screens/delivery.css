@@ -85,3 +85,4 @@
 }
 .fs-dlv__del:hover:not(:disabled) { color: var(--fs-danger, #e5484d); border-color: var(--fs-danger, #e5484d); }
 .fs-dlv__del:disabled { opacity: 0.45; cursor: default; }
+.fs-dlv__row > .fs-dlv__del { block-size: 32px; }
