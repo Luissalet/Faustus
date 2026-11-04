@@ -16,6 +16,12 @@ No bloquean nada ni esperan una respuesta concreta de Luis; salieron de PENDIENT
 - **Precios por franja de OpenRouter:** contrastado el 04-11 con el catálogo real (454 modelos, todos con precio leído por `price_from_openrouter_raw`). Ese catálogo trae `pricing.overrides` por día y hora UTC (DeepSeek V4.1 Flash cuesta el doble en horas laborables) y la estimación usa el precio base: tomar el máximo de las franjas para la cota alta.
 - **Receta GLM alternativa:** probar `max_num_seqs` 16 (hoy 8: 115 tok/s agregados con 8, 16 o 64 peticiones) y un `reasoning_effort` menor en rondas de control de pantalla (con max piensa 60-80 s), la próxima vez que se cargue.
 - **Modelo pequeño de tool-calling en el dispositivo** (19-09): descartado mientras implique DLL nativa, descarga de pesos y telemetría por defecto.
+- **OBJ-5, nodos remotos por grupos** (11-09): retomarlo ahora que las Sparks son nodos reales (antes esperaba a un segundo PC).
+- **QA en vivo que pueden hacer los agentes** (estaba entre las pruebas de Luis, pero no necesita micrófono ni cuentas):
+  - «Seguir a la app» en Conectores (§96): arrancar Jobhunter en otro puerto desde el Hub, parar el original, pulsar Check y ver «Followed the app from … to …».
+  - Perfiles de lanzamiento y conectores de apps fusionadas (§101): el conector «Gepetto's Hoard» está desactivado y su `REST_MANIFEST` apunta a `D:\LocalAI\odysseus\bridges\rest_mcp`, que ya no existe (Gepetto y Plato's viven ahora en el 5186 de Vulcan); decidir con Vulcan si se migra a su preset o se retira, y probar los perfiles de Dorian's, Jobhunter's y Writer's con la app arriba.
+  - Creator con el flag activado (§90-94): `/creator`, la biblioteca, un preflight real contra un motor instalado y el ciclo de vida de un plugin de principio a fin.
+  - Lint de grounding con el almacén real (§145): un ítem bien respaldado y uno inventado, ver que el panel «Grounding» los distingue y borrar los dos después; revisar `proper_noun` y fechas día/mes frente a mes/día.
 
 ## Primer token con cobertura — 03-11-2026
 
