@@ -102,3 +102,12 @@ def test_builtin_server_is_registered():
     from src import builtin_mcp
     script, _name = builtin_mcp._BUILTIN_SERVERS["source_authority"]
     assert script == "mcp_servers/source_authority_server.py"
+
+
+def test_docs_prefix_on_a_platform_that_gives_anyone_a_subdomain_is_not_official():
+    from src.source_authority import classify_source
+    for url in ("https://docs.google.com/document/d/abc", "https://docs.someone.github.io/guide",
+                "https://docs.myapp.netlify.app/", "https://developer.fake.pages.dev/x"):
+        assert classify_source(url)["official"] is False, url
+    assert classify_source("https://docs.python.org/3/")["official"] is True
+    assert classify_source("https://developer.mozilla.org/en-US/")["official"] is True

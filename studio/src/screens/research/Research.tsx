@@ -269,7 +269,9 @@ export function SourceList({ sources }: { sources: ResearchSource[] }) {
   if (sources.length === 0) return null;
   const checked = summarise(sources).checked;
   const officialCount = sources.filter((s) => s.official).length;
-  const shown = officialOnly ? sources.filter((s) => s.official) : sources;
+  // The checkbox only exists while some source is official; a ticked box carried over to a report
+  // with none would otherwise hide every source with no way to untick it.
+  const shown = officialOnly && officialCount > 0 ? sources.filter((s) => s.official) : sources;
   return (
     <details className="fs-rs__sources" data-testid="research-sources">
       <summary>{tn(sources.length, '{n} source', '{n} sources')}{officialCount > 0 ? ` · ${t('{n} official', { n: officialCount })}` : ''}</summary>

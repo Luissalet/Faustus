@@ -38,6 +38,9 @@ _SHOP = ("amazon.", "ebay.", "aliexpress.", "etsy.com", "walmart.com", "pccompon
          "shopify.com", "temu.com")
 _SOCIAL = ("x.com", "twitter.com", "facebook.com", "instagram.com", "linkedin.com", "tiktok.com", "threads.net",
            "mastodon.social", "bsky.app")
+_USER_CONTENT = ("docs.google.com", "drive.google.com", "sites.google.com", "notion.site", "notion.so",
+                 "gitbook.io", "netlify.app", "vercel.app", "herokuapp.com", "web.app", "firebaseapp.com",
+                 "glitch.me", "repl.co", "onrender.com", "fly.dev", "workers.dev")
 _VIDEO = ("youtube.com", "youtu.be", "vimeo.com", "twitch.tv", "dailymotion.com")
 
 
@@ -92,7 +95,10 @@ def classify_source(url: Any) -> Dict[str, Any]:
     if hit:
         return out("intergovernmental", True, hit)
     # Documentation: a docs./developer. subdomain is the vendor's own, so it is official.
-    if labels[0] in ("docs", "developer", "developers") and len(labels) >= 3:
+    # ...unless the host is a platform that hands anyone a subdomain or a document (docs.google.com is a
+    # shared document, docs.someone.github.io a project page): there the prefix proves nothing.
+    open_platform = bool(_matches(host, _USER_CONTENT + _CODE + _WIKI + _QA + _SOCIAL + _VIDEO + _BLOG))
+    if labels[0] in ("docs", "developer", "developers") and len(labels) >= 3 and not open_platform:
         return out("docs", True, labels[0] + ".")
     if _is_or_under(host, "readthedocs.io") or _is_or_under(host, "readthedocs.org"):
         return out("docs", False, "readthedocs")
