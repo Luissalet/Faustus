@@ -3394,11 +3394,15 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "commission_office",
-            "description": "Commission office: one record per client commission (opportunity, proposal, agreed, in_progress, delivered, closed, lost) with scope versions compared by scope_compare, milestones with due dates, amounts and deliverables linked to delivery packages (ready read live), contacts (optional People id), files, decisions and payments with a Ledger reference. Actions: create {title, client?, request?, budget?}, list, show/status {id}, update {id, stage?, title?, client?, summary?, budget?}, add_scope {id, kind: initial|agreement|change, text, graph?, effort_hours?}, add_milestone {id, title, due?, amount?, deliverables?}, update_milestone {id, milestone, done?, due?, add_deliverable?}, link_package {id, milestone, package_id, deliverable?}, add_contact {id, name, role?, email?, people_id?}, add_file {id, path, role?}, add_decision {id, text, date?}, add_payment {id, label, amount?, due?, ledger_ref?}.",
+            "description": "Commission office: one record per client commission (opportunity, proposal, agreed, in_progress, delivered, closed, lost) with scope versions compared by scope_compare, milestones with due dates, amounts and deliverables linked to delivery packages (ready read live), contacts (optional People id), files, decisions and payments with a Ledger reference. Actions: create {title, client?, request?, budget?}, list, show/status {id}, update {id, stage?, title?, client?, summary?, budget?}, add_scope {id, kind: initial|agreement|change, text, graph?, effort_hours?}, add_milestone {id, title, due?, amount?, deliverables?}, update_milestone {id, milestone, done?, due?, add_deliverable?}, link_package {id, milestone, package_id, deliverable?}, add_contact {id, name, role?, email?, people_id?}, add_file {id, path, role?}, add_decision {id, text, date?}, add_payment {id, label, amount?, due?, ledger_ref?}, proposal {id, assumptions?, exclusions?, internal_terms?, lang?}: drafts a Word + Markdown proposal where each point is verified (from the record), an assumption or an open question, with internal names, local paths and non-client e-mails masked and listed.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact", "add_file", "add_decision", "add_payment", "status"]},
+                    "action": {"type": "string", "enum": ["create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact", "add_file", "add_decision", "add_payment", "status", "proposal"]},
+                    "assumptions": {"type": "string", "description": "Proposal assumptions, one per line"},
+                    "exclusions": {"type": "string", "description": "Out of scope, one per line"},
+                    "internal_terms": {"type": "string", "description": "More words to keep out of the proposal, one per line"},
+                    "lang": {"type": "string", "enum": ["es", "en"]},
                     "id": {"type": "string", "description": "Commission id"},
                     "title": {"type": "string"}, "client": {"type": "string"}, "summary": {"type": "string"},
                     "stage": {"type": "string", "enum": ["opportunity", "proposal", "agreed", "in_progress", "delivered", "closed", "lost"]},

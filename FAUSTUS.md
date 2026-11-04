@@ -17557,3 +17557,14 @@ Herramienta `commission_office` y pestaña **Commissions** de Studio → Deliver
 - **Prueba en vivo (04-11).** Encargo «Caja para sensor»: petición inicial, acuerdo (comparado con la petición: plazo 15 → 10 días, dos cláusulas nuevas), cambio del cliente con el mapa `caja-sensor` (DOCX local, pulgadas rehace el pipeline, «más bonito» pregunta), hito vencido M1 enlazado al paquete real de la ficha 3D (listo), segundo hito añadido desde la pantalla. REST, MCP y UI.
 - **Límites.** No crea propuestas (E31), no concilia cobros con Ledger ni busca personas en People; no es un Hoard aparte.
 - **Pruebas.** `tests/test_commission_office.py` (3) y el caso de superficies en `tests/test_delivery_surfaces.py`.
+
+## 04-11-2026 · Propuesta profesional desde el expediente (Hangar E31)
+
+`commission_office action=proposal` (y el botón «Draft proposal» de Studio → Delivery → Commissions) redacta una propuesta en Word y Markdown desde el expediente del encargo. Módulo `src/proposal_builder.py`.
+
+- **Secciones**: contexto (petición inicial), alcance acordado, cambios solicitados pendientes de acordar, plan e hitos (fecha, importe, entregas comprobadas por su paquete), importe (presupuesto y total de hitos), decisiones tomadas, supuestos, fuera del alcance y preguntas abiertas. Una sección sin datos lo dice en vez de rellenarse.
+- **Origen de cada punto**: «verificado» (sale del expediente), «supuesto» (lo indica quien redacta) o «pregunta» (sigue abierta: cambios no acordados y preguntas del comparador).
+- **Control de fugas**: antes de escribir, se ocultan rutas locales, ids internos, nombres de herramientas y de la familia de Hoards y correos que no son de los contactos del cliente; cada ocultación se lista en el resultado y en la pantalla. Se pueden añadir palabras propias.
+- **Superficies**: herramienta y MCP `commission_office` (`action=proposal`), `POST /api/commissions/{id}/proposal`, descarga `GET /api/commissions/{id}/proposals/{nombre}.docx|.md`, sección «Proposal» en la pantalla.
+- **Límites**: no redacta con modelo ni reutiliza casos anteriores; solo ordena lo que hay en el expediente y lo que se le da.
+- **Pruebas**: `tests/test_proposal_builder.py` (2) y el caso de superficies.

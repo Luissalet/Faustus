@@ -24,7 +24,8 @@ GET  /api/commissions                        the owner's commissions
 POST /api/commissions                        {title, client?, stage?, summary?, request?, budget?}
 GET  /api/commissions/{id}                   the record with its computed status
 POST /api/commissions/{id}/{action}          update | add_scope | add_milestone | update_milestone | link_package |
-                                             add_contact | add_file | add_decision | add_payment
+                                             add_contact | add_file | add_decision | add_payment | proposal
+GET  /api/commissions/{id}/proposals/{name}.{docx|md}   a drafted proposal (Hangar E31)
 """
 from typing import Any, Dict
 
@@ -124,7 +125,7 @@ def setup_delivery_routes() -> APIRouter:
         return _reply(scope_compare.run(owner_of(request), {"action": "show", "id": cid}))
 
     _OFFICE_POST = ("update", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact",
-                    "add_file", "add_decision", "add_payment")
+                    "add_file", "add_decision", "add_payment", "proposal")
 
     async def _json(request: Request) -> Dict[str, Any]:
         try:
@@ -148,6 +149,18 @@ def setup_delivery_routes() -> APIRouter:
     async def show_commission(cid: str, request: Request):
         from src import commission_office
         return _reply(commission_office.run(owner_of(request), {"action": "show", "id": cid}))
+
+    @router.get("/api/commissions/{cid}/proposals/{name}.{kind}")
+    async def proposal_download(cid: str, name: str, kind: str, request: Request):
+        from src import proposal_builder
+        owner = owner_of(request)
+        try:
+            path = proposal_builder.proposal_file(owner, cid, name, kind)
+        except (FileNotFoundError, ValueError):
+            return JSONResponse(status_code=404, content={"error": "no such proposal", "error_class": "office.not_found"})
+        media = ("application/vnd.openxmlformats-officedocument.wordprocessingml.document" if kind == "docx"
+                 else "text/markdown")
+        return FileResponse(str(path), media_type=media, filename=path.name)
 
     @router.post("/api/commissions/{cid}/{action}")
     async def commission_action(cid: str, action: str, request: Request):

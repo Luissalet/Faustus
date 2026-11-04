@@ -188,6 +188,18 @@ export interface Commission {
   contacts: { name: string; role: string; email: string; people_id: string }[]; files: { path: string; role: string; note: string }[];
   decisions: { date: string; text: string; by: string }[]; payments: { label: string; amount: number | null; due: string; ledger_ref: string }[];
   events: { at: string; kind: string; text: string }[]; status: CommissionStatus;
+  proposals?: { name: string; date: string; counts: Record<string, number>; masked: number }[];
+  proposal?: Proposal;
+}
+export interface Proposal {
+  name: string; title: string; date: string; sections: { title: string; items: { text: string; origin: 'verified' | 'assumption' | 'question' }[] }[];
+  leaks: { kind: string; value: string }[]; counts: Record<string, number>;
+}
+export const proposalHref = (id: string, name: string, kind: 'docx' | 'md') =>
+  `/api/commissions/${encodeURIComponent(id)}/proposals/${encodeURIComponent(name)}.${kind}`;
+export function originLabel(o: string): string {
+  const labels: Record<string, string> = { verified: t('Verified'), assumption: t('Assumption'), question: t('Question') };
+  return labels[o] ?? o;
 }
 export interface CommissionRow { id: string; title: string; client: string; stage: string; updated: string; next_due: string | null; overdue: number; scope_versions: number }
 

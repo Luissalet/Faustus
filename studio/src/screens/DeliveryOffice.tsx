@@ -1,4 +1,4 @@
-import { Briefcase, Check, Link2, Plus } from 'lucide-react';
+import { Briefcase, Check, FileText, Link2, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState } from '../components';
 import * as api from '../adapters/delivery';
@@ -41,6 +41,10 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
   const [role, setRole] = useState('');
   const [file, setFile] = useState('');
   const [decision, setDecision] = useState('');
+  const [assumptions, setAssumptions] = useState('');
+  const [exclusions, setExclusions] = useState('');
+  const [internal, setInternal] = useState('');
+  const [proposal, setProposal] = useState<api.Proposal | null>(c.proposal ?? null);
   const act = (action: string, body: Record<string, unknown>, after?: () => void) => {
     setError('');
     api.commissionAction(c.id, action, body).then((r) => { onChange(r); after?.(); }).catch((e) => setError((e as Error).message));
@@ -152,6 +156,40 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
           <input className="fs-field fs-dlv__grow" placeholder={t('Decision')} value={decision} onChange={(e) => setDecision(e.target.value)} />
           <Button size="sm" icon={Plus} label={t('Add decision')} disabled={!decision.trim()} onClick={() => act('add_decision', { text: decision }, () => setDecision(''))} />
         </div>
+      </section>
+
+      <section className="fs-dlv__block" aria-label={t('Proposal')} data-testid="office-proposal">
+        <h3 className="fs-dlv__h">{t('Proposal')}</h3>
+        <p className="fs-dlv__muted">{t('Drafted from this record: each point says whether it comes from the record, is an assumption of this proposal or is still an open question. Internal names, local paths and e-mails that are not the client\'s are masked and listed.')}</p>
+        <label className="fs-dlv__field">{t('Assumptions (one per line)')}<textarea className="fs-field" rows={2} value={assumptions} onChange={(e) => setAssumptions(e.target.value)} data-testid="office-assumptions" /></label>
+        <label className="fs-dlv__field">{t('Out of scope (one per line)')}<textarea className="fs-field" rows={2} value={exclusions} onChange={(e) => setExclusions(e.target.value)} data-testid="office-exclusions" /></label>
+        <label className="fs-dlv__field">{t('Other words to keep out (one per line)')}<textarea className="fs-field" rows={2} value={internal} onChange={(e) => setInternal(e.target.value)} /></label>
+        <div><Button variant="primary" icon={FileText} label={t('Draft proposal')} testId="office-proposal-btn"
+          onClick={() => { setError(''); api.commissionAction(c.id, 'proposal', { assumptions, exclusions, internal_terms: internal }).then((r) => { setProposal(r.proposal ?? null); onChange(r); }).catch((e) => setError((e as Error).message)); }} /></div>
+        {(c.proposals ?? []).length > 0 && (
+          <ul className="fs-dlv__plain fs-dlv__small">
+            {(c.proposals ?? []).map((p) => (
+              <li key={p.name}>{p.name} · {p.date} · {p.counts.verified ?? 0} {t('verified')}, {p.counts.assumption ?? 0} {t('assumptions')}, {p.counts.question ?? 0} {t('questions')}{p.masked ? ` · ${p.masked} ${t('masked')}` : ''}
+                {' '}<a href={api.proposalHref(c.id, p.name, 'docx')} download>.docx</a> · <a href={api.proposalHref(c.id, p.name, 'md')} target="_blank" rel="noreferrer">.md</a></li>
+            ))}
+          </ul>
+        )}
+        {proposal && (
+          <div className="fs-dlv__proposal" data-testid="office-proposal-preview">
+            <strong>{proposal.title}</strong>
+            {proposal.sections.map((s) => (
+              <div key={s.title}>
+                <div className="fs-dlv__h">{s.title}</div>
+                {s.items.length === 0 ? <p className="fs-dlv__muted">{t('No data in the record.')}</p> : (
+                  <ul className="fs-dlv__plain fs-dlv__small">
+                    {s.items.map((it, i) => <li key={i}>{it.text} <span className="fs-dlv__pill" data-tone={it.origin === 'verified' ? 'good' : it.origin === 'question' ? 'warn' : 'unknown'}>{api.originLabel(it.origin)}</span></li>)}
+                  </ul>
+                )}
+              </div>
+            ))}
+            {proposal.leaks.length > 0 && <p className="fs-dlv__muted">{t('Masked')}: {proposal.leaks.map((l) => `${l.kind} «${l.value}»`).join(' · ')}</p>}
+          </div>
+        )}
       </section>
 
       <section className="fs-dlv__block" aria-label={t('Timeline')}>

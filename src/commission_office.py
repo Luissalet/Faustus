@@ -17,6 +17,9 @@ and files, and points at the owners of each thing instead of copying them:
   written to People or Ledger here.
 * **Status** is computed: next milestone, overdue ones, deliverables without a
   ready package, open scope questions, decisions.
+* **Proposal** (E31): ``action=proposal`` drafts a Word + Markdown proposal from
+  the record through ``src/proposal_builder.py`` (verified / assumption /
+  question per point, internal names and paths masked and listed).
 
 Records live in DATA_DIR/commissions/<owner>/<id>.json. One dispatcher,
 ``run(owner, args)``, serves the chat tool, HTTP and MCP; errors come back as
@@ -38,7 +41,7 @@ logger = logging.getLogger(__name__)
 STAGES = ("opportunity", "proposal", "agreed", "in_progress", "delivered", "closed", "lost")
 SCOPE_KINDS = ("initial", "agreement", "change")
 ACTIONS = ("create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package",
-           "add_contact", "add_file", "add_decision", "add_payment", "status")
+           "add_contact", "add_file", "add_decision", "add_payment", "status", "proposal")
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _ID = re.compile(r"[a-z0-9-]{3,80}")
 
@@ -384,6 +387,18 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
                 raise OfficeError("office.bad_args", "amount must be a number") from None
             _append(rec, "payments", {"label": label, "amount": amount, "due": _date(args.get("due"), "due"),
                                       "ledger_ref": _s(args, "ledger_ref", 120)}, label)
+        elif action == "proposal":
+            from src import proposal_builder
+            result = proposal_builder.build(owner, rec, status(owner, rec), args)
+            rec.setdefault("proposals", []).append({"name": result["name"], "date": result["date"],
+                                                    "counts": result["counts"], "masked": len(result["leaks"])})
+            if rec["stage"] == "opportunity":
+                _event(rec, "stage", "opportunity -> proposal")
+                rec["stage"] = "proposal"
+            _event(rec, "proposal", f"{result['name']} ({result['counts']['verified']} verified, "
+                                    f"{result['counts']['assumption']} assumptions, {result['counts']['question']} questions)")
+            _save(owner, rec)
+            return {**rec, "status": status(owner, rec), "proposal": result}
         _save(owner, rec)
         return {**rec, "status": status(owner, rec)}
     except OfficeError as exc:

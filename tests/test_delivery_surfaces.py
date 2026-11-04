@@ -138,6 +138,12 @@ def test_commission_office_surfaces(client, monkeypatch, tmp_path):
     assert client.get(f"/api/commissions/{cid}").json()["title"] == "Caja"
     assert client.post(f"/api/commissions/{cid}/bogus", json={}).status_code == 400
     assert client.get("/api/commissions/nope-zz").status_code == 404
+    p = client.post(f"/api/commissions/{cid}/proposal", json={"assumptions": "El cliente aporta el sensor."}).json()
+    assert p["proposal"]["name"] == "propuesta-1" and p["proposal"]["counts"]["assumption"] == 1
+    doc = client.get(f"/api/commissions/{cid}/proposals/propuesta-1.docx")
+    assert doc.status_code == 200 and doc.content[:2] == b"PK"
+    assert "Supuestos" in client.get(f"/api/commissions/{cid}/proposals/propuesta-1.md").text
+    assert client.get(f"/api/commissions/{cid}/proposals/propuesta-9.md").status_code == 404
     out = asyncio.run(TOOL_HANDLERS["commission_office"](json.dumps({"action": "show", "id": cid}), {"owner": "alice"}))
     assert out["exit_code"] == 0 and "Caja" in out["output"]
     from src.tool_index_examples import EXAMPLES
