@@ -180,7 +180,9 @@ def test_start_incremental_refresh_noop_when_fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(rh, "RESEARCH_DATA_DIR", tmp_path)
     monkeypatch.setattr(rh, "DEEP_RESEARCH_DIR", str(tmp_path))
 
-    now = datetime(2026, 10, 11, 12, 0, 0)
+    # start_incremental_refresh reads the real clock, so ages are measured
+    # from now (a fixed date made the "fresh" source go stale with time).
+    now = datetime.now().replace(microsecond=0)
     fresh = (now - timedelta(days=1)).isoformat(timespec="seconds")
     report = "## Only\n\nBody [1].\n"
     sid = "rp-freshdemo01"
@@ -229,7 +231,9 @@ def test_start_incremental_refresh_seeds_prior_and_skips_fresh_urls(
     from src import research_handler as rh
     monkeypatch.setattr(rh, "RESEARCH_DATA_DIR", tmp_path)
 
-    now = datetime(2026, 10, 11, 12, 0, 0)
+    # start_incremental_refresh reads the real clock, so ages are measured
+    # from now (a fixed date made the "fresh" source go stale with time).
+    now = datetime.now().replace(microsecond=0)
     old = (now - timedelta(days=40)).isoformat(timespec="seconds")
     fresh = (now - timedelta(days=1)).isoformat(timespec="seconds")
     report = (

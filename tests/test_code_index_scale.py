@@ -43,6 +43,9 @@ def _build_large_repo(root: str, *, vendor_files: int = 200, own_files: int = 48
 
 
 @pytest.mark.slow
+# 86 s on its own (04-11-2026): over the suite's 120 s ceiling on a busy box,
+# where the thread timeout kills the whole xdist worker.
+@pytest.mark.timeout(600)
 def test_5000_file_repo_never_opens_vendor_or_binary_files(ce_store, tmp_path):
     root = str(tmp_path / "big_repo")
     _build_large_repo(root)

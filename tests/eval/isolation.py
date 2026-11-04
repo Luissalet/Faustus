@@ -19,16 +19,36 @@ from src.bench import harness_pair as hp
 REPO = Path(__file__).resolve().parents[2]
 
 
+def _served_by_live_instance(data: Path) -> bool:
+    """True while a Faustus server started from this checkout is running.
+
+    That server keeps writing to the same ``data`` directory (its log, run
+    records, databases), so a before/after stamp of the directory cannot tell
+    its writes from a test's and the guard would fail at random. The record
+    is the one ``server_runtime`` keeps; only a live, verified owner counts.
+    """
+    if data.resolve() != (REPO / "data").resolve():
+        return False
+    try:
+        import server_runtime
+        record = server_runtime.read_record()
+        return bool(record) and server_runtime.owned_process(record) is not None
+    except Exception:  # noqa: BLE001 - unknown means keep watching
+        return False
+
+
 def watched_dirs() -> Sequence[Path]:
     """Directories the eval suite must never write to: the repository's own
-    ``data`` directory (the default data dir of a developer checkout)."""
-    return [d for d in (REPO / "data",) if d.exists()]
+    ``data`` directory (the default data dir of a developer checkout), unless
+    a live server from this checkout is writing to it at the same time."""
+    return [d for d in (REPO / "data",) if d.exists() and not _served_by_live_instance(d)]
 
 
 def guard(extra_dirs: Sequence[Path] = ()) -> Iterator[None]:
-    before = hp.capture_process_state([*watched_dirs(), *extra_dirs])
+    dirs = [*watched_dirs(), *extra_dirs]  # decided once, so both stamps match
+    before = hp.capture_process_state(dirs)
     yield
-    after = hp.capture_process_state([*watched_dirs(), *extra_dirs])
+    after = hp.capture_process_state(dirs)
     leaks = hp.state_leaks(before, after)
     if leaks:
         pytest.fail("test leaked global state:\n  " + "\n  ".join(f"{v.kind}: {v.detail}" for v in leaks),

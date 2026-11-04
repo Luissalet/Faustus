@@ -62,6 +62,11 @@ def test_workspace_low_signal_floor_keeps_the_edit_path():
     __import__("os").environ.get("FAUSTUS_SKIP_TOOL_INDEX") == "1",
     reason="tool index not wanted here",
 )
+# Builds the real embedding index of every built-in tool on the CPU: 61 s on
+# its own (04-11-2026), past the suite's 120 s ceiling when the box is busy,
+# where the thread timeout then kills the whole xdist worker.
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_the_index_had_the_answer_all_along():
     """The retrieval that was skipped returns the tool the sentence names.
 

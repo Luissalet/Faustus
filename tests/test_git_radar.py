@@ -94,10 +94,13 @@ def test_scan_finds_repos_under_watched_roots_and_classifies(roots, tmp_path):
     (dirty / "b.txt").write_text("b")
     ahead = _repo(roots / "ahead")
     _with_remote(ahead, tmp_path / "ahead.git")
+    # "local" gets its first commit before "ahead" gets its second, so "ahead"
+    # really holds the most recent commit (it used to be made after it and the
+    # order below depended on both landing in the same clock second).
+    local = _repo(roots / "local")
     (ahead / "c.txt").write_text("c")
     _git(ahead, "add", "c.txt")
     _git(ahead, "commit", "-q", "-m", "second")
-    local = _repo(roots / "local")
 
     payload = git_radar.scan("alice", refresh=True)
     by_name = {r["name"]: r for r in payload["repos"]}

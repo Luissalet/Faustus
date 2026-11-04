@@ -87,6 +87,10 @@ def test_recompute_reports_nothing_lost_for_two_uncalibrated_models(monkeypatch,
 
 # ── stream_agent_loop wiring: a real mid-task fallback ───────────────────
 
+# 59 s on its own (04-11-2026, the first full agent turn of the module):
+# a busy box took it past the 120 s ceiling and lost the xdist worker.
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_fallback_mid_task_emits_capabilities_changed_with_lost(monkeypatch, tmp_path):
     monkeypatch.setattr(mcal, "_default_data_dir", lambda: str(tmp_path))
     prev_key = mcal.manifest_key(vendor="openai", model_id="selected-model", endpoint_id="selected-ep")

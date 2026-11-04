@@ -272,27 +272,30 @@ async def test_status_reports_unhealthy_when_process_exists_but_probe_unhealthy(
 
 async def test_status_all_probes_every_engine_side_by_side(monkeypatch, executable, model_file):
     """Every engine's status in one call; the probes run off the event loop
-    and at the same time (two 0.4 s probes finish well under 0.8 s)."""
+    and at the same time (each probe waits until the other has started)."""
     import time as _time
     a = engines.create_engine(owner="tester", name="A", executable=executable, model_path=model_file,
                               port=_free_port())
     b = engines.create_engine(owner="tester", name="B", executable=executable, model_path=model_file,
                               port=_free_port())
     from src import runner_providers
+    import threading
+    # Each probe waits for the other one to have started: run one after the
+    # other, the first would time out at the barrier. This proves "at the same
+    # time" without a wall-clock bound that a loaded machine can miss.
+    both_started = threading.Barrier(2, timeout=10)
 
     def slow_probe(root, force=False, timeout=1.5):
-        _time.sleep(0.4)
+        both_started.wait()
+        _time.sleep(0.05)
         return {"available": True, "healthy": root.endswith(str(a["port"])), "model": "m",
                 "context_length": 1, "footprint_bytes": None, "footprint_measured": False,
                 "generating": False}
 
     monkeypatch.setattr(runner_providers, "probe_llama_cpp", slow_probe)
-    t0 = _time.monotonic()
     out = await engines.status_all()
-    took = _time.monotonic() - t0
     assert out[a["id"]]["state"] == "running"
     assert out[b["id"]]["state"] == "unhealthy"
-    assert took < 0.75, took
 
 
 def test_argv_fields_split_a_hand_started_server_into_fields_and_flags():
