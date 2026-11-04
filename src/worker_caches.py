@@ -577,7 +577,6 @@ def clear(*, root: str = "", session_id: str = "", all_idle: bool = False,
         if row["active"] and not force:
             skipped.append({"root": row["root"], "reason": "the worker is running"})
             continue
-        freed += int(row["bytes"])
         if forget:
             shutil.rmtree(target, ignore_errors=True)
         else:
@@ -585,6 +584,14 @@ def clear(*, root: str = "", session_id: str = "", all_idle: bool = False,
                 path = os.path.join(target, sub)
                 if os.path.isdir(path):
                     shutil.rmtree(path, ignore_errors=True)
-        cleared.append({"root": row["root"], "name": row["name"], "freed_bytes": row["bytes"],
-                        "forgotten": bool(forget)})
+        # A file another process holds open (Windows) survives rmtree: count
+        # what is really gone, not what was there.
+        left = int(describe(target, live=live)["bytes"]) if os.path.isdir(target) else 0
+        gone = max(0, int(row["bytes"]) - left)
+        freed += gone
+        entry = {"root": row["root"], "name": row["name"], "freed_bytes": gone,
+                 "forgotten": bool(forget) and not left}
+        if left:
+            entry["remaining_bytes"] = left
+        cleared.append(entry)
     return {"cleared": cleared, "skipped": skipped, "freed_bytes": freed}

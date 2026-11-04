@@ -146,3 +146,21 @@ def test_mcp_tools_render_the_listing(monkeypatch):
     assert seen[-1][1] == "/api/agents/worker-caches?parent_session_id=p"
     text = asyncio.run(ws.call_tool("workers_cache_clear", {"session_id": "w1"}))[0].text
     assert "freed 1.0 MB" in text and seen[-1] == ("POST", "/api/agents/worker-caches/clear", {"session_id": "w1"})
+
+
+def test_clear_counts_only_what_is_really_gone(monkeypatch):
+    import shutil
+
+    async def run():
+        root, env = await asyncio.create_task(_as_worker("w8", name="locked", session_id="w8"))
+        with open(os.path.join(env["PIP_CACHE_DIR"], "held.whl"), "wb") as fh:
+            fh.write(b"x" * 4096)
+        return root
+    asyncio.run(run())
+    with monkeypatch.context() as m:
+        m.setattr(shutil, "rmtree", lambda *a, **k: None)  # a file another process holds open
+        out = worker_caches.clear(session_id="w8")
+    assert out["freed_bytes"] == 0
+    assert out["cleared"][0]["freed_bytes"] == 0 and out["cleared"][0]["remaining_bytes"] == 4096
+    out = worker_caches.clear(session_id="w8")
+    assert out["freed_bytes"] == 4096 and "remaining_bytes" not in out["cleared"][0]
