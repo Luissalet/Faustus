@@ -76,6 +76,14 @@ _NOT_SSE_FRAME_TYPES = frozenset({
     # llm_core sends to an OpenAI-compatible engine -- constrained decoding,
     # nothing to do with the stream coming back (22-09-2026).
     "json_schema",
+    # The request-body JSON schema of POST /api/chat_stream (chat_routes,
+    # OpenAPI `openapi_extra`): property types, not stream frames.
+    "string",
+    "number",
+    "boolean",
+    # `thinking: {"type": "disabled"}` in a request llm_core sends to a
+    # provider that takes an explicit thinking switch.
+    "disabled",
 })
 
 # `"type": "x"`, `'type': 'x'`, or the kwarg form `type="x"` — never
