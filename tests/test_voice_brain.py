@@ -141,3 +141,38 @@ def test_voice_mcp_server_exposes_the_brain():
     assert "voice_brain" in names
     session = next(t for t in voice.TOOLS if t.name == "voice_session")
     assert session.inputSchema["properties"]["brain"]["type"] == "boolean"
+
+
+def test_a_no_memory_turn_does_not_feed_memory_capture(monkeypatch):
+    """brain=false must stop the memory extraction after the turn too, not
+    only the recall before it (the link status says nothing is fed)."""
+    import sys
+    import types
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from tests.test_kv_cache_invalidation_2927 import _install_chat_helpers_stubs
+    helpers = _install_chat_helpers_stubs(monkeypatch)
+    seen = {"memory": 0}
+    mod = types.ModuleType("services.memory.memory_extractor")
+
+    async def fake_extract_and_store(*a, **k):
+        seen["memory"] += 1
+    mod.extract_and_store = fake_extract_and_store
+    monkeypatch.setitem(sys.modules, "services.memory.memory_extractor", mod)
+    ep = types.ModuleType("src.task_endpoint")
+    ep.resolve_task_endpoint = lambda url, model, headers, owner=None: (url, model, headers)
+    monkeypatch.setitem(sys.modules, "src.task_endpoint", ep)
+    queued = []
+    monkeypatch.setattr(helpers, "_spawn_bg", lambda coro: queued.append(coro) or coro.close())
+    monkeypatch.setattr(helpers, "needs_auto_name", lambda name: False)
+    sess = SimpleNamespace(endpoint_url="u", model="m", headers={}, history=[object()] * 8, name="n")
+    manager = SimpleNamespace(save_sessions=lambda: None)
+
+    def fire(**kw):
+        queued.clear()
+        helpers.run_post_response_tasks(sess, manager, "s", "hola", "vale", None, {"auto_memory": True},
+                                        MagicMock(), MagicMock(), None, owner="o", **kw)
+        return len(queued)
+    assert fire() == 1
+    assert fire(no_memory=True) == 0

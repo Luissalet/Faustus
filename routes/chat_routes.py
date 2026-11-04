@@ -2781,6 +2781,9 @@ def setup_chat_routes(
 
         image_generation_session = _is_image_generation_session(sess, owner=effective_user(request))
         no_memory = str(form_data.get("no_memory", (body or {}).get("no_memory", ""))).lower() == "true"
+        # What the caller asked for, before coding/image turns switch recall off
+        # by themselves: only the caller's request also stops memory capture.
+        explicit_no_memory = no_memory
         # CONTRATO_MODOS: one-turn behaviour-mode override, same form/JSON
         # dual-read posture every other per-turn field on this route uses.
         behavior_mode = str(
@@ -4261,7 +4264,7 @@ def setup_chat_routes(
                                             _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
                                             incognito=incognito, compare_mode=compare_mode,
                                             character_name=ctx.preset.character_name,
-                                            owner=_user,
+                                            owner=_user, no_memory=explicit_no_memory,
                                             allow_background_extraction=(
                                                 not tool_policy.block_all_tool_calls
                                                 and not tool_approval_continuation
@@ -4938,7 +4941,7 @@ def setup_chat_routes(
                                                                 agent_rounds=_agent_rounds,
                                         agent_tool_calls=_agent_tool_calls,
                                         skills_manager=skills_manager,
-                                        owner=_user,
+                                        owner=_user, no_memory=explicit_no_memory,
                                         extract_skills=(
                                             user_requested_agent
                                             and not tool_approval_continuation

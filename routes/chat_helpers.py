@@ -1760,8 +1760,12 @@ def run_post_response_tasks(
     owner: str = None,
     extract_skills: bool = True,
     allow_background_extraction: bool = True,
+    no_memory: bool = False,
 ):
     """Fire background tasks after a completed response: memory extraction, webhooks, auto-name, skill extraction.
+
+    `no_memory` is the turn's own "skip memory" request (the composer's switch,
+    a voice session with the brain off): such a turn is not mined for memories.
 
     Memory/skill extraction are queued to run *sequentially*, after the main
     completion stream for this session has fully wound down — never
@@ -1780,7 +1784,8 @@ def run_post_response_tasks(
     # Memory extraction — only every 4th message pair to avoid excess LLM calls
     _msg_count = len(sess.history) if hasattr(sess, 'history') else 0
     _should_extract = (_msg_count >= 4) and (_msg_count % 4 == 0)
-    if allow_background_extraction and not incognito and not compare_mode and _should_extract and uprefs.get("auto_memory", True):
+    if (allow_background_extraction and not incognito and not no_memory and not compare_mode
+            and _should_extract and uprefs.get("auto_memory", True)):
         from services.memory.memory_extractor import extract_and_store
         from src.task_endpoint import resolve_task_endpoint
         t_url, t_model, t_headers = resolve_task_endpoint(
