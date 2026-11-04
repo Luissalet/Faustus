@@ -189,7 +189,7 @@ def _diff(base: str, new: str) -> Dict[str, Any]:
     fa, fb = _formats(base), _formats(new)
     qa, qb = _quantities(base), _quantities(new)
     d: Dict[str, Any] = {}
-    if fa != fb and (fa or fb):
+    if fa != fb and fa and fb:          # a clause that names no format/unit does not change one
         d["attributes"] = {"from": sorted(fa - fb) or sorted(fa), "to": sorted(fb - fa) or sorted(fb)}
     changed_q = {u: {"from": qa[u], "to": qb[u]} for u in qa.keys() & qb.keys() if qa[u] != qb[u]}
     if changed_q:
@@ -222,9 +222,9 @@ def _classify(new_clauses: List[str], base_clauses: List[str], replace: bool) ->
             d = _diff(base_clauses[j], c)
             row.update(status="changed" if d.get("attributes") or d.get("quantities") else "included", match=j, diff=d)
             matched_base.add(j)
-        elif best >= 0.25:
+        elif best >= 0.34:                  # at least a third of the words in common
             d = _diff(base_clauses[j], c)
-            if second >= 0.25 and best - second < 0.08:
+            if second >= 0.34 and best - second < 0.08:
                 row.update(status="ambiguous", reason="two", match=j, other=scored[1][1])
             elif d.get("attributes") or d.get("quantities"):
                 row.update(status="changed", match=j, diff=d)

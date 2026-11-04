@@ -5,6 +5,7 @@ import { Button, EmptyState, Skeleton } from '../components';
 import * as api from '../adapters/delivery';
 import { t, tn } from '../i18n';
 import { ScopePanel } from './DeliveryScope';
+import { OfficePanel } from './DeliveryOffice';
 import './delivery.css';
 
 /**
@@ -167,8 +168,8 @@ function PackageDetail({ pkg, onReverified }: { pkg: api.DeliveryPackage; onReve
 export function DeliveryScreen() {
   const [params, setParams] = useSearchParams();
   const openId = params.get('p') ?? '';
-  const view = params.get('view') === 'scope' ? 'scope' : 'packages';
-  const setView = (v: string) => { const next = new URLSearchParams(params); if (v === 'scope') next.set('view', 'scope'); else next.delete('view'); setParams(next, { replace: true }); };
+  const view = params.get('view') === 'scope' ? 'scope' : params.get('view') === 'office' ? 'office' : 'packages';
+  const setView = (v: string) => { const next = new URLSearchParams(params); if (v === 'packages') next.delete('view'); else next.set('view', v); setParams(next, { replace: true }); };
   const [rows, setRows] = useState<api.PackageRow[] | null>(null);
   const [pkg, setPkg] = useState<api.DeliveryPackage | null>(null);
   const [error, setError] = useState('');
@@ -207,15 +208,17 @@ export function DeliveryScreen() {
           </p>
         </div>
         <div className="fs-dlv__row">
-          <Button variant="primary" icon={Plus} label={t('New package')} onClick={() => setCreating(true)} testId="delivery-new" />
+          <Button variant="primary" icon={Plus} label={t('New package')} onClick={() => { setCreating(true); setView('packages'); }} testId="delivery-new" />
           <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Reload')} onClick={() => { void reloadList(); }} />
         </div>
       </header>
       <div className="fs-tabs" role="tablist" aria-label={t('Delivery sections')}>
         <button type="button" role="tab" className="fs-tab" aria-selected={view === 'packages'} data-testid="delivery-tab-packages" onClick={() => setView('packages')}>{t('Packages')}</button>
         <button type="button" role="tab" className="fs-tab" aria-selected={view === 'scope'} data-testid="delivery-tab-scope" onClick={() => setView('scope')}>{t('Scope changes')}</button>
+        <button type="button" role="tab" className="fs-tab" aria-selected={view === 'office'} data-testid="delivery-tab-office" onClick={() => setView('office')}>{t('Commissions')}</button>
       </div>
       {view === 'scope' && <ScopePanel />}
+      {view === 'office' && <OfficePanel />}
       {view === 'packages' && error && <p className="fs-dlv__why" data-tone="bad" role="alert">{error}</p>}
       {view === 'packages' && rows === null && <Skeleton label={t('Reading the packages')} count={3} height="56px" />}
       {view === 'packages' && <div className="fs-dlv__layout" data-single={!rows || rows.length === 0 || undefined}>

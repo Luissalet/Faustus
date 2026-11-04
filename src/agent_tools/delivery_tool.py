@@ -1,4 +1,4 @@
-"""agent_tools/delivery_tool.py -- the `delivery_package` (Hangar E33) and `scope_compare` (E30) executors.
+"""agent_tools/delivery_tool.py -- the `delivery_package` (Hangar E33) and `scope_compare` (E30) executors, plus `commission_office` (E29).
 
 Thin dispatcher over `src.delivery_package.run`: build a reproducible delivery
 package whose editables and exports were reopened from the source and from the
@@ -51,3 +51,18 @@ class ScopeCompareTool:
         if data.get("error"):
             return {"error": f"scope_compare: {data['error']}", "error_class": data.get("error_class"), "exit_code": 1}
         return {"output": scope_compare.render(data), "exit_code": 0, "result": data}
+
+
+class CommissionOfficeTool:
+    """`commission_office` {action, id?, ...} (Hangar E29): one record per commission."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src import commission_office
+        args = _args(content)
+        if not args:
+            return {"error": "commission_office: the arguments must be a JSON object", "exit_code": 1}
+        owner = str((ctx or {}).get("owner") or "")
+        data = await asyncio.to_thread(commission_office.run, owner, args)
+        if data.get("error"):
+            return {"error": f"commission_office: {data['error']}", "error_class": data.get("error_class"), "exit_code": 1}
+        return {"output": commission_office.render(data), "exit_code": 0, "result": data}

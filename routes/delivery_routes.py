@@ -18,6 +18,13 @@ Scope comparator (Hangar E30, src/scope_compare.py):
 POST /api/scope-comparisons                  {agreement, new_request, initial?, graph?, effort_hours?, mode?, lang?, title?}
 GET  /api/scope-comparisons                  the owner's comparisons, newest first
 GET  /api/scope-comparisons/{id}             one comparison
+
+Commission office (Hangar E29, src/commission_office.py):
+GET  /api/commissions                        the owner's commissions
+POST /api/commissions                        {title, client?, stage?, summary?, request?, budget?}
+GET  /api/commissions/{id}                   the record with its computed status
+POST /api/commissions/{id}/{action}          update | add_scope | add_milestone | update_milestone | link_package |
+                                             add_contact | add_file | add_decision | add_payment
 """
 from typing import Any, Dict
 
@@ -115,5 +122,42 @@ def setup_delivery_routes() -> APIRouter:
     async def show_scope(cid: str, request: Request):
         from src import scope_compare
         return _reply(scope_compare.run(owner_of(request), {"action": "show", "id": cid}))
+
+    _OFFICE_POST = ("update", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact",
+                    "add_file", "add_decision", "add_payment")
+
+    async def _json(request: Request) -> Dict[str, Any]:
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        return body if isinstance(body, dict) else {}
+
+    @router.get("/api/commissions")
+    async def list_commissions(request: Request):
+        from src import commission_office
+        return _reply(commission_office.run(owner_of(request), {"action": "list"}))
+
+    @router.post("/api/commissions")
+    async def create_commission(request: Request):
+        from src import commission_office
+        owner = owner_of(request)
+        return _reply(commission_office.run(owner, {**(await _json(request)), "action": "create"}))
+
+    @router.get("/api/commissions/{cid}")
+    async def show_commission(cid: str, request: Request):
+        from src import commission_office
+        return _reply(commission_office.run(owner_of(request), {"action": "show", "id": cid}))
+
+    @router.post("/api/commissions/{cid}/{action}")
+    async def commission_action(cid: str, action: str, request: Request):
+        from src import commission_office
+        owner = owner_of(request)
+        if action not in _OFFICE_POST:
+            return JSONResponse(status_code=400, content={"error": f"action must be one of {', '.join(_OFFICE_POST)}",
+                                                          "error_class": "office.bad_args"})
+        import asyncio
+        body = await _json(request)
+        return _reply(await asyncio.to_thread(commission_office.run, owner, {**body, "action": action, "id": cid}))
 
     return router

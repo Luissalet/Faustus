@@ -3393,6 +3393,40 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "commission_office",
+            "description": "Commission office: one record per client commission (opportunity, proposal, agreed, in_progress, delivered, closed, lost) with scope versions compared by scope_compare, milestones with due dates, amounts and deliverables linked to delivery packages (ready read live), contacts (optional People id), files, decisions and payments with a Ledger reference. Actions: create {title, client?, request?, budget?}, list, show/status {id}, update {id, stage?, title?, client?, summary?, budget?}, add_scope {id, kind: initial|agreement|change, text, graph?, effort_hours?}, add_milestone {id, title, due?, amount?, deliverables?}, update_milestone {id, milestone, done?, due?, add_deliverable?}, link_package {id, milestone, package_id, deliverable?}, add_contact {id, name, role?, email?, people_id?}, add_file {id, path, role?}, add_decision {id, text, date?}, add_payment {id, label, amount?, due?, ledger_ref?}.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact", "add_file", "add_decision", "add_payment", "status"]},
+                    "id": {"type": "string", "description": "Commission id"},
+                    "title": {"type": "string"}, "client": {"type": "string"}, "summary": {"type": "string"},
+                    "stage": {"type": "string", "enum": ["opportunity", "proposal", "agreed", "in_progress", "delivered", "closed", "lost"]},
+                    "request": {"type": "string", "description": "First request text (create)"},
+                    "budget": {"type": "object", "description": "{amount, currency?, note?}"},
+                    "kind": {"type": "string", "enum": ["initial", "agreement", "change"]},
+                    "text": {"type": "string", "description": "Scope version or decision text"},
+                    "graph": {"type": "string", "description": "Decision map that grounds the scope comparison"},
+                    "effort_hours": {"type": "object"},
+                    "milestone": {"type": "string", "description": "Milestone id such as M1"},
+                    "due": {"type": "string", "description": "YYYY-MM-DD"},
+                    "done": {"description": "true or a YYYY-MM-DD date; empty reopens", "anyOf": [{"type": "boolean"}, {"type": "string"}]},
+                    "amount": {"type": "number"},
+                    "deliverables": {"type": "array", "items": {"type": "string"}},
+                    "add_deliverable": {"type": "string"},
+                    "package_id": {"type": "string", "description": "Delivery package id (link_package)"},
+                    "deliverable": {"type": "string"},
+                    "name": {"type": "string"}, "role": {"type": "string"}, "email": {"type": "string"}, "people_id": {"type": "string"},
+                    "path": {"type": "string"}, "note": {"type": "string"}, "date": {"type": "string"}, "by": {"type": "string"},
+                    "label": {"type": "string"}, "ledger_ref": {"type": "string"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_handoff",
             "description": "Client handoff package: install/configure/migrate/run/test/recover/demo instructions from the repo dossier, executed in a throwaway copy and written to HANDOFF.md. Only verified commands are presented as instructions; failed and not-run ones go under 'Not verified' with the reason. Runs the repository's own commands.",
             "parameters": {

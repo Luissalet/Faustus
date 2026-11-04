@@ -1259,6 +1259,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "is this new request already in the agreed scope or a change order",
         "qué cambia entre la petición inicial, el acuerdo y la nueva solicitud",
     ],
+    "commission_office": [
+        "abre un expediente para el encargo de la caja con el cliente y la primera petición",
+        "what is due next on this commission and which deliverables are not ready",
+        "añade el acuerdo firmado como nueva versión del alcance y enlaza la entrega al hito",
+    ],
     "decision_map": [
         "si cambia la unidad de medida, qué entregables hay que rehacer",
         "link this requirement to the decision and the deliverable it affects",

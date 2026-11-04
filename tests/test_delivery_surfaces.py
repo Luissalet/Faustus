@@ -88,7 +88,7 @@ def test_mcp_server_lists_the_tool_and_refuses_without_an_owner(monkeypatch, tmp
     pytest.importorskip("mcp")
     import mcp_servers.delivery_server as srv
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["delivery_package", "scope_compare"] and all(t.inputSchema["type"] == "object" for t in tools)
+    assert [t.name for t in tools] == ["delivery_package", "scope_compare", "commission_office"] and all(t.inputSchema["type"] == "object" for t in tools)
     monkeypatch.delenv("ODYSSEUS_MCP_DELIVERY_OWNER", raising=False)
     monkeypatch.delenv("ODYSSEUS_DELIVERY_OWNER", raising=False)
     assert "no owner configured" in asyncio.run(srv.call_tool("delivery_package", {"action": "list"}))[0].text
@@ -124,3 +124,28 @@ def test_scope_compare_surfaces(client, monkeypatch, tmp_path):
     monkeypatch.setenv("ODYSSEUS_MCP_DELIVERY_OWNER", "alice")
     res = asyncio.run(srv.call_tool("scope_compare", {"agreement": agreement, "new_request": "Incluir tres vistas renderizadas."}))
     assert json.loads(res[0].text)["rows"][0]["status"] == "included"
+
+
+def test_commission_office_surfaces(client, monkeypatch, tmp_path):
+    r = client.post("/api/commissions", json={"title": "Caja", "client": "Taller", "request": "Diseñar una caja.\nEntregar planos en PDF."})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+    r = client.post(f"/api/commissions/{cid}/add_scope", json={"kind": "agreement", "text": "Diseñar una caja.\nEntregar planos en PDF.\nPlazo de 10 días."})
+    assert r.json()["stage"] == "agreed" and r.json()["scope"][1]["comparison"]["counts"]["added"] == 1
+    r = client.post(f"/api/commissions/{cid}/add_milestone", json={"title": "Entrega 1", "due": "2026-12-01"})
+    assert r.json()["status"]["next_milestone"]["id"] == "M1"
+    assert client.get("/api/commissions").json()["commissions"][0]["id"] == cid
+    assert client.get(f"/api/commissions/{cid}").json()["title"] == "Caja"
+    assert client.post(f"/api/commissions/{cid}/bogus", json={}).status_code == 400
+    assert client.get("/api/commissions/nope-zz").status_code == 404
+    out = asyncio.run(TOOL_HANDLERS["commission_office"](json.dumps({"action": "show", "id": cid}), {"owner": "alice"}))
+    assert out["exit_code"] == 0 and "Caja" in out["output"]
+    from src.tool_index_examples import EXAMPLES
+    from src.tool_capabilities import TOOL_CAPABILITIES
+    assert EXAMPLES["commission_office"] and TOOL_CAPABILITIES["commission_office"].effects
+    assert "commission_office" in tool_index.BUILTIN_TOOL_DESCRIPTIONS and "commission_office" in TOOL_TAGS
+    pytest.importorskip("mcp")
+    import mcp_servers.delivery_server as srv
+    monkeypatch.setenv("ODYSSEUS_MCP_DELIVERY_OWNER", "alice")
+    res = json.loads(asyncio.run(srv.call_tool("commission_office", {"action": "list"}))[0].text)
+    assert res["commissions"][0]["id"] == cid

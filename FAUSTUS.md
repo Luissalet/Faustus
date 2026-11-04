@@ -17544,3 +17544,16 @@ Herramienta `scope_compare` y pestaña **Scope changes** de Studio → Delivery.
 - **Prueba en vivo (04-11).** Mapa `caja-sensor` (circuito → caja → placa/render → export_pdf; «PDF» alimenta solo la exportación, «milímetros» el circuito): PDF → DOCX sale cambio local de 1–2 h y la ficha técnica como entregable; milímetros → pulgadas rehace el pipeline (5 nodos, 8–14 h); tapa transparente es trabajo nuevo sin fundamento; «más bonito» es pregunta. Igual por REST, MCP y la pantalla.
 - **Límites.** Comparación léxica, no semántica: una reformulación con otras palabras sale como añadida o ambigua. El mapa solo sabe lo que se enlazó.
 - **Pruebas.** `tests/test_scope_compare.py` (7) y el caso de superficies en `tests/test_delivery_surfaces.py`.
+
+## 04-11-2026 · Oficina del encargo, primer corte (Hangar E29)
+
+Herramienta `commission_office` y pestaña **Commissions** de Studio → Delivery. Un expediente por encargo con su ciclo (oportunidad → propuesta → acordado → en curso → entregado → cerrado o perdido). Primer corte: alcance → hito → entrega, con contactos, ficheros, decisiones y cobros. Módulo `src/commission_office.py`; referencia `docs/api/commission-office.md`.
+
+- **Alcance por versiones** (petición inicial, acuerdo, cambios). Cada versión nueva se compara con el acuerdo vigente mediante `scope_compare` (E30) y guarda el id, los recuentos y las preguntas. El primer acuerdo pasa el encargo a «acordado».
+- **Hitos** con fecha, importe y entregables; un entregable apunta a un paquete de entrega (E33) y su «listo» se lee del paquete cada vez.
+- **Contactos** (con id opcional de People's Hoard), **ficheros**, **decisiones** y **cobros** con referencia opcional de Ledger: se registran, no se copian ni se consultan esos Hoards.
+- **Estado calculado**: próximo hito, hitos vencidos, entregables sin paquete listo, preguntas abiertas del último cambio, facturación prevista y presupuesto; **línea de tiempo** con cada cambio.
+- **Superficies**: chat, HTTP admin `/api/commissions*`, MCP integrado `delivery` (tres herramientas) y Studio.
+- **Prueba en vivo (04-11).** Encargo «Caja para sensor»: petición inicial, acuerdo (comparado con la petición: plazo 15 → 10 días, dos cláusulas nuevas), cambio del cliente con el mapa `caja-sensor` (DOCX local, pulgadas rehace el pipeline, «más bonito» pregunta), hito vencido M1 enlazado al paquete real de la ficha 3D (listo), segundo hito añadido desde la pantalla. REST, MCP y UI.
+- **Límites.** No crea propuestas (E31), no concilia cobros con Ledger ni busca personas en People; no es un Hoard aparte.
+- **Pruebas.** `tests/test_commission_office.py` (3) y el caso de superficies en `tests/test_delivery_surfaces.py`.

@@ -168,3 +168,43 @@ export function parseEffort(text: string): Record<string, [number, number]> {
   }
   return out;
 }
+
+/* -- commission office (`/api/commissions`, Hangar E29) ------------------- */
+
+export const STAGES = ['opportunity', 'proposal', 'agreed', 'in_progress', 'delivered', 'closed', 'lost'] as const;
+export interface ScopeVersion { version: number; kind: 'initial' | 'agreement' | 'change'; text: string; at: string;
+  comparison?: { id: string; against: number; counts: Record<ScopeStatus, number>; questions: string[] } }
+export interface Milestone { id: string; title: string; due: string; done: string | null; amount: number | null;
+  deliverables: { title: string; package_id: string | null }[] }
+export interface CommissionStatus {
+  stage: string; agreement_version: number | null; pending_change: boolean; open_questions: string[];
+  next_milestone: { id: string; title: string; due: string } | null; overdue: string[]; milestones_done: number;
+  milestones_total: number; deliverables: { milestone: string; title: string; package_id: string | null; ready: boolean | null }[];
+  deliverables_without_ready_package: string[]; billing_expected: number | null;
+}
+export interface Commission {
+  id: string; title: string; client: string; stage: string; summary: string; created: string; updated: string;
+  budget: { amount: number; currency: string; note: string } | null; scope: ScopeVersion[]; milestones: Milestone[];
+  contacts: { name: string; role: string; email: string; people_id: string }[]; files: { path: string; role: string; note: string }[];
+  decisions: { date: string; text: string; by: string }[]; payments: { label: string; amount: number | null; due: string; ledger_ref: string }[];
+  events: { at: string; kind: string; text: string }[]; status: CommissionStatus;
+}
+export interface CommissionRow { id: string; title: string; client: string; stage: string; updated: string; next_due: string | null; overdue: number; scope_versions: number }
+
+export function stageLabel(stage: string): string {
+  const labels: Record<string, string> = {
+    opportunity: t('Opportunity'), proposal: t('Proposal'), agreed: t('Agreed'), in_progress: t('In progress'),
+    delivered: t('Delivered'), closed: t('Closed'), lost: t('Lost'),
+  };
+  return labels[stage] ?? stage;
+}
+
+export async function listCommissions(): Promise<CommissionRow[]> {
+  const r = await request<{ commissions?: CommissionRow[] }>('/api/commissions');
+  return Array.isArray(r.commissions) ? r.commissions : [];
+}
+export const loadCommission = (id: string) => request<Commission>(`/api/commissions/${encodeURIComponent(id)}`);
+export const createCommission = (body: { title: string; client: string; request: string }) =>
+  request<Commission>('/api/commissions', { method: 'POST', body: JSON.stringify(body) });
+export const commissionAction = (id: string, action: string, body: Record<string, unknown>) =>
+  request<Commission>(`/api/commissions/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: JSON.stringify(body) });

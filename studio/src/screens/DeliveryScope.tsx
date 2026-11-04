@@ -87,6 +87,11 @@ export function ScopePanel() {
   const [history, setHistory] = useState<api.ScopeListRow[]>([]);
   const reload = useCallback(() => { api.listComparisons().then(setHistory).catch(() => undefined); }, []);
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    // A commission links its scope versions here with ?view=scope&c=<comparison id>.
+    const id = new URLSearchParams(window.location.search).get('c');
+    if (id) api.loadComparison(id).then(setCmp).catch(() => undefined);
+  }, []);
   const run = async () => {
     setBusy(true);
     setError('');
