@@ -10653,3 +10653,16 @@ assumptions	supuestos
 masked	ocultos
 Masked	Ocultado
 No data in the record.	Sin datos en el expediente.
+People and payments	Personas y cobros
+Read live from People and Ledger through the Hub; only their ids are kept here and nothing is written there.	Se lee en vivo de People y Ledger a través del Hub; aquí solo se guardan sus ids y allí no se escribe nada.
+Name to look up in People	Nombre que buscar en People
+Find in People	Buscar en People
+Nobody in People matches that name.	Nadie en People coincide con ese nombre.
+Payment	Cobro
+In Ledger	En Ledger
+Received	Cobrado
+No incoming movement of that amount	Ningún ingreso de ese importe
+Not checked yet	Aún sin comprobar
+Add payment	Añadir cobro
+Check Ledger	Comprobar en Ledger
+read	leídos

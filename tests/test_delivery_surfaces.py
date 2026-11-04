@@ -155,3 +155,19 @@ def test_commission_office_surfaces(client, monkeypatch, tmp_path):
     monkeypatch.setenv("ODYSSEUS_MCP_DELIVERY_OWNER", "alice")
     res = json.loads(asyncio.run(srv.call_tool("commission_office", {"action": "list"}))[0].text)
     assert res["commissions"][0]["id"] == cid
+
+
+def test_people_and_ledger_routes(client, monkeypatch):
+    from src import commission_office as co
+    monkeypatch.setattr(co, "_hub_call", lambda app, tool, args: {"ok": True, "result": (
+        {"results": [{"id": "p-9", "name": "Ana"}]} if app == "people" else
+        {"items": [{"id": "t9", "date": "2026-11-04", "amount_cents": 10000, "counterparty": "Taller", "note": ""}]})})
+    assert client.get("/api/commissions/people-lookup", params={"name": "Ana"}).json()["people"][0]["id"] == "p-9"
+    cid = client.post("/api/commissions", json={"title": "Caja", "client": "Taller"}).json()["id"]
+    client.post(f"/api/commissions/{cid}/add_payment", json={"label": "Final", "amount": 100, "due": "2026-11-04"})
+    rec = client.post(f"/api/commissions/{cid}/reconcile_payments", json={}).json()
+    assert rec["payments"][0]["ledger_check"]["candidates"][0]["tx_id"] == "t9"
+    rec = client.post(f"/api/commissions/{cid}/confirm_payment", json={"label": "Final", "tx_id": "t9"}).json()
+    assert rec["status"]["payments_received"] == 100.0
+    rec = client.post(f"/api/commissions/{cid}/link_person", json={"name": "Ana", "people_id": "p-9"}).json()
+    assert rec["status"]["people_linked"] == 1

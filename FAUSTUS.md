@@ -17568,3 +17568,14 @@ Herramienta `commission_office` y pestaña **Commissions** de Studio → Deliver
 - **Superficies**: herramienta y MCP `commission_office` (`action=proposal`), `POST /api/commissions/{id}/proposal`, descarga `GET /api/commissions/{id}/proposals/{nombre}.docx|.md`, sección «Proposal» en la pantalla.
 - **Límites**: no redacta con modelo ni reutiliza casos anteriores; solo ordena lo que hay en el expediente y lo que se le da.
 - **Pruebas**: `tests/test_proposal_builder.py` (2) y el caso de superficies.
+
+## 04-11-2026 · Oficina del encargo: People y Ledger en vivo (seguimiento de E29)
+
+`commission_office` lee People's Hoard y Ledger's Hoard a través del Hub (`src/hoard_link/family.call`), sin escribir en ellos y guardando solo ids.
+
+- **People**: `people_lookup {name}` (también `GET /api/commissions/people-lookup?name=`) devuelve candidatos de `find_people` con nombre, círculos y puntuación; `link_person` guarda solo el id en el contacto del encargo.
+- **Ledger**: `reconcile_payments` lee `list_entries` desde 60 días antes del cobro más temprano hasta 60 días después del más tardío (o hoy) y lista los ingresos de exactamente ese importe (±1 céntimo), puntuados: 0,6 por el importe, +0,2 si el cliente o el concepto aparecen en la contrapartida o la nota, +0,2 si la fecha está a 7 días del vencimiento. `confirm_payment {label, tx_id}` guarda el id del movimiento y la fecha. El estado suma lo cobrado y lista los cobros con candidatos sin confirmar.
+- **Pantalla**: sección «Personas y cobros» en Delivery → Encargos (buscar en People y enlazar, cobros con su comprobación en Ledger, «Comprobar en Ledger», «Confirmar», «Añadir cobro»).
+- **Prueba en vivo (04-11)**: Ledger y People arrancados desde el Hub; un cobro de ejemplo de 360 € se comprobó contra 25 movimientos reales sin coincidencia (REST, MCP y pantalla); las búsquedas en People no devolvieron candidatos para los nombres de prueba. No se guardaron datos reales en el expediente ni en los recibos.
+- **Límites**: solo importes exactos; no concilia cobros parciales ni varios movimientos para un cobro; si el Hub o el Hoard no responden, el error queda en el cobro.
+- **Pruebas**: `tests/test_commission_followups.py` (4) y el caso de rutas en `tests/test_delivery_surfaces.py`.

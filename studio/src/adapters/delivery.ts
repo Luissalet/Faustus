@@ -181,12 +181,15 @@ export interface CommissionStatus {
   next_milestone: { id: string; title: string; due: string } | null; overdue: string[]; milestones_done: number;
   milestones_total: number; deliverables: { milestone: string; title: string; package_id: string | null; ready: boolean | null }[];
   deliverables_without_ready_package: string[]; billing_expected: number | null;
+  payments_received?: number | null; payments_to_confirm?: string[]; people_linked?: number;
 }
 export interface Commission {
   id: string; title: string; client: string; stage: string; summary: string; created: string; updated: string;
   budget: { amount: number; currency: string; note: string } | null; scope: ScopeVersion[]; milestones: Milestone[];
   contacts: { name: string; role: string; email: string; people_id: string }[]; files: { path: string; role: string; note: string }[];
-  decisions: { date: string; text: string; by: string }[]; payments: { label: string; amount: number | null; due: string; ledger_ref: string }[];
+  decisions: { date: string; text: string; by: string }[];
+  payments: { label: string; amount: number | null; due: string; ledger_ref: string; confirmed?: boolean; received_on?: string;
+    ledger_check?: { at: string; error?: string; entries_scanned?: number; candidates?: LedgerCandidate[] } }[];
   events: { at: string; kind: string; text: string }[]; status: CommissionStatus;
   proposals?: { name: string; date: string; counts: Record<string, number>; masked: number }[];
   proposal?: Proposal;
@@ -200,6 +203,11 @@ export const proposalHref = (id: string, name: string, kind: 'docx' | 'md') =>
 export function originLabel(o: string): string {
   const labels: Record<string, string> = { verified: t('Verified'), assumption: t('Assumption'), question: t('Question') };
   return labels[o] ?? o;
+}
+export interface LedgerCandidate { tx_id: string; date: string; amount: number; counterparty: string; score: number }
+export interface PersonCandidate { id: string; name: string; score: number | null; relation: string }
+export async function peopleLookup(name: string): Promise<{ people: PersonCandidate[]; error?: string }> {
+  return request(`/api/commissions/people-lookup?name=${encodeURIComponent(name)}`);
 }
 export interface CommissionRow { id: string; title: string; client: string; stage: string; updated: string; next_due: string | null; overdue: number; scope_versions: number }
 

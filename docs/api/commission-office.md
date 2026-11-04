@@ -34,3 +34,9 @@ Records: `DATA_DIR/commissions/<owner>/<id>.json`.
 
 Not in this cut: proposals (E31), invoices synced with Ledger, People
 look-ups, a separate Hoard.
+
+## People and Ledger, read live (follow-up)
+
+- `people_lookup {name}` / `GET /api/commissions/people-lookup?name=`: People's Hoard `find_people` through the Hub; `link_person {id, name, people_id}` stores only the id.
+- `reconcile_payments {id}`: Ledger's `list_entries` (read-only) around the expected payments; incoming movements of exactly the amount, scored by date and by client or label in the counterparty or note. `confirm_payment {id, label, tx_id}` records the movement id.
+- Studio: Delivery → Commissions → **People and payments**.

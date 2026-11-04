@@ -1,4 +1,4 @@
-import { Briefcase, Check, FileText, Link2, Plus } from 'lucide-react';
+import { Briefcase, Check, FileText, Link2, Plus, Search, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, EmptyState } from '../components';
 import * as api from '../adapters/delivery';
@@ -45,6 +45,11 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
   const [exclusions, setExclusions] = useState('');
   const [internal, setInternal] = useState('');
   const [proposal, setProposal] = useState<api.Proposal | null>(c.proposal ?? null);
+  const [lookup, setLookup] = useState('');
+  const [found, setFound] = useState<{ people: api.PersonCandidate[]; error?: string } | null>(null);
+  const [payLabel, setPayLabel] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [payDue, setPayDue] = useState('');
   const act = (action: string, body: Record<string, unknown>, after?: () => void) => {
     setError('');
     api.commissionAction(c.id, action, body).then((r) => { onChange(r); after?.(); }).catch((e) => setError((e as Error).message));
@@ -155,6 +160,48 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
         <div className="fs-dlv__row">
           <input className="fs-field fs-dlv__grow" placeholder={t('Decision')} value={decision} onChange={(e) => setDecision(e.target.value)} />
           <Button size="sm" icon={Plus} label={t('Add decision')} disabled={!decision.trim()} onClick={() => act('add_decision', { text: decision }, () => setDecision(''))} />
+        </div>
+      </section>
+
+      <section className="fs-dlv__block" aria-label={t('People and payments')} data-testid="office-links">
+        <h3 className="fs-dlv__h">{t('People and payments')}</h3>
+        <p className="fs-dlv__muted">{t('Read live from People and Ledger through the Hub; only their ids are kept here and nothing is written there.')}</p>
+        <div className="fs-dlv__row">
+          <input className="fs-field fs-dlv__grow" placeholder={t('Name to look up in People')} value={lookup} onChange={(e) => setLookup(e.target.value)} data-testid="office-people-q" />
+          <Button size="sm" icon={Search} label={t('Find in People')} disabled={!lookup.trim()} testId="office-people-find"
+            onClick={() => { api.peopleLookup(lookup).then(setFound).catch((e) => setError((e as Error).message)); }} />
+        </div>
+        {found && (found.error ? <p className="fs-dlv__why" data-tone="bad">{found.error}</p> : found.people.length === 0 ? <p className="fs-dlv__muted">{t('Nobody in People matches that name.')}</p> : (
+          <ul className="fs-dlv__plain fs-dlv__small" data-testid="office-people-results">
+            {found.people.map((p) => <li key={p.id}>{p.name}{p.relation ? ` · ${p.relation}` : ''}{p.score != null ? ` · ${p.score}` : ''} <Button size="sm" icon={Link2} label={t('Link')} onClick={() => act('link_person', { name: p.name, people_id: p.id }, () => setFound(null))} /></li>)}
+          </ul>
+        ))}
+        <table className="fs-dlv__table" data-testid="office-payments">
+          <thead><tr><th>{t('Payment')}</th><th>{t('Amount')}</th><th>{t('Due')}</th><th>{t('In Ledger')}</th></tr></thead>
+          <tbody>
+            {c.payments.map((p) => (
+              <tr key={p.label}>
+                <td>{p.label}</td><td>{p.amount ?? '—'}</td><td>{p.due || '—'}</td>
+                <td>
+                  {p.confirmed ? <span className="fs-dlv__pill" data-tone="good">{t('Received')} {p.received_on || ''}</span>
+                    : p.ledger_check?.error ? <span className="fs-dlv__muted">{p.ledger_check.error}</span>
+                    : p.ledger_check ? ((p.ledger_check.candidates ?? []).length === 0 ? <span className="fs-dlv__muted">{t('No incoming movement of that amount')} ({p.ledger_check.entries_scanned ?? 0} {t('read')})</span> : (
+                      <ul className="fs-dlv__plain fs-dlv__small">
+                        {(p.ledger_check.candidates ?? []).map((m) => <li key={m.tx_id}>{m.date} · {m.amount} · {m.counterparty} · {m.score} <Button size="sm" icon={Check} label={t('Confirm')} onClick={() => act('confirm_payment', { label: p.label, tx_id: m.tx_id })} /></li>)}
+                      </ul>
+                    )) : <span className="fs-dlv__muted">{t('Not checked yet')}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="fs-dlv__row">
+          <input className="fs-field fs-dlv__grow" placeholder={t('Payment')} value={payLabel} onChange={(e) => setPayLabel(e.target.value)} data-testid="office-pay-label" />
+          <input className="fs-field fs-dlv__num" type="number" placeholder={t('Amount')} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} data-testid="office-pay-amount" />
+          <input className="fs-field" type="date" value={payDue} onChange={(e) => setPayDue(e.target.value)} aria-label={t('Due')} />
+          <Button size="sm" icon={Plus} label={t('Add payment')} disabled={!payLabel.trim()} testId="office-pay-add"
+            onClick={() => act('add_payment', { label: payLabel, ...(payAmount ? { amount: Number(payAmount) } : {}), due: payDue }, () => { setPayLabel(''); setPayAmount(''); setPayDue(''); })} />
+          <Button size="sm" icon={Wallet} label={t('Check Ledger')} disabled={c.payments.length === 0} testId="office-ledger-check" onClick={() => act('reconcile_payments', {})} />
         </div>
       </section>
 

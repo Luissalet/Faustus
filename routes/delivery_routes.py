@@ -26,6 +26,8 @@ GET  /api/commissions/{id}                   the record with its computed status
 POST /api/commissions/{id}/{action}          update | add_scope | add_milestone | update_milestone | link_package |
                                              add_contact | add_file | add_decision | add_payment | proposal
 GET  /api/commissions/{id}/proposals/{name}.{docx|md}   a drafted proposal (Hangar E31)
+GET  /api/commissions/people-lookup?name=    People's Hoard candidates through the Hub (read-only)
+POST /api/commissions/{id}/link_person | reconcile_payments | confirm_payment   (Ledger read-only)
 """
 from typing import Any, Dict
 
@@ -125,7 +127,8 @@ def setup_delivery_routes() -> APIRouter:
         return _reply(scope_compare.run(owner_of(request), {"action": "show", "id": cid}))
 
     _OFFICE_POST = ("update", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact",
-                    "add_file", "add_decision", "add_payment", "proposal")
+                    "add_file", "add_decision", "add_payment", "proposal", "link_person", "reconcile_payments",
+                    "confirm_payment")
 
     async def _json(request: Request) -> Dict[str, Any]:
         try:
@@ -144,6 +147,13 @@ def setup_delivery_routes() -> APIRouter:
         from src import commission_office
         owner = owner_of(request)
         return _reply(commission_office.run(owner, {**(await _json(request)), "action": "create"}))
+
+    @router.get("/api/commissions/people-lookup")
+    async def people_lookup(request: Request, name: str = ""):
+        from src import commission_office
+        owner = owner_of(request)
+        import asyncio
+        return _reply(await asyncio.to_thread(commission_office.run, owner, {"action": "people_lookup", "name": name}))
 
     @router.get("/api/commissions/{cid}")
     async def show_commission(cid: str, request: Request):

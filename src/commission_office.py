@@ -15,6 +15,13 @@ and files, and points at the owners of each thing instead of copying them:
   person; **files** are paths with a role; **payments** are labels with the
   expected amount and an optional Ledger reference. Nothing is fetched from or
   written to People or Ledger here.
+* **People and Ledger, read live** (follow-up of E29): ``people_lookup`` asks
+  People's Hoard (``find_people``) through the local Hub and ``link_person``
+  stores only the id; ``reconcile_payments`` reads Ledger's entries
+  (``list_entries``, read-only) around each expected payment and lists the
+  incoming movements of exactly that amount, scored by date and by the client
+  or label in the counterparty or note; ``confirm_payment`` records the chosen
+  movement id. Nothing is written to People or Ledger.
 * **Status** is computed: next milestone, overdue ones, deliverables without a
   ready package, open scope questions, decisions.
 * **Proposal** (E31): ``action=proposal`` drafts a Word + Markdown proposal from
@@ -41,7 +48,8 @@ logger = logging.getLogger(__name__)
 STAGES = ("opportunity", "proposal", "agreed", "in_progress", "delivered", "closed", "lost")
 SCOPE_KINDS = ("initial", "agreement", "change")
 ACTIONS = ("create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package",
-           "add_contact", "add_file", "add_decision", "add_payment", "status", "proposal")
+           "add_contact", "add_file", "add_decision", "add_payment", "status", "proposal",
+           "people_lookup", "link_person", "reconcile_payments", "confirm_payment")
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _ID = re.compile(r"[a-z0-9-]{3,80}")
 
@@ -269,6 +277,132 @@ def _append(rec: Dict[str, Any], key: str, item: Dict[str, Any], label: str) -> 
     return item
 
 
+
+# ---------------------------------------------------------------------------
+# People and Ledger through the local Hub (read-only)
+
+def _hub_call(app: str, tool: str, arguments: Mapping[str, Any]) -> Dict[str, Any]:
+    """Call a family app's tool through the Hub; never raises."""
+    try:
+        from src import family_services
+        from src.hoard_link import family
+        family_services.configure()
+        res = family.call(app, tool, dict(arguments), timeout=30.0)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    if not isinstance(res, dict):
+        return {"ok": False, "error": "unexpected answer from the hub"}
+    if res.get("ok") is False or res.get("error"):
+        return {"ok": False, "error": str(res.get("error") or f"HTTP {res.get('status')}")}
+    return {"ok": True, "result": res.get("result", res)}
+
+
+def _rows(result: Any, *keys: str) -> List[Dict[str, Any]]:
+    if isinstance(result, list):
+        return [r for r in result if isinstance(r, dict)]
+    if isinstance(result, dict):
+        for k in keys:
+            if isinstance(result.get(k), list):
+                return [r for r in result[k] if isinstance(r, dict)]
+        if isinstance(result.get("result"), (list, dict)):
+            return _rows(result["result"], *keys)
+    return []
+
+
+def people_lookup(args: Mapping[str, Any]) -> Dict[str, Any]:
+    name = _s(args, "name", 120)
+    if not name:
+        raise OfficeError("office.bad_args", "name is required")
+    res = _hub_call("people", "find_people", {"query": name, "limit": 6})
+    if not res["ok"]:
+        return {"people": [], "source": "people", "error": res["error"]}
+    people = []
+    for r in _rows(res["result"], "results", "people", "candidates", "items", "matches"):
+        pid = r.get("id") or r.get("person_id")
+        if pid:
+            people.append({"id": str(pid), "name": str(r.get("name") or r.get("display_name") or ""),
+                           "score": r.get("score"),
+                           "relation": r.get("relation") or r.get("relationship") or ", ".join(str(c) for c in r.get("circles") or [])})
+    return {"people": people, "source": "people"}
+
+
+def link_person(rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
+    name, pid = _s(args, "name", 120), _s(args, "people_id", 80)
+    if not name or not pid:
+        raise OfficeError("office.bad_args", "name and people_id are required")
+    for c in rec["contacts"]:
+        if c["name"] == name:
+            c["people_id"] = pid
+            break
+    else:
+        rec["contacts"].append({"name": name, "role": _s(args, "role", 80), "email": "", "people_id": pid})
+    _event(rec, "contact", f"{name} ↔ People {pid}")
+    return rec
+
+
+def _words_of(text: str) -> set:
+    return {w for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())}
+
+
+def reconcile_payments(rec: Dict[str, Any]) -> Dict[str, Any]:
+    pending = [p for p in rec.get("payments") or [] if p.get("amount") is not None and not p.get("confirmed")]
+    if not pending:
+        return {"checked": 0, "entries_scanned": 0}
+    today = _today()
+    dates = [_dt.date.fromisoformat(p["due"]) for p in pending if p.get("due")] or [today]
+    start = min(dates) - _dt.timedelta(days=60)
+    end = max(max(dates) + _dt.timedelta(days=60), today)
+    res = _hub_call("ledger", "list_entries", {"from": start.isoformat(), "to": end.isoformat(), "limit": 200, "order": "asc"})
+    if not res["ok"]:
+        for p in pending:
+            p["ledger_check"] = {"at": _now(), "error": res["error"]}
+        return {"checked": 0, "error": res["error"]}
+    entries = _rows(res["result"], "items", "entries", "results")
+    client_words = _words_of(rec.get("client") or "")
+    for p in pending:
+        cents = round(float(p["amount"]) * 100)
+        due = _dt.date.fromisoformat(p["due"]) if p.get("due") else None
+        label_words = _words_of(p["label"]) | client_words
+        cands = []
+        for e in entries:
+            try:
+                ec = int(e.get("amount_cents"))
+            except (TypeError, ValueError):
+                continue
+            if ec <= 0 or abs(ec - cents) > 1:
+                continue
+            score = 0.6
+            text = f"{e.get('counterparty') or ''} {e.get('note') or ''}"
+            if label_words & _words_of(text):
+                score += 0.2
+            try:
+                ed = _dt.date.fromisoformat(str(e.get("date"))[:10])
+                if due and abs((ed - due).days) <= 7:
+                    score += 0.2
+            except ValueError:
+                pass
+            cands.append({"tx_id": e.get("id"), "date": e.get("date"), "amount": ec / 100,
+                          "counterparty": e.get("counterparty") or "", "score": round(score, 2)})
+        cands.sort(key=lambda c: -c["score"])
+        p["ledger_check"] = {"at": _now(), "candidates": cands[:3], "entries_scanned": len(entries)}
+    _event(rec, "payment", f"Ledger checked for {len(pending)} payment(s): "
+           + ", ".join(f"{p['label']} {'candidates ' + str(len(p['ledger_check']['candidates'])) if p['ledger_check']['candidates'] else 'no match'}" for p in pending))
+    return {"checked": len(pending), "entries_scanned": len(entries)}
+
+
+def confirm_payment(rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
+    label, tx = _s(args, "label", 160), _s(args, "tx_id", 120)
+    if not label or not tx:
+        raise OfficeError("office.bad_args", "label and tx_id are required")
+    for p in rec.get("payments") or []:
+        if p["label"] == label:
+            cand = next((c for c in (p.get("ledger_check") or {}).get("candidates") or [] if c["tx_id"] == tx), None)
+            p.update({"ledger_ref": tx, "confirmed": True, "received_on": (cand or {}).get("date") or _date(args.get("date"), "date")})
+            _event(rec, "payment", f"{label} confirmed with Ledger movement {tx}")
+            return p
+    raise OfficeError("office.not_found", f"no payment {label!r}")
+
+
 def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
     from src import delivery_package
     today = _today()
@@ -287,6 +421,9 @@ def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
     last = (rec.get("scope") or [None])[-1]
     open_questions = (last or {}).get("comparison", {}).get("questions", []) if last and last.get("kind") == "change" else []
     expected = sum(float(m["amount"]) for m in rec.get("milestones") or [] if m.get("amount") is not None)
+    pays = rec.get("payments") or []
+    received = sum(float(p["amount"]) for p in pays if p.get("confirmed") and p.get("amount") is not None)
+    to_confirm = [p["label"] for p in pays if not p.get("confirmed") and ((p.get("ledger_check") or {}).get("candidates"))]
     return {"stage": rec["stage"], "today": today.isoformat(),
             "agreement_version": agreed["version"] if agreed else None,
             "pending_change": bool(last and last["kind"] == "change"),
@@ -297,6 +434,9 @@ def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
             "deliverables": deliverables,
             "deliverables_without_ready_package": [d["title"] for d in deliverables if d["ready"] is not True],
             "billing_expected": expected if rec.get("milestones") else None,
+            "payments_received": received if pays else None,
+            "payments_to_confirm": to_confirm,
+            "people_linked": sum(1 for c in rec.get("contacts") or [] if c.get("people_id")),
             "budget": rec.get("budget")}
 
 
@@ -343,6 +483,8 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             raise OfficeError("office.bad_args", f"action must be one of {', '.join(ACTIONS)}")
         if action == "list":
             return {"commissions": list_commissions(owner)}
+        if action == "people_lookup":
+            return people_lookup(args)
         if action == "create":
             rec = create(owner, args)
             return {**rec, "status": status(owner, rec)}
@@ -387,6 +529,14 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
                 raise OfficeError("office.bad_args", "amount must be a number") from None
             _append(rec, "payments", {"label": label, "amount": amount, "due": _date(args.get("due"), "due"),
                                       "ledger_ref": _s(args, "ledger_ref", 120)}, label)
+        elif action == "link_person":
+            link_person(rec, args)
+        elif action == "reconcile_payments":
+            summary = reconcile_payments(rec)
+            _save(owner, rec)
+            return {**rec, "status": status(owner, rec), "reconcile": summary}
+        elif action == "confirm_payment":
+            confirm_payment(rec, args)
         elif action == "proposal":
             from src import proposal_builder
             result = proposal_builder.build(owner, rec, status(owner, rec), args)
