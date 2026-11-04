@@ -40,6 +40,11 @@ def handler_cls(monkeypatch):
 JUNK = "The page does not contain relevant information"
 
 
+def _plain(sources):
+    """url/title only: 6253bd61 deliberately stamps source_type/official on every source."""
+    return [{"url": s["url"], "title": s["title"]} for s in sources]
+
+
 def test_low_quality_summary_is_not_a_source(handler_cls):
     out = handler_cls._extract_sources([{"url": "http://a", "title": "T", "summary": JUNK}])
     assert out == []
@@ -49,7 +54,7 @@ def test_good_summary_is_kept(handler_cls):
     out = handler_cls._extract_sources(
         [{"url": "http://a", "title": "T", "summary": "Detailed statistics about the topic"}]
     )
-    assert out == [{"url": "http://a", "title": "T"}]
+    assert _plain(out) == [{"url": "http://a", "title": "T"}]
 
 
 def test_junk_first_no_longer_suppresses_the_good_finding(handler_cls):
@@ -59,14 +64,14 @@ def test_junk_first_no_longer_suppresses_the_good_finding(handler_cls):
             {"url": "http://a", "title": "Good", "summary": "Real data about the topic"},
         ]
     )
-    assert out == [{"url": "http://a", "title": "Good"}]
+    assert _plain(out) == [{"url": "http://a", "title": "Good"}]
 
 
 def test_evidence_is_checked_when_summary_missing(handler_cls):
     out = handler_cls._extract_sources(
         [{"url": "http://a", "title": "T", "evidence": "Concrete evidence text"}]
     )
-    assert out == [{"url": "http://a", "title": "T"}]
+    assert _plain(out) == [{"url": "http://a", "title": "T"}]
 
 
 def test_report_sources_section_gates_junk(handler_cls):

@@ -10501,3 +10501,37 @@ Thinking skipped	Pensamiento omitido
 Shared board	Tablero compartido
 Issue board	Tablero de incidencias
 Task views	Vistas de tareas
+- Orders API\n- Email notifications\n- Admin dashboard	- API de pedidos\n- Notificaciones por correo\n- Panel de administración
+Answered by a re-sent request after {s} s	Respondida por un reenvío tras {s} s
+Answered by a re-sent request after {s} s.	Respondida por un reenvío tras {s} s.
+Answered by a re-sent request: {w}; re-sends skipped: {k}.	Respondida por un reenvío: {w}; reenvíos omitidos: {k}.
+Between 0 and {max}; 0 never re-sends to the same server.	Entre 0 y {max}; 0 no reenvía nunca al mismo servidor.
+Blueprint	Plano
+Chats from	Chats desde
+Check against the code	Comprobar con el código
+Checked against the code as of {when}	Comprobado con el código a fecha de {when}
+Describe files with the utility model (only changed files are described again)	Describir los archivos con el modelo auxiliar (solo se vuelven a describir los que han cambiado)
+Earlier:	Antes:
+Every part and file of the work folder in plain words, with the routes it serves and the requests it makes.	Cada parte y archivo de la carpeta de trabajo en lenguaje llano, con las rutas que sirve y las peticiones que hace.
+Floorplan	Plano de código
+No floorplan yet for this folder.	Esta carpeta aún no tiene plano de código.
+No floorplan yet for this folder. Generate one first.	Esta carpeta aún no tiene plano de código. Genera uno primero.
+Only the global LLM service (the Sparks) is offered; a local text model is never the hedge. Automatic uses the same model on another of its endpoints when one lists it, else the first fallback of the chain served there.	Solo se ofrece el servicio LLM global (las Sparks); un modelo de texto local nunca es la alternativa. Automático usa el mismo modelo en otro de sus endpoints si alguno lo lista; si no, el primer respaldo de la cadena servido allí.
+Only what had been said by this date	Solo lo dicho hasta esta fecha
+Open map	Abrir mapa
+Optional JSON object {model: re-sends per turn} that replaces the number above for those models.	Objeto JSON opcional {modelo: reenvíos por turno} que sustituye al número de arriba para esos modelos.
+Paste a PRD or goal; each planned part is marked as built, partly built or missing.	Pega un PRD u objetivo; cada parte prevista se marca como construida, parcial o ausente.
+Re-send skipped after {s} s: the server had {n} requests waiting	Reenvío omitido tras {s} s: el servidor tenía {n} peticiones en espera
+Re-send skipped after {s} s: this turn already used its re-sends	Reenvío omitido tras {s} s: este turno ya había usado sus reenvíos
+Re-send: after the delay the same request goes again to the same server and model, the silent one is closed; skipped when the server reports requests waiting. Automatic ends here when there is no other route.	Reenvío: pasado el plazo, la misma petición vuelve al mismo servidor y modelo y se cierra la que no responde; se omite si el servidor informa de peticiones en espera. Automático termina aquí si no hay otra ruta.
+Re-sends per model	Reenvíos por modelo
+Re-sends per model must be a JSON object like {"model": 1}	Los reenvíos por modelo deben ser un objeto JSON como {"modelo": 1}
+Re-sends per turn	Reenvíos por turno
+Search parts, files, routes, requests	Buscar partes, archivos, rutas, peticiones
+Search the floorplan	Buscar en el plano de código
+These marks describe an earlier version of the code, not this floorplan. Check again to mark it against the current code.	Estas marcas describen una versión anterior del código, no este plano. Vuelve a comprobar para marcarlo con el código actual.
+marked again after the floorplan was regenerated	marcado de nuevo tras regenerar el plano de código
+the floorplan was refreshed first because the code had changed	el plano de código se actualizó antes porque el código había cambiado
+{model} at {endpoint}: the same request is re-sent there after {s} s without a first token (up to {n} per turn).	{model} en {endpoint}: la misma petición se reenvía allí tras {s} s sin primer token (hasta {n} por turno).
+{n} described now, {m} reused, {p} waiting for the model	{n} descritos ahora, {m} reutilizados, {p} esperando al modelo
+{parts} parts · {files} files · {routes} routes · {requests} outgoing requests	{parts} partes · {files} archivos · {routes} rutas · {requests} peticiones salientes

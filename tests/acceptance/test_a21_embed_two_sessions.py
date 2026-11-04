@@ -418,7 +418,14 @@ def test_a21_two_real_sessions_two_tokens_do_not_see_each_other(request, a21_ser
 
 
 def _playwright_chromium_launch_error() -> Optional[str]:
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
+    # Only point Playwright at a browsers folder that exists: a hard-coded Linux
+    # path made every other Playwright test on Windows look for a missing browser.
+    if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+        for _cand in ("/opt/pw-browsers",
+                      os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")):
+            if _cand and os.path.isdir(_cand):
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _cand
+                break
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as e:

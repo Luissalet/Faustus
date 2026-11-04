@@ -57,7 +57,8 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n'); // CRL
 {
   const src = read('studio/src/screens/Project.tsx');
   assert.ok(src.includes("import { SourceControlPanel } from './source-control/SourceControlPanel';"), 'Project.tsx must import SourceControlPanel');
-  assert.match(src, /\{\s*id:\s*'repos',\s*label:\s*'Repositories'/, "TABS must gain a 'repos' entry");
+  // 6b7ada99 turned the project tabs into collapsible sections: the repos one is a <details> opened by ?tab=repos.
+  assert.match(src, /rawTab === 'repos'[^]*?<summary>\{t\('Repositories'\)\}<\/summary>/, "Project.tsx must have a Repositories section opened by the 'repos' tab");
   assert.match(src, /<SourceControlPanel projectId=\{project\.id\}\s*\/>/, "the 'repos' tab must mount <SourceControlPanel projectId={project.id} />");
   assert.ok(!/icon=\{GitBranch\}\s*\n\s*label=\{t\('Source control'\)\}/.test(src), 'the old lote-81 "Source control" header button must be gone');
   assert.ok(src.includes('/source-control?project='), 'Project.tsx must still link to /source-control?project=<id> ("Open full screen")');
@@ -122,8 +123,10 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n'); // CRL
 // panel (?panel=git), distinct from the existing Tools entry that goes to
 // the standalone full screen ──
 {
-  const src = read('studio/src/shell/CommandPalette.tsx');
-  assert.ok(src.includes("go('/studio?panel=git')"), 'the command palette must offer a shortcut that opens ?panel=git');
+  // 527203da rebuilt the palette from the route table: Source control is reached through its routes.ts entry
+  // (placed in the project's Repositories section by toolPlacement.ts), and Studio.tsx still honours ?panel=git.
+  assert.ok(read('studio/src/shell/routes.ts').includes("path: '/source-control'"), 'the route table must keep the Source control entry the palette lists');
+  assert.ok(read('studio/src/screens/Studio.tsx').includes('?panel=git'), 'Studio.tsx must keep the ?panel=git deep link');
 }
 
 console.log('ok l86-source-control-panel');
