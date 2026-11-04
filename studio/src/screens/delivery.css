@@ -58,3 +58,15 @@
 .fs-dlv__num { inline-size: 9ch; }
 .fs-dlv textarea.fs-field { block-size: auto; min-block-size: 5.5em; resize: vertical; }
 .fs-dlv__proposal { display: grid; gap: var(--fs-space-2); padding: var(--fs-space-3); border: 1px dashed var(--fs-border); border-radius: 8px; }
+
+.fs-dlv__meeting {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--fs-border);
+}
+.fs-dlv__meeting td:nth-child(5) {
+  width: 50%;
+}
+.fs-dlv__meeting td:nth-child(3) {
+  white-space: nowrap;
+}

@@ -50,6 +50,11 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
   const [payLabel, setPayLabel] = useState('');
   const [payAmount, setPayAmount] = useState('');
   const [payDue, setPayDue] = useState('');
+  const [meetingList, setMeetingList] = useState<{ id: string; title: string; date: string }[]>([]);
+  const [meetingId, setMeetingId] = useState('');
+  const [meetingText, setMeetingText] = useState('');
+  const [meetingSource, setMeetingSource] = useState('');
+  useEffect(() => { api.recentMeetings().then(setMeetingList).catch(() => setMeetingList([])); }, []);
   const act = (action: string, body: Record<string, unknown>, after?: () => void) => {
     setError('');
     api.commissionAction(c.id, action, body).then((r) => { onChange(r); after?.(); }).catch((e) => setError((e as Error).message));
@@ -161,6 +166,63 @@ function Detail({ c, packages, onChange }: { c: api.Commission; packages: api.Pa
           <input className="fs-field fs-dlv__grow" placeholder={t('Decision')} value={decision} onChange={(e) => setDecision(e.target.value)} />
           <Button size="sm" icon={Plus} label={t('Add decision')} disabled={!decision.trim()} onClick={() => act('add_decision', { text: decision }, () => setDecision(''))} />
         </div>
+      </section>
+
+      <section className="fs-dlv__block" aria-label={t('Meetings')} data-testid="office-meetings">
+        <h3 className="fs-dlv__h">{t('Meetings')}</h3>
+        <p className="fs-dlv__muted">{t('Each statement of a meeting is sorted into decision, promise, requirement, tentative proposal or question, with who said it and when. «Podríamos», «could» and similar wording is never taken as a commitment; nothing goes into the record until you promote it.')}</p>
+        <div className="fs-dlv__row">
+          <select className="fs-field fs-dlv__grow" value={meetingId} aria-label={t('Faustus meeting')} onChange={(e) => setMeetingId(e.target.value)} data-testid="office-meeting-pick">
+            <option value="">{meetingList.length ? t('Faustus meeting…') : t('No Faustus meetings yet')}</option>
+            {meetingList.map((m) => <option key={m.id} value={m.id}>{m.title}{m.date ? ` · ${m.date.slice(0, 10)}` : ''}</option>)}
+          </select>
+          <Button size="sm" icon={Plus} label={t('Import meeting')} disabled={!meetingId} testId="office-meeting-import-id"
+            onClick={() => act('import_meeting', { meeting_id: meetingId }, () => setMeetingId(''))} />
+        </div>
+        <div className="fs-dlv__row">
+          <textarea className="fs-field fs-dlv__grow" rows={3} value={meetingText} onChange={(e) => setMeetingText(e.target.value)} placeholder={t('Or paste notes or a transcript: one statement per line, «[00:12:30] Name: text»')} data-testid="office-meeting-text" />
+          <input className="fs-field" placeholder={t('Source')} value={meetingSource} onChange={(e) => setMeetingSource(e.target.value)} data-testid="office-meeting-source" />
+          <Button size="sm" icon={Plus} label={t('Import text')} disabled={!meetingText.trim()} testId="office-meeting-import"
+            onClick={() => act('import_meeting', { text: meetingText, source: meetingSource }, () => { setMeetingText(''); setMeetingSource(''); })} />
+        </div>
+        {(st.meeting_open_questions ?? []).length > 0 && (
+          <div data-testid="office-meeting-questions">
+            <strong>{t('Open questions from meetings')}</strong>
+            <ul className="fs-dlv__plain fs-dlv__small">{(st.meeting_open_questions ?? []).map((q) => <li key={q} className="fs-dlv__ask">{q}</li>)}</ul>
+          </div>
+        )}
+        {(c.meetings ?? []).map((m) => (
+          <div key={m.id} className="fs-dlv__meeting" data-testid={`office-meeting-${m.id}`}>
+            <div className="fs-dlv__row">
+              <strong>{m.id} · {m.source}</strong><span className="fs-dlv__muted">{m.date}</span>
+              {api.MEETING_KINDS.filter((k) => m.counts[k]).map((k) => <span key={k} className="fs-dlv__pill" data-tone={api.meetingKindTone(k)}>{api.meetingKindLabel(k)} · {m.counts[k]}</span>)}
+            </div>
+            <table className="fs-dlv__table">
+              <thead><tr><th>#</th><th>{t('Kind')}</th><th>{t('When')}</th><th>{t('Who')}</th><th>{t('Statement')}</th><th /></tr></thead>
+              <tbody>
+                {m.items.map((i) => (
+                  <tr key={i.n} data-testid={`office-meeting-${m.id}-${i.n}`}>
+                    <td>{i.n}</td>
+                    <td><span className="fs-dlv__pill" data-tone={api.meetingKindTone(i.kind)}>{api.meetingKindLabel(i.kind)}</span></td>
+                    <td className="fs-dlv__mono">{i.time || `L${i.line}`}</td><td>{i.speaker || '—'}</td><td>{i.text}</td>
+                    <td>
+                      {i.promoted ? <span className="fs-dlv__pill" data-tone="good">{i.promoted.as === 'milestone' ? t('Milestone') : api.meetingKindLabel(i.promoted.as)} · {i.promoted.ref}</span>
+                        : i.firm ? (
+                          <div className="fs-dlv__row">
+                            <Button size="sm" label={t('Decision')} testId={`office-promote-${m.id}-${i.n}-decision`} onClick={() => act('promote_meeting_item', { meeting: m.id, n: i.n, as: 'decision' })} />
+                            <Button size="sm" label={t('Requirement')} testId={`office-promote-${m.id}-${i.n}-requirement`} onClick={() => act('promote_meeting_item', { meeting: m.id, n: i.n, as: 'requirement' })} />
+                            <Button size="sm" label={t('Milestone')} testId={`office-promote-${m.id}-${i.n}-milestone`} onClick={() => act('promote_meeting_item', { meeting: m.id, n: i.n, as: 'milestone' })} />
+                          </div>
+                        ) : i.kind === 'proposal' ? (
+                          <span className="fs-dlv__muted">{t('Not a commitment')} <Button size="sm" label={t('Requirement anyway')} testId={`office-promote-${m.id}-${i.n}-force`} onClick={() => act('promote_meeting_item', { meeting: m.id, n: i.n, as: 'requirement', force: true })} /></span>
+                        ) : <span className="fs-dlv__muted">{t('Waiting for an answer')}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </section>
 
       <section className="fs-dlv__block" aria-label={t('People and payments')} data-testid="office-links">

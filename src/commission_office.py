@@ -49,7 +49,9 @@ STAGES = ("opportunity", "proposal", "agreed", "in_progress", "delivered", "clos
 SCOPE_KINDS = ("initial", "agreement", "change")
 ACTIONS = ("create", "update", "list", "show", "add_scope", "add_milestone", "update_milestone", "link_package",
            "add_contact", "add_file", "add_decision", "add_payment", "status", "proposal",
-           "people_lookup", "link_person", "reconcile_payments", "confirm_payment")
+           "people_lookup", "link_person", "reconcile_payments", "confirm_payment",
+           "list_meetings", "import_meeting", "promote_meeting_item")
+PROMOTE_AS = ("decision", "requirement", "milestone")
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _ID = re.compile(r"[a-z0-9-]{3,80}")
 
@@ -403,6 +405,92 @@ def confirm_payment(rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, A
     raise OfficeError("office.not_found", f"no payment {label!r}")
 
 
+# ---------------------------------------------------------------------------
+# Meetings -> requirements and open questions (E27)
+
+def _meeting(rec: Mapping[str, Any], mid: str) -> Dict[str, Any]:
+    for m in rec.get("meetings") or []:
+        if m["id"] == mid:
+            return m
+    raise OfficeError("office.not_found", f"no meeting {mid!r} in this commission")
+
+
+def _meeting_owner(owner: str) -> str:
+    return "" if owner in ("", "_") else owner
+
+
+def recent_meetings(owner: str) -> Dict[str, Any]:
+    from src import meetings
+    rows = meetings.list_meetings(owner=_meeting_owner(owner), limit=30)
+    return {"meetings": [{"id": r.get("id"), "title": r.get("title") or r.get("id"), "date": r.get("date") or r.get("created") or ""}
+                         for r in rows if r.get("id")]}
+
+
+def import_meeting(owner: str, rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
+    from src import meeting_requirements as mr
+    text = str(args.get("text") or "")
+    source = _s(args, "source", 160)
+    meeting_id = _s(args, "meeting_id", 120)
+    date = _date(args.get("date"), "date")
+    if meeting_id and not text.strip():
+        from src import meetings
+        found = meetings.get_meeting(meeting_id, owner=_meeting_owner(owner))
+        if not found:
+            raise OfficeError("office.not_found", f"no meeting {meeting_id!r}")
+        text = str(found.get("markdown") or found.get("transcript") or "")
+        source = source or str(found.get("title") or meeting_id)
+        date = date or _date(str(found.get("date") or found.get("created") or "")[:10], "date")
+    if not text.strip():
+        raise OfficeError("office.bad_args", "text or meeting_id is required")
+    items = mr.extract(text[:200000])
+    for item in items:
+        item["promoted"] = None
+    rec.setdefault("meetings", [])
+    m = {"id": _next_id(rec["meetings"], "R"), "source": source or "meeting", "meeting_id": meeting_id,
+         "date": date or _today().isoformat(), "at": _now(), "items": items, "counts": mr.counts(items)}
+    rec["meetings"].append(m)
+    c = m["counts"]
+    _event(rec, "meeting", f"{m['id']} {m['source']}: {c['decision']} decisions, {c['promise']} promises, "
+                           f"{c['requirement']} requirements, {c['proposal']} proposals, {c['question']} questions")
+    return m
+
+
+def promote_meeting_item(owner: str, rec: Dict[str, Any], args: Mapping[str, Any]) -> Dict[str, Any]:
+    m = _meeting(rec, _s(args, "meeting"))
+    try:
+        n = int(args.get("n"))
+    except (TypeError, ValueError):
+        raise OfficeError("office.bad_args", "n (item number) is required") from None
+    item = next((i for i in m["items"] if i["n"] == n), None)
+    if item is None:
+        raise OfficeError("office.not_found", f"no item {n} in meeting {m['id']}")
+    target = _s(args, "as")
+    if target not in PROMOTE_AS:
+        raise OfficeError("office.bad_args", f"as must be one of {', '.join(PROMOTE_AS)}")
+    if item.get("promoted"):
+        raise OfficeError("office.already_promoted", f"item {n} is already a {item['promoted']['as']}")
+    if not item["firm"] and args.get("force") not in (True, "true", 1, "1"):
+        raise OfficeError("office.not_firm", f"item {n} is a {item['kind']}: tentative wording or a question is never "
+                                             "a commitment; pass force to promote it anyway")
+    origin = " ".join(x for x in (f"{m['id']}#{n}", item.get("speaker"), item.get("time")) if x) + f" · {m['source']}"
+    if target == "requirement":
+        last = (rec.get("scope") or [None])[-1]
+        text = f"{last['text'].rstrip()}\n- {item['text']}" if last else item["text"]
+        version = _add_scope(owner, rec, {"kind": "change", "text": text, "source": origin, "lang": _s(args, "lang") or "es"})
+        ref = f"v{version['version']}"
+    elif target == "decision":
+        _append(rec, "decisions", {"date": m["date"], "text": item["text"][:1000], "by": item.get("speaker") or "",
+                                   "source": origin}, item["text"][:80])
+        ref = f"#{len(rec['decisions'])}"
+    else:
+        ms = add_milestone(rec, {"title": item["text"][:160], "due": args.get("due")})
+        ms["source"] = origin
+        ref = ms["id"]
+    item["promoted"] = {"as": target, "at": _now(), "ref": ref, "forced": not item["firm"]}
+    _event(rec, "meeting", f"{m['id']}#{n} -> {target} {ref}")
+    return item
+
+
 def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
     from src import delivery_package
     today = _today()
@@ -437,6 +525,9 @@ def status(owner: str, rec: Mapping[str, Any]) -> Dict[str, Any]:
             "payments_received": received if pays else None,
             "payments_to_confirm": to_confirm,
             "people_linked": sum(1 for c in rec.get("contacts") or [] if c.get("people_id")),
+            "meeting_items_pending": sum(1 for mt in rec.get("meetings") or [] for i in mt["items"] if not i.get("promoted")),
+            "meeting_open_questions": [f"{mt['id']}#{i['n']} {i['text']}" for mt in rec.get("meetings") or []
+                                       for i in mt["items"] if i["kind"] == "question" and not i.get("promoted")],
             "budget": rec.get("budget")}
 
 
@@ -472,6 +563,13 @@ def render(m: Dict[str, Any]) -> str:
             lines.append("Without a ready package: " + ", ".join(st["deliverables_without_ready_package"]))
         if st.get("open_questions"):
             lines.append("Open scope questions: " + " | ".join(st["open_questions"]))
+        if st.get("meeting_open_questions"):
+            lines.append("Open meeting questions: " + " | ".join(st["meeting_open_questions"]))
+        for mt in m.get("meetings") or []:
+            lines.append(f"Meeting {mt['id']} {mt['source']}: " + ", ".join(f"{k} {v}" for k, v in mt["counts"].items() if v))
+            for i in mt["items"]:
+                mark = f" -> {i['promoted']['as']}" if i.get("promoted") else ""
+                lines.append(f"  {i['n']}. [{i['kind']}] {i.get('time') or ''} {i.get('speaker') or ''}: {i['text']}{mark}")
         return "\n".join(lines)
     return json.dumps(m, ensure_ascii=False)
 
@@ -485,6 +583,8 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             return {"commissions": list_commissions(owner)}
         if action == "people_lookup":
             return people_lookup(args)
+        if action == "list_meetings":
+            return recent_meetings(owner)
         if action == "create":
             rec = create(owner, args)
             return {**rec, "status": status(owner, rec)}
@@ -537,6 +637,10 @@ def run(owner: str, args: Mapping[str, Any]) -> Dict[str, Any]:
             return {**rec, "status": status(owner, rec), "reconcile": summary}
         elif action == "confirm_payment":
             confirm_payment(rec, args)
+        elif action == "import_meeting":
+            import_meeting(owner, rec, args)
+        elif action == "promote_meeting_item":
+            promote_meeting_item(owner, rec, args)
         elif action == "proposal":
             from src import proposal_builder
             result = proposal_builder.build(owner, rec, status(owner, rec), args)

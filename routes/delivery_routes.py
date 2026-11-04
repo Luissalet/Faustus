@@ -28,6 +28,8 @@ POST /api/commissions/{id}/{action}          update | add_scope | add_milestone 
 GET  /api/commissions/{id}/proposals/{name}.{docx|md}   a drafted proposal (Hangar E31)
 GET  /api/commissions/people-lookup?name=    People's Hoard candidates through the Hub (read-only)
 POST /api/commissions/{id}/link_person | reconcile_payments | confirm_payment   (Ledger read-only)
+GET  /api/commissions/meetings              recent Faustus meetings to import (Hangar E27)
+POST /api/commissions/{id}/import_meeting | promote_meeting_item   meeting -> requirements and open questions
 """
 from typing import Any, Dict
 
@@ -128,7 +130,7 @@ def setup_delivery_routes() -> APIRouter:
 
     _OFFICE_POST = ("update", "add_scope", "add_milestone", "update_milestone", "link_package", "add_contact",
                     "add_file", "add_decision", "add_payment", "proposal", "link_person", "reconcile_payments",
-                    "confirm_payment")
+                    "confirm_payment", "import_meeting", "promote_meeting_item")
 
     async def _json(request: Request) -> Dict[str, Any]:
         try:
@@ -154,6 +156,11 @@ def setup_delivery_routes() -> APIRouter:
         owner = owner_of(request)
         import asyncio
         return _reply(await asyncio.to_thread(commission_office.run, owner, {"action": "people_lookup", "name": name}))
+
+    @router.get("/api/commissions/meetings")
+    async def commission_meetings(request: Request):
+        from src import commission_office
+        return _reply(commission_office.run(owner_of(request), {"action": "list_meetings"}))
 
     @router.get("/api/commissions/{cid}")
     async def show_commission(cid: str, request: Request):

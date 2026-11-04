@@ -40,3 +40,11 @@ look-ups, a separate Hoard.
 - `people_lookup {name}` / `GET /api/commissions/people-lookup?name=`: People's Hoard `find_people` through the Hub; `link_person {id, name, people_id}` stores only the id.
 - `reconcile_payments {id}`: Ledger's `list_entries` (read-only) around the expected payments; incoming movements of exactly the amount, scored by date and by client or label in the counterparty or note. `confirm_payment {id, label, tx_id}` records the movement id.
 - Studio: Delivery → Commissions → **People and payments**.
+
+## Meetings to requirements and open questions (Hangar E27)
+
+- `list_meetings` / `GET /api/commissions/meetings`: recent Faustus meetings of the owner.
+- `import_meeting {id, meeting_id | text, source?, date?}` / `POST /api/commissions/{id}/import_meeting`: each statement is sorted into `decision`, `promise`, `requirement`, `proposal` or `question`, with speaker, timestamp (`[hh:mm:ss] Name: text`) and line. Conditional wording (podríamos, se podría, quizá, could, maybe, what if) is always a proposal. Stored as `meetings[]` (R1, R2…); nothing enters the scope.
+- `promote_meeting_item {id, meeting, n, as: decision|requirement|milestone, force?}`: a decision keeps its speaker; a requirement becomes a change version (current text plus the statement, compared with the agreement); a promise can become a milestone. The origin (`R1#4 Luis 00:04:02 · source`) is kept. Proposals and questions answer `office.not_firm` unless `force`.
+- Status adds `meeting_items_pending` and `meeting_open_questions`.
+- Studio: Delivery → Commissions → **Meetings**.

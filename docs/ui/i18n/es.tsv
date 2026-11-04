@@ -10666,3 +10666,20 @@ Not checked yet	Aún sin comprobar
 Add payment	Añadir cobro
 Check Ledger	Comprobar en Ledger
 read	leídos
+
+Promise	Promesa
+Proposal (tentative)	Propuesta (tentativa)
+Meetings	Reuniones
+Each statement of a meeting is sorted into decision, promise, requirement, tentative proposal or question, with who said it and when. «Podríamos», «could» and similar wording is never taken as a commitment; nothing goes into the record until you promote it.	Cada frase de la reunión se clasifica como decisión, promesa, requisito, propuesta tentativa o pregunta, con quién la dijo y cuándo. «Podríamos», «could» y expresiones parecidas nunca se toman como compromiso; nada pasa al expediente hasta que lo promueves.
+Faustus meeting	Reunión de Faustus
+Faustus meeting…	Reunión de Faustus…
+No Faustus meetings yet	Aún no hay reuniones en Faustus
+Import meeting	Importar reunión
+Or paste notes or a transcript: one statement per line, «[00:12:30] Name: text»	O pega notas o una transcripción: una frase por línea, «[00:12:30] Nombre: texto»
+Import text	Importar texto
+Open questions from meetings	Preguntas pendientes de reuniones
+Who	Quién
+Statement	Frase
+Not a commitment	No es un compromiso
+Requirement anyway	Requisito de todos modos
+Waiting for an answer	Pendiente de respuesta

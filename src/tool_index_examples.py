@@ -1263,6 +1263,7 @@ EXAMPLES: Dict[str, List[str]] = {
         "abre un expediente para el encargo de la caja con el cliente y la primera petición",
         "what is due next on this commission and which deliverables are not ready",
         "añade el acuerdo firmado como nueva versión del alcance y enlaza la entrega al hito",
+        "pasa la reunión de ayer al expediente: qué se decidió, qué prometimos y qué preguntas quedan",
     ],
     "decision_map": [
         "si cambia la unidad de medida, qué entregables hay que rehacer",

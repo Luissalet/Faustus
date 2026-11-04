@@ -182,6 +182,7 @@ export interface CommissionStatus {
   milestones_total: number; deliverables: { milestone: string; title: string; package_id: string | null; ready: boolean | null }[];
   deliverables_without_ready_package: string[]; billing_expected: number | null;
   payments_received?: number | null; payments_to_confirm?: string[]; people_linked?: number;
+  meeting_items_pending?: number; meeting_open_questions?: string[];
 }
 export interface Commission {
   id: string; title: string; client: string; stage: string; summary: string; created: string; updated: string;
@@ -192,6 +193,7 @@ export interface Commission {
     ledger_check?: { at: string; error?: string; entries_scanned?: number; candidates?: LedgerCandidate[] } }[];
   events: { at: string; kind: string; text: string }[]; status: CommissionStatus;
   proposals?: { name: string; date: string; counts: Record<string, number>; masked: number }[];
+  meetings?: OfficeMeeting[];
   proposal?: Proposal;
 }
 export interface Proposal {
@@ -203,6 +205,22 @@ export const proposalHref = (id: string, name: string, kind: 'docx' | 'md') =>
 export function originLabel(o: string): string {
   const labels: Record<string, string> = { verified: t('Verified'), assumption: t('Assumption'), question: t('Question') };
   return labels[o] ?? o;
+}
+export type MeetingKind = 'decision' | 'promise' | 'requirement' | 'proposal' | 'question';
+export interface MeetingItem { n: number; kind: MeetingKind; text: string; speaker: string; time: string; line: number; firm: boolean;
+  promoted: { as: string; at: string; ref: string; forced: boolean } | null }
+export interface OfficeMeeting { id: string; source: string; meeting_id: string; date: string; at: string; items: MeetingItem[]; counts: Record<MeetingKind, number> }
+export const MEETING_KINDS: MeetingKind[] = ['decision', 'promise', 'requirement', 'proposal', 'question'];
+export function meetingKindLabel(k: string): string {
+  const labels: Record<string, string> = { decision: t('Decision'), promise: t('Promise'), requirement: t('Requirement'), proposal: t('Proposal (tentative)'), question: t('Question') };
+  return labels[k] ?? k;
+}
+export function meetingKindTone(k: string): Tone {
+  return k === 'decision' || k === 'promise' ? 'good' : k === 'requirement' || k === 'question' ? 'warn' : 'unknown';
+}
+export async function recentMeetings(): Promise<{ id: string; title: string; date: string }[]> {
+  const r = await request<{ meetings?: { id: string; title: string; date: string }[] }>('/api/commissions/meetings');
+  return Array.isArray(r.meetings) ? r.meetings : [];
 }
 export interface LedgerCandidate { tx_id: string; date: string; amount: number; counterparty: string; score: number }
 export interface PersonCandidate { id: string; name: string; score: number | null; relation: string }
