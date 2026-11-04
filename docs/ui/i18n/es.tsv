@@ -10416,7 +10416,7 @@ Worker caches	Cachés de los workers
 {n} worker folder	{n} carpeta de worker
 {n} worker folders	{n} carpetas de workers
 Empty idle workers	Vaciar los workers parados
-Each worker resolves pip, npm, uv, yarn, pnpm, poetry, go and nuget packages and its temp files through a folder of its own, so two workers never share a cache.	Cada worker resuelve los paquetes de pip, npm, uv, yarn, pnpm, poetry, go y nuget y sus temporales en una carpeta propia, así que dos workers nunca comparten caché.
+Each worker resolves pip, npm, uv, yarn, pnpm, poetry, go, nuget, Gradle, Maven, Deno, Bun, Composer, Pipenv, pre-commit, ccache, sccache, Cypress, Electron and Cargo caches and its temp files through a folder of its own, so two workers never share a cache.	Cada worker resuelve las cachés de pip, npm, uv, yarn, pnpm, poetry, go, nuget, Gradle, Maven, Deno, Bun, Composer, Pipenv, pre-commit, ccache, sccache, Cypress, Electron y Cargo, y sus archivos temporales, a través de una carpeta propia, así que dos workers nunca comparten caché.
 No worker has run a command yet.	Ningún worker ha ejecutado aún un comando.
 This worker has not run a command, so it has no cache folder yet.	Este worker no ha ejecutado ningún comando, así que aún no tiene carpeta de cachés.
 Caches	Cachés

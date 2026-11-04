@@ -106,7 +106,7 @@ export function WorkerCachesCard() {
         <Button size="sm" icon={Eraser} label={t('Empty idle workers')} loading={busy} disabled={rows.length === 0} onClick={() => void clearAll()} />
       </header>
       <p className="fs-agents__note">
-        {t('Each worker resolves pip, npm, uv, yarn, pnpm, poetry, go and nuget packages and its temp files through a folder of its own, so two workers never share a cache.')}
+        {t('Each worker resolves pip, npm, uv, yarn, pnpm, poetry, go, nuget, Gradle, Maven, Deno, Bun, Composer, Pipenv, pre-commit, ccache, sccache, Cypress, Electron and Cargo caches and its temp files through a folder of its own, so two workers never share a cache.')}
       </p>
       {note && <p className="fs-agents__note" data-on>{note}</p>}
       {snap && rows.length === 0 && <p className="fs-agents__note">{t('No worker has run a command yet.')}</p>}
