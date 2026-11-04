@@ -23,7 +23,11 @@ SOURCE_TYPES = ("gov", "edu", "intergovernmental", "docs", "paper", "code", "wik
 _GOV_LABELS = ("gov", "gob", "gouv", "go", "govt", "gv")
 _EDU_LABELS = ("edu", "ac")
 _INTERGOV = ("europa.eu", "who.int", "un.org", "worldbank.org", "imf.org", "oecd.org", "wto.org", "nato.int",
-             "iso.org", "ietf.org", "w3.org")
+             "iso.org", "ietf.org", "w3.org", "rfc-editor.org", "unesco.org", "bis.org", "ecb.europa.eu")
+# Official bodies whose domain has no structural signal (Spain's gob.es ones are caught by the host
+# pattern already). A short curated list, matched as the domain itself or a subdomain, never as a substring.
+_GOV_LISTED = ("boe.es", "ine.es", "bde.es", "cnmv.es", "agenciatributaria.es", "aemet.es", "seg-social.es",
+               "congreso.es", "senado.es", "poderjudicial.es", "tribunalconstitucional.es")
 _PAPER = ("arxiv.org", "doi.org", "pubmed.ncbi.nlm.nih.gov", "semanticscholar.org", "openreview.net",
           "biorxiv.org", "medrxiv.org", "aclanthology.org", "jmlr.org")
 _CODE = ("github.com", "gitlab.com", "bitbucket.org", "huggingface.co", "pypi.org", "npmjs.com", "crates.io",
@@ -94,6 +98,9 @@ def classify_source(url: Any) -> Dict[str, Any]:
     hit = _matches(host, _INTERGOV)
     if hit:
         return out("intergovernmental", True, hit)
+    hit = _matches(host, _GOV_LISTED)
+    if hit:
+        return out("gov", True, hit)
     # Documentation: a docs./developer. subdomain is the vendor's own, so it is official.
     # ...unless the host is a platform that hands anyone a subdomain or a document (docs.google.com is a
     # shared document, docs.someone.github.io a project page): there the prefix proves nothing.

@@ -124,3 +124,16 @@ def test_old_saved_sources_are_classified_when_served():
     assert (reddit["official"], reddit["source_type"]) == (False, "forum")
     assert (kept["official"], kept["source_type"]) == (False, "blog")  # already classified: untouched
     assert stamp_missing(None) is None and stamp_missing("x") == "x"
+
+def test_listed_official_bodies_without_a_structural_signal():
+    from src.source_authority import classify_source
+    for url in ("https://www.boe.es/diario_boe/", "https://ine.es/", "https://www.bde.es/", "https://www.cnmv.es/",
+                "https://sede.agenciatributaria.es/", "https://eur-lex.europa.eu/", "https://www.ecb.europa.eu/",
+                "https://www.who.int/", "https://www.oecd.org/", "https://datatracker.ietf.org/doc/rfc9110",
+                "https://www.rfc-editor.org/rfc/rfc9110", "https://www.w3.org/TR/"):
+        assert classify_source(url)["official"] is True, url
+    assert classify_source("https://www.boe.es/")["source_type"] == "gov"
+    # lookalikes and substrings are not the body
+    for url in ("https://boe.es.evil.com/", "https://notboe.es/", "https://ine.es.example.org/x",
+                "https://www.boe-es.com/", "https://evil.com/?u=https://www.boe.es/"):
+        assert classify_source(url)["official"] is False, url
