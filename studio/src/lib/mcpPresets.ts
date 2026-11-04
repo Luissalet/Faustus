@@ -54,6 +54,8 @@ export interface McpPreset {
   transport?: 'http' | 'sse';
 }
 
+export const GRAPHQL_PRESET = 'GraphQL API on this PC';
+
 export const MCP_PRESETS: McpPreset[] = [
   {
     name: 'Penpot (native design workspace)', command: '', args: [], env: {},
@@ -222,6 +224,12 @@ The agent acts on the real device with your accounts: keep the approval prompts 
     help: 'Change the last argument to the directory the server should have access to. It is the only one it can reach.',
   },
   { name: 'Memory', command: 'npx', args: ['-y', '@modelcontextprotocol/server-memory'], env: {} },
+  {
+    // The REST bridge shipped with Faustus (bridges/rest_mcp) reads the schema of a GraphQL endpoint on this PC.
+    // GraphqlSetup fills the command, arguments and environment once the schema has been read.
+    name: GRAPHQL_PRESET, command: '', args: [], env: {},
+    help: 'A GraphQL API running on this PC becomes one tool per query, read from its own schema. Enter its address and press Read the schema; mutations stay off unless you turn them on.',
+  },
   {
     name: 'Postgres',
     command: 'npx',

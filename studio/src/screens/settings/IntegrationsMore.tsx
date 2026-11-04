@@ -37,7 +37,8 @@ import {
   type McpServer,
   type McpTool,
 } from '../../adapters/integrations';
-import { MCP_PRESETS, fieldsFor, githubRepo, oauthFilePayload, presetByName, presetUrl, withProvider } from '../../lib/mcpPresets';
+import { GraphqlSetup } from './GraphqlSetup';
+import { GRAPHQL_PRESET, MCP_PRESETS, fieldsFor, githubRepo, oauthFilePayload, presetByName, presetUrl, withProvider } from '../../lib/mcpPresets';
 import { locale, t, tn } from '../../i18n';
 import { getGoogleOAuthClient } from '../../adapters/google';
 import { Field, Select, Toggle } from './fields';
@@ -581,6 +582,9 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
           onChange={pickPreset}
         />
       </Field>
+      {preset?.name === GRAPHQL_PRESET && (
+        <GraphqlSetup onFill={(f) => { setName(f.name); setCmd(f.command); setArgs(f.args); setEnv(f.env); }} />
+      )}
       {preset?.providerDropdown && (
         <Field label={t(preset.providerDropdown.label)} htmlFor="mcp-provider" help={t('Fills in the server addresses; the address and the password are still yours to type.')}>
           <Select

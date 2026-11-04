@@ -336,6 +336,38 @@ def setup_mcp_routes(mcp_manager: McpManager):
         from src.mcp_config_audit import audit_candidate, load_configured_servers
         return audit_candidate(config, load_configured_servers())
 
+    @router.post("/graphql/preview")
+    def preview_graphql_connector(request: Request, config: dict = Body(...)):
+        """The tools a local GraphQL endpoint would give the assistant, read by introspection (one read-only tool
+        per first-level Query field; Mutation fields only with `mutations: true`), plus the server fields
+        (command, args, env) that register it through the REST bridge (bridges/rest_mcp). Nothing is saved or started."""
+        require_admin(request)
+        import sys
+        from bridges.rest_mcp import server as rest_bridge
+        base_url = str(config.get("base_url") or "").strip()
+        path = "/" + str(config.get("path") or "/graphql").strip().lstrip("/")
+        mutations = bool(config.get("mutations"))
+        if not base_url or not rest_bridge.is_loopback_base_url(base_url):
+            raise HTTPException(400, "base_url must be a loopback address (127.0.0.1, localhost or ::1)")
+        try:
+            schema = rest_bridge.fetch_graphql_schema(base_url, None, path)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"Could not read the GraphQL schema from {base_url}{path}: {exc}")
+        specs, notes = rest_bridge.graphql_to_tools(schema, path, mutations)
+        env = {"REST_BASE_URL": base_url.rstrip("/"), "REST_GRAPHQL_PATH": path}
+        if mutations:
+            env["REST_GRAPHQL_MUTATIONS"] = "1"
+        script = Path(__file__).resolve().parents[2] / "bridges" / "rest_mcp" / "server.py"
+        host = urllib.parse.urlsplit(base_url).netloc
+        return {
+            "tools": [{"name": s["name"], "description": s["description"], "readonly": bool(s["readonly"]),
+                       "params": [{"name": m["orig"], "type": m["gql_type"], "required": bool(m["required"])}
+                                  for m in s["params"].values()]} for s in specs],
+            "notes": notes,
+            "fields": {"name": f"GraphQL {host}", "command": sys.executable, "args": json.dumps([str(script)]),
+                       "env": json.dumps(env)},
+        }
+
     @router.get("/servers")
     def list_servers(request: Request):
         """List all configured MCP servers with connection status."""

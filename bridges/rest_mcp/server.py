@@ -26,6 +26,11 @@ REST_ALLOW           Optional regex over "METHOD /path", filtering which
 REST_TOKEN_FILE      Optional path to a bearer token, sent as
                      "Authorization: Bearer <token>" on every request.
 REST_NAME            Optional display name for the MCP server.
+REST_GRAPHQL_PATH    Optional. Path of a GraphQL endpoint under REST_BASE_URL (e.g. /graphql). Its schema is
+                     read by introspection at startup and every first-level Query field becomes a read-only tool
+                     (`query_<field>`), with the selection set derived from the schema.
+REST_GRAPHQL_SCHEMA  Optional path to a saved introspection result (JSON), used instead of the live call.
+REST_GRAPHQL_MUTATIONS  Optional. "1" also exposes the Mutation fields (`mutation_<field>`); off by default.
 REST_HEALTH_PATH     Optional path for the always-present `app_status` tool.
                      Default "/api/health".
 
@@ -359,6 +364,9 @@ def register_tools(mcp, tool_specs: List[Dict[str, Any]], base_url: str, token: 
         seen_names.add(spec["name"])
 
         async def dispatch(tool_name: str, values: Dict[str, Any], _spec=spec) -> str:
+            if _spec.get("graphql"):
+                return await call_rest(base_url, token, "POST", _spec["path"], {}, {},
+                                        graphql_request(_spec, values))
             path_values, query, body = _split_params(_spec["params"], values)
             return await call_rest(base_url, token, _spec["method"], _spec["path"],
                                     path_values, query, body)
@@ -386,6 +394,153 @@ def add_health_tool(mcp, base_url: str, token: Optional[str], health_path: str, 
     mcp.add_tool(app_status, name="app_status",
                  description=f"Check whether the app is reachable (GET {health_path}).",
                  annotations=ToolAnnotations(readOnlyHint=True))
+
+
+# ── GraphQL ─────────────────────────────────────────────────────────────────
+# A GraphQL endpoint is described by introspection, not by an OpenAPI document.
+# Every first-level Query field becomes a read-only tool (`query_<field>`); the
+# Mutation fields become tools (`mutation_<field>`) only when REST_GRAPHQL_MUTATIONS
+# is set, because a write is something a human opts into. The selection set of a
+# tool is derived from the schema (the scalar leaves of the returned type, one
+# level of nested objects), so the model never has to write GraphQL.
+
+INTROSPECTION_QUERY = (
+    "query IntrospectionQuery { __schema { queryType { name } mutationType { name } types { kind name description "
+    "fields { name description args { name description defaultValue type { ...T } } type { ...T } } "
+    "inputFields { name type { ...T } } enumValues { name } } } } "
+    "fragment T on __Type { kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name "
+    "ofType { kind name } } } } } }"
+)
+_GQL_SELECTION_FIELDS = 40
+_GQL_SELECTION_DEPTH = 2
+
+
+def _gql_unwrap(t: Optional[Dict[str, Any]]):
+    """(kind, name, is_list) of the named type under any NON_NULL / LIST wrappers."""
+    is_list = False
+    while isinstance(t, dict) and t.get("kind") in ("NON_NULL", "LIST"):
+        if t["kind"] == "LIST":
+            is_list = True
+        t = t.get("ofType")
+    if not isinstance(t, dict):
+        return "SCALAR", "String", is_list
+    return t.get("kind") or "SCALAR", t.get("name") or "String", is_list
+
+
+def _gql_type_str(t: Optional[Dict[str, Any]]) -> str:
+    """The GraphQL spelling of a type reference, e.g. ``[ID!]!``."""
+    if not isinstance(t, dict):
+        return "String"
+    kind = t.get("kind")
+    if kind == "NON_NULL":
+        return _gql_type_str(t.get("ofType")) + "!"
+    if kind == "LIST":
+        return "[" + _gql_type_str(t.get("ofType")) + "]"
+    return t.get("name") or "String"
+
+
+def _gql_json_type(t: Optional[Dict[str, Any]]) -> str:
+    kind, name, is_list = _gql_unwrap(t)
+    if is_list:
+        return "array"
+    if kind == "INPUT_OBJECT":
+        return "object"
+    return {"Int": "integer", "Float": "number", "Boolean": "boolean"}.get(name, "string")
+
+
+def _gql_selection(types: Dict[str, Dict[str, Any]], type_name: str, depth: int) -> str:
+    """``{ a b { c } }`` for an object type: its scalar/enum fields that take no required argument and, while
+    depth allows, one level of nested objects. ``{ __typename }`` when nothing else is selectable."""
+    node = types.get(type_name) or {}
+    leaves: List[str] = []
+    nested: List[str] = []
+    for f in node.get("fields") or []:
+        if any((a.get("type") or {}).get("kind") == "NON_NULL" and a.get("defaultValue") is None
+               for a in f.get("args") or []):
+            continue
+        kind, name, _ = _gql_unwrap(f.get("type"))
+        if kind in ("SCALAR", "ENUM"):
+            leaves.append(f["name"])
+        elif kind in ("OBJECT", "INTERFACE") and depth > 1 and name != type_name:
+            inner = _gql_selection(types, name, depth - 1)
+            if inner != "{ __typename }":
+                nested.append(f"{f['name']} {inner}")
+    picked = (leaves + nested)[:_GQL_SELECTION_FIELDS]
+    return "{ " + " ".join(picked) + " }" if picked else "{ __typename }"
+
+
+def graphql_to_tools(introspection: Dict[str, Any], path: str,
+                     include_mutations: bool = False) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Tool specs from an introspection result (``{"data": {"__schema": ...}}`` or the bare ``__schema``)."""
+    schema = introspection.get("data", introspection) if isinstance(introspection, dict) else {}
+    schema = schema.get("__schema", schema) if isinstance(schema, dict) else {}
+    types = {t["name"]: t for t in (schema.get("types") or []) if isinstance(t, dict) and t.get("name")}
+    roots = [("query", (schema.get("queryType") or {}).get("name"))]
+    if include_mutations:
+        roots.append(("mutation", (schema.get("mutationType") or {}).get("name")))
+    specs: List[Dict[str, Any]] = []
+    notes: List[str] = []
+    used: set = set()
+    for operation, root_name in roots:
+        for f in (types.get(root_name) or {}).get("fields") or []:
+            field = str(f.get("name") or "")
+            if not field or field.startswith("__"):
+                continue
+            tool = f"{operation}_{_sanitize_ident(field)}"[:64]
+            if tool in used or not _TOOL_NAME_RE.match(tool):
+                notes.append(f"graphql {operation} {field!r} skipped: tool name {tool!r} unusable or taken")
+                continue
+            used.add(tool)
+            params: Dict[str, Any] = {}
+            used_idents: set = set()
+            for a in f.get("args") or []:
+                py = _dedupe_ident(_sanitize_ident(a["name"]), used_idents)
+                params[py] = {"orig": a["name"], "in": "graphql_var", "type": _gql_json_type(a.get("type")),
+                              "required": (a.get("type") or {}).get("kind") == "NON_NULL" and a.get("defaultValue") is None,
+                              "description": a.get("description") or "", "gql_type": _gql_type_str(a.get("type"))}
+            kind, ret_name, is_list = _gql_unwrap(f.get("type"))
+            selection = _gql_selection(types, ret_name, _GQL_SELECTION_DEPTH) if kind in ("OBJECT", "INTERFACE") else ""
+            sig = ", ".join(f"{p['orig']}: {p['gql_type']}" for p in params.values())
+            specs.append({
+                "name": tool,
+                "description": (f.get("description") or "").strip() or
+                               f"GraphQL {operation} {field}({sig}) -> {_gql_type_str(f.get('type'))}",
+                "method": "POST", "path": path, "readonly": operation == "query", "params": params,
+                "graphql": {"operation": operation, "field": field, "selection": selection},
+            })
+    return specs, notes
+
+
+def graphql_request(spec: Dict[str, Any], values: Dict[str, Any]) -> Dict[str, Any]:
+    """The JSON body of the POST for one tool call: only the variables the caller gave are declared."""
+    gql = spec["graphql"]
+    declared: List[str] = []
+    passed: List[str] = []
+    variables: Dict[str, Any] = {}
+    for py, meta in spec["params"].items():
+        value = values.get(py)
+        if value is None:
+            continue
+        declared.append(f"${meta['orig']}: {meta['gql_type']}")
+        passed.append(f"{meta['orig']}: ${meta['orig']}")
+        variables[meta["orig"]] = value
+    head = f"{gql['operation']} Faustus" + (f"({', '.join(declared)})" if declared else "")
+    call = gql["field"] + (f"({', '.join(passed)})" if passed else "")
+    sel = gql.get("selection") or ""
+    return {"query": f"{head} {{ {call} {sel} }}".replace("  ", " "), "variables": variables}
+
+
+def fetch_graphql_schema(base_url: str, token: Optional[str], path: str, timeout: float = 10.0) -> Dict[str, Any]:
+    """Run the introspection query against the local endpoint. Raises on a transport error or GraphQL errors."""
+    import httpx
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    resp = httpx.post(base_url.rstrip("/") + "/" + path.lstrip("/"), json={"query": INTROSPECTION_QUERY},
+                      headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    if not isinstance(data, dict) or not (data.get("data") or {}).get("__schema"):
+        raise ValueError("the endpoint did not return a GraphQL schema (introspection may be disabled)")
+    return data
 
 
 # ── assembly ────────────────────────────────────────────────────────────────
@@ -437,6 +592,24 @@ def build_server(env: Dict[str, str]):
                 if s["name"] in existing_names:
                     continue  # a manifest entry with the same name wins
                 all_specs.append(s)
+            all_notes.extend(notes)
+
+    graphql_path = env.get("REST_GRAPHQL_PATH")
+    if graphql_path or env.get("REST_GRAPHQL_SCHEMA"):
+        graphql_path = graphql_path or "/graphql"
+        try:
+            if env.get("REST_GRAPHQL_SCHEMA"):
+                with open(env["REST_GRAPHQL_SCHEMA"], "r", encoding="utf-8") as fh:
+                    introspection = json.load(fh)
+            else:
+                introspection = fetch_graphql_schema(base_url, token, graphql_path)
+        except Exception as exc:  # noqa: BLE001 - startup best-effort, never fatal
+            print(f"rest_mcp: could not read the GraphQL schema ({exc}); skipping GraphQL tools", file=sys.stderr)
+        else:
+            specs, notes = graphql_to_tools(introspection, graphql_path,
+                                            env.get("REST_GRAPHQL_MUTATIONS", "").lower() in ("1", "true", "yes"))
+            existing_names = {s["name"] for s in all_specs}
+            all_specs.extend(s for s in specs if s["name"] not in existing_names)
             all_notes.extend(notes)
 
     instructions = manifest_instructions or f"REST bridge for {name}."

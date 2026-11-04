@@ -10467,3 +10467,11 @@ blog	blog
 shop	tienda
 social network	red social
 video	vídeo
+GraphQL server	Servidor GraphQL
+GraphQL path	Ruta de GraphQL
+Also expose mutations (they can change data)	Exponer también las mutaciones (pueden modificar datos)
+Read the schema	Leer el esquema
+{n} tools from this schema. The form below is filled in; press Add to register it.	{n} herramientas de este esquema. El formulario de abajo está relleno; pulsa Añadir para registrarlo.
+changes data	modifica datos
+GraphQL API on this PC	API GraphQL en este PC
+A GraphQL API running on this PC becomes one tool per query, read from its own schema. Enter its address and press Read the schema; mutations stay off unless you turn them on.	Una API GraphQL que corre en este PC se convierte en una herramienta por consulta, leída de su propio esquema. Indica su dirección y pulsa Leer el esquema; las mutaciones quedan apagadas salvo que las actives.
