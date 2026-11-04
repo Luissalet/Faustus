@@ -1,10 +1,12 @@
 """
 delivery_server.py
 
-MCP server for reproducible delivery packages (Hangar E33): the same
-`delivery_package` tool the chat has, over `src/delivery_package.py`, so the
-chat, the HTTP routes (`/api/delivery-packages*`) and this server share one
-implementation.
+MCP server for the delivery side of a commission: reproducible delivery
+packages (Hangar E33, `delivery_package` over `src/delivery_package.py`) and
+the scope comparator (E30, `scope_compare` over `src/scope_compare.py`). The
+same tools the chat has, so the chat, the HTTP routes
+(`/api/delivery-packages*`, `/api/scope-comparisons*`) and this server share
+one implementation.
 
 * **stdout is the JSON-RPC stream.** `src/stdio_guard.py` is raised before
   anything else is imported.
@@ -35,7 +37,7 @@ except Exception:  # pragma: no cover - the server must start regardless
 server = Server("delivery")
 
 _OWNER_ENV_KEYS = ("ODYSSEUS_MCP_DELIVERY_OWNER", "ODYSSEUS_DELIVERY_OWNER")
-_NAMES = ("delivery_package",)
+_NAMES = ("delivery_package", "scope_compare")
 _OWNER_ERROR = ("Error: the delivery MCP server has no owner configured, so it cannot tell whose packages these "
                 "are. Set ODYSSEUS_MCP_DELIVERY_OWNER for this server.")
 
@@ -75,6 +77,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return _text(_OWNER_ERROR)
     args = arguments if isinstance(arguments, dict) else {}
     try:
+        if name == "scope_compare":
+            from src import scope_compare
+            return _text(await asyncio.to_thread(scope_compare.run, owner, args))
         from src import delivery_package
         return _text(await asyncio.to_thread(delivery_package.run, owner, args, confine=False))
     except Exception as exc:  # noqa: BLE001
@@ -87,7 +92,7 @@ def _preload() -> None:
     after the reader thread blocks on it would stall ``tools/list``."""
     try:
         _schemas()
-        from src import delivery_package  # noqa: F401
+        from src import delivery_package, scope_compare  # noqa: F401
     except Exception:  # noqa: BLE001 - the server still starts; the call reports the error
         pass
 

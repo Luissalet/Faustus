@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router';
 import { Button, EmptyState, Skeleton } from '../components';
 import * as api from '../adapters/delivery';
 import { t, tn } from '../i18n';
+import { ScopePanel } from './DeliveryScope';
 import './delivery.css';
 
 /**
@@ -166,6 +167,8 @@ function PackageDetail({ pkg, onReverified }: { pkg: api.DeliveryPackage; onReve
 export function DeliveryScreen() {
   const [params, setParams] = useSearchParams();
   const openId = params.get('p') ?? '';
+  const view = params.get('view') === 'scope' ? 'scope' : 'packages';
+  const setView = (v: string) => { const next = new URLSearchParams(params); if (v === 'scope') next.set('view', 'scope'); else next.delete('view'); setParams(next, { replace: true }); };
   const [rows, setRows] = useState<api.PackageRow[] | null>(null);
   const [pkg, setPkg] = useState<api.DeliveryPackage | null>(null);
   const [error, setError] = useState('');
@@ -208,9 +211,14 @@ export function DeliveryScreen() {
           <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Reload')} onClick={() => { void reloadList(); }} />
         </div>
       </header>
-      {error && <p className="fs-dlv__why" data-tone="bad" role="alert">{error}</p>}
-      {rows === null && <Skeleton label={t('Reading the packages')} count={3} height="56px" />}
-      <div className="fs-dlv__layout" data-single={!rows || rows.length === 0 || undefined}>
+      <div className="fs-tabs" role="tablist" aria-label={t('Delivery sections')}>
+        <button type="button" role="tab" className="fs-tab" aria-selected={view === 'packages'} data-testid="delivery-tab-packages" onClick={() => setView('packages')}>{t('Packages')}</button>
+        <button type="button" role="tab" className="fs-tab" aria-selected={view === 'scope'} data-testid="delivery-tab-scope" onClick={() => setView('scope')}>{t('Scope changes')}</button>
+      </div>
+      {view === 'scope' && <ScopePanel />}
+      {view === 'packages' && error && <p className="fs-dlv__why" data-tone="bad" role="alert">{error}</p>}
+      {view === 'packages' && rows === null && <Skeleton label={t('Reading the packages')} count={3} height="56px" />}
+      {view === 'packages' && <div className="fs-dlv__layout" data-single={!rows || rows.length === 0 || undefined}>
         <div>
           {rows && rows.length === 0 && !creating && (
             <EmptyState icon={PackageCheck} title={t('No delivery packages yet')} body={t('Create one with the files of a finished job.')} />
@@ -234,7 +242,7 @@ export function DeliveryScreen() {
           {!creating && pkg && <PackageDetail key={pkg.id} pkg={pkg} onReverified={() => { void reloadList(); }} />}
           {!creating && !pkg && rows && rows.length > 0 && <p className="fs-dlv__muted">{t('Choose a package to see what was checked.')}</p>}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

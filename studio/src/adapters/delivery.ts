@@ -104,3 +104,67 @@ export const reverifyPackage = (id: string) =>
 
 export const downloadHref = (id: string) => `${BASE}/${encodeURIComponent(id)}/download`;
 export const documentHref = (id: string) => `${BASE}/${encodeURIComponent(id)}/document`;
+
+/* -- scope comparator (`/api/scope-comparisons`, Hangar E30) --------------- */
+
+export type ScopeStatus = 'included' | 'changed' | 'added' | 'removed' | 'ambiguous';
+export interface ScopeEffect {
+  class: 'local' | 'partial' | 'pipeline' | 'none' | 'unknown'; recalculate?: string[]; deliverables?: string[];
+  effort_hours?: [number, number]; no_effort_for?: string[]; reason?: string; items?: string[];
+}
+export interface ScopeRow {
+  n: number; clause: string; status: ScopeStatus; agreed?: string; agreed_ref?: string; reason?: string;
+  diff?: { attributes?: { from: string[]; to: string[] }; quantities?: Record<string, { from: string; to: string }> };
+  effect?: ScopeEffect; options: string[]; question?: string;
+}
+export interface ScopeComparison {
+  id: string; title: string; created: string; graph: string | null; graph_found: boolean | null; rows: ScopeRow[];
+  counts: Record<ScopeStatus, number>; questions: string[]; negotiated: { clause: string; status: string }[]; limits: string;
+}
+export interface ScopeListRow { id: string; title: string; created: string; counts: Record<ScopeStatus, number>; questions: number; graph: string | null }
+
+export function scopeTone(status: string): Tone {
+  if (status === 'included') return 'good';
+  if (status === 'ambiguous') return 'warn';
+  if (status === 'added' || status === 'changed' || status === 'removed') return 'bad';
+  return 'unknown';
+}
+
+export function scopeLabel(status: string): string {
+  const labels: Record<string, string> = {
+    included: t('Already included'), changed: t('Changed'), added: t('New work'), removed: t('Removed'), ambiguous: t('Ambiguous'),
+  };
+  return labels[status] ?? status;
+}
+
+export function effectLabel(e?: ScopeEffect): string {
+  if (!e) return '';
+  const labels: Record<string, string> = {
+    local: t('Local change'), partial: t('Partial rework'), pipeline: t('Reruns the pipeline'), none: t('Nothing depends on it'),
+    unknown: t('Effect not grounded'),
+  };
+  return labels[e.class] ?? e.class;
+}
+
+export async function listComparisons(): Promise<ScopeListRow[]> {
+  const r = await request<{ comparisons?: ScopeListRow[] }>('/api/scope-comparisons');
+  return Array.isArray(r.comparisons) ? r.comparisons : [];
+}
+
+export const loadComparison = (id: string) => request<ScopeComparison>(`/api/scope-comparisons/${encodeURIComponent(id)}`);
+
+export function compareScope(body: {
+  title: string; initial: string; agreement: string; new_request: string; graph: string; mode: string; effort_hours?: Record<string, [number, number]>;
+}): Promise<ScopeComparison> {
+  return request<ScopeComparison>('/api/scope-comparisons', { method: 'POST', body: JSON.stringify(body) });
+}
+
+/** "export_pdf: 1-2" per line -> {export_pdf: [1, 2]}; lines that do not parse are ignored. */
+export function parseEffort(text: string): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  for (const line of lines(text)) {
+    const m = /^([A-Za-z0-9_.:-]+)\s*[:=]\s*(\d+(?:[.,]\d+)?)\s*(?:-|–|a|to)\s*(\d+(?:[.,]\d+)?)/.exec(line);
+    if (m) out[m[1]] = [Number(m[2].replace(',', '.')), Number(m[3].replace(',', '.'))];
+  }
+  return out;
+}

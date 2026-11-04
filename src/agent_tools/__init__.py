@@ -124,7 +124,7 @@ from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool
 from .contract_tools import CriteriaCheckTool
 from .prior_art_tools import PriorArtTool
 from .uncertainty_tool import UncertaintyNextObservationTool
-from .delivery_tool import DeliveryPackageTool
+from .delivery_tool import DeliveryPackageTool, ScopeCompareTool
 from .ci_tools import CiFailuresTool
 from .coordination_tool import CoordinationTool
 from src.coordination.tools import NAMES as _COORDINATION_TOOLS
@@ -394,6 +394,8 @@ TOOL_HANDLERS = {
     "uncertainty_next_observation": UncertaintyNextObservationTool().execute,
     # Reproducible delivery package: editables/exports reopened from source and zip (src/delivery_package.py).
     "delivery_package": DeliveryPackageTool().execute,
+    # Scope comparator: initial request / agreement / new request, effects from the decision map (src/scope_compare.py).
+    "scope_compare": ScopeCompareTool().execute,
     # CI failure analyzer (lot C): what really broke in a GitHub Actions run,
     # read from the run's own logs. See src/ci_failures.py.
     "ci_failures": CiFailuresTool().execute,
@@ -627,7 +629,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Uncertainty sensor -- src/agent_tools/uncertainty_tool.py.
              "uncertainty_next_observation",
              # Delivery package -- src/agent_tools/delivery_tool.py.
-             "delivery_package",
+             "delivery_package", "scope_compare",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
              "inspect_image",
              # Autonomous bug hunter -- src/agent_tools/bug_hunt_tools.py.

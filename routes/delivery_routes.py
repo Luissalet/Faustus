@@ -13,6 +13,11 @@ GET  /api/delivery-packages/{id}             the manifest (items, checks, gaps, 
 POST /api/delivery-packages/{id}/reverify    extract the stored zip again and reopen every item
 GET  /api/delivery-packages/{id}/download    the zip
 GET  /api/delivery-packages/{id}/document    ENTREGA.md as text
+
+Scope comparator (Hangar E30, src/scope_compare.py):
+POST /api/scope-comparisons                  {agreement, new_request, initial?, graph?, effort_hours?, mode?, lang?, title?}
+GET  /api/scope-comparisons                  the owner's comparisons, newest first
+GET  /api/scope-comparisons/{id}             one comparison
 """
 from typing import Any, Dict
 
@@ -87,5 +92,28 @@ def setup_delivery_routes() -> APIRouter:
         folder = path.with_suffix("")
         doc = folder / "ENTREGA.md"
         return PlainTextResponse(doc.read_text(encoding="utf-8") if doc.is_file() else "", media_type="text/markdown")
+
+    @router.post("/api/scope-comparisons")
+    async def compare_scope(request: Request):
+        from src import scope_compare
+        owner = owner_of(request)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        import asyncio
+        return _reply(await asyncio.to_thread(scope_compare.run, owner, {**body, "action": "compare"}))
+
+    @router.get("/api/scope-comparisons")
+    async def list_scope(request: Request):
+        from src import scope_compare
+        return _reply(scope_compare.run(owner_of(request), {"action": "list"}))
+
+    @router.get("/api/scope-comparisons/{cid}")
+    async def show_scope(cid: str, request: Request):
+        from src import scope_compare
+        return _reply(scope_compare.run(owner_of(request), {"action": "show", "id": cid}))
 
     return router

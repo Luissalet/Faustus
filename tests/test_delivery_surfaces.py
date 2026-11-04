@@ -88,7 +88,7 @@ def test_mcp_server_lists_the_tool_and_refuses_without_an_owner(monkeypatch, tmp
     pytest.importorskip("mcp")
     import mcp_servers.delivery_server as srv
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["delivery_package"] and tools[0].inputSchema["type"] == "object"
+    assert [t.name for t in tools] == ["delivery_package", "scope_compare"] and all(t.inputSchema["type"] == "object" for t in tools)
     monkeypatch.delenv("ODYSSEUS_MCP_DELIVERY_OWNER", raising=False)
     monkeypatch.delenv("ODYSSEUS_DELIVERY_OWNER", raising=False)
     assert "no owner configured" in asyncio.run(srv.call_tool("delivery_package", {"action": "list"}))[0].text
@@ -102,3 +102,25 @@ def test_the_server_is_a_registered_builtin_twin():
     from src import builtin_mcp
     assert "delivery" in builtin_mcp._BUILTIN_SERVERS
     assert "delivery" in builtin_mcp.NATIVE_TWIN_SERVERS
+
+
+def test_scope_compare_surfaces(client, monkeypatch, tmp_path):
+    agreement = "Entregar el informe exportado en PDF.\nIncluir tres vistas renderizadas."
+    r = client.post("/api/scope-comparisons", json={"agreement": agreement, "new_request": "Entregar el informe exportado en DOCX."})
+    assert r.status_code == 200 and r.json()["rows"][0]["status"] == "changed"
+    cid = r.json()["id"]
+    assert client.get("/api/scope-comparisons").json()["comparisons"][0]["id"] == cid
+    assert client.get(f"/api/scope-comparisons/{cid}").json()["id"] == cid
+    assert client.post("/api/scope-comparisons", json={"agreement": "x"}).status_code == 400
+    out = asyncio.run(TOOL_HANDLERS["scope_compare"](json.dumps({"agreement": agreement, "new_request": "Añadir una animación del montaje."}),
+                                                     {"owner": "alice"}))
+    assert out["exit_code"] == 0 and out["result"]["rows"][0]["status"] == "added" and "added" in out["output"]
+    from src.tool_index_examples import EXAMPLES
+    from src.tool_capabilities import TOOL_CAPABILITIES
+    assert "scope_compare" in tool_index.BUILTIN_TOOL_DESCRIPTIONS and EXAMPLES["scope_compare"]
+    assert TOOL_CAPABILITIES["scope_compare"].effects and "scope_compare" in TOOL_TAGS
+    pytest.importorskip("mcp")
+    import mcp_servers.delivery_server as srv
+    monkeypatch.setenv("ODYSSEUS_MCP_DELIVERY_OWNER", "alice")
+    res = asyncio.run(srv.call_tool("scope_compare", {"agreement": agreement, "new_request": "Incluir tres vistas renderizadas."}))
+    assert json.loads(res[0].text)["rows"][0]["status"] == "included"

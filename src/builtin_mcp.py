@@ -159,9 +159,10 @@ _BUILTIN_SERVERS = {
     # decision/effect map (src/derivation_ops.py): the same three tools as the chat.
     # Owner-scoped through ODYSSEUS_MCP_DERIVATIONS_OWNER; runs nothing itself.
     "derivations": ("mcp_servers/derivations_server.py", "Built-in: Recipes and derivations"),
-    # Reproducible delivery packages (src/delivery_package.py): the same `delivery_package` tool as the chat.
-    # Owner-scoped through ODYSSEUS_MCP_DELIVERY_OWNER; reads the named files and writes under DATA_DIR.
-    "delivery": ("mcp_servers/delivery_server.py", "Built-in: Delivery packages"),
+    # Reproducible delivery packages (src/delivery_package.py) and the scope comparator (src/scope_compare.py):
+    # the same `delivery_package` and `scope_compare` tools as the chat. Owner-scoped through
+    # ODYSSEUS_MCP_DELIVERY_OWNER; reads the named files and writes under DATA_DIR.
+    "delivery": ("mcp_servers/delivery_server.py", "Built-in: Delivery packages and scope changes"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool

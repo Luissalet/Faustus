@@ -673,6 +673,9 @@ _register({"recipe_learn", "decision_map"}, ToolEffect.WRITE_PRIVATE)
 # contributes the report code_graph_handoff already wrote.
 _register({"delivery_package"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE, ToolEffect.WRITE_WORKSPACE,
           result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
+# Scope comparator (src/scope_compare.py): pure text comparison plus a read of
+# the owner's decision map; keeps each comparison under DATA_DIR.
+_register({"scope_compare"}, ToolEffect.WRITE_PRIVATE)
 _register({"derivation_graph"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
           result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,

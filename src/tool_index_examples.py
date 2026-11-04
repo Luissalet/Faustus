@@ -1254,6 +1254,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "package the editable files, exports and instructions and check they open before delivering",
         "comprueba que el zip de la entrega se abre igual que los originales",
     ],
+    "scope_compare": [
+        "compara lo acordado con lo que pide ahora el cliente y dime qué es trabajo nuevo",
+        "is this new request already in the agreed scope or a change order",
+        "qué cambia entre la petición inicial, el acuerdo y la nueva solicitud",
+    ],
     "decision_map": [
         "si cambia la unidad de medida, qué entregables hay que rehacer",
         "link this requirement to the decision and the deliverable it affects",

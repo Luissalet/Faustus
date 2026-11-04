@@ -3370,6 +3370,29 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "scope_compare",
+            "description": "Scope comparator: marks each clause of a new client request as included, changed (format, unit or quantity), added, removed or ambiguous against the agreement (and, with the initial request, what was negotiated). Matching uses shared words, formats and quantities, not meaning. With a decision map graph, the map items a clause names are followed to the derivation nodes and deliverables they affect (local vs pipeline change, with the links); effort only sums the ranges given in effort_hours. Returns commercial options per clause and questions for ambiguous ones. action=compare (default) / list / show {id}.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["compare", "list", "show"]},
+                    "agreement": {"type": "string", "description": "The agreed scope (one clause per line or sentence)"},
+                    "new_request": {"type": "string", "description": "What the client asks now"},
+                    "initial": {"type": "string", "description": "The first request, to list what the agreement changed"},
+                    "graph": {"type": "string", "description": "Decision map / derivation graph id that grounds the effects"},
+                    "effort_hours": {"type": "object", "description": "Hours per derivation node as [min, max], e.g. {\"export_pdf\": [1, 2]}"},
+                    "mode": {"type": "string", "enum": ["delta", "replace"], "description": "delta (default): the new request adds to the agreement; replace: it restates the whole scope, so agreed clauses it omits count as removed"},
+                    "lang": {"type": "string", "enum": ["es", "en"]},
+                    "title": {"type": "string"},
+                    "id": {"type": "string", "description": "Comparison id (show)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_handoff",
             "description": "Client handoff package: install/configure/migrate/run/test/recover/demo instructions from the repo dossier, executed in a throwaway copy and written to HANDOFF.md. Only verified commands are presented as instructions; failed and not-run ones go under 'Not verified' with the reason. Runs the repository's own commands.",
             "parameters": {

@@ -50,3 +50,7 @@
 .fs-dlv__pill[data-tone='warn'] { color: var(--fs-warning); border-color: currentColor; }
 .fs-dlv__why { margin: 0; font-size: 12px; }
 .fs-dlv__why[data-tone='bad'] { color: var(--fs-danger); }
+.fs-dlv__small { font-size: 12px; }
+.fs-dlv__ask { margin: 0; font-size: 12px; color: var(--fs-warning); }
+.fs-dlv .fs-tabs { display: flex; gap: var(--fs-space-2); }
+.fs-dlv textarea.fs-field { block-size: auto; min-block-size: 5.5em; resize: vertical; }
