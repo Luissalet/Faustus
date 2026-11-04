@@ -52,3 +52,6 @@
   .fs-project-workspace__list > li > div { flex-basis: 100%; }
 }
 .fs-project-task-table { overflow: auto; } .fs-project-task-table table { width: 100%; border-collapse: collapse; text-align: left; } .fs-project-task-table th, .fs-project-task-table td { padding: var(--fs-space-3); border-bottom: 1px solid var(--fs-border); } .fs-project-task-table button { text-align: left; color: inherit; }
+/* Task views (shared board, requirements, objectives, issues, coordination): one tab row; wide views scroll inside their panel. */
+.fs-project-task-views { overflow-x: auto; }
+.fs-project-tasks > .fs-panel { min-width: 0; overflow-x: auto; }

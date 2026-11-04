@@ -37,6 +37,9 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 await m.act(async () => { root.render(m.createElement(m.ProjectTasks, {project:{id:'p'},say:()=>{}})); await tick(); });
 assert.equal(host.querySelectorAll('[data-testid="project-task-card"]').length,1,'agent task is visible immediately');
 assert.equal(host.querySelectorAll('details').length,0,'no parallel hidden objectives/requirements/board');
+// The other views of the same records stay reachable as explicit tabs (Luis: features are never removed or hidden).
+assert.deepEqual([...host.querySelectorAll('[data-testid^="project-task-view-"]')].map(el => el.dataset.testid.replace('project-task-view-','')), ['board','requirements','objectives','issues','coordination'],'requirements, objectives, issue board and coordination views keep an entry');
+assert.equal(host.querySelector('[data-testid="project-task-view-board"]').getAttribute('aria-selected'),'true','the shared board is the default view');
 assert.match(host.textContent,/Old record is too large/,'migration errors are visible without hiding canonical tasks');
 await m.act(async () => { host.querySelector('[data-testid="project-task-card"]').click(); await tick(); });
 let dialog = document.querySelector('[data-testid="project-task-editor"]');

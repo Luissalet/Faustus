@@ -363,10 +363,12 @@ def requirement_dispatch(name, pid, *args, **kw):
     from src.requirements.store import SOURCES, STATUSES, PROPOSED_BY, LINK_KINDS
     values = kw if name == 'create' else args[1] if name == 'update' else {}
     for field, vocabulary in (('source', SOURCES), ('status', STATUSES), ('proposed_by', PROPOSED_BY)):
-        if field in values and values[field] not in vocabulary:
+        # None means "not given", as in the original store: the REST create
+        # route passes status=None for an ordinary new requirement.
+        if values.get(field) is not None and values[field] not in vocabulary:
             raise ValueError('Invalid requirement ' + field)
     if name == 'create':
-        values = dict(kw)
+        values = {k: v for k, v in kw.items() if v is not None}
         if values.get('proposed_by') == 'model':
             values['status'] = 'proposed'
         patch = fields(values)

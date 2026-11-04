@@ -1,11 +1,17 @@
 import { Download, LayoutGrid, Plus, RefreshCw, Search, Table2, Upload } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Button, Dialog, IconButton, Skeleton } from '../../components';
+import { lazyChunk } from '../../shell/lazyChunk';
 import type { Project } from '../../adapters/projects';
 import { createProjectTask, editProjectTask, listProjectTasks, prepareTasks, readProjectTask, taskColumns, taskStatusLabel, type ProjectTask, type TaskDetail } from '../../adapters/projectTasks';
 import { t } from '../../i18n';
 import { ImportDialog } from '../board/ImportDialog';
 import { exportMdUrl } from '../../adapters/board';
+
+const BoardPanel = lazyChunk(() => import('../board/BoardPanel').then((m) => ({ default: m.BoardPanel })));
+const ProjectRequirements = lazyChunk(() => import('./Requirements').then((m) => ({ default: m.ProjectRequirements })));
+const ProjectObjectives = lazyChunk(() => import('./Objectives').then((m) => ({ default: m.ProjectObjectives })));
+const ProjectBoard = lazyChunk(() => import('./ProjectAgora').then((m) => ({ default: m.ProjectBoard })));
 
 export function TaskEditor({ projectId, taskId, onClose, onSaved }: {
   projectId: string; taskId: number | 'new'; onClose: () => void; onSaved: () => void;
@@ -78,7 +84,65 @@ export function TaskEditor({ projectId, taskId, onClose, onSaved }: {
   </Dialog>;
 }
 
-export function ProjectTasks({ project }: { project: Project; focus?: string; say: (message: string) => void }) {
+/**
+ * Views of the same project work, selectable above the shared board: the
+ * board itself (default), requirements (human accept/reject, revisions and
+ * the evidence matrix), objectives, the issue board with its detail and
+ * evidence panes, and the agents' coordination board. After adoption the
+ * other views read and write the shared records through their compatibility
+ * routes (docs/api/project-tasks.md), so they are lenses, not parallel stores.
+ * `?focus=` (or the old `tab=requisitos|objetivos`) opens one directly.
+ */
+export const TASK_VIEWS = [
+  { id: 'board', label: 'Shared board' },
+  { id: 'requirements', label: 'Requirements' },
+  { id: 'objectives', label: 'Objectives' },
+  { id: 'issues', label: 'Issue board' },
+  { id: 'coordination', label: 'Agent coordination tasks' },
+] as const;
+export type TaskView = typeof TASK_VIEWS[number]['id'];
+
+function taskView(focus?: string): TaskView {
+  return TASK_VIEWS.some(view => view.id === focus) ? focus as TaskView : 'board';
+}
+
+function TaskViewTabs({ view, onChange }: { view: TaskView; onChange: (view: TaskView) => void }) {
+  return <div className="fs-tabs fs-project-task-views" role="tablist" aria-label={t('Task views')}>
+    {TASK_VIEWS.map(entry => <button key={entry.id} type="button" role="tab" className="fs-tab" aria-selected={view === entry.id}
+      data-testid={`project-task-view-${entry.id}`} onClick={() => onChange(entry.id)}>{t(entry.label)}</button>)}
+  </div>;
+}
+
+export function ProjectTasks({ project, focus, say }: { project: Project; focus?: string; say: (message: string) => void }) {
+  const [view, setView] = useState<TaskView>(() => taskView(focus));
+  useEffect(() => { setView(taskView(focus)); }, [focus]);
+  const choose = (next: TaskView) => {
+    setView(next);
+    try {
+      const url = new URL(window.location.href);
+      if (next === 'board') url.searchParams.delete('focus'); else url.searchParams.set('focus', next);
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch { /* the view still switches without a shareable URL */ }
+  };
+  const tabs = <TaskViewTabs view={view} onChange={choose} />;
+  if (view === 'board') return <SharedBoard project={project} tabs={tabs} />;
+  return <div className="fs-project-workspace fs-project-tasks" data-testid={`project-tasks-${view}`}>
+    {tabs}
+    <section className="fs-panel" aria-label={t(TASK_VIEWS.find(entry => entry.id === view)!.label)}>
+      <Suspense fallback={<Skeleton label={t('Loading the board')} count={3} height="80px" />}>
+        {view === 'requirements' && <>
+          <p className="fs-prose">{t('Define what must be delivered and how to verify it. Existing requirement decisions, revisions and evidence stay attached.')}</p>
+          <ProjectRequirements projectId={project.id} say={say} />
+        </>}
+        {view === 'objectives' && <ProjectObjectives projectId={project.id} say={say} />}
+        {view === 'issues' && <BoardPanel projectId={project.id} />}
+        {view === 'coordination' && <ProjectBoard project={project} />}
+      </Suspense>
+    </section>
+  </div>;
+}
+
+function SharedBoard({ project, tabs }: { project: Project; tabs: ReactNode }) {
   const [tasks, setTasks] = useState<ProjectTask[] | null>(null);
   const [error, setError] = useState('');
   const [migrationError, setMigrationError] = useState('');
@@ -115,6 +179,7 @@ export function ProjectTasks({ project }: { project: Project; focus?: string; sa
     catch (failure) { setError((failure as Error).message); }
   };
   return <div className="fs-project-workspace fs-project-tasks" data-testid="project-tasks">
+    {tabs}
     <header className="fs-project-tasks-toolbar">
       <label className="fs-project-tasks-search"><Search size={16} aria-hidden="true" /><input className="fs-field" aria-label={t('Search tasks')} placeholder={t('Search tasks')} value={query} onChange={event => setQuery(event.target.value)} /></label>
       <select className="fs-field" aria-label={t('Assignee')} value={owner} onChange={event => setOwner(event.target.value)}><option value="">{t('All assignees')}</option>{[...new Set(tasks?.map(task => task.owner).filter(Boolean))].sort().map(value => <option key={value} value={value!}>{value}</option>)}</select>

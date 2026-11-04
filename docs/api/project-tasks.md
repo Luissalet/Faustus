@@ -10,6 +10,15 @@ dragging between normal work states; a table, filters, Markdown export and the
 existing file-import preview also operate on these shared records. Pending
 reviews use the submission workflow and cannot be bypassed by marking done.
 
+A row of view tabs above the board (Shared board, Requirements, Objectives,
+Issue board, Agent coordination tasks) keeps the earlier views reachable: the
+requirement list with its human accept/reject decision, revisions, evidence
+links and coverage matrix; the objectives list; the issue board with its detail
+pane; and the Agora coordination board. After adoption they go through the
+compatibility writers below, so they show and change the same shared records.
+`?focus=requirements|objectives|issues|coordination` (and the older
+`tab=requisitos|objetivos`) opens a view directly.
+
 Projects → Chats includes its saved Agora rooms and their participants. Opening
 a room returns to the existing Studio interface, conversation selector, Members,
 native composer and collapsible Debate. No histories or room IDs are replaced.

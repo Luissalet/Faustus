@@ -91,6 +91,23 @@ def test_normal_proposal_writer_and_dependency_share_canonical_records(shared):
     assert len(project_tasks.listing(project)['tasks'])==3
 
 
+def test_rest_shaped_requirement_create_then_human_accept_and_reject(shared):
+    # The REST create route passes every optional field, status=None included
+    # (routes/requirements_routes.py::create_requirement). After adoption that
+    # was refused as "Invalid requirement status", so Projects -> Tasks ->
+    # Requirements could not add a requirement to decide on.
+    from src import project_tasks
+    from src.requirements import store as req
+    project,ledger=shared;pid=project['id'];project_tasks.prepare(project)
+    made=[req.create(pid,title=title,text='',source='human',acceptance=[],proposed_by='human',status=None,created_by='user')
+          for title in ('Accept me','Reject me')]
+    assert [m['status'] for m in made]==['proposed','proposed']
+    assert req.update(pid,made[0]['key'],{'status':'accepted'},by='human')['status']=='accepted'
+    assert req.update(pid,made[1]['key'],{'status':'rejected'},by='human')['status']=='rejected'
+    assert {r['key']:r['status'] for r in req.list_requirements(pid)}=={made[0]['key']:'accepted',made[1]['key']:'rejected'}
+    with pytest.raises(req.RequirementsError): req.create(pid,title='Bad',status='maybe')
+
+
 @pytest.mark.asyncio
 async def test_proposal_evidence_and_meeting_writers_keep_their_contracts(shared, monkeypatch, tmp_path):
     from src import project_tasks, project_board, meetings
