@@ -1034,13 +1034,19 @@ def test_reissue_settings_update_and_surfaces(monkeypatch):
     written = {}
     monkeypatch.setattr("src.settings.update_settings", lambda patch: written.update(patch))
     monkeypatch.setattr(model_hedge, "status", lambda limit=20: {"ok": True})
-    model_hedge.update({"target": "reissue", "reissue_max": 2, "reissue_overrides": '{"m": 0, "x": 9}'})
+    model_hedge.update({"target": "reissue", "reissue_max": 2, "reissue_overrides": '{"m": 0, "x": 5}'})
     assert written == {"agent_hedge_target": "reissue", "agent_hedge_reissue_max": 2,
                        "agent_hedge_reissue_overrides": '{"m": 0, "x": 5}'}
     for bad in ({"reissue_max": 6}, {"reissue_max": -1}, {"reissue_max": 1.5},
-                {"reissue_max": "x"}, {"reissue_overrides": "nope"}, {"reissue_overrides": [1]}):
-        with pytest.raises(ValueError):
+                {"reissue_max": "x"}, {"reissue_overrides": "nope"}, {"reissue_overrides": [1]},
+                # a bad entry is refused, never silently dropped (or clamped)
+                {"reissue_overrides": {"m": "a"}}, {"reissue_overrides": {"m": 9}},
+                {"reissue_overrides": {"m": 1.5}}, {"reissue_overrides": {"m": True}},
+                {"reissue_overrides": {"m": 1, "n": None}}, {"reissue_overrides": {"": 1}}):
+        written.clear()
+        with pytest.raises(ValueError, match="reissue_"):
             model_hedge.update(bad)
+        assert written == {}
     from src.settings import DEFAULT_SETTINGS
     assert DEFAULT_SETTINGS["agent_hedge_reissue_max"] == 1
     from src.tool_schemas import FUNCTION_TOOL_SCHEMAS

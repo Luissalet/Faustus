@@ -1099,6 +1099,13 @@ def update(patch: Dict[str, Any]) -> Dict[str, Any]:
                 raise ValueError("reissue_overrides must be a JSON object {model: re-sends}") from None
         if not isinstance(raw, dict):
             raise ValueError("reissue_overrides must be an object {model: re-sends}")
+        for name, count in raw.items():
+            ok = (not isinstance(count, bool) and str(name or "").strip() != ""
+                  and isinstance(count, (int, float)) and float(count).is_integer()
+                  and 0 <= count <= MAX_REISSUE_MAX)
+            if not ok:
+                raise ValueError(f"reissue_overrides[{name!r}] must be a whole number "
+                                 f"between 0 and {MAX_REISSUE_MAX}, got {count!r}")
         changes[SETTING_REISSUE_OVERRIDES] = json.dumps(parse_reissue_overrides(raw), ensure_ascii=False)
     if not changes:
         raise ValueError("nothing to change")
