@@ -20013,10 +20013,17 @@ async def _stream_agent_loop_body(
         r"(?:\s*(?:done|all\s+set|completed|finished|hecho|listo|completado|terminado)[.!]?)+\s*",
         _visible_final, re.IGNORECASE))
     _cap_needs_answer = bool(_exhausted_rounds) and (not _visible_final or _bare_done_final)
+    # A thinking-only length exit can spend its continuation allowance after
+    # successful reads, leaving no answer for history to save. Use the same
+    # final synthesis as a round-cap exit; never resume a cancelled/budget exit.
+    _length_needs_answer = (
+        _round_finish_reason == "length" and _ledger.stop_reason == "complete"
+        and not _visible_final
+    )
     if _cap_needs_answer and _bare_done_final:
         full_response = ""
         yield f"data: {json.dumps({'type': 'response_replace', 'text': ''})}\n\n"
-    if ((_ledger.stop_reason == _LOOP_STOP_REASON or _cap_needs_answer)
+    if ((_ledger.stop_reason == _LOOP_STOP_REASON or _cap_needs_answer or _length_needs_answer)
             and not _strip_think_blocks(strip_tool_blocks(full_response)).strip()):
         _answering = _pinned_fallback_candidate or (endpoint_url, model, headers)
         _synth = ""
@@ -20028,7 +20035,8 @@ async def _stream_agent_loop_body(
                     "Stop. Using ONLY the information already gathered above, write "
                     "the final answer for the user now. Do NOT call any tools, "
                     "do NOT explain your reasoning — output the finished response "
-                    "directly. If the investigation did not get there, say plainly "
+                    "directly. Preserve the original user's language and requested output format, "
+                    "including JSON-only or code-only. If the investigation did not get there, say plainly "
                     "what you found, what is still unknown and what you would try next."
                 ),
             }]
@@ -20038,11 +20046,16 @@ async def _stream_agent_loop_body(
                 # back in (live: 60k tokens shared with another run); 60 s
                 # always timed out and the user got the canned line.
                 headers=_answering[2], temperature=0.3, max_tokens=max_tokens,
-                timeout=(300 if _cap_needs_answer else 60),
+                timeout=(300 if _cap_needs_answer or _length_needs_answer else 60),
+                gen_overrides=(dict(gen_overrides or {}) if _length_needs_answer else None),
                 _spend_purpose="final_synthesis",
             )
             _raw_text = _raw or ""
             _synth = _strip_think_blocks(strip_tool_blocks(_raw_text)).strip()
+            if _length_needs_answer and re.fullmatch(
+                    r"(?:\s*(?:done|all\s+set|completed|finished|hecho|listo|completado|terminado)[.!]?)+\s*",
+                    _synth, re.IGNORECASE):
+                _synth = ""
             usage_buckets.append(_usage_bucket(
                 round_num=round_num,
                 model=_answering[1],
@@ -20070,6 +20083,10 @@ async def _stream_agent_loop_body(
                 _lines.append(("Pendiente: " if _es else "Still open: ") + "; ".join(_open[:6]) + ".")
             _synth = ("No he podido redactar un resumen de lo reunido. " if _es else
                       "I could not write up a summary of what was gathered. ") + " ".join(_lines)
+        if _length_needs_answer and not _synth:
+            _synth = ("El modelo agotó sus salidas sin redactar una respuesta; este turno quedó incompleto."
+                      if _ledger.language == "es" else
+                      "The model exhausted its outputs without writing an answer; this turn is incomplete.")
         _out = _synth or _canned_no_answer(_ledger.language)
         if _cap_needs_answer:
             _cap_note = ("(Se alcanzó el límite de pasos de este turno; esto es lo reunido hasta ahora. "

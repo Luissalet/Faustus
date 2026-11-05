@@ -59,3 +59,11 @@ Within table cells, source labels stay on one line so narrow columns cannot
 stretch rows by wrapping citations one letter at a time. Wide comparisons keep
 their horizontal scroll inside the existing table container. Source disclosures
 outside tables still wrap long titles normally.
+
+If a normal turn ends on a thinking-only token-limit exit without a final answer,
+the existing tool-free closing synthesis now also uses the gathered information
+for that exit. It preserves the turn's generation overrides and requested output
+format. It does not replace a partial answer or resume a cancelled/budget exit.
+A failed or bare-completion synthesis reports that the turn is incomplete,
+rather than allowing an empty answer to become `Done.` in history. This recovery
+does not establish factual accuracy: multi-domain model tests remain separate.

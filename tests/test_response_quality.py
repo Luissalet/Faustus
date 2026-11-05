@@ -286,3 +286,64 @@ def test_editorial_round_runs_when_search_came_from_an_mcp_server(monkeypatch):
             final += event['delta']
     assert calls['n'] == 3
     assert 'cause is unknown' in final
+
+@pytest.mark.parametrize('closing_value', [
+    'Las fases dependen de la porción iluminada visible; la sombra terrestre causa eclipses.',
+    '{"fase":"iluminacion"}', 'Done.', '', TimeoutError('slow model'),
+])
+def test_empty_length_after_search_gets_a_final_answer_with_same_generation_settings(monkeypatch, closing_value):
+    from tests.test_agent_rounds_exhausted import _patch_common, _collect, _types
+    import src.agent_loop as al
+    import src.llm_core as llm_core
+    _patch_common(monkeypatch)
+    scripted = iter([('```web_search\nmoon phases\n```', 'tool_calls'), ('', 'length'), ('', 'length'), ('', 'length')])
+    async def stream(*args, **kwargs):
+        text, finish = next(scripted)
+        if finish == 'tool_calls':
+            yield 'data: ' + __import__('json').dumps({'type': 'tool_calls', 'calls': [
+                {'name': 'web_search', 'arguments': '{"query":"moon phases"}'}]}) + '\n\n'
+        elif text:
+            yield 'data: ' + __import__('json').dumps({'delta': text}) + '\n\n'
+        yield 'data: ' + __import__('json').dumps({'type': 'finish', 'finish_reason': finish}) + '\n\n'
+    calls = []
+    async def closing(**kwargs):
+        calls.append(kwargs)
+        if isinstance(closing_value, Exception):
+            raise closing_value
+        return closing_value
+    monkeypatch.setattr(al, 'stream_llm_with_fallback', stream)
+    monkeypatch.setattr(al, '_agent_route_tool_mode', lambda *args, **kwargs: (True, False, False))
+    monkeypatch.setattr(llm_core, 'llm_call_async', closing)
+    overrides = {'num_ctx': 1048576, 'think': True, 'reasoning_effort': 'max'}
+    events = _types(_collect(al.stream_agent_loop('http://x/v1', 'm',
+        [{'role': 'user', 'content': '¿Las fases de la Luna son eclipses?'}],
+        max_rounds=8, relevant_tools={'web_search'}, gen_overrides=overrides)))
+    assert len(calls) == 1
+    assert calls[0]['gen_overrides'] == overrides
+    assert calls[0]['_spend_purpose'] == 'final_synthesis'
+    assert 'output format' in calls[0]['messages'][-1]['content']
+    text = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            text = event.get('text', '')
+        elif 'delta' in event and not event.get('thinking'):
+            text += event['delta']
+    if closing_value in ('Done.', '') or isinstance(closing_value, Exception):
+        assert 'incomplete' in text or 'incompleto' in text
+        assert text.strip() != 'Done.'
+    else:
+        assert closing_value in text
+        if closing_value.startswith('{'):
+            assert __import__('json').loads(text) == {'fase': 'iluminacion'}
+
+
+def test_nonempty_length_answer_does_not_get_replaced_by_final_synthesis(monkeypatch):
+    from tests.test_agent_harness_loop_partial_work import _patch, _run
+    import src.llm_core as llm_core
+    calls = _patch(monkeypatch, [('', 'length'), ('', 'length'), ('La explicación parcial.', 'length')])
+    async def unexpected(**kwargs):
+        pytest.fail('nonempty partial answer must be preserved')
+    monkeypatch.setattr(llm_core, 'llm_call_async', unexpected)
+    events = _run(None, user='Explica las fases lunares.')
+    assert calls['n'] == 3
+    assert any('La explicación parcial.' in e.get('delta', '') for e in events)
