@@ -156,7 +156,7 @@ class ComfyUIBackend:
             if e.reason == "unreachable":
                 return {"ok": False, "reason": "backend_unavailable",
                         "detail": f"{e.detail}. Start ComfyUI (on this machine: "
-                                  f"D:\\LocalAI\\Start-ComfyUI.ps1) and point Faustus "
+                                  f"E:\\Development\\Tools\\ComfyUI\\Start-ComfyUI.ps1) and point Faustus "
                                   f"at it with COMFYUI_URL if it is not on "
                                   f"{DEFAULT_BASE_URL}."}
             return {"ok": False, "reason": "backend_unavailable", "detail": str(e)}
