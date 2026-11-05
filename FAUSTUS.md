@@ -1,5 +1,332 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Hoards bajo demanda (18-10-2026, #870).** Esta instalación conserva las 37
+conexiones MCP directas de los Hoards desactivadas y el Hub conectado con sus
+174 herramientas. Abrir Faustus no debe arrancar toda la familia; se mantiene
+el inicio explícito desde el Hub o una tarea encargada y las paradas manuales.
+Se desactivó la regla de reinicio ante caída, sin quitar las demás reglas ni
+los backups programados. API, MCP y navegador comprobaron la configuración.
+Esto corrige los arranques no pedidos, sin atribuirles el bloqueo de Windows.
+
+**Silver: reto de tipos y animaciones (#865).** Instalaciones permite practicar
+con diez preguntas de semilla repetible, generaciones 1–9 y uno o dos tipos
+defensivos; cuatro opciones, mejor respuesta única, explicación de factores,
+rachas y repaso de errores. Se puede repetir el mismo intento o comenzar otro.
+Usa la tabla del Dex instalado: no calcula daño, habilidades, objetos, STAB,
+clima ni teracristalización. La práctica termina al salir de la página y no
+crea combates ni guarda intentos. `type_challenge` y `type_challenge_score`
+comparten implementación local de UI, REST y MCP (193 herramientas).
+Mordisco, Triturar, Desarme, Persecución y Tormento añaden cinco motivos y 30
+cuadros de PMD Equipo de Rescate Rojo, con crédito a redblueyellow y píxeles
+originales, compartidos por combates, campales, HTML y vídeo. Catálogo: 783
+sprites, 162 fuentes, 227 atlas y 2836 cuadros; material previo conservado.
+Main `dac77c54` está aprobado CAS2 y activo, con datos preservados y pruebas
+Python, Node, API, MCP y navegador. No añade dependencias ni APIs externas.
+
+**Silver: Resistir (#871).** Activo en Main `1ea2955816f1234d83a6ebe37152b49ec7f12d37`,
+aprobado CAS1: diez tipos de ataque distintos, cuatro Pokémon con tipos históricos
+y elección del menor multiplicador, explicando resistencias e inmunidades.
+Generaciones 1–9, uno o dos tipos, semilla repetible, rachas, repaso y reintentos;
+teclado, móvil e interfaz ES/EN. Los mismos dos handlers admiten `goal=attack|defend`;
+ataque sigue predeterminado y conserva los 54 mazos y resultados de referencia.
+Práctica temporal, sin guardar combates ni exportar el reto como HTML; mantiene
+193 herramientas MCP y los motivos de 865. El autor acredita 620 Python y 558
+Node PASS, builds, API/MCP y navegador, con 18 tablas y datos previos conservados.
+Sólo se activó Silver; no se reactivaron las conexiones ni aplicaciones de 870.
+
+**Theseus: estado actual (#779, CAS22).** Main `0f6` está activo con 38
+herramientas MCP, 56 análisis estáticos, 38 operaciones runtime y 50 de sesión
+binaria. El programa completo sigue abierto en `docs/SOURCE-COVERAGE.md` de
+Theseus. Los anexos anteriores de firmware, navegador y Frida describen etapas
+históricas; no se mezclan con este inventario activo.
+
+**Sparks: razonamiento y trabajos largos (#835, #844, #848).** Los endpoints
+gestionados conservan los niveles nativos de razonamiento y los presupuestos
+explícitos del llamador. La espera inicial, la inactividad de salida significativa
+y el plazo completo del turno son distintos. Tramas vacías y comentarios SSE no
+simulan progreso; la interfaz distingue espera de generación. Un EOF incompleto
+conserva lo recibido y muestra la interrupción, sin repetir el POST. Las llamadas
+sin streaming usan el tiempo HTTP configurado; el presupuesto inicial ya no corta
+toda la generación. Se conserva cancelación y la continuación existente, con los
+resultados de herramientas ya ejecutadas. Véanse `docs/streaming-activity.md` y
+`docs/api/nonstream-timeouts.md`. Fuentes aprobadas, integradas y activas a
+18-10-2026. API, MCP y ajustes del navegador confirman la espera inicial de
+900 segundos. La evaluación de estabilidad sigue abierta; la petición larga real Main falló
+como se detalla a continuación. Comprobar el ajuste no acredita ese recorrido.
+
+**Estado actual de recuperación, 19-10-2026 (evidencia a 03:30 UTC).**
+Main `8c8da902` está activo con 915/918/919/920 aprobados Cursor CAS1. Incluye
+sufijos de colisión válidos en Windows, heartbeat de lease en worker con join
+al cancelar, I/O de recuperación fuera del loop de coordinación y tools de plan
+armado permitidas dentro de los esquemas nativos. 915/918/920 están DONE y sus
+worktrees propios retirados; no se han cerrado 919 ni 835. Los 312 casos CPU
+distintos pasaron entre ejecuciones: 311 iniciales y el único nodo bloqueado
+por la guarda pasó después con 12 intérpretes protegidos. El fallo inicial se
+conserva; no fue un pase único de 312.
+
+**Activación y recuperación, corte 19-10 00:45 UTC.** El cold start 9b61 conserva
+REVIEW_REQUIRED. La conciliación acotada recoge 361 tablas/338 archivos protegidos:
+una fila endpoint cambió sólo is_enabled/updated_at, settings sólo __revision__
+y procesos protegidos iguales. Los dos skills nuevos reconstruyen sus hashes
+before quitando únicamente owner:admin; no hubo fold de párrafos ni restauración.
+Root reparó su entorno de controladores: USERNAME omitido impedía SSH, y la
+omisión de ProgramFiles/ProgramW6432 provocaba NVML255. Se reiniciaron sólo los
+controladores necesarios Hub/Prometheus, no el modelo; después sólo Hub para
+NVML. El endpoint volvió a habilitarse automáticamente. Se conservan 37 MCP
+directos desactivados y las 24 paradas manuales actuales (18 en aquel cold start).
+
+**QA acotada, cortes18-10/19-10 conservados.** 915/918 pasaron API/MCP: siete
+objetivos por owner, dos sync idempotentes y rutas elegidas/colisiones; navegador
+SyncNow/reload PASS. Tres health200 respondieron durante una escritura retenida,
+pero stop_seen era Server.should_exit: no acredita espera larga dentro de
+model_lease.stop; el cancel/join se prueba en CPU. 919 conserva el original
+FAILED_OR_UNKNOWN_NO_REPLAY por conteo 3 vs 5 completions, aunque cuatro casos
+funcionales y 32 health dentro del hold 3,52 s pasaron; ventana 157/0 fallos/máx 0,815 s.
+Quedaron auxiliares sin atribución completa; AgoraTasks no se validó. 920 pasó
+exposición API/MCP de cinco tools y tracker 3 por SSE/JSON, con max_rounds=1 de
+fixture; no prueba ejecutar el plan. Su tarjeta no apareció tras reload, un
+comportamiento UI/history anterior a 920. No son garantías globales de salud,
+autonomía o calidad. Los fallos de fixtures y alcances de cierre siguen archivados.
+
+Continuidad y recibos completos:
+[corte actualizado](D:/LocalAI/research-inbox/sparks835/runtime-audit/status-20261019T0326Z.md),
+[activación9b61](D:/LocalAI/research-inbox/sparks835/patch-deployment/cold-start-9b61-postcheck/REPORT.md),
+[CPU compuesto](D:/LocalAI/research-inbox/sparks835/runtime-audit/composed915918919920-cpu/REPORT.md).
+
+La primera entrega Workledger por MCP nativo terminó 27 rondas y 41 tools.
+Root leyó todas las fuentes y comprobó 17 casos independientes originales,
+54 tests propios y seis CLI Windows. Dos casos adicionales del store fallaron:
+mutar el argumento tras tx.append cambiaba el commit, y SQLite INTEGER rechazaba
+un delta válido 2**80. La corrección se interrumpió por 503 antes de editar;
+ese turno fallido no se ha repetido. El nuevo seguimiento tras recuperar
+el servicio terminó14rondas/26tools. Root leyó13archivos finales completos:
+17casos independientes originales,61tests propios,6CLIWindows,2regresiones
+originales y3grupos estrictos tipados PASS. Acepta ese proyecto corregido dentro
+de las comprobaciones, no fiabilidad global. El wrapper conserva exit1 porque
+GET/MCP de conversación devuelve404 pese al stream completo y estado done.
+La conciliación RO separada conserva el fallo;942 corrige el desajuste de
+propietario en el modo sin login, con pruebaCPU/API/MCP/browser de fixture y
+18tests independientesPASS. Ya está activo: GET/MCP leen el mismo chat835real
+de6mensajes y Studio conserva su respuesta al recargar, sin reenviar el turno.
+La activación conserva REVIEW_REQUIRED por una revisión de settings y3skills:
+owner más plegado de un párrafo reconstruye sus3SHAprevios exactos enRAM.
+Boots del modelo, hashesHub y snapshotsDB iguales.942DONE y WTpropio retirado;
+historial, fuentes y recibos anteriores intactos.
+
+La causa inmediata de la caída fue la protección de memoria de la receta:
+6.340.026.368 bytes disponibles quedaron por debajo del suelo existente de6GiB,
+que ordenó parar Docker con una petición activa. Root inició descargas de pesos
+en paralelo: fue una mala decisión operativa; después se midieron HWM16,1GiB y RSS15,2GiB
+en el descargador. No demuestra OOM del kernel ni corrupción del modelo.
+Las dos descargas propias reanudables están canceladas, con parciales conservados
+y procesos ausentes comprobados. Una recuperación nativa de la misma receta
+NVFP4 devolvió el servicio, conservando suelo6GiB, contexto1M y16secuencias. La
+comparación completa del hash Docker falló y sigue sin atribuirse; una lectura
+separada coincidió con los invariantes de runtime fijados del boot anterior.
+940 está revisada, integrada y probada por MCP/API y navegador: descargó5,08GB
+con SHA256 correctos y pico89,8MiB en el proceso. Es un resultado acotado, sin
+techo universal de memoria; su worktree propio está retirado. QAD no está cargado
+ni seleccionado. El nuevo job HTTP serial completó52/52SHA y177,52GB enSpark1,
+con HWM91,2MiB y mínimo19,85GB de memoria disponible observado. Un certificado
+separado conserva el recibo genérico anterior. Los2jobs originales siguen
+cancelados; Spark2 está parcial y no hay descargas activas. La revisión de capacidad exige runner
+nativo con1M/16 y guarda6GiB; el shell antiguo500k/4 no sustituye al servicio.
+941 sigue en changes: el gate de carrera pasaCPU, pero un resume externo
+vacío activó el envío de una outbox antigua en un test de callbacks inerte;
+faltan turnos cortos y cambios continuos de runID. Ningún arreglo941estáactivo.
+Ahora se ejecuta otro proyecto completo, Docsite, por MCP/Sparks normal y con
+corpus independientes prefijados. No se ha inspeccionado ni aceptado su código
+mientras el modelo lo escribe.881DONE con patches equivalentes aprobados y
+sólo su WTpropio verificado retirado.
+La fiabilidad global sigue sin demostrarse.
+
+El anexo 916 FINAL de otro autor (hilo 32, mensaje 10911) es un informe externo
+de finalización; esta actualización no afirma publicación propia ni integración
+global de 835 y conserva intacta la documentación de ese autor.
+
+**Antecedente histórico de activación 2dc.**
+
+Después se activó Main `2dc04d3e` con895/896 aprobadas: conserva correcciones de
+números, negación y orden, elige vozES/EN según la respuesta actual y permite
+language_hint opcional para audio breve incierto en reconocimiento automático.
+Voz y MCP comparten las opciones; las variantes del wake sólo se admiten como
+vocativos directos. No se sustituyen nombres corrientes ni se incorpora un nuevo
+detector acústico. Autor verifica API/MCP/238assets y audio sintético, sin afirmar
+calidad del micrófono de Luis ni del modelo. La activación conserva
+REVIEW_REQUIRED: settings cambió de bytes y un skill recibió migración de dueño
+al arrancar; falta baseline semántico completo, sin restauraciones a ciegas ni
+afirmación de conservación byte exacta. Fuente: opendex-implementation.
+
+La repetición real plain960 terminó en una ronda y 580,247 s con el humano
+original íntegro de 3.192.509 caracteres y 994.054 tokens de entrada. El JSON
+completo dio A17=12000 frente a 10500 esperado: transporte completo y semántica
+FAIL. El proyecto real posterior terminó en 20 rondas y 786,038 s: 17 pruebas
+independientes, 47 del código generado, seis CLI cp1252 y tres oráculos extra
+pasaron. Pero usó y borró temporales `/tmp` fuera del workspace: cumplimiento
+FAIL. 898 proporciona TMP/TEMP/TMPDIR propios por ejecución desde el dispatcher;
+el `/tmp` literal de
+MSYS sigue compartido y no se declara resuelto. Ninguno acredita fiabilidad global.
+
+898 R2 conserva session/run en ambas ramas fallback Python/Bash y en PowerShell.
+Dos turnos nativos secuenciales API/MCP verificaron que Python, PowerShell,
+Git Bash y Python repetido comparten carpeta y marcador dentro del run, con
+raíces distintas entre runs. Las respuestas assistant completas coinciden en
+journal y DB privados. Se conservan los fallos de los oráculos: un fixture no
+admitía la auditoría prevista y otro esperaba dos LF no emitidos por el stream.
+El API aceptado se concilió sólo en lectura, sin reenviarlo. No prueba concurrencia.
+
+Los cuatro casos largos API/MCP son evidencia funcional histórica, no una
+garantía de disponibilidad. Se conservan 6/156 fallos del sampler independiente,
+debug R1/R2 con 11/16 y clock R1 con 1/41. El clock R2 posterior sobre 9b61 completó
+b115/JSON35 con un dispatch CPU en 39,5059 s y 43/43 health <3 s, máximo 2,2691 s:
+PASS de esa cohorte instrumentada, sin borrar históricos ni formar un A/B causal
+homogéneo. Se acotó un intervalo de callback, no su hoja causante.
+
+**Histórico KV, cortes18-10/19-10 anteriores a KV4.** La primera entrega falló
+compactación/CLI/corrupción/close-write y su control de muerte no mataba al hijo.
+La corrección1 pasó 49 propios y 7 grupos R2, pero falló cabecera plausible y batch
+fuera del dominio del decoder. La corrección2 pasó 54 propios y 7 grupos, reparó
+esos dos defectos pero confundió colas binarias legítimas con corrupción.
+KV3 terminó 78 rondas/103 tools/0 degenerate ; 60 propios PASS no fueron aceptación:
+el primer grupo R2 falló al reabrir tras 4 threads (chain 101/offset 165), los otros
+seis no corrieron. Otro testigo de frame binario alineado dentro de una cola
+incompleta falló, mientras sus controles pasaban. No se aceptó ninguna de esas
+entregas ni root reparó programa/oráculos para pasarlas.
+
+KV4 terminó con62tests propios y los siete gruposR2 originales PASS,
+pero dos casos independientes de prefijos binarios rechazan appends legítimos
+incompletos. Sus controles pasan y las fuentes permanecen intactas: entrega no
+aceptada. Trace205 omitió mensajes por superar su almacenamiento diagnóstico;
+ocurrencia íntegra en llm_core UNKNOWN y bytes downstream no capturados.
+La revisión auxiliar falló en el filtro de su proveedor, sin informe ni aprobación;
+las mediciones locales de root son evidencia separada.
+
+El detalle y los recibos/fallos intactos están enlazados en el corte actualizado anterior.
+Los párrafos heredados del corte 16:36 que siguen son historia, incluidos estados
+de revisiones 886/888; no describen el Main actual ni reabren revisiones antiguas.
+
+La receta original sigue restaurada. R4 comparó1.265tokens decode/prefill; R5
+terminó14.365tokens en255,576s, primer evento0,576s. Sus indicadores exploratorios
+no se activaron, pero RAW no observado y scores no certifican semántica. La revisión
+del programa de almacenamiento generado encontró pérdida de datos reproducible
+entre encoder/recovery y tests defectuosos. El kernel sparseMLA sintético pasó10/10
+casosGPU; no demuestra corrección del modelo entero. 900 está aprobado y pasó
+navegador privado:3.192.509 caracteres/391secciones, búsqueda hasta la última,
+copy con longitud/FNVcompletos, editor acotado y guardado sin cambiar texto.
+Tras reload, el humano conserva SHA256b115 exacto por API. Las modificaciones
+de contenido y regenerate están probadas por CPU, no por otra inferencia UI.
+La pestaña privada se cerró; estos cambios ya están activos en Main, con recarga
+normal del navegador también verificada.
+La aceptación completa del proyecto y fiabilidad global siguen abiertas.
+
+**Estado histórico a 18-10-2026, 16:36 UTC (#835, #876–#888).** Los cambios
+876/877/879/880/881/882 están aprobados, integrados y activos en Main `e8eddcac`.
+Build propio, API/MCP y los 238 assets servidos están verificados. La revisión de
+activación acredita conservación de los datos protegidos: sólo se refrescaron dos
+fechas de endpoints, sin añadir o borrar filas ni alterar credenciales o configuración.
+Los recibos están en `research-inbox/sparks835/patch-deployment`.
+
+881 conserva el error terminal de capacidad tras recargar el mismo chat. Su prueba
+visual final pasó con un único Send original de 3,9M, cero asistentes guardados y
+cero dispatch; el defecto independiente de identidad `syncIds` está corregido y
+revisado. 882 evita construir TLS innecesariamente para HTTP. La cohorte CPU quieta
+API/MCP pasó 81 comprobaciones de salud; Stop tuvo 1/22 fallos. La salud conjunta
+sigue abierta en 877 con 1/103, sin borrar el histórico 2/81 ni atribuir el timeout al
+POST Stop. Estos resultados privados no certifican fiabilidad global ni calidad.
+
+**Main plain960 real terminó FAIL.** Duró 1.129,482 s, con nueve llamadas de modelo,
+HTTP400 en la novena y rc3 del ejecutor. El humano guardado conserva íntegros sus
+3.192.509 caracteres y el hash original b115. La igualdad literal de ese mensaje
+dentro del wire no queda acreditada: las trazas omitieron el array por tamaño y
+el cierre fallido no guardó el resumen prompt_audit. Tampoco se demuestra recorte.
+Round2 produjo el JSON exacto de 35 caracteres, pero `completion_audit` reabrió el
+turno. El contenido final guardado tiene 85 caracteres, JSON más aviso de error,
+y falla el contrato estricto completo. El acierto intermedio no convierte el turno
+en PASS. La petición real de proyecto largo sigue pendiente. Resultado canónico:
+`research-inbox/sparks835/production-qa/runs/main-plain960-e8e-20261018T1548Z/semantic-reconciliation.json`.
+
+887 distingue ese fallo del presupuesto inicial: R1 usó 1.047.754 tokens de entrada
+y agotó los 822 restantes hasta la ventana 1.048.576. **6000 AUTO es INPUT soft**, no
+reserva de salida; output 0 no fija una reserva conocida. Se conservaron 368 schemas,
+incluidas 340 herramientas MCP forzadas a hot por unattended: 174 del Hub y 166
+internas de 21 servidores (22 servidores MCP incluido el Hub). Las 37 conexiones
+directas desactivadas en 870 no se reactivaron. Ya existen catálogo progresivo y lookup, pero esa oferta forzada queda
+exenta de diferir schemas. El ledger estima caracteres, no el template/tokenizador
+exacto del proveedor; su 102% no prueba pérdida del humano. Diagnóstico y límites:
+`research-inbox/sparks835/runtime-audit/context-budget887`.
+
+888 corrige la falsa detección de ruta raíz y la elegibilidad de auditoría. Su
+revisión 3da queda BLOQUEADA: la revisión independiente reproduce que Fix/Refactor
+sobre directorios relativos sin extensión pierden su auditoría de trabajo. El
+autor prepara el delta correctivo; todavía no se acredita una solución aceptada.
+886 evita la construcción TLS innecesaria en probes HTTP del backend de modelos:
+fuente `2ec3175d`, 30 pruebas CPU PASS con tres testigos RED/Green HTTPX reales,
+aprobada por Cursor CAS1, **sin integrar ni activar**. La salud nativa residual sigue
+abierta. Estas auditorías no arrancaron ni reiniciaron apps o MCP del usuario.
+
+**Comparación del modelo, mismo corte.** DENSE B llegó a READY, con metadata
+positiva del target y cobertura parcial del draft, pero terminó 0/4 en calidad.
+La configuración original exacta está RESTAURADA en los tres nodos: contexto 1M,
+FP8 KV 8GiB y DFlash Recover1. Original A2 también acabó 4/4 FAIL. La lectura posterior
+readonly confirma los mismos tres boots/configuración y ambas fuentes residentes
+contra las primarias. La selección efectiva de backend sigue UNKNOWN: la regex
+no acredita por sí sola la línea INFO que selecciona la implementación.
+
+884 R2 terminó 2/4: las cuatro muestras acabaron STOP y no generaron cabeceras de
+asistente. Las dos T1 pasaron exactamente; T0r0 falló cálculo y claves sin acentos,
+y T0r1 sólo las claves. No demuestra curado el agotamiento de 32K de razonamiento.
+Low 885 pasó revisión independiente, se lanzó a 16:11:09Z y terminó **0/4**. Las
+dos T0 agotaron 32.768 tokens de razonamiento sin contenido; las dos T1 terminaron
+STOP con el neto incorrecto 1500. Los cuatro prompt IDs Low coinciden. El tratamiento
+no corrigió esos fallos; no se atribuye una causa única ni se certifica calidad.
+
+A1 conserva su strict 0/4 histórico con los cuatro resultados numéricos correctos:
+tres respuestas añadían cabecera/reflexión tras JSON y una omitía acentos. Son
+fallos distintos, no cuatro errores aritméticos. 835 permanece abierto. Recibos y
+límites en `research-inbox/sparks835/alternatives` y `runtime-audit`; los resultados
+históricos siguientes conservan su alcance y no sustituyen este estado.
+
+Las salidas estructuradas (#849) usan JSON Schema nativo cuando el OpenAPI del
+servidor acredita soporte, conservando el razonamiento solicitado. Esto garantiza
+el contrato de forma del servidor, no la verdad de los valores generados. Las
+herramientas MCP largas (#850) comunican su espera al cliente oficial y a la
+espera externa, también tras recuperar o refrescar el catálogo. El puente Sparks
+(#853) contempla los tiempos nativos de arranque y parada con sus márgenes; un
+progreso recibido no renueva el plazo completo. Documentación de los contratos:
+`docs/api/mcp-timeouts.md` y `docs/api/sparks-mcp-timeouts.md`.
+
+El muestreo de las Sparks gestionadas (#854) conserva los valores nativos del
+servidor, sin heredar el suelo de temperatura, el tope de programación ni los
+samplers genéricos de otro motor local. Se mantienen las opciones explícitas del
+llamador, sesión y modelo guardado, también al cambiar de candidato durante un
+fallback. No se modifica globalmente la configuración de otros motores.
+Véase `docs/api/sparks-sampling.md`.
+
+El historial intercalado (#859) conserva el razonamiento entre rondas de
+herramientas cuando la identidad servida y el perfil de plantilla están
+acreditados por la caché existente. El fallback retira el razonamiento privado
+de otra ruta antes de compactar y estimar contexto; las llamadas y resultados
+de herramientas se conservan. No se añade sondeo HTTP a cada generación.
+Véase `docs/api/interleaved-history.md`, incluido el límite de frescura de la
+metadata y la política anterior para modelos sin acreditar.
+
+La prueba privada completa generó un proyecto de persistencia con 27 rondas y 44
+herramientas. Tras recibir un fallo real de Windows, el modelo lo corrigió:
+68 pruebas del proyecto, 17 aceptaciones independientes y 6 CLI pasaron. Esto prueba
+ese trabajo y su corrección por feedback; las repeticiones directas aún muestran
+errores lógicos y de formato. No se certifica fiabilidad universal ni se trata un
+error de lógica como evidencia para reiniciar el servidor. Los recibos y límites
+están en `research-inbox/sparks835` del espacio de trabajo común.
+
+La batería directa de 72 casos High con concurrencia dos y cuatro obtuvo
+49 aciertos y 23 fallos; siguen existiendo errores de cálculo, formato y
+truncación. Cuatro pruebas largas con entradas reales de unos 523K y 978K
+tokens dieron dos aciertos y dos fallos. El cruce correcto a 978K tardó
+422,6 segundos en producir su primer evento, más que el antiguo límite
+inicial de 300 segundos. Son casos medidos, no una certificación general
+de precisión con un millón de tokens. Las comparaciones controladas del motor
+y la prueba nueva del flujo global siguen abiertas.
+
 **Blender 5.2 y servidor MCP oficial (#780):** instalado y activo el motor de
 Blender Lab 1.0.3 sobre Blender 5.2.2 LTS. El panel Faustus conecta la escena y
 abre el chat común. Hay 35 herramientas MCP: 26 oficiales, cuatro flujos vivos y
@@ -13583,9 +13910,9 @@ cancelación de una revisión restaura también el color Workbench capturado por
 valor, cámara, fotograma y contexto. QAoffline, sin llamadas a Sparks; la calidad
 de modelado autónomo sigue pendiente de las pruebas del motor en otro chat.
 
-### Theseus: reconstrucción local (18-10-2026)
+### Theseus: reconstrucción local, registro histórico CAS2 (18-10-2026)
 
-Theseus's Hoard está integrado y activo en `http://127.0.0.1:5217`, Main
+La entrega CAS2 se integró y activó en `http://127.0.0.1:5217`, Main
 `4b2838a`, con aprobación cruzada CAS2. Sus 33 herramientas MCP y 18 operaciones
 nativas conservan análisis por formatos, sesiones persistentes de Ghidra libre y
 comparaciones de bytes que distinguen constantes diferentes aunque cambien las
@@ -13601,8 +13928,8 @@ Pruebas de composición en Main: 40 correctas y dos Ghidra opt-in omitidas en es
 pasada; esas dos se ejecutaron con el motor real tanto por el autor como por el
 revisor. La activación conservó todas las tablas y el token existentes. La paridad
 completa sigue abierta en `docs/SOURCE-COVERAGE.md` de Theseus. La ampliación
-posterior de transferencia de evidencias está probada en worktree y pendiente de
-revisión propia. Estas operaciones y sus pruebas no han utilizado las Sparks ni
+posterior se describe en el estado actual de Theseus al inicio de este documento.
+Estas operaciones y sus pruebas no han utilizado las Sparks ni
 otro modelo. Manual nativo y grafo actualizados; tarea Ágora 779 abierta.
 
 
@@ -13749,3 +14076,8 @@ las cuatro pruebas fuera de Silver de la tarea 840 no hicieron solicitudes
 externas ni API. No se afirma que todos los proveedores históricos de la app
 hayan desaparecido. No se tocaron modelos, GPU o Hub ni se hizo push.
 Pruebas detalladas: research-inbox/silver-rock845 y silver-pause847.
+
+
+### Talos y Hermes bajo demanda (18-10-2026)
+
+Talos's Hoard reúne pantalla, portapapeles, actividad, audio, servicios y disco en seis módulos independientes (93 herramientas MCP); Hermes's Hoard reúne productos/ofertas y envíos/viajes (114). Todas las funciones empiezan desactivadas y el catálogo no arranca servidores ni motores. Se inician explícitamente desde Hoard Hub en5220/5221; las carpetas de datos originales se conservan y se usan en su ubicación. Los siete servidores absorbidos quedan desactivados y sus registros sólo mantienen compatibilidad de llamadas. Repositorios públicos TalosHoard/HermesHoard, README y manual familiar actualizados. No añadir conexiones MCP directas con autostart.

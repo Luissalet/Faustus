@@ -34,6 +34,256 @@ A temporary retryable Sparks service outage before output keeps the task alive
 on the same configured model. Completed tool results are retained; Stop and
 requested initial deadlines remain available. [Service continuity](website/SPARKS-SERVICE-CONTINUITY.md).
 
+On this installation, Hoards start when explicitly requested from the Hub or an
+active task. The direct Hoard MCP connections remain saved but disabled; the Hub
+connection remains available. Starting Faustus therefore does not connect every
+specialist app. Manual stops remain in effect. The automatic restart-on-down rule
+is disabled; its other rules and scheduled backups remain configured. This
+deployment change addresses unwanted starts, not the cause of a Windows freeze.
+
+Silver's Installations page includes a repeatable ten-question type challenge:
+generations 1–9, one or two defensive types, four choices, factor explanations,
+streaks and error review. It uses the installed type chart and does not simulate
+damage, abilities, items, STAB, weather or Terastallization. Practice is temporary;
+the native UI, REST and MCP share `type_challenge` and `type_challenge_score`.
+The Resist mode asks for the best defender against each attacking type, using
+the historical types of four Pokémon. Its repeatable ten questions include
+resistance and immunity factors, streaks and error review. The existing attack
+mode remains the default. Both use the same native handlers and temporary practice.
+Five additional PMD Red Rescue Team move motifs share their original sprite
+pixels across battles, portable HTML and video, with source credit retained.
+The activated Silver catalogue contains 193 MCP tools; no external API was added.
+
+Theseus task 779's CAS22 release is active on Main `0f6`: 38 MCP tools,
+56 static analyses, 38 runtime operations and 50 binary session operations.
+The overall programme remains open in Theseus's `docs/SOURCE-COVERAGE.md`.
+Earlier firmware, browser and Frida annexes describe their respective historical
+stages; they are not the current activation inventory.
+
+Managed Sparks preserve native reasoning levels and explicit thinking budgets.
+Streaming distinguishes initial response, meaningful output inactivity and the
+whole turn deadline; empty frames do not count as generated work. An incomplete
+Studio stream retains its output and reports the interruption. Blocking responses
+use the configured HTTP allowance rather than treating the initial wait as a
+deadline for the entire answer. [Streaming](docs/streaming-activity.md) ·
+[Blocking responses](docs/api/nonstream-timeouts.md).
+
+**Current Sparks recovery, 19 October 2026 (03:30 UTC evidence cut).**
+Main `8c8da902` is active with the reviewed 915/918/919/920 changes: Windows-safe
+vault collision names, lease-heartbeat I/O off the loop with cancellation join,
+recovery I/O off the coordination loop, and permitted armed-plan tools in native
+schemas. API/MCP fixtures cover these paths within the limits below. 915/918/920
+are DONE and their own worktrees removed; 919 and the overall Sparks835 task
+remain open. The composed CPU check passed 312 distinct cases across runs, not
+one 312-PASS run; its initial subprocess-guard failure remains recorded.
+
+The cold-start receipt retains REVIEW_REQUIRED. Its addendum explains two
+owner-only skill migrations and the scoped endpoint/settings changes, without
+asserting every byte stayed identical. Root corrected its controller recovery
+environment (USERNAME for SSH, ProgramFiles/ProgramW6432 for NVML) without
+reloading the model. The endpoint is enabled again. The 37 disabled direct MCP
+connections and 24 current manually stopped apps remain preserved (18 at the earlier cold start).
+
+Current work, acceptance criteria and detailed historical receipts are in the
+[current continuity note](D:/LocalAI/research-inbox/sparks835/runtime-audit/status-20261019T0326Z.md)
+and [cold-start addendum](D:/LocalAI/research-inbox/sparks835/patch-deployment/cold-start-9b61-postcheck/REPORT.md).
+No global reliability or model-quality acceptance is claimed.
+
+Workledger's first native MCP delivery completed 27 rounds and 41 tools.
+After reading every source file, root verified 17 original independent cases,
+54 producer tests and six Windows CLI checks. Two additional store cases failed:
+transaction input mutations changed the later commit, and SQLite INTEGER rejected
+an otherwise valid 2**80 delta. The correction stopped before editing with a 503;
+that failed turn is not replayed. The new post-recovery follow-up completed
+14 rounds and 26 tools. After all 13 final program files were read, the original
+17 independent cases, 61 producer tests, six Windows CLI checks, both original
+regressions and three stricter typed groups passed. This accepts that corrected
+project within those checks, not global reliability. Its wrapper still exited1:
+conversation GET/MCP returned404 despite a finished stream and canonical done.
+A separate read-only reconciliation preserves that failure; task942 fixes the
+existing single-user owner mismatch, with CPU/API/MCP/browser fixture proof
+and independent18-PASS review. It is now active: HTTP/MCP read the same real
+835 chat with six messages; Studio reload preserved its final answer. No turn
+was resent. Activation retains REVIEW_REQUIRED for a settings revision and
+three learned skills: owner plus one paragraph fold reconstructs their exact
+preimage hashes in RAM. Model boots, Hub hashes and DB snapshots match.
+Task942 and its own worktree are closed; history/source receipts are retained.
+
+The immediate outage was the recipe's memory guard: 6,340,026,368 available bytes
+fell below its existing 6 GiB floor, triggering a Docker stop during an active
+request. Concurrent weight downloads started by root were a poor operational
+choice; a downloader later measured 16.1 GiB HWM and 15.2 GiB RSS. This is not evidence of
+kernel OOM or model corruption. Both own resumable downloads are now cancelled
+with partial files retained and processes confirmed absent. One managed recovery
+of the same NVFP4 recipe restored service with the floor, 1M context and 16 sequences
+preserved. Its full Docker configuration hash comparison failed and remains
+unattributed; a separate read matched the earlier pinned runtime invariants.
+Task940 is reviewed, integrated and verified through native MCP/API and browser:
+a 5.08 GB transfer matched its SHA256 values with a 89.8 MiB downloader peak.
+This is a scoped result, not a universal memory bound. Its own worktree was removed.
+The alternative QAD checkpoint has not been loaded or selected. The native
+serial HTTP job completed all52 pinned hashes and177.52GB on Spark1, with
+91.2MiB downloader HWM and at least19.85GB available memory observed. Its
+separate certificate preserves the generic two-file receipt unchanged. Both
+original jobs remain cancelled; Spark2 is still partial and no download is
+active. A capacity review requires a native runner with 1M/16 and the existing
+6GiB guard; the earlier 500k/4 shell is not an acceptable replacement. Task941
+remains in changes: its race gate passes CPU checks, but an empty external
+resume activated an old outbox send in an inert callback test; short turns
+and continuous run-ID changes also need coverage. No refresher fix is active.
+A new complete Docsite project is running through normal MCP/global Sparks,
+with independent corpora fixed in advance. Its code has not been inspected
+or accepted while the model is writing. Task881 is closed with equivalent
+approved patches and only its own verified worktree removed.
+
+The other author's 916 FINAL annex (thread 32, message 10911) is an external
+completion report; this update claims neither its publication nor global 835
+integration and leaves that author's documentation untouched.
+
+**Earlier activation, 2dc (historical).**
+Main source and backend subsequently advanced to `2dc04d3e` for reviewed voice
+changes 895/896. API, native MCP and all 238 served assets passed the owner's
+verification. Its activation receipt retains REVIEW_REQUIRED: settings bytes
+changed and startup migrated one legacy skill; no complete prior semantic
+settings snapshot was preserved. Byte-exact preservation is not asserted.
+888 prevents completed factual responses from reopening as workspace work;
+four native API/MCP cases used a scripted provider and verified conversation reload.
+887 preserved 340 executable tools while using 27/28/28 schemas across three rounds.
+
+The repeated real plain960 request completed in one round and 580.247 seconds,
+with the full 3,192,509-character input and 994,054 input tokens. Its complete JSON
+returned A17=12000 instead of 10500: transport completed, semantic acceptance failed.
+A real project then completed 20 rounds in 786.038 seconds; 17 independent checks,
+47 generated-code tests, six native cp1252 CLI checks and three extra oracles passed.
+However, it used and deleted `/tmp` files outside its workspace, so full task compliance
+failed. Change 898 now supplies per-run TMP/TEMP/TMPDIR through the normal tool
+dispatcher; literal MSYS `/tmp` remains shared.
+These results do not certify global reliability.
+
+898 R2 preserves the session/run context through both Python/Bash fallback
+branches and PowerShell. Two sequential native turns, API and MCP, verified that
+Python, PowerShell, Git Bash and a repeated Python command share their run's
+temporary directory and marker, with different roots between runs. The whole
+assistant responses matched their native journals and private DB. Earlier fixture
+failures remain recorded: one omitted the expected completion audit; another
+expected two line breaks absent from the emitted API stream. The accepted API
+was reconciled read-only and was not resent. This does not test concurrency.
+
+Four composed long API/MCP cases are historical functional evidence, with
+long-input health failures still retained. A later instrumented 9b61 b115 case
+passed 43/43 active-window health probes; it is one bounded cohort, not a global
+cure or homogeneous causal A/B. 919 retains its overall failed/unknown auxiliary
+accounting despite scoped functional positives; 920 does not prove a persisted
+three-task UI card or completed plan execution.
+
+KV4 completed 62 producer tests and the seven original R2 groups, but
+two independent binary-prefix cases still reject legitimate incomplete appends.
+The controls pass and candidate sources remain unchanged; the delivery is not
+accepted. Trace205 omitted messages above its diagnostic storage allowance, so
+full occurrence in llm_core remains UNKNOWN and downstream bytes unverified.
+The auxiliary source-review attempt failed at its provider filter and produced
+no report or approval; root's local measurements are separate evidence.
+
+The inherited 16:36 research paragraphs below (including 886 and888 revision3da)
+record their historical submission state, not current deployment status; later
+approved revisions superseded those statements. See the continuity note above.
+
+The original model recipe remains restored. Real decode/prefill diagnostic R4
+compared 1,265 tokens; R5 completed 14,365 output tokens in 255.576 seconds,
+with its first event at 0.576 seconds. The exploratory long-reply indicators
+were not flagged, but RAW mode was not observed and scores do not certify
+semantic quality. Independent inspection of R5's generated storage program
+found a reproducible encoder/recovery data-loss defect and broken tests.
+A synthetic GPU sparse-MLA check passed all ten cases, without proving full-model
+correctness. The numerical and semantic results remain separate.
+
+Reviewed change 900 addresses giant transcript rendering while keeping the complete
+message. In the private browser, a 3,192,509-character message opened with 391
+sections, full-source search reached the last section, and copying returned the
+complete length and expected FNV checksum. The bounded editor saved the unchanged
+message; API readback after reload retained its exact SHA256. Content-changing
+edits and regeneration are covered by CPU checks, not a new browser inference.
+The private tab was closed. This change is now active in Main, whose normal
+browser reload also passed.
+
+Voice mode preserves corrections to numbers, negation and word order, and uses
+the current reply when selecting English or Spanish output voices. Automatic
+local recognition accepts an optional recent-language hint for uncertain short
+audio; clear speech and explicit language selection take precedence. Optional
+wake-word mode recognizes two ASR variants only as direct vocatives. Ordinary
+names are not rewritten. REST and native MCP expose the same options.
+See [voice streaming](docs/api/voice-stream.md). Tests used synthetic audio and
+simulated chat; they do not certify the user's microphone or global model quality.
+
+**Historical recovery snapshot, 18 October 2026, 16:36 UTC.** Approved tasks
+876/877/879/880/881/882 are integrated in Faustus Main `e8eddcac` and active.
+Its own build, native API/MCP and all 238 served asset hashes passed verification.
+Activation preserved protected data; its review records only two endpoint timestamp
+refreshes. Studio 881's capacity error survived refresh of the same conversation.
+The quiet CPU API/MCP cohort passed 81 health checks; its separate Stop cohort had
+one timeout in 22. Overall health remains open at 1/103, with the earlier 2/81
+failure retained. These results do not certify model quality or global reliability.
+
+The real Main plain960 request **failed** after 1,129.482s and nine model calls,
+ending with HTTP400 and runner rc3. The stored human message retains all
+3,192,509 characters and its original b115 hash; literal equality inside the
+provider wire is not accredited because the trace omitted the message array.
+Round 2 returned the exact 35-character answer, but `completion_audit` reopened
+the turn. The final stored 85 characters combine that JSON with an error notice,
+so the complete final response fails the strict contract. The larger real project
+request remains pending. Canonical result:
+`research-inbox/sparks835/production-qa/runs/main-plain960-e8e-20261018T1548Z/semantic-reconciliation.json`.
+
+Round 1 used 1,047,754 input tokens and exhausted the remaining 822 output tokens.
+6000 AUTO is the soft **input** budget; output 0 supplies no known output reserve.
+The offer retained 368 schemas, including 340 MCP tools forced hot by unattended
+mode: 174 Hub tools and 166 tools from 21 internal servers, or 22 MCP servers
+including the Hub. The 37 direct Hoard connections disabled under 870 were not
+reactivated. Progressive catalogue and
+lookup already exist, but this forced offer bypasses deferral. Offline audit 887
+records that pressure without claiming input truncation. Task 888 revision 3da
+is blocked by independent review: Fix/Refactor requests on extensionless relative
+directories lose their work audit. The corrective revision is in progress; no
+accepted fix is claimed.
+Task 886's HTTP model-probe change passed 30 CPU checks, including three real HTTPX red/green
+witnesses, and is approved by Cursor CAS1; it is not integrated or active.
+Residual native health remains open. No user apps or MCP servers were restarted for these audits.
+
+DENSE B reached ready, then passed 0/4 quality samples. The exact original
+configuration is restored on all three nodes: 1M context, FP8 KV 8GiB and DFlash
+Recover1. Original A2 also failed all four samples. A later read-only capture
+confirmed the same three boots/configuration and both resident source files against
+primary evidence; backend selection remains UNKNOWN because the log regex does
+not establish the selecting INFO line. Research 884 finished 2/4: all four samples
+stopped normally without assistant headers; both T1 samples passed exactly, while
+the T0 samples failed arithmetic/key spelling or key spelling alone. This does not
+establish a cure for 32K reasoning exhaustion. Independently reviewed Low 885 was
+launched at 16:11:09Z and finished **0/4**: both T0 samples exhausted 32,768
+reasoning tokens without content; both T1 samples stopped with the wrong net 1500.
+All four Low prompt-ID checks passed. This treatment did not cure the observed
+failures. Task 835 stays open.
+Evidence and limits: workspace `research-inbox/sparks835/runtime-audit` and
+`research-inbox/sparks835/alternatives`.
+
+Managed Sparks also retain their server's sampling defaults instead of inheriting
+the generic local model temperature floor, coding temperature cap and sampler
+defaults. Explicit caller, session and saved model options retain precedence,
+including when a request falls back between managed and other local endpoints.
+[Sampling](docs/api/sparks-sampling.md).
+
+Verified interleaved templates retain reasoning between tool rounds of the same
+user turn. Candidate routing removes internal reasoning from another endpoint
+before compaction and context estimation. This uses the existing managed
+metadata cache; it adds no generation-time network probe.
+[Tool-round history](docs/api/interleaved-history.md).
+
+Structured responses use native JSON Schema on managed endpoints whose serving
+API advertises support; explicit reasoning settings remain intact. Long MCP
+tools publish their wait allowance through discovery and the official client
+session, including cached and refreshed catalogues. Progress notifications do
+not extend the caller's whole-operation deadline. [Structured output](docs/api/sparks-structured-output.md) ·
+[MCP waits](docs/api/mcp-timeouts.md) · [Sparks lifecycle](docs/api/sparks-mcp-timeouts.md).
+
 Persistent groups can pair the resident GLM implementer with an independent Qwen
 reviewer on a fourth Spark. Participant routes, read-only execution and input
 budgets survive saving and reloading presets. Correction turns remain directed
@@ -790,7 +1040,7 @@ Context reduction keeps the user's latest instruction rather than a synthetic to
 
 On 8 October 2026: explicit reasoning effort kept through chat generation, read-only mode enforced at the chat API and every tool execution gate, tool documentation in guide-only turns and type checks on `manage_research` arguments, together with the execution-continuity work (approval resumes with evidence, answer-only maths turns, room for an answer after thinking). The DGX Spark backend (§278) is active. Measurements of the Spark models are in FAUSTUS.md.
 
-## Verified Spark deployment
+## Verified Spark deployment — original baseline
 
 The selected deployment is GLM-5.3-Flash NVFP4 on three Sparks, with a 1,048,576-token window. Three cold million-token retrieval tests passed with matching input counts. Measured generation was 40.1 tokens/s; cold input preparation took about 421 seconds and cached input reached its first token in 2.4 seconds. These comparison measurements used low reasoning, not xhigh. The two-Spark trial stalled before completing its 64K baseline. Qwen on one Spark completed 1M but generated about 4 tokens/s, so that split was discarded. Preferences remain editable in Settings → Sparks and Prometheus; local GPU options and their memory pill remain available. See FAUSTUS.md for evidence and remaining integration work.
 
