@@ -1,0 +1,18 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	worktree = D:/LocalAI/worktrees/faustus-checkpoint1188/.qa-http-data/mcp-fixture
+	symlinks = false
+	ignorecase = true
+	autocrlf = false
+	safecrlf = false
+	longpaths = true
+	fsmonitor = false
+	untrackedCache = true
+	quotepath = false
+[commit]
+	gpgsign = false
+[gc]
+	auto = 2000
