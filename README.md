@@ -83,6 +83,12 @@ A temporary retryable Sparks service outage before output keeps the task alive
 on the same configured model. Completed tool results are retained; Stop and
 requested initial deadlines remain available. [Service continuity](website/SPARKS-SERVICE-CONTINUITY.md).
 
+Hoards start only when requested from the Hub or an active task. The direct Hoard MCP connections stay saved but disabled while the Hub connection remains, so starting Faustus does not connect every specialist app. Manual stops are respected and the automatic restart-on-down rule is disabled.
+
+Silver's Installations page includes a repeatable ten-question type challenge (generations 1-9, one or two defensive types, four choices, factor explanations, streaks, error review) and a Resist mode (`goal=defend`; attack stays the default). It uses the installed type chart and does not simulate damage, abilities, items, STAB, weather or Terastallization. Practice is temporary; UI, REST and MCP share `type_challenge` and `type_challenge_score`. Five additional move motifs share original sprite pixels across battles, portable HTML and video, with source credit retained.
+
+Managed Sparks preserve native reasoning levels and explicit thinking budgets. Streaming distinguishes initial response, meaningful output inactivity and the whole turn deadline; empty frames do not count as progress, and an incomplete stream keeps what was received. Blocking responses use the configured HTTP allowance ([Blocking responses](docs/api/nonstream-timeouts.md)). Structured responses use native JSON Schema where the server advertises it ([Structured output](docs/api/sparks-structured-output.md)); long MCP tools publish their wait allowance and progress does not extend the whole-operation deadline ([MCP waits](docs/api/mcp-timeouts.md) · [Sparks lifecycle](docs/api/sparks-mcp-timeouts.md)). Sampling keeps the server's native defaults while explicit caller, session and saved model options take precedence ([Sampling](docs/api/sparks-sampling.md)). Verified interleaved templates retain reasoning between tool rounds; candidate routing removes it before compaction ([Tool-round history](docs/api/interleaved-history.md)).
+
 Persistent groups can pair the resident GLM implementer with an independent Qwen
 reviewer on a fourth Spark. Participant routes, read-only execution and input
 budgets survive saving and reloading presets. Correction turns remain directed
