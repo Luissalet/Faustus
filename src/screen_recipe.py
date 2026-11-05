@@ -131,7 +131,9 @@ def propose(owner: str, draft: Mapping[str, Any], mapping: Any, *, title: str = 
     if cmp:  # several observations: only what changed between them is a parameter
         constants = {str(v) for i in cmp["inputs"] if i["status"] == "constant" for v in i["values"][:1]}
         constants |= {str(w["values"][0]) for w in cmp["windows"] if w["status"] == "constant" and w["values"]}
-        hints = {k: v for k, v in hints.items() if str(v) not in constants}
+        # by input name, not by value: a varying input whose first value equals another input's constant stays a parameter
+        constant_names = {i["name"] for i in cmp["inputs"] if i["status"] == "constant"}
+        hints = {k: v for k, v in hints.items() if k not in constant_names}
     # the values a person wrote in the mapping (paths, ids, names) are case values: listing them in the request lets the
     # learner turn them into parameters, as it does with the literals of a chat request
     # (free text with spaces is left alone: only paths, quoted when they have spaces, and single words or numbers)
@@ -161,6 +163,13 @@ def propose(owner: str, draft: Mapping[str, Any], mapping: Any, *, title: str = 
         limits.append(f"{draft['masked_values']} secret-looking value(s) were masked and are not part of the recipe.")
     if cmp:
         limits += cmp["limits"]
+        varying = {i["name"]: str(i["values"][0]) for i in cmp["inputs"] if i["status"] == "varies" and i["values"]}
+        for i in cmp["inputs"]:   # steps are matched to parameters by value: the same text in two roles cannot be told apart
+            clash = [n for n, v in varying.items() if i["status"] == "constant" and i["values"] and str(i["values"][0]) == v]
+            if clash:
+                limits.append(f"The constant input {i['name']} (step {i['step']}) has the same value as the changing input "
+                              f"{clash[0]} in the observed run, so every step that uses that value was turned into the parameter "
+                              f"{clash[0]}: check the steps that should keep it fixed.")
     recipe.limits = list(recipe.limits) + limits
     recipe.source = {**(recipe.source or {}), "kind": "screen", "draft_schema": SCHEMA, "shape": draft.get("shape"),
                      "window": draft.get("window"), "mapped_steps": order, "manual_steps": [m["n"] for m in manual]}
@@ -260,6 +269,8 @@ def compare_drafts(drafts: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _FILE_RE = re.compile(r"([^\\/:*?\"<>|\s][^\\/:*?\"<>|]*?\.(xlsx|xlsm|xls|ods|csv|tsv|txt|md|json|log|xml|html?|docx|doc|odt|rtf))\b", re.I)
+_APP_PREFIX_RE = re.compile(r"^(?:microsoft\s+)?(?:excel|word|libreoffice\s+(?:calc|writer)|wps\s+\w+|notepad\+*|bloc de notas|"
+                            r"visual studio code|sublime text)\s+[-–—]\s+", re.I)
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.I)
 _CELL_RE = re.compile(r"^[A-Za-z]{1,3}[1-9][0-9]{0,6}$")
 _APPS = {
@@ -276,7 +287,15 @@ _EXT_FAMILY = {".xlsx": "sheet", ".xlsm": "sheet", ".xls": "sheet", ".ods": "she
 def file_in(window: Any) -> str:
     """The file a window title names ('Facturas.xlsx - Excel' -> 'Facturas.xlsx'), or ''."""
     m = _FILE_RE.search(str(window or ""))
-    return m.group(1).strip() if m else ""
+    if not m:
+        return ""
+    name = m.group(1).strip().lstrip("●•○◦·*+ ")           # an editor's unsaved-changes marker is not part of the name
+    for _ in range(3):                                         # 'Microsoft Excel - Facturas.xlsx': the app name comes first
+        shorter = _APP_PREFIX_RE.sub("", name, count=1)
+        if shorter == name:
+            break
+        name = shorter
+    return name.strip()
 
 
 def app_family(app: Any, window: Any) -> str:
@@ -315,7 +334,9 @@ def _step_value(draft: Mapping[str, Any], step: Mapping[str, Any]) -> Dict[str, 
     return {"name": None, "value": None, "masked": False, "secret": False, "label": None}
 
 
-def _suggest_step(draft: Mapping[str, Any], step: Mapping[str, Any], read: set, locale: str) -> Dict[str, Any]:
+def _suggest_step(draft: Mapping[str, Any], step: Mapping[str, Any], read: set, locale: str,
+                  wrote: Optional[set] = None) -> Dict[str, Any]:
+    wrote = set() if wrote is None else wrote
     n, kind = step.get("n"), str(step.get("kind") or "")
     fam = app_family(step.get("app"), step.get("window"))
     f = file_in(step.get("window")) or file_in(step.get("path"))
@@ -355,12 +376,20 @@ def _suggest_step(draft: Mapping[str, Any], step: Mapping[str, Any], read: set, 
         masked_note = " The value was masked in the recording: write the value of this case." if val["masked"] or val["value"] in (None, "") else ""
         conf = "low" if masked_note else "medium"
         if fam == "text" and f:
+            if ("file", f.lower()) in wrote:   # write_file replaces the whole file: a second write would erase the first
+                return out("manual", f"{f} is already written by an earlier step and write_file replaces the whole file; put "
+                                     "all the typed text in one write (edit that step's content) instead of a second write.")
+            wrote.add(("file", f.lower()))
             return out("map", f"Text was written into {f} in {app}: write the file." + masked_note, "write_file",
                        {"path": f, "content": str(content)}, conf)
         if fam == "sheet" and f and ext not in (".csv", ".tsv"):
             label = str(val["label"] or "")
             cell = label if _CELL_RE.match(label) else "A1"
             sheet = "Hoja1" if locale == "es" else "Sheet1"
+            if ("cell", f.lower(), cell.upper()) in wrote:
+                return out("manual", f"{f} already gets a value in {cell.upper()} from an earlier step and the recording does "
+                                     "not show a different cell for this one; give its sheet and cell to map it.")
+            wrote.add(("cell", f.lower(), cell.upper()))
             return out("map", f"A value was typed into {f} in {app}: write it into the workbook. The recording does not show the "
                               f"sheet or the cell; confirm sheet_name and start_cell." + masked_note, "manage_spreadsheet",
                        {"action": "write_range", "path": f, "sheet_name": sheet, "start_cell": cell.upper(), "values": [[content]]}, "low")
@@ -384,12 +413,13 @@ def suggest_mapping(draft: Mapping[str, Any]) -> Dict[str, Any]:
     draft = check_draft(draft)
     available = _tools_available()
     read: set = set()
+    wrote: set = set()
     locale = str(draft.get("locale") or "es")
     rows = []
     for step in draft["steps"]:
         if not isinstance(step, Mapping):
             continue
-        row = _suggest_step(draft, step, read, locale)
+        row = _suggest_step(draft, step, read, locale, wrote)
         if row["action"] == "map" and available is not None and row["tool"] not in available:
             row.update(action="manual", why=f"{row['tool']} is not available in this Faustus; {row['why']}", tool=None, args={})
         rows.append(row)

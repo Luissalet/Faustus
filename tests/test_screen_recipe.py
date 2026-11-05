@@ -259,3 +259,43 @@ def test_baird_screenshots_become_the_events_talos_segments(monkeypatch):
                         else {"ok": False, "error": "module_disabled"})
     off = derivation_ops.run_recipe(OWNER, {"action": "screen_draft", "source": "baird", "start": "2026-11-04T10:00", "end": "2026-11-04T11:00"})
     assert off["error_class"] == "screen.talos_unavailable" and len(off["events"]) == 2 and "events" in off["error"]
+
+
+def test_file_names_are_read_from_titles_with_the_app_first_or_an_unsaved_marker():
+    assert sr.file_in("Microsoft Excel - Facturas.xlsx") == "Facturas.xlsx"
+    assert sr.file_in("Excel - Facturas.xlsx") == "Facturas.xlsx"
+    assert sr.file_in("● notas.txt - proyecto - Visual Studio Code") == "notas.txt"
+    assert sr.file_in("*notas.txt - Notepad") == "notas.txt"
+    assert sr.file_in("Registro - marzo.xlsx - Excel") == "Registro - marzo.xlsx"   # a dash inside the name stays
+    assert sr.file_in("Facturas.xlsx - Excel") == "Facturas.xlsx" and sr.file_in("Calculadora") == ""
+    rows = {r["step"]: r for r in sr.suggest_mapping({"schema": sr.SCHEMA, "title": "x", "inputs": [],
+                                                      "steps": [_step(1, "app_switch", "Excel", "Microsoft Excel - Facturas.xlsx")]})["suggestions"]}
+    assert rows[1]["args"] == {"action": "read_workbook", "path": "Facturas.xlsx"}
+
+
+def test_a_varying_input_stays_a_parameter_when_its_value_equals_a_constant_of_another_input():
+    first = office_draft(number="ACME", provider="ACME")
+    second = office_draft(number="ZETA", provider="ACME")
+    mapping = [{"step": 2, "tool": "manage_spreadsheet", "args": {"action": "write_range", "path": "Registro.xlsx",
+                                                                  "sheet_name": "Hoja1", "start_cell": "A2", "values": [["ACME"]]}}]
+    out = derivation_ops.run_recipe(OWNER, {"action": "from_screen", "draft": first, "observations": [second], "mapping": mapping})
+    names = {p["name"] for p in out["recipe"]["params"]}
+    assert "numero" in names and "proveedor" not in names, out["recipe"]["params"]
+
+
+def test_two_typed_values_for_the_same_file_or_cell_are_not_both_mapped():
+    draft = {"schema": sr.SCHEMA, "title": "x", "locale": "es", "steps": [
+        _step(1, "type_text", "Notepad", "notas.txt - Notepad", ["a"]), _step(2, "type_text", "Notepad", "notas.txt - Notepad", ["b"]),
+        _step(3, "type_text", "Excel", "Libro.xlsx - Excel", ["a"]), _step(4, "type_text", "Excel", "Libro.xlsx - Excel", ["b"])],
+        "inputs": [{"name": "a", "example": "uno", "kind": "name"}, {"name": "b", "example": "dos", "kind": "name"}]}
+    rows = {r["step"]: r for r in sr.suggest_mapping(draft)["suggestions"]}
+    assert rows[1]["action"] == "map" and rows[2]["action"] == "manual" and "replaces the whole file" in rows[2]["why"]
+    assert rows[3]["action"] == "map" and rows[4]["action"] == "manual" and "A1" in rows[4]["why"]
+
+
+def test_a_constant_that_equals_a_changing_value_is_flagged_in_the_limits():
+    first = office_draft(number="ACME", provider="ACME")
+    second = office_draft(number="ZETA", provider="ACME")
+    mapping = [{"step": 4, "tool": "write_file", "args": {"path": "registro.txt", "content": "ACME"}}]
+    out = derivation_ops.run_recipe(OWNER, {"action": "from_screen", "draft": first, "observations": [second], "mapping": mapping})
+    assert any("same value as the changing input numero" in x for x in out["recipe"]["limits"]), out["recipe"]["limits"]
