@@ -37,6 +37,25 @@ async def reply(peer, request, result=None, **extra):
 
 
 @pytest.mark.asyncio
+async def test_a_call_waits_briefly_for_an_extension_that_is_reconnecting():
+    async with running_relay(peer_wait=3) as relay:
+        async def late_extension():
+            await asyncio.sleep(0.4)
+            peer = await hello(relay)
+            request = json.loads(await peer.recv())
+            await reply(peer, request, {"tabs": []})
+            return peer
+        task = asyncio.create_task(late_extension())
+        result = await relay.call({"action": "tabs"})
+        assert result["ok"] is True and result["result"] == {"tabs": []}
+        await (await task).close()
+    async with running_relay(peer_wait=0.3) as relay:
+        started = asyncio.get_running_loop().time()
+        assert (await relay.call({"action": "tabs"}))["error"]["code"] == "extension_unavailable"
+        assert asyncio.get_running_loop().time() - started >= 0.3
+
+
+@pytest.mark.asyncio
 async def test_no_connection_and_invalid_arguments_never_dispatch():
     async with running_relay() as relay:
         assert (await relay.call({"action": "tabs"}))["error"]["code"] == "extension_unavailable"

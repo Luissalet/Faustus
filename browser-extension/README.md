@@ -33,3 +33,20 @@ File transfers and dispatched-request cancellation were independently reviewed a
 The managed backend was restarted normally and its live browser_session catalog now lists upload and download alongside the original eight actions. The existing disabled direct Writer and legacy QA MCP registrations remain disabled. No model service was stopped or started.
 
 Real Brave file-chooser/Blob acceptance and new Faustus-model acceptance remain pending: the installed extension still needs a normal reload, and its loaded folder/code version is not established by its ID or handshake. Browser automation rejected the internal extension page; no desktop/CDP workaround was used. The earlier prepared/under-review wording above is historical, not the current review state. Writer parity remains open.
+
+
+## Looking and moving like a person (1.2.0, verified 2026-11-06)
+
+The extension now covers what a person (or Claude driving a tab) does to read a page, all on an explicit tab and in the background:
+
+- `reload` (optional `ignore_cache`), `back`, `forward` and `navigate` wait for the new document (new loader, document stable for 600 ms) before the readback, and the readback retries up to three times while a page is still replacing itself.
+- `scroll {direction up|down|left|right, amount}` turns the wheel at the centre or over a `ref`; a `ref` alone scrolls it into view. `hover {ref}` opens menus and tooltips. `select {ref, value}` picks an option by value or visible text.
+- `wait {seconds ≤ 10}` gives a slow list or a check page time and reads it again; nothing is sent to the page.
+- `screenshot` takes `region [x0,y0,x1,y1]` or a `ref` to zoom on part of the viewport.
+- `open_tab {url}` opens a page in a new background tab; `close_tab` closes only tabs opened that way (`tabs` marks them `opened_by_faustus`). `reload_extension` makes the browser load new extension code.
+- `view: {text: true}` (Python side) turns any readback into reading lines: text in document order, controls as `[role ref] label`, disabled marked, links with `-> url`, filtered by `query` and paged by `offset`/`limit`.
+- `view: {visible: true}` keeps only what is on screen now. The extension measures it with one `DOMSnapshot.captureSnapshot` of layout boxes against the scrolled viewport (only when asked) and returns `viewport {x, y, width, height, page_width, page_height}`; the text view reports `off_screen_lines`.
+
+Reconnection: after the relay goes away the extension retries after 1, 2, 5 and then every 10 seconds (the one-minute alarm stays as the fallback), and the relay lets a call wait up to 8 seconds (`--peer-wait`) for the extension to come back instead of failing at once. In the same Faustus turn, a relay restarted with a new contract is announced live from the next step, so its calls are no longer refused until the next turn.
+
+Verified live in Brave through a Faustus agent turn on a real shop list: `reload` with text view (2 calls, 33 s instead of 31 calls), link URLs, `wait`, `scroll` down and up with `visible` (80 lines on screen and 326 off screen at y=720; 57 and 362 back at the top), background `open_tab`, region screenshot and `close_tab`. A check page in a background tab was reported and left alone. 49 extension tests and 102 Python relay tests pass.

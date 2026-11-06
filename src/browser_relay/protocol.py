@@ -5,8 +5,11 @@ from copy import deepcopy
 
 EXTENSION_ID = "cneonpjikbdhbaddfpmmdjemfdphlppa"
 ORIGIN = "chrome-extension://" + EXTENSION_ID
-READ_ACTIONS = frozenset({"tabs", "snapshot", "screenshot"})
-ACTIONS = (*sorted(READ_ACTIONS), "click", "type", "press", "navigate", "release", "upload", "download")
+READ_ACTIONS = frozenset({"tabs", "snapshot", "screenshot", "wait"})
+ACTIONS = (*sorted(READ_ACTIONS), "click", "type", "press", "navigate", "release", "upload", "download",
+           "scroll", "hover", "select", "reload", "back", "forward", "open_tab", "close_tab", "reload_extension")
+READBACK_ACTIONS = ("snapshot", "click", "type", "press", "navigate", "upload", "scroll", "hover", "select", "reload", "back",
+                    "forward", "wait")
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -19,6 +22,15 @@ SCHEMA = {
         "key": {"type": "string", "minLength": 1},
         "url": {"type": "string", "minLength": 1},
         "detail": {"type": "string", "enum": ["compact", "full"], "default": "compact"},
+        "direction": {"type": "string", "enum": ["up", "down", "left", "right"],
+                      "description": "scroll: wheel direction; with a ref the wheel turns over that element."},
+        "amount": {"type": "integer", "minimum": 1, "maximum": 20, "description": "scroll: wheel ticks (default 3)."},
+        "region": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
+                   "description": "screenshot: [x0, y0, x1, y1] in CSS pixels of the visible viewport, to zoom on a part."},
+        "value": {"type": "string", "minLength": 1, "description": "select: the option value or its visible text."},
+        "ignore_cache": {"type": "boolean", "description": "reload: bypass the browser cache."},
+        "seconds": {"type": "number", "minimum": 0.2, "maximum": 10,
+                    "description": "wait: seconds to give the page (a check page, a late list) before reading it again."},
         "view": {
             "type": "object",
             "properties": {
@@ -30,6 +42,13 @@ SCHEMA = {
                 "limit": {"type": "integer", "minimum": 1},
                 "context": {"type": "boolean", "default": False,
                             "description": "Add original direct parents and siblings in context_nodes; nodes stays flat."},
+                "text": {"type": "boolean", "default": False,
+                         "description": "Return the page as reading lines (text in document order, controls as "
+                                        "[role ref] label) instead of AX rows. Best for reading lists, prices and buttons."},
+                "visible": {"type": "boolean", "default": False,
+                            "description": "Only what is on screen now (after a scroll): rows/lines outside the viewport "
+                                           "are left out and the result carries viewport {x, y, width, height, "
+                                           "page_width, page_height} to know where on the page you are."},
             },
             "additionalProperties": False,
         },
@@ -45,9 +64,14 @@ SCHEMA = {
             ("release", ["tab_id"]),
             ("upload", ["tab_id", "ref", "files"]),
             ("download", ["tab_id", "ref", "output_path"]),
+            ("scroll", ["tab_id"]), ("hover", ["tab_id", "ref"]), ("select", ["tab_id", "ref", "value"]),
+            ("reload", ["tab_id"]), ("back", ["tab_id"]), ("forward", ["tab_id"]),
+            ("open_tab", ["url"]), ("close_tab", ["tab_id"]), ("wait", ["tab_id"]),
         ]
     ] + [{"if": {"required": ["view"]},
-          "then": {"properties": {"action": {"enum": ["snapshot", "click", "type", "press", "navigate", "upload"]}}}},
+          "then": {"properties": {"action": {"enum": list(READBACK_ACTIONS)}}}},
+        {"if": {"required": ["region"]}, "then": {"properties": {"action": {"const": "screenshot"}}}},
+        {"if": {"required": ["direction"]}, "then": {"properties": {"action": {"const": "scroll"}}}},
         {"if": {"required": ["files"]}, "then": {"properties": {"action": {"const": "upload"}}}},
         {"if": {"required": ["output_path"]}, "then": {"properties": {"action": {"const": "download"}}}},
     ],

@@ -41,7 +41,7 @@ class StdioClient:
 @pytest.mark.asyncio
 async def test_real_stdio_catalog_validation_actions_image_and_eof():
     env = dict(os.environ, PYTHONPATH=str(ROOT), PYTHONIOENCODING="utf-8")
-    process = await asyncio.create_subprocess_exec(sys.executable, str(ROOT / "src/browser_relay/server.py"), "--port", "0", "--timeout", ".3",
+    process = await asyncio.create_subprocess_exec(sys.executable, str(ROOT / "src/browser_relay/server.py"), "--port", "0", "--timeout", ".3", "--peer-wait", "0",
                                                   cwd=ROOT, env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     client = StdioClient(process)
     async def stderr_tail():

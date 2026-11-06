@@ -20,6 +20,21 @@ const READ_LINK_BLOB = `async function(expected) {
   return await response.blob();
 }`;
 const READ_BLOB_META = `function() { return {bytes:this.size, mime:this.type}; }`;
+// Fixed: choose one option of a <select> by its value or its visible text, firing the events a person's choice fires.
+const SELECT_OPTION = `function(wanted) {
+  if (this.localName !== 'select' || this.disabled || !this.isConnected) throw Error('The ref is not an enabled select');
+  const options = Array.from(this.options), text = String(wanted).trim();
+  const option = options.find(o => o.value === wanted) || options.find(o => o.text.trim() === text)
+    || options.find(o => o.text.trim().toLowerCase() === text.toLowerCase());
+  if (!option || option.disabled) throw Error('No enabled option ' + JSON.stringify(wanted) + '; options: ' + options.slice(0, 40).map(o => o.text.trim()).join(' | '));
+  this.value = option.value;
+  this.dispatchEvent(new Event('input', {bubbles: true}));
+  this.dispatchEvent(new Event('change', {bubbles: true}));
+  return {value: option.value, text: option.text.trim()};
+}`;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+export const ACTIONS = ['tabs', 'snapshot', 'screenshot', 'click', 'type', 'press', 'navigate', 'release', 'upload', 'download',
+  'scroll', 'hover', 'select', 'reload', 'back', 'forward', 'open_tab', 'close_tab', 'reload_extension', 'wait'];
 const READ_BLOB_PART = `async function(offset, length) {
   const bytes = new Uint8Array(await this.slice(offset, offset + length).arrayBuffer());
   let binary = '';
@@ -79,7 +94,7 @@ function keyboard(key) {
 }
 
 export class BrowserController {
-  constructor(chrome) { this.chrome = chrome; this.tabs = new Map(); this.owned = new Set(); this.session = null; }
+  constructor(chrome) { this.chrome = chrome; this.tabs = new Map(); this.owned = new Set(); this.created = new Set(); this.session = null; }
 
   state(tabId) {
     if (!this.tabs.has(tabId)) this.tabs.set(tabId, {generation: 0, lifetime: 0, refs: new Map(), document: null, queue: Promise.resolve(), fileChooser: null, attaching: null, detaching: null, detached: new AbortController()});
@@ -172,7 +187,22 @@ export class BrowserController {
     if (tab.url !== after.url || after.url !== url) fail('document_changed', 'Tab URL and main-frame document changed during observation; take a new snapshot.');
     return {tab: after, stamp: {frame_id: frame.id, loader_id: frame.loaderId ?? '', url, backend_id: backend}};
   }
-  async snapshot(context) {
+  /** Marks which AX nodes are on screen now: one DOMSnapshot of layout boxes against the scrolled viewport. */
+  async onScreen(context, nodes) {
+    const view = await this.viewport(context), dom = await this.send(context, 'DOMSnapshot.captureSnapshot', {computedStyles: [], includeDOMRects: true});
+    const doc = dom?.documents?.[0], backend = doc?.nodes?.backendNodeId ?? [], layout = doc?.layout ?? {}, boxes = new Map();
+    (layout.nodeIndex ?? []).forEach((index, i) => { const b = layout.bounds?.[i]; if (Array.isArray(b) && b[2] > 0 && b[3] > 0 && !boxes.has(backend[index])) boxes.set(backend[index], b); });
+    const left = view.pageX, top = view.pageY, right = left + view.width, bottom = top + view.height;
+    const byId = new Map(nodes.map(node => [node.nodeId, node])), memo = new Map();
+    const inView = node => {
+      if (memo.has(node.nodeId)) return memo.get(node.nodeId);
+      memo.set(node.nodeId, false); const b = boxes.get(node.backendDOMNodeId);
+      const value = b ? b[0] < right && b[0] + b[2] > left && b[1] < bottom && b[1] + b[3] > top : (node.childIds ?? []).some(id => byId.has(id) && inView(byId.get(id)));
+      memo.set(node.nodeId, value); return value;
+    };
+    return {flags: new Map(nodes.map(node => [node.nodeId, inView(node)])), viewport: {x: left, y: top, width: view.width, height: view.height, page_width: view.pageWidth, page_height: view.pageHeight}};
+  }
+  async snapshot(context, options = {}) {
     this.invalidate(context.tabId); const generation = context.state.generation, before = await this.document(context);
     const tree = await this.send(context, 'Accessibility.getFullAXTree', {frameId: before.stamp.frame_id}), after = await this.document(context);
     if (generation !== context.state.generation || !equalDocument(before.stamp, after.stamp)) { this.invalidate(context.tabId); fail('document_changed', 'Document changed during AX snapshot; old references were invalidated.'); }
@@ -187,6 +217,11 @@ export class BrowserController {
       refs.set(ref, {backendId: node.backendDOMNodeId, generation, document: after.stamp}); axRefs.set(node.nodeId, ref);
     }
     const result = {tab: after.tab, generation, document: {frame_id: after.stamp.frame_id, loader_id: after.stamp.loader_id, url: after.stamp.url}, scope: 'main_frame', nodes: nodes.map(node => ({ref: axRefs.get(node.nodeId) ?? null, role: textOf(node.role), name: textOf(node.name), value: textOf(node.value), properties: Object.fromEntries((node.properties ?? []).map(property => [property.name, valueOf(property.value)])), ignored: !!node.ignored, child_refs: (node.childIds ?? []).map(id => axRefs.get(id)).filter(Boolean)}))};
+    if (options.visible) {
+      const screen = await this.onScreen(context, nodes);
+      if (generation !== context.state.generation) { this.invalidate(context.tabId); fail('document_changed', 'Document changed while measuring the viewport; take a new snapshot.'); }
+      nodes.forEach((node, index) => { result.nodes[index].in_view = screen.flags.get(node.nodeId); }); result.viewport = screen.viewport;
+    }
     context.current(); context.state.refs = refs; context.state.document = after.stamp; return result;
   }
   async reference(context, ref) {
@@ -204,7 +239,7 @@ export class BrowserController {
     if (resolved.generation !== context.state.generation || !equalDocument(current.stamp, resolved.saved.document)) { this.invalidate(context.tabId); fail('stale_ref', 'Document changed before input dispatch; take a fresh snapshot.'); }
   }
 
-  async clickReference(context, resolved) {
+  async clickReference(context, resolved, {hover = false} = {}) {
     await this.send(context, 'DOM.scrollIntoViewIfNeeded', {backendNodeId: resolved.saved.backendId});
     const geometry = await this.send(context, 'DOM.getContentQuads', {backendNodeId: resolved.saved.backendId}), layout = await this.send(context, 'Page.getLayoutMetrics'), viewport = layout.cssVisualViewport ?? layout.visualViewport;
     if (!viewport || !(viewport.clientWidth > 0 && viewport.clientHeight > 0)) fail('viewport_unavailable', 'The target tab has no CSS viewport.');
@@ -216,8 +251,88 @@ export class BrowserController {
     const hit = await this.send(context, 'DOM.getNodeForLocation', {...point, includeUserAgentShadowDOM: true});
     if (resolved.generation !== context.state.generation) fail('stale_ref', 'Document changed during click hit-test; take a fresh snapshot.');
     if (hit?.frameId !== resolved.saved.document.frame_id || !descendants.has(hit?.backendNodeId)) fail('target_obscured', 'The click point is covered by another target or frame, or has no DOM hit. Observe the page and take a fresh snapshot; no mouse input was dispatched.');
+    if (hover) { context.phase = 'outcome_unknown'; await this.send(context, 'Input.dispatchMouseEvent', {type: 'mouseMoved', ...point, button: 'none', buttons: 0}); return point; }
     context.phase = 'outcome_unknown'; await this.send(context, 'Input.dispatchMouseEvent', {type: 'mousePressed', ...point, button: 'left', buttons: 1, clickCount: 1});
     await this.send(context, 'Input.dispatchMouseEvent', {type: 'mouseReleased', ...point, button: 'left', buttons: 0, clickCount: 1});
+  }
+
+  // A navigation (navigate, reload, back, forward) is acknowledged before the new document exists. Wait until the main
+  // frame has a new loader and its document stops changing, so the readback reads the new page, not a half-built one.
+  async settleAfterNavigation(context, previousLoader, timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs; let last = '', stableSince = 0;
+    while (Date.now() < deadline) {
+      await context.wait(sleep(250));
+      let stamp; try { stamp = (await this.document(context)).stamp; } catch { continue; }
+      const key = stamp.loader_id + '|' + stamp.url + '|' + stamp.backend_id;
+      if (stamp.loader_id === previousLoader) continue;
+      if (key !== last) { last = key; stableSince = Date.now(); continue; }
+      if (Date.now() - stableSince >= 600) break;
+    }
+    this.invalidate(context.tabId);
+  }
+  async loaderOf(context) { try { return (await this.document(context)).stamp.loader_id; } catch { return ''; } }
+  async viewport(context) {
+    const layout = await this.send(context, 'Page.getLayoutMetrics'), viewport = layout.cssVisualViewport ?? layout.visualViewport, page = layout.cssLayoutViewport ?? layout.layoutViewport ?? {};
+    if (!viewport || !(viewport.clientWidth > 0 && viewport.clientHeight > 0)) fail('viewport_unavailable', 'The target tab has no CSS viewport.');
+    const content = layout.cssContentSize ?? layout.contentSize ?? {};
+    return {width: viewport.clientWidth, height: viewport.clientHeight, pageX: page.pageX ?? viewport.pageX ?? 0, pageY: page.pageY ?? viewport.pageY ?? 0, pageWidth: content.width ?? null, pageHeight: content.height ?? null};
+  }
+  async scroll(context, args, resolved) {
+    const amount = Number.isInteger(args.amount) ? Math.max(1, Math.min(args.amount, 20)) : 3, direction = args.direction;
+    if (resolved && !direction) {
+      await this.verifyReference(context, resolved); context.phase = 'outcome_unknown';
+      await this.send(context, 'DOM.scrollIntoViewIfNeeded', {backendNodeId: resolved.saved.backendId}); return;
+    }
+    if (!['up', 'down', 'left', 'right'].includes(direction)) fail('invalid_arguments', 'scroll needs direction up, down, left or right (or only a ref to bring that element into view).');
+    const view = await this.viewport(context); let point = {x: Math.round(view.width / 2), y: Math.round(view.height / 2)};
+    if (resolved) {
+      await this.verifyReference(context, resolved);
+      const geometry = await this.send(context, 'DOM.getContentQuads', {backendNodeId: resolved.saved.backendId}), visible = visiblePoint(geometry.quads, view.width, view.height);
+      point = {x: Math.round(visible.x), y: Math.round(visible.y)};
+    }
+    const step = 120 * amount, deltaX = direction === 'left' ? -step : direction === 'right' ? step : 0, deltaY = direction === 'up' ? -step : direction === 'down' ? step : 0;
+    context.phase = 'outcome_unknown'; await this.send(context, 'Input.dispatchMouseEvent', {type: 'mouseWheel', ...point, deltaX, deltaY});
+    await context.wait(sleep(300));     // let the page react (lazy rows load on scroll)
+  }
+  async screenshot(context, args) {
+    const before = await this.document(context); let clip;
+    if (args.ref !== undefined || Array.isArray(args.region)) {
+      const view = await this.viewport(context); let box;
+      if (args.ref !== undefined) {
+        const resolved = await this.reference(context, args.ref);
+        await this.send(context, 'DOM.scrollIntoViewIfNeeded', {backendNodeId: resolved.saved.backendId});
+        const quads = (await this.send(context, 'DOM.getContentQuads', {backendNodeId: resolved.saved.backendId})).quads ?? [];
+        const xs = quads.flatMap(q => [q[0], q[2], q[4], q[6]]), ys = quads.flatMap(q => [q[1], q[3], q[5], q[7]]);
+        if (!xs.length) fail('node_not_visible', 'The referenced node has no box to capture.');
+        const again = await this.viewport(context);
+        box = {x: Math.min(...xs) + again.pageX, y: Math.min(...ys) + again.pageY, width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys)};
+      } else {
+        const [x0, y0, x1, y1] = args.region.map(Number);
+        if (![x0, y0, x1, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) fail('invalid_arguments', 'region is [x0, y0, x1, y1] in CSS pixels of the visible viewport, with x1 > x0 and y1 > y0.');
+        box = {x: x0 + view.pageX, y: y0 + view.pageY, width: x1 - x0, height: y1 - y0};
+      }
+      if (!(box.width >= 1 && box.height >= 1)) fail('node_not_visible', 'Nothing to capture in that box.');
+      clip = {...box, scale: 1};
+    }
+    const image = await this.send(context, 'Page.captureScreenshot', {format: 'png', fromSurface: true, ...(clip ? {clip} : {})}), after = await this.document(context);
+    if (!equalDocument(before.stamp, after.stamp)) fail('document_changed', 'Document changed during the targeted screenshot.');
+    if (typeof image?.data !== 'string' || !image.data) fail('screenshot_unavailable', 'Page.captureScreenshot returned no PNG.');
+    return {tab: after.tab, image: {data: image.data, mimeType: 'image/png'}, ...(clip ? {clip} : {})};
+  }
+  async selectOption(context, args, resolved) {
+    if (typeof args.value !== 'string' || !args.value) fail('invalid_arguments', 'select requires value: the option value or its visible text.');
+    const group = 'faustus-select:' + context.session.id + ':' + context.tabId;
+    await this.verifyReference(context, resolved);
+    const remote = await this.send(context, 'DOM.resolveNode', {backendNodeId: resolved.saved.backendId, objectGroup: group});
+    if (!remote.object?.objectId) fail('stale_ref', 'The select has no live DOM object.');
+    try {
+      context.phase = 'outcome_unknown';
+      const reply = await this.send(context, 'Runtime.callFunctionOn', {objectId: remote.object.objectId, functionDeclaration: SELECT_OPTION, arguments: [{value: args.value}], returnByValue: true});
+      if (reply.exceptionDetails) fail('select_failed', reply.exceptionDetails.exception?.description || reply.exceptionDetails.text || 'Option not selected.');
+      return reply.result?.value;
+    } finally {
+      try { await this.chrome.debugger.sendCommand({tabId: context.tabId}, 'Runtime.releaseObjectGroup', {objectGroup: group}); } catch { /* the readback still runs */ }
+    }
   }
 
   async upload(context, args, resolved) {
@@ -317,18 +432,35 @@ export class BrowserController {
       const released = await context.wait(this.detachOwned(context.tabId), true); context.phase = 'action_confirmed'; return {tab, released};
     }
     await this.attach(context);
-    if (action === 'snapshot') return this.snapshot(context);
-    if (action === 'screenshot') {
-      const before = await this.document(context), image = await this.send(context, 'Page.captureScreenshot', {format: 'png', fromSurface: true}), after = await this.document(context);
-      if (!equalDocument(before.stamp, after.stamp)) fail('document_changed', 'Document changed during the targeted screenshot.');
-      if (typeof image?.data !== 'string' || !image.data) fail('screenshot_unavailable', 'Page.captureScreenshot returned no PNG.'); return {tab: after.tab, image: {data: image.data, mimeType: 'image/png'}};
-    }
+    const visible = args.view?.visible === true;
+    if (action === 'snapshot') return this.snapshot(context, {visible});
+    if (action === 'screenshot') return this.screenshot(context, args);
     let resolved;
-    if (action === 'click' || action === 'type' || action === 'upload' || action === 'download' || action === 'press' && args.ref !== undefined) resolved = await this.reference(context, args.ref);
-    let upload;
+    if (['click', 'type', 'upload', 'download', 'hover', 'select'].includes(action) || ['press', 'scroll'].includes(action) && args.ref !== undefined) resolved = await this.reference(context, args.ref);
+    let upload, selected;
     if (action === 'download') return this.downloadLink(context, args, resolved);
     if (action === 'click') {
       await this.clickReference(context, resolved);
+    } else if (action === 'hover') {
+      await this.clickReference(context, resolved, {hover: true});
+    } else if (action === 'scroll') {
+      await this.scroll(context, args, resolved);
+    } else if (action === 'select') {
+      selected = await this.selectOption(context, args, resolved);
+    } else if (action === 'wait') {
+      // Give a page time (a challenge page, a late list, an animation) and read it again: nothing is sent to the page.
+      const seconds = Math.max(0.2, Math.min(Number(args.seconds) || 2, 10));
+      await context.wait(sleep(seconds * 1000)); this.invalidate(context.tabId);
+    } else if (action === 'reload') {
+      const loader = await this.loaderOf(context); this.invalidate(context.tabId); context.phase = 'outcome_unknown';
+      await this.send(context, 'Page.reload', {ignoreCache: args.ignore_cache === true}); context.phase = 'action_confirmed';
+      await this.settleAfterNavigation(context, loader);
+    } else if (action === 'back' || action === 'forward') {
+      const history = await this.send(context, 'Page.getNavigationHistory'), index = history.currentIndex + (action === 'back' ? -1 : 1), entry = history.entries?.[index];
+      if (!entry) fail('no_history_entry', 'There is no page ' + (action === 'back' ? 'before' : 'after') + ' this one in the tab history.');
+      const loader = await this.loaderOf(context); this.invalidate(context.tabId); context.phase = 'outcome_unknown';
+      await this.send(context, 'Page.navigateToHistoryEntry', {entryId: entry.id}); context.phase = 'action_confirmed';
+      await this.settleAfterNavigation(context, loader);
     } else if (action === 'upload') {
       upload = await this.upload(context, args, resolved);
     } else if (action === 'type') {
@@ -344,21 +476,45 @@ export class BrowserController {
     } else if (action === 'navigate') {
       let url; try { url = new URL(args.url); } catch { fail('invalid_arguments', 'navigate requires an absolute http or https URL.'); }
       if (!['http:', 'https:'].includes(url.protocol)) fail('invalid_arguments', 'navigate only accepts http or https URLs.');
-      await this.document(context); this.invalidate(context.tabId); context.phase = 'outcome_unknown'; const ack = await this.send(context, 'Page.navigate', {url: url.href}); context.phase = 'action_confirmed';
+      const loader = (await this.document(context)).stamp.loader_id; this.invalidate(context.tabId); context.phase = 'outcome_unknown'; const ack = await this.send(context, 'Page.navigate', {url: url.href}); context.phase = 'action_confirmed';
       if (ack?.errorText) fail('navigation_failed', 'Page.navigate acknowledged failure: ' + ack.errorText);
+      await this.settleAfterNavigation(context, loader);
     } else fail('invalid_arguments', 'Unknown browser action.');
     context.phase = 'action_confirmed';
-    let snapshot; try { snapshot = await this.snapshot(context); } catch (error) { throw new BrowserCommandError('readback_failed', 'Browser acknowledged ' + action + ', but AX readback failed: ' + String(error)); }
-    context.phase = 'readback_complete'; return {tab: snapshot.tab, action, snapshot, ...(upload ? {upload} : {})};
+    let snapshot, lastError;
+    for (let attempt = 0; attempt < 3 && !snapshot; attempt++) {     // a page still finishing its scripts can change once more
+      try { snapshot = await this.snapshot(context, {visible}); } catch (error) { lastError = error; if (error?.code !== 'document_changed') break; await context.wait(sleep(500)); }
+    }
+    if (!snapshot) throw new BrowserCommandError('readback_failed', 'Browser acknowledged ' + action + ', but AX readback failed: ' + String(lastError));
+    context.phase = 'readback_complete'; return {tab: snapshot.tab, action, snapshot, ...(upload ? {upload} : {}), ...(selected ? {selected} : {})};
   }
 
   async run(args) {
     const session = this.session;
     if (!session) return {ok: false, error: {code: 'connection_lost', message: 'No ready relay connection.'}, phase: 'not_dispatched'};
-    if (!args || typeof args !== 'object' || !['tabs', 'snapshot', 'click', 'type', 'press', 'navigate', 'screenshot', 'release', 'upload', 'download'].includes(args.action)) return {ok: false, error: {code: 'invalid_arguments', message: 'Unknown browser action.'}, phase: 'not_dispatched'};
+    if (!args || typeof args !== 'object' || !ACTIONS.includes(args.action)) return {ok: false, error: {code: 'invalid_arguments', message: 'Unknown browser action.'}, phase: 'not_dispatched'};
     if (args.action === 'tabs') {
-      try { const tabs = await this.chrome.tabs.query({}); if (this.session !== session) fail('connection_lost', 'Connection changed during tabs query.'); return {ok: true, result: {tabs: tabs.map(tabInfo)}, phase: 'readback_complete'}; }
+      try { const tabs = await this.chrome.tabs.query({}); if (this.session !== session) fail('connection_lost', 'Connection changed during tabs query.'); return {ok: true, result: {tabs: tabs.map(tab => ({...tabInfo(tab), opened_by_faustus: this.created.has(tab.id)}))}, phase: 'readback_complete'}; }
       catch (error) { return {ok: false, error: {code: error.code ?? 'browser_command_failed', message: String(error.message ?? error)}, phase: 'not_dispatched'}; }
+    }
+    if (args.action === 'open_tab') {
+      // A new tab in the background (never activated): to read another page without touching the person's tabs.
+      let url; try { url = new URL(args.url); } catch { return {ok: false, error: {code: 'invalid_arguments', message: 'open_tab requires an absolute http or https URL.'}, phase: 'not_dispatched'}; }
+      if (!['http:', 'https:'].includes(url.protocol)) return {ok: false, error: {code: 'invalid_arguments', message: 'open_tab only accepts http or https URLs.'}, phase: 'not_dispatched'};
+      try {
+        const tab = await this.chrome.tabs.create({url: url.href, active: false}); this.created.add(tab.id);
+        return {ok: true, result: {tab: {...tabInfo(tab), opened_by_faustus: true}, note: 'Opened in the background. Take a snapshot of this tab_id once it has loaded; close it with close_tab when done.'}, phase: 'action_confirmed'};
+      } catch (error) { return {ok: false, error: {code: 'browser_command_failed', message: String(error.message ?? error)}, phase: 'outcome_unknown'}; }
+    }
+    if (args.action === 'close_tab') {
+      if (!this.created.has(args.tab_id)) return {ok: false, error: {code: 'not_opened_by_faustus', message: 'close_tab only closes tabs this extension opened with open_tab; the person\'s own tabs are never closed.'}, phase: 'not_dispatched'};
+      try { await this.detachOwned(args.tab_id).catch(() => {}); await this.chrome.tabs.remove(args.tab_id); this.created.delete(args.tab_id); return {ok: true, result: {closed: args.tab_id}, phase: 'action_confirmed'}; }
+      catch (error) { return {ok: false, error: {code: 'browser_command_failed', message: String(error.message ?? error)}, phase: 'outcome_unknown'}; }
+    }
+    if (args.action === 'reload_extension') {
+      // New extension code takes effect without anyone opening the extensions page. The relay reconnects by itself.
+      setTimeout(() => this.chrome.runtime.reload(), 200);
+      return {ok: true, result: {reloading: true, version: this.chrome.runtime.getManifest?.().version ?? ''}, phase: 'action_confirmed'};
     }
     if (!Number.isInteger(args.tab_id) || args.tab_id < 0) return {ok: false, error: {code: 'invalid_arguments', message: 'An explicit integer tab_id is required.'}, phase: 'not_dispatched'};
     const state = this.state(args.tab_id), lifetime = state.lifetime;

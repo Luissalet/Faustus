@@ -139,6 +139,21 @@ def create_server(relay: BrowserRelay) -> Server:
             "selection reports total, matches and next_offset; matched_roles diagnoses roles that eliminate all query matches. "
             "For split text use view:{query:'visibles',roles:['StaticText'],context:true}: context_nodes adds original "
             "direct parents and siblings, while nodes remains flat. No ancestry is invented for null refs. "
+            "To READ a page (a product list, prices, the state of buy buttons, an article) use view:{text:true}: one "
+            "call returns the page as reading lines in document order, controls as [role ref] label (disabled marked), "
+            "paged by offset/limit (400 lines) and filtered by query; prefer it over paging AX rows. "
+            "Look and move like a person, in the background: reload (waits for the new page), back/forward (tab history), "
+            "scroll {direction up|down|left|right, amount ticks, optional ref to turn the wheel over that element; a ref "
+            "alone brings it into view}, hover {ref} (menus, tooltips), select {ref, value: option value or visible text}, "
+            "screenshot with region [x0,y0,x1,y1] or ref to zoom on a part (see what the text does not say: images, "
+            "colours, a greyed button), open_tab {url} opens a page in a new background tab (read a product page without "
+            "touching the person's tab) and close_tab closes only tabs opened that way. tabs marks opened_by_faustus. "
+            "wait {seconds <= 10} gives a page time (a loading list, a check page) and reads it again. "
+            "Text view shows where links go (-> url), so a page can be opened with open_tab instead of clicking. "
+            "reload_extension makes the browser load new extension code; the relay reconnects by itself. "
+            "Mutations and navigations accept view too, so a reload can come back already as text. "
+            "view.visible keeps only what is on screen now (combine with text after a scroll) and returns viewport "
+            "{x, y, width, height, page_width, page_height}: y/page_height says how far down the page you are. "
             "An outcome_unknown must be observed before deciding any explicit retry; never replay it automatically."),
             inputSchema=SCHEMA, annotations=ToolAnnotations(readOnlyHint=False, idempotentHint=False))]
 
@@ -152,6 +167,8 @@ def create_server(relay: BrowserRelay) -> Server:
             return mcp_result(failure("invalid_arguments", str(exc)))
         detail = args.pop("detail", "compact")
         view = args.pop("view", None)
+        if isinstance(view, dict) and view.get("visible"):
+            args["view"] = {"visible": True}         # the extension measures the viewport only when asked
         try:
             inputs = upload_inputs(args["files"]) if args["action"] == "upload" else None
             if args["action"] == "download":
@@ -174,8 +191,8 @@ def create_server(relay: BrowserRelay) -> Server:
     return server
 
 
-async def main(port: int = 7016, timeout: float = 30):
-    relay = BrowserRelay(port=port, timeout=timeout)
+async def main(port: int = 7016, timeout: float = 30, peer_wait: float = 8):
+    relay = BrowserRelay(port=port, timeout=timeout, peer_wait=peer_wait)
     await relay.start()
     # Also permits tests to request port0 without reserving a racy candidate port.
     print(f"browser_relay_listening=127.0.0.1:{relay.port}", file=sys.stderr, flush=True)
@@ -192,9 +209,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=7016)
     parser.add_argument("--timeout", type=float, default=30)
+    parser.add_argument("--peer-wait", type=float, default=8,
+                        help="seconds a call waits for the extension to (re)connect before extension_unavailable")
     options = parser.parse_args()
     try:
-        asyncio.run(main(options.port, options.timeout))
+        asyncio.run(main(options.port, options.timeout, options.peer_wait))
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1)

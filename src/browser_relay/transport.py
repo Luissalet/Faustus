@@ -15,10 +15,13 @@ from .protocol import EXTENSION_ID, ORIGIN, READ_ACTIONS, failure, validate_argu
 
 
 class BrowserRelay:
-    def __init__(self, *, port: int = 7016, timeout: float = 30, hello_timeout: float = 5):
+    def __init__(self, *, port: int = 7016, timeout: float = 30, hello_timeout: float = 5, peer_wait: float = 0):
         self.port = port
         self.timeout = timeout
         self.hello_timeout = hello_timeout
+        # After a relay or browser restart the extension comes back on its own within seconds;
+        # a call made in that gap waits for it instead of failing at once. Nothing is sent meanwhile.
+        self.peer_wait = max(0.0, float(peer_wait))
         self._server = None
         self._peer = None
         self._ready = False
@@ -98,6 +101,11 @@ class BrowserRelay:
         except ValueError as exc:
             return failure("invalid_arguments", str(exc))
         peer = self._peer if self._ready else None
+        if peer is None and self.peer_wait > 0:
+            deadline = asyncio.get_running_loop().time() + self.peer_wait
+            while peer is None and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.2)
+                peer = self._peer if self._ready else None
         if peer is None:
             return failure("extension_unavailable", "Connect the browser session extension; no browser was launched")
         async with self._serial:

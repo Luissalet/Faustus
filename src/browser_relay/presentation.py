@@ -46,7 +46,7 @@ def compact_snapshot(snapshot: dict) -> dict:
         return False
 
     removed = set()
-    known = {"ref", "role", "name", "value", "properties", "ignored", "child_refs"}
+    known = {"ref", "role", "name", "value", "properties", "ignored", "child_refs", "in_view"}
     for node in addressable:
         empty_wrapper = (node.get("role") in {"none", "generic", "Ignored", ""}
                          and not node.get("name") and not node.get("value") and not node.get("properties")
@@ -116,6 +116,8 @@ def filtered_snapshot(snapshot: dict, view: dict) -> dict:
     query_matches = [node for node in nodes
                      if not query or any(query in str(node[key]).casefold()
                                          for key in ("name", "value") if node.get(key) is not None)]
+    if view.get("visible"):
+        query_matches = [node for node in query_matches if node.get("in_view") is not False]
     matches = [node for node in query_matches if roles is None or node.get("role") in roles]
     offset = int(view.get("offset", 0))
     end = offset + int(view["limit"]) if "limit" in view else len(matches)
@@ -137,12 +139,103 @@ def filtered_snapshot(snapshot: dict, view: dict) -> dict:
     return result
 
 
+TEXT_CONTROL_ROLES = {"button", "link", "checkbox", "radio", "switch", "textbox", "searchbox", "combobox", "listbox",
+                      "menuitem", "menuitemcheckbox", "menuitemradio", "option", "tab", "spinbutton", "slider"}
+TEXT_PLAIN_ROLES = {"StaticText", "InlineTextBox", "text"}
+TEXT_DEFAULT_LIMIT = 400
+
+
+def _reading_order(nodes: list[dict]) -> list[dict]:
+    """Document order. The extension lists nodes depth-first; when the list disagrees with the tree, walk the tree."""
+    by_ref = {node["ref"]: node for node in nodes if isinstance(node.get("ref"), str)}
+    children = {child for node in nodes for child in (node.get("child_refs") or []) if isinstance(child, str)}
+    walked, seen = [], set()
+    stack = [node["ref"] for node in reversed(nodes) if isinstance(node.get("ref"), str) and node["ref"] not in children]
+    while stack:
+        ref = stack.pop()
+        if ref in seen or ref not in by_ref:
+            continue
+        seen.add(ref)
+        walked.append(ref)
+        stack.extend(reversed([c for c in (by_ref[ref].get("child_refs") or []) if isinstance(c, str)]))
+    listed = [node["ref"] for node in nodes if isinstance(node.get("ref"), str)]
+    if walked == listed:
+        return nodes                                  # null-ref rows keep their place
+    return [by_ref[ref] for ref in walked] + [node for node in nodes if not isinstance(node.get("ref"), str)]
+
+
+def text_view(snapshot: dict, view: dict) -> dict:
+    """The page as reading lines: text in document order, one line per text, controls as ``[role ref] label``.
+
+    Built from the compact projection (no duplicated inline text, no empty wrappers), so a list of products reads as
+    name, price, button. ``query`` keeps only lines containing it (case-insensitive); ``offset``/``limit`` page the lines
+    (default limit 400). Refs are the snapshot's own, usable with click/type/press."""
+    compact = compact_snapshot(snapshot)
+    nodes = compact.get("nodes")
+    if not isinstance(nodes, list) or any(not isinstance(node, dict) for node in nodes):
+        return compact
+    lines: list[str] = []
+    last_label = ""
+    on_screen_only, off_screen = bool(view.get("visible")), 0
+    for node in _reading_order(nodes):
+        if node.get("ignored"):
+            continue
+        role = node.get("role")
+        name = " ".join(str(node.get("name") or "").split())
+        value = node.get("value")
+        value_text = " ".join(str(value).split()) if value not in (None, "", False) else ""
+        if role in TEXT_CONTROL_ROLES:
+            label = name or value_text
+            if not label:
+                continue
+            props = node.get("properties") or {}
+            flags = [flag for flag in ("disabled", "checked", "selected", "expanded") if props.get(flag) is True]
+            line = f"[{role} {node.get('ref')}] {label}"
+            if value_text and value_text != label:
+                line += f" = {value_text}"
+            if flags:
+                line += f" ({', '.join(flags)})"
+            url = props.get("url")
+            if role == "link" and isinstance(url, str) and url.startswith(("http://", "https://")):
+                line += f" -> {url}"                  # where it goes: open it with open_tab without clicking
+            last_label = label
+        elif role == "heading" and name:
+            line, last_label = "# " + name, name
+        elif role in TEXT_PLAIN_ROLES and name:
+            if name == last_label:
+                continue                              # the label of the control just written
+            line, last_label = name, name
+        else:
+            continue
+        if on_screen_only and node.get("in_view") is False:
+            off_screen += 1                           # above or below the viewport now
+            continue
+        if lines and lines[-1] == line:
+            continue
+        lines.append(line)
+    query = str(view.get("query", "")).casefold()
+    numbered = [(i, line) for i, line in enumerate(lines) if not query or query in line.casefold()]
+    offset = int(view.get("offset", 0))
+    limit = int(view.get("limit", TEXT_DEFAULT_LIMIT))
+    page = numbered[offset:offset + limit]
+    next_offset = offset + len(page)
+    result = {key: value for key, value in compact.items() if key != "nodes"}
+    result["text"] = "\n".join(line for _i, line in page)
+    result["selection"] = {"kind": "text", "total_lines": len(lines), "matches": len(numbered), "offset": offset,
+                           "next_offset": next_offset if next_offset < len(numbered) else None}
+    if on_screen_only:
+        result["selection"]["off_screen_lines"] = off_screen
+    return result
+
+
 def present_payload(payload: dict, detail: str, view: dict | None = None) -> dict:
     if not payload.get("ok") or not isinstance(payload.get("result"), dict):
         return payload
     if view is None and detail == "full":
         return payload
     def project(snapshot):
+        if view is not None and view.get("text"):
+            return text_view(snapshot, view)
         return filtered_snapshot(snapshot, view) if view is not None else compact_snapshot(snapshot)
 
     result = project(payload["result"])
