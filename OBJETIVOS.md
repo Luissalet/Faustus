@@ -2521,3 +2521,14 @@ Implementado en `src/recipe_learning.py`, `src/derivation_graph.py` y `src/deriv
 3. ~~Ejecutar de verdad una receta en un caso nuevo y comprobar la salida~~ — hecho (#2050): `recipe_learn action=execute` / `POST /api/recipes/{id}/execute`, ver FAUSTUS.md 03-11-2026 «Ejecución real de recetas».
 4. ~~Botón «Ejecutar de verdad» en la interfaz~~ — hecho: pantalla Recetas (`/recipes`) con ensayo en seco estructural y ejecución real, ver FAUSTUS.md 03-11-2026 «Pantalla Recetas».
 5. ~~Esperar trabajos asíncronos de otras herramientas~~ — hecho para `generate_image`/`image_job`, `fanout_run`, `research_podcast` y `trigger_research` (`src/job_waiters.py`); lo que no está en el registro sigue `queued`. Pendiente: añadir al registro cada herramienta nueva que devuelva un id y tenga consulta de estado.
+
+
+## browser_session: lo que aún hace un humano y Faustus no — 06-11-2026
+
+Base hecha y verificada en vivo (FAUSTUS.md 06-11, extensión 1.2.0): recarga/atrás/adelante que esperan al documento, scroll, hover, select, wait, captura de región, pestañas de fondo propias, vista de texto con enlaces y vista `visible` con viewport. Siguientes pasos, por orden de valor:
+
+1. Leer la consola y las peticiones de red de la pestaña (errores JS, respuestas JSON de la propia página) sin ejecutar código del llamante: `Runtime.consoleAPICalled`/`Network.responseReceived` acotados a la pestaña y al tiempo de la acción.
+2. Filtro «sólo controles» (`view.interactive`) para decidir dónde actuar sin leer todo el texto.
+3. Arrastrar (`drag {ref, to_ref | dx, dy}`) con la misma verificación de impacto que `click`.
+4. Que el modelo mire una captura cuando el texto no basta (botón gris sin texto, precio en imagen): comprobar si la ruta por defecto (DeepSeek por Prometheus) recibe las capturas como imagen y, si no, con qué modelo de visión se miran y cuánto cuesta.
+5. Prueba nativa del refresco de esquemas en mitad de un turno (reiniciar el relé con un esquema nuevo durante un turno largo); hoy está cubierta por pruebas unitarias y por la regla del bucle.
