@@ -1,4 +1,4 @@
-param([string]$Root = 'D:\LocalAI\ollaya', [switch]$Stop, [switch]$Warm)
+param([string]$Root = 'E:\Development\Tools\ollaya', [switch]$Stop, [switch]$Warm)
 $ErrorActionPreference = 'Stop'
 # The executable is the checksum-verified official v0.9.0 distribution.
 # No downloads, startup registration or replacement of the default helper.

@@ -1446,7 +1446,7 @@ GROUPS: list[dict[str, Any]] = [
             _list("model_server_restart_commands", "Restart commands",
                   "host:port=command for servers no launcher keeps running, comma-separated. The command "
                   "must stop and start the server itself.",
-                  placeholder="127.0.0.1:8081=powershell -File D:\\LocalAI\\Restart-LlamaServer.ps1"),
+                  placeholder="127.0.0.1:8081=powershell -File E:\\Development\\Tools\\llama.cpp\\Restart-LlamaServer.ps1"),
             _int("model_server_heal_timeout_s", "Wait for the restarted server (seconds)",
                  "How long a big model may take to load again before the restart counts as failed.",
                  30, 3600),

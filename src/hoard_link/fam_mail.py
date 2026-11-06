@@ -219,7 +219,7 @@ STATUS_TTL_S = 300.0
 FAUSTUS_ENV = ("FAUSTUS_DIR", "HOARD_FAUSTUS_DIR", "HOARD_HUB_FAUSTUS_DIR")
 FAUSTUS_PYTHON_ENV = ("FAUSTUS_PYTHON", "HOARD_FAUSTUS_PYTHON", "HOARD_HUB_FAUSTUS_PYTHON")
 PYTHON_CANDIDATES = ("venv/Scripts/python.exe", ".venv/Scripts/python.exe", "venv/bin/python", ".venv/bin/python")
-COMMON_FAUSTUS_PATHS = (r"D:\LocalAI\faustus", r"C:\LocalAI\faustus", "~/LocalAI/faustus", "~/faustus")
+COMMON_FAUSTUS_PATHS = (r"E:\Development\IA\Faustus", r"C:\LocalAI\faustus", "~/LocalAI/faustus", "~/faustus")
 _hub_hint: dict[str, Any] = {"at": 0.0, "key": "", "dir": ""}
 
 
@@ -262,7 +262,7 @@ def faustus_dir(setting: Any = None, *, ask_hub: bool = True, extra: Iterable[An
     1. ``setting`` (the app's own setting; a path or a callable returning one),
     2. the environment: ``FAUSTUS_DIR``, ``HOARD_FAUSTUS_DIR``, ``HOARD_HUB_FAUSTUS_DIR``,
     3. a ``faustus`` folder next to this package, the app that vendors it, or any folder above (up to five levels),
-    4. the usual places: ``D:\\LocalAI\\faustus``, ``C:\\LocalAI\\faustus``, ``~/LocalAI/faustus``, ``~/faustus``, then ``extra``,
+    4. the usual places: ``E:\\Development\\IA\\Faustus``, ``C:\\LocalAI\\faustus``, ``~/LocalAI/faustus``, ``~/faustus``, then ``extra``,
     5. what the hub's mail gateway says it uses (``ask_hub``; the hub itself passes False).
     """
     try:

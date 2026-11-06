@@ -16,9 +16,9 @@ Machine-wide and shared by the whole family:
       "ollama": {"exe": null},
       "commands": [
         {"id": "llamacpp", "label": "llama.cpp",
-         "argv": ["powershell", "-NoProfile", "-File", "D:/LocalAI/Start-LlamaServer.ps1"],
-         "stop_argv": ["powershell", "-NoProfile", "-File", "D:/LocalAI/Stop-LlamaServer.ps1"],
-         "cwd": "D:/LocalAI", "health": "http://127.0.0.1:8081/health",
+         "argv": ["powershell", "-NoProfile", "-File", "E:/Development/Tools/llama.cpp/Start-LlamaServer.ps1"],
+         "stop_argv": ["powershell", "-NoProfile", "-File", "E:/Development/Tools/llama.cpp/Stop-LlamaServer.ps1"],
+         "cwd": "E:/Development/Tools/llama.cpp", "health": "http://127.0.0.1:8081/health",
          "capabilities": ["llm", "vision"]}
       ]
     }

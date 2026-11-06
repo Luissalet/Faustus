@@ -28,7 +28,7 @@ What it does, for a loopback endpoint only:
      working directory and environment, preserving the live model and flags;
    * a managed engine (Settings > engines): stop and start it;
    * a command set for that host:port in ``model_server_restart_commands``
-     (``"127.0.0.1:8081=powershell -File D:\\LocalAI\\Restart-LlamaServer.ps1"``).
+     (``"127.0.0.1:8081=powershell -File E:\\Development\\Tools\\llama.cpp\\Restart-LlamaServer.ps1"``).
    A server with none of these is left alone and the result says why.
 3. Wait for the port, ``/health`` and a correct generated answer again.
 

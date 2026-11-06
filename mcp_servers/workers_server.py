@@ -9,8 +9,8 @@ tokens go to planning and review:
     {
       "mcpServers": {
         "faustus-workers": {
-          "command": "D:/LocalAI/odysseus/venv/Scripts/python.exe",
-          "args": ["D:/LocalAI/odysseus/mcp_servers/workers_server.py"],
+          "command": "E:/Development/IA/Faustus/venv/Scripts/python.exe",
+          "args": ["E:/Development/IA/Faustus/mcp_servers/workers_server.py"],
           "env": {"FAUSTUS_URL": "http://127.0.0.1:7000",
                   "FAUSTUS_API_TOKEN": "ody_...",      # Settings → API tokens → profile "fable_workers"
                   "FAUSTUS_MCP_FORMAT": "toon"}        # toon (default) | text
