@@ -34,6 +34,16 @@ runtime support remains pending. It shares the operator's profile
 and does not launch another browser or control the desktop.
 [Setup and current limits](src/browser_relay/README.md).
 
+Since extension 1.2.0 the agent reads and moves through a real tab the way a
+person does, in the background: reload/back/forward that wait for the new page,
+scroll, hover, select, wait, region screenshots, background tabs it opens and
+closes itself, and `view: {text: true}` reading lines with link targets.
+`view: {visible: true}` keeps only what is on screen and reports where on the
+page the viewport is. The extension reconnects within seconds after a relay
+restart, a call waits briefly for it, and a server restarted mid-turn is
+announced with its live schema from the next step. Verified in a real agent
+turn on a live shop list ([details](browser-extension/README.md)).
+
 Turn completion can reconcile completed progress from recent operations and
 replace intermediate drafts with the final revision. Status notes do not
 borrow older work to close new steps; references resolve operational tool

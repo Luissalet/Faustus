@@ -1821,6 +1821,47 @@ def _local_mcp_schemas(mcp_schemas, schema_tools, user_text):
     if any(keyword in (user_text or "").lower() for keyword in _MCP_KEYWORDS):
         return mcp_schemas
     return []
+
+
+def _refresh_live_mcp_schemas(mcp_schemas, manager, disabled_map=None):
+    """The offered MCP schemas, each swapped for its live definition when its server changed the
+    contract mid-turn (a restarted server with new parameters).
+
+    Each step announces what it sends and a call is refused when the live contract differs from
+    the announced one. Without this the turn kept announcing the old schema, so every later call
+    to the restarted tool was refused until the next turn. Same comparison as the step snapshot:
+    semantic hash, descriptions apart, the loop's own `security_risk` parameter apart. Tools that
+    vanished are left as they are: the call gate revokes them."""
+    if not mcp_schemas or manager is None:
+        return mcp_schemas
+    try:
+        from src.step_snapshot import _without_loop_params
+        from src.tool_schema_receipts import definition_hashes
+        live = {(schema.get("function") or {}).get("name"): schema
+                for schema in manager.get_all_openai_schemas(disabled_map or {})}
+    except Exception:  # noqa: BLE001 - an unreadable catalogue keeps the announced schemas
+        logger.debug("[mcp-refresh] live catalogue unavailable", exc_info=True)
+        return mcp_schemas
+    refreshed, changed = [], False
+    for schema in mcp_schemas:
+        offered = schema.get("function") if isinstance(schema, dict) else None
+        fresh = live.get(offered.get("name")) if isinstance(offered, dict) else None
+        if fresh is None:
+            refreshed.append(schema)
+            continue
+        try:
+            current = _without_loop_params(offered, fresh["function"]) or offered
+            differs = definition_hashes(current)[1] != definition_hashes(dict(fresh["function"]))[1]
+        except Exception:  # noqa: BLE001
+            differs = False
+        if differs:
+            logger.info("[mcp-refresh] %s changed its contract mid-turn; the next step announces the live one",
+                        offered.get("name"))
+            changed = True
+        refreshed.append(fresh if differs else schema)
+    return refreshed if changed else mcp_schemas
+
+
 _ADMIN_SCHEMA_NAMES = frozenset([
     "manage_session", "manage_skills", "manage_tasks",
     "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens",
@@ -12168,6 +12209,11 @@ async def _stream_agent_loop_body(
         # MCP descriptions and fenced tool instructions remain in the prompt.
         if route_state.get("text_only_transport"):
             return []
+        # A server restarted mid-turn with a new contract: announce the live
+        # schema from this step on, or every call to it stays refused.
+        if route_state["mcp_schemas"]:
+            route_state["mcp_schemas"] = _refresh_live_mcp_schemas(
+                route_state["mcp_schemas"], mcp_mgr, _mcp_disabled_map)
         route_mcp_schemas = route_state["mcp_schemas"]
         route_relevant_tools = route_state["relevant_tools"]
         route_schema_tools = route_state.get("schema_tools")

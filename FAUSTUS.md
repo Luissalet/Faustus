@@ -1,5 +1,13 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Navegar la pestaña real como una persona — browser_session 1.2.0 (2026-11-06)
+
+browser_session mira y se mueve en segundo plano, siempre sobre una pestaña explícita: `reload`/`back`/`forward`/`navigate` esperan al documento nuevo; `scroll` (dirección y ticks, o un ref), `hover`, `select`, `wait` (≤ 10 s, sin tocar la página); `screenshot` de una región o de un ref; `open_tab` en segundo plano y `close_tab` sólo de las pestañas que abrió; `reload_extension`. `view: {text: true}` devuelve la página como líneas de lectura con `[rol ref] etiqueta`, marcas de deshabilitado y `-> url` en los enlaces; `view: {visible: true}` deja sólo lo que está en pantalla y devuelve `viewport` (y, alto, alto de página) y `off_screen_lines`.
+
+Reconexión: la extensión reintenta a 1, 2, 5 y 10 s; el relé espera hasta 8 s (`--peer-wait`) a que vuelva antes de `extension_unavailable`. En el mismo turno, un servidor MCP reiniciado con contrato nuevo se anuncia con su esquema vivo desde el paso siguiente (`_refresh_live_mcp_schemas` en el bucle), así que sus llamadas ya no quedan rechazadas hasta el próximo turno.
+
+Verificado en Brave con un turno real de Faustus sobre una lista de una tienda: recarga leída en 2 llamadas (antes 31), enlaces, `wait`, `scroll` abajo/arriba con `visible` (80 líneas en pantalla y 326 fuera en y=720), pestaña de fondo, captura de región y cierre. Hermes usa esta mirada para contrastar sus lecturas de ventana abierta. 49 pruebas de extensión, 102 del relé y las del refresco de esquemas pasan.
+
 ## Archivos en la sesión real del navegador — preparación #1856
 
 La ampliación en revisión de browser_session añade upload por ref/selector de archivo de la pestaña elegida y download del enlace observado, incluidos Blob. El backend devuelve archivo local nuevo, bytes/SHA y recibo completo, sin Base64 en la respuesta al modelo. Las ocho acciones anteriores, identidad/permisos de extensión y no replay se conservan. Sólo download usa JavaScript fijo para leer el recurso; no hay evaluación libre ni acceso a callbacks privados de la aplicación. La selección no demuestra importación; descargas efímeras de botón/POST y los errores reales de fetch no se ocultan.
