@@ -1,5 +1,9 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Correr en una Spark con el PC apagado (2026-11-08)
+
+El Hoard Hub puede llevar Faustus, Hermes y Prometheus a una DGX Spark y traerlos de vuelta (**Ejecutar en: PC | Spark3**, en la tarjeta de Faustus de Inicio). Allí Faustus corre como servicio de usuario de systemd (`server_runtime.py serve` en el 7000, límite de 6 GB), con los mismos datos (usuarios, chats, proyectos, cuentas de correo cifradas con `data/.app_key`), y se publica por HTTPS en el nombre Tailscale de la Spark. Mientras está fuera, `server_runtime.py start` en el PC se niega a arrancar (`placed_elsewhere()` lee `data/runtime/placement.json`, que pone y quita el Hub), así que nunca hay dos Faustus sobre la misma información. Quedan en pausa mientras tanto el control del navegador real y del escritorio de Windows, los modelos de Ollama del PC y los servidores MCP que sólo existen en Windows; los endpoints de las Sparks siguen disponibles. Detalle del traslado en el README del Hoard Hub.
+
 ## Navegar la pestaña real como una persona — browser_session 1.2.0 (2026-11-06)
 
 browser_session mira y se mueve en segundo plano, siempre sobre una pestaña explícita: `reload`/`back`/`forward`/`navigate` esperan al documento nuevo; `scroll` (dirección y ticks, o un ref), `hover`, `select`, `wait` (≤ 10 s, sin tocar la página); `screenshot` de una región o de un ref; `open_tab` en segundo plano y `close_tab` sólo de las pestañas que abrió; `reload_extension`. `view: {text: true}` devuelve la página como líneas de lectura con `[rol ref] etiqueta`, marcas de deshabilitado y `-> url` en los enlaces; `view: {visible: true}` deja sólo lo que está en pantalla y devuelve `viewport` (y, alto, alto de página) y `off_screen_lines`.

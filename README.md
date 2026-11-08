@@ -138,6 +138,10 @@ foreground preemption policy remains opt-in; explicit task Stop stays available.
 
 **Plugin marketplace:** in Connectors, download Hoards with one button or link existing folders. Required HoardLink downloads first when missing. Faustus ships the catalogue; source checkouts live in `plugins/<id>/repository/`, outside Git. Watch and Book remain independent. [Collaborator setup and cloning](docs/api/plugin-marketplace.md).
 
+## Running on a Spark with the PC off (8 November 2026)
+
+The Hoard Hub can move Faustus, together with Hermes and Prometheus, to a DGX Spark and back (**Run on: PC | Spark**, on the Home Faustus tile). There Faustus runs as a systemd user service on port 7000 with the same data (accounts, chats, projects, mail accounts) and is published over HTTPS on the Spark's Tailscale name, so phone and laptop keep using it with the PC switched off. While it lives on the Spark, `server_runtime.py start` on the PC refuses to start a second copy (`data/runtime/placement.json`). Paused meanwhile: control of the real browser and the Windows desktop, the PC's Ollama models and Windows-only MCP servers. Verified: a chat answered by a Spark model through the tailnet address.
+
 ## Sparks verification (20 October 2026)
 
 The active backend includes the reviewed single-user conversation ownership fix:

@@ -486,7 +486,24 @@ def stop_all():
     }
 
 
+def placed_elsewhere():
+    """Where the Hoard Hub moved this Faustus (``data/runtime/placement.json``), or None while it belongs here.
+
+    The Hub writes it when Faustus, Hermes and Prometheus move to a Spark so the PC can be switched off, and removes it
+    when they come back: until then a second Faustus here would work on a stale copy of the same data."""
+    try:
+        where=json.loads((RUNTIME / "placement.json").read_text(encoding="utf-8"))
+    except (OSError,ValueError):
+        return None
+    return where if isinstance(where,dict) and where.get("location") not in (None,"","pc") else None
+
+
 def start(port=7000,owner="web"):
+    where=placed_elsewhere()
+    if where:
+        url=(where.get("urls") or {}).get("faustus") or ""
+        raise ValueError(f"Faustus is running on {where.get('node') or 'a Spark'}{' (' + url + ')' if url else ''}; "
+                         "bring it back from the Hoard Hub (Run on: PC) before starting it here.")
     with launch_lock():
         record=read_record()
         if owned_process(record) and record.get("port")==port and _unreachable_server(record,port):
