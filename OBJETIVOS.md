@@ -1,5 +1,15 @@
 # Objetivos acordados
 
+## Ejecutar en PC o Spark y escritorio remoto — 09-11-2026
+
+Hecho y verificado (ida y vuelta completas, avisos por correo desde la Spark, escritorio remoto en las cuatro Sparks). Lo siguiente:
+
+- **Elegir la Spark de destino** desde el Hub (hoy Spark3 fija en `placement.json`), comprobando memoria libre y que no sea la que sirve el modelo principal.
+- **Traslado más rápido por Wi-Fi:** el primer traslado de Faustus (4,5 GB) va a 5-8 MB/s porque la tubería stdin de ssh en Windows limita; probar paramiko dentro del Hub o comprimir (zstd) los ficheros nuevos. Los siguientes ya van por bloques y tardan 1-2 minutos.
+- **Push web de Faustus en la Spark:** las claves VAPID viajan con los datos; probar un push real al móvil desde la Spark.
+- **Escritorio remoto de Prometheus:** que la pantalla virtual se adapte al tamaño de la ventana (hoy «Ajustar» solo escala la vista) y portapapeles de imágenes.
+- **Hermes en la Spark:** una alternativa a «Mi ventana abierta» que no dependa del navegador de Windows y no evada nada (por ejemplo, avisos oficiales de stock de la tienda por correo).
+
 ## Ideas y ajustes que estaban en PENDIENTES — 04-11-2026
 
 No bloquean nada ni esperan una respuesta concreta de Luis; salieron de PENDIENTES en el repaso del 04-11.
