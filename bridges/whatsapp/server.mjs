@@ -73,7 +73,10 @@ const MESSAGES_FILE = join(DATA_DIR, "messages.jsonl");
 const CONTACTS_FILE = join(DATA_DIR, "contacts.json");
 
 // ---------------------------------------------------------------- store ---
-const state = { status: "starting", qr: null, me: null, lastError: null, connectedAt: null };
+const state = { status: "starting", qr: null, me: null, lastError: null, connectedAt: null,
+  // Messages WhatsApp delivered that this session cannot decrypt (broken keys: the same session ran in two places,
+  // or the link went stale). A growing count with nothing readable means the link must be paired again.
+  undecryptable: { count: 0, lastAt: null, chats: {} }, lastInboundAt: null };
 // What the phone is still sending after a (re)connection, so the screen can show
 // progress instead of a silent, stale chat list. `pending` turns false when
 // WhatsApp says the offline backlog is delivered; history batches carry a percentage.
@@ -311,6 +314,12 @@ async function fetchMedia(msg, m) {
 function ingest(msg, { unread = false } = {}) {
   const key = msg.key || {};
   if (!key.id || !key.remoteJid || key.remoteJid === "status@broadcast") return null;
+  if (msg.messageStubType === proto.WebMessageInfo.StubType.CIPHERTEXT) {
+    // Not a row: there is no text to show, and storing it would hide the message when a resend arrives.
+    const u = state.undecryptable; u.count++; u.lastAt = Date.now();
+    const c = canon(key.remoteJid); u.chats[c] = (u.chats[c] || 0) + 1;
+    return null;
+  }
   rememberRaw(msg); // keep the raw stanza even on a dedup hit — refreshes what quote/forward/react/delete/edit can see
   if (seenIds.has(key.id)) return null;
   const [text, kind] = textOf(msg);
@@ -320,6 +329,10 @@ function ingest(msg, { unread = false } = {}) {
   if (key.senderPn && !key.fromMe) learnLid(key.participant || key.remoteJid, key.senderPn);
   if (key.participantPn && key.participant) learnLid(key.participant, key.participantPn);
   if (key.senderLid && !isLid(key.remoteJid) && !key.fromMe) learnLid(key.senderLid, key.remoteJid);
+  // Newer library: the other identity of the chat / sender travels as *Alt.
+  if (key.remoteJidAlt) { if (isLid(key.remoteJid)) learnLid(key.remoteJid, key.remoteJidAlt); else if (isLid(key.remoteJidAlt)) learnLid(key.remoteJidAlt, key.remoteJid); }
+  if (key.participantAlt && key.participant) { if (isLid(key.participant)) learnLid(key.participant, key.participantAlt); else if (isLid(key.participantAlt)) learnLid(key.participantAlt, key.participant); }
+  if (!key.fromMe) state.lastInboundAt = Date.now();
   const chat = canon(key.remoteJid);
   const from = key.fromMe ? (state.me?.jid || "me") : canon(key.participant || key.remoteJid);
   const m = {

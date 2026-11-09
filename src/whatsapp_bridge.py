@@ -137,12 +137,59 @@ def _write_record(rec: Dict[str, Any]) -> None:
 # lifecycle
 # ---------------------------------------------------------------------------
 
+def _wanted_library() -> str:
+    """The WhatsApp library version package.json asks for ("" when unreadable)."""
+    try:
+        with open(os.path.join(bridge_dir(), "package.json"), encoding="utf-8") as fh:
+            return str((json.load(fh).get("dependencies") or {}).get("@whiskeysockets/baileys") or "")
+    except (OSError, ValueError):
+        return ""
+
+
+def _installed_library() -> str:
+    try:
+        with open(os.path.join(bridge_dir(), "node_modules", "@whiskeysockets", "baileys", "package.json"), encoding="utf-8") as fh:
+            return str(json.load(fh).get("version") or "")
+    except (OSError, ValueError):
+        return ""
+
+
 def installed() -> bool:
-    return os.path.isdir(os.path.join(bridge_dir(), "node_modules", "@whiskeysockets", "baileys"))
+    """Dependencies present AND at the version package.json pins (a pin bump reinstalls on the next start)."""
+    have = _installed_library()
+    if not have:
+        return False
+    want = _wanted_library().lstrip("^~=")
+    return not want or have == want
+
+
+def _node_candidates() -> List[str]:
+    home = os.path.expanduser("~")
+    return [os.environ.get("FAUSTUS_NODE", ""), r"C:\Program Files\nodejs\node.exe",
+            # where the Hoard Hub installs Node when Faustus runs on a Spark (no system Node there)
+            os.path.join(home, "faustus-stack", "node", "bin", "node"), "/usr/local/bin/node", "/usr/bin/node"]
 
 
 def node_path() -> Optional[str]:
-    return shutil.which("node") or (r"C:\Program Files\nodejs\node.exe" if os.path.exists(r"C:\Program Files\nodejs\node.exe") else None)
+    found = shutil.which("node")
+    if found:
+        return found
+    for cand in _node_candidates():
+        if cand and os.path.isfile(cand):
+            return cand
+    return None
+
+
+def _npm_path() -> Optional[str]:
+    found = shutil.which("npm") or shutil.which("npm.cmd")
+    if found:
+        return found
+    node = node_path()
+    if node:
+        sibling = os.path.join(os.path.dirname(node), "npm.cmd" if os.name == "nt" else "npm")
+        if os.path.isfile(sibling):
+            return sibling
+    return None
 
 
 def install(timeout_s: float = 240.0) -> Dict[str, Any]:
@@ -150,12 +197,16 @@ def install(timeout_s: float = 240.0) -> Dict[str, Any]:
     with _INSTALL_LOCK:
         if installed():
             return {"ok": True, "already": True}
-        npm = shutil.which("npm") or shutil.which("npm.cmd")
+        npm = _npm_path()
         if not npm:
             return {"ok": False, "error": "npm not found on PATH"}
+        env = dict(os.environ)
+        node = node_path()
+        if node:   # npm's own launcher looks for `node` on PATH (a Node unpacked in the user's folder is not there)
+            env["PATH"] = os.path.dirname(node) + os.pathsep + env.get("PATH", "")
         try:
             proc = subprocess.run([npm, "install", "--omit=dev", "--no-audit", "--no-fund"], cwd=bridge_dir(),
-                                  capture_output=True, text=True, timeout=timeout_s, shell=False)
+                                  capture_output=True, text=True, timeout=timeout_s, shell=False, env=env)
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
         ok = proc.returncode == 0 and installed()
@@ -203,6 +254,33 @@ def start(*, owner: str = "") -> Dict[str, Any]:
         ready = poll_readiness(lambda: probe(1.5) is not None, timeout_s=20.0, interval_s=0.5)
         return {"started": True, "pid": result.pid, "ready": ready, "log_path": log_path,
                 "status": probe() if ready else None}
+
+
+def paired() -> bool:
+    """A WhatsApp session is stored here (the QR was scanned on this machine at some point)."""
+    return os.path.isfile(os.path.join(data_dir(), "auth", "creds.json"))
+
+
+def _wanted_path() -> str:
+    return os.path.join(data_dir(), "keep.json")
+
+
+def wanted() -> bool:
+    """Whether the person wants the bridge kept running (default yes once paired). Pressing Stop says no;
+    Start says yes again."""
+    try:
+        with open(_wanted_path(), encoding="utf-8") as fh:
+            return bool(json.load(fh).get("wanted", True))
+    except (OSError, ValueError):
+        return True
+
+
+def set_wanted(value: bool) -> None:
+    try:
+        with open(_wanted_path(), "w", encoding="utf-8") as fh:
+            json.dump({"wanted": bool(value), "at": time.time()}, fh)
+    except OSError:
+        pass
 
 
 def stop() -> Dict[str, Any]:
@@ -349,13 +427,40 @@ def _register_reconcilers() -> None:
 _register_reconcilers()
 
 
+def health(st: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Whether the link is usable, in words a screen can show. ``needs_pairing`` is the one case only the person can fix:
+    WhatsApp keeps delivering messages this session cannot decrypt (its keys broke: the same session ran in two places)
+    and nothing readable has come in since."""
+    if not st:
+        return {"ok": False, "state": "stopped", "needs_pairing": False}
+    if st.get("status") in ("qr", "logged_out"):
+        return {"ok": False, "state": "needs_pairing", "needs_pairing": True}
+    und = st.get("undecryptable") or {}
+    count = int(und.get("count") or 0)
+    last_bad = und.get("lastAt") or 0
+    last_good = st.get("lastInboundAt") or 0
+    if count >= 5 and last_bad and last_bad > last_good:
+        return {"ok": False, "state": "broken_keys", "needs_pairing": True, "undecryptable": count}
+    return {"ok": st.get("status") == "connected", "state": st.get("status") or "unknown", "needs_pairing": False}
+
+
 def status() -> Dict[str, Any]:
     st = probe()
     if st is None:
-        return {"status": "stopped", "installed": installed(), "node": bool(node_path()), "port": port()}
-    st["installed"] = True
-    st["port"] = port()
-    return st
+        out = {"status": "stopped", "installed": installed(), "node": bool(node_path()), "port": port()}
+    else:
+        out = st
+        out["installed"] = True
+        out["port"] = port()
+    out["paired"] = paired()
+    out["keep_running"] = wanted()
+    out["health"] = health(st)
+    try:
+        from src import whatsapp_keeper
+        out["keeper"] = dict(whatsapp_keeper.last)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def chats(limit: int = 50) -> List[Dict[str, Any]]:

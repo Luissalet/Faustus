@@ -2964,6 +2964,10 @@ async def _startup_event():
     from src.sparks import sync_loop as _sparks_sync_loop
     _supervisor.spawn(_sparks_sync_loop(), name="sparks-sync")
 
+    # WhatsApp bridge kept alive where this Faustus runs (src/whatsapp_keeper.py).
+    from src.whatsapp_keeper import keep_loop as _whatsapp_keep_loop
+    _supervisor.spawn(_whatsapp_keep_loop(), name="whatsapp-keeper")
+
     # A snapshot for diagnostics only. The supervisor owns these; nothing may
     # rely on this list to keep a task alive or to find it at shutdown.
     app.state._startup_tasks = _supervisor.live()

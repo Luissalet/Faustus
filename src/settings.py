@@ -969,6 +969,9 @@ DEFAULT_SETTINGS = {
     "whatsapp_commitments_enabled": False,
     "whatsapp_commitments_all_chats": False,
     "whatsapp_commitments_chats": [],
+    # Keep the paired WhatsApp bridge running where this Faustus runs: started after a reboot, a crash or a move to a
+    # Spark, never on a copy the Hoard Hub moved elsewhere (src/whatsapp_keeper.py). Pressing Stop still stops it.
+    "whatsapp_keep_running": True,
     # Gibberish-script guard (src.llm_core._DegenerateStreamGuard): over a
     # sliding window of `local_gibberish_window_chars` streamed characters,
     # abort as degenerate when more than this fraction of alphabetic

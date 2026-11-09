@@ -111,11 +111,13 @@ def setup_whatsapp_routes() -> APIRouter:
     @router.post("/start")
     async def start(request: Request) -> Dict[str, Any]:
         require_human(request)
+        wa.set_wanted(True)    # kept running from now on (src/whatsapp_keeper.py)
         return await asyncio.to_thread(wa.start, owner=_owner(request))
 
     @router.post("/stop")
     async def stop(request: Request) -> Dict[str, Any]:
         require_human(request)
+        wa.set_wanted(False)   # a deliberate stop: the keeper leaves it stopped until Start
         return await asyncio.to_thread(wa.stop)
 
     @router.post("/logout")
