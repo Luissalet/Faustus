@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "id": "seurat",
+  "name": "Seurat's Hoard",
+  "purpose": "Voxel studio: draw voxel models in a 3D editor and turn pictures (sprites, pixel art, drawings) into voxel models, instantly (inflate, extrude, front + side silhouettes) or with the language model (DeepSeek on the Sparks by default), which sees the pictures, builds the model with operations and reviews its own renders. Exports MagicaVoxel .vox, GLB, STL for printing and PNG renders / isometric sprites. Assistants can create, edit, look at and export models.",
+  "capabilities": [
+    "voxel-editor",
+    "image-to-voxel",
+    "sprite-to-voxel",
+    "voxel-generation",
+    "vox-export",
+    "glb-export",
+    "stl-export",
+    "sprite-render",
+    "model-look"
+  ],
+  "x-family": {
+    "copilot": true
+  },
+  "placeholders": [
+    "SEURAT_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5250",
+    "TOKEN_FILE": "{SEURAT_DIR}/data/mcp-token",
+    "PYTHON": "{SEURAT_DIR}/.venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5250",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "seurats-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "seurats-hoard"
+      ],
+      "title": [
+        "seurat's hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "seurat_hoard",
+        "--no-browser"
+      ],
+      "cwd": "{SEURAT_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "SEURAT_PORT": "5250"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 40
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{SEURAT_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "SEURAT_URL": "{APP_URL}",
+      "SEURAT_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "SEURAT_BRIDGE_AUTOSTART",
+      "SEURAT_DATA_DIR"
+    ]
+  },
+  "notes": "Axes: x right, y up, z towards the viewer; c is a palette index (0 erases). reference_add then generate_start (poll generate_status) for a model-made voxel version; build_from_image for an instant one. model_ops edits with operations (layer copies pixel rows onto the front, side or top plane). model_look returns a picture; model_export writes .vox, .glb, .stl (millimetres) or PNG/sprites and returns the path. Every change keeps the previous content as a version."
+}
