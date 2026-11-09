@@ -281,6 +281,7 @@ function textOf(msg) {
 const MEDIA_DIR = join(DATA_DIR, "media");
 const MEDIA_MAX_BYTES = Number(process.env.WA_MEDIA_MAX_BYTES || 25 * 1024 * 1024);
 const MEDIA_EXT = { audio: "ogg", image: "jpg", video: "mp4", sticker: "webp", document: "" };
+const MEDIA_KINDS = new Set(Object.keys(MEDIA_EXT));
 mkdirSync(MEDIA_DIR, { recursive: true });
 
 function mediaNode(msg) {
@@ -321,7 +322,12 @@ function ingest(msg, { unread = false } = {}) {
     return null;
   }
   rememberRaw(msg); // keep the raw stanza even on a dedup hit — refreshes what quote/forward/react/delete/edit can see
-  if (seenIds.has(key.id)) return null;
+  if (seenIds.has(key.id)) {
+    // A message seen again (history on demand) can bring the file a first download missed.
+    const row = messages.find((x) => x.id === key.id);
+    if (row && !row.media && MEDIA_KINDS.has(row.kind) && mediaNode(msg)) void fetchMedia(msg, row);
+    return null;
+  }
   const [text, kind] = textOf(msg);
   if (kind === "protocol") return null;
   if (kind === "reaction") return null;   // applied to the target row by messages.reaction, never a row of its own
@@ -599,14 +605,29 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/history") {
       // Ask the phone for older messages of one chat; they land through messaging-history.set.
       if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
-      const { chat, count } = await readBody(req);
+      const { chat, count, before_id, missing_media } = await readBody(req);
       const r = resolveTarget(chat);
       if (r.error) return json(res, 404, r);
       if (r.ambiguous) return json(res, 409, r);
-      const oldest = messages.find((m) => m.chat === r.jid && m.key);
-      if (!oldest) return json(res, 404, { error: "no message of that chat to anchor the request" });
-      const id = await sock.fetchMessageHistory(Math.min(Number(count || 50), 500), oldest.key, oldest.ts * 1000);
-      return json(res, 200, { ok: true, requested: id, before_ts: oldest.ts, chat: r.jid });
+      // Anchor: a given message, or — to recover pictures whose download failed — the first message after the newest
+      // media row without a file (the phone sends what came before it again, and ingest downloads the missing files).
+      let anchor = null;
+      if (missing_media) {
+        const rows = messages.filter((m) => m.chat === r.jid && m.key);
+        const lacking = rows.filter((m) => MEDIA_KINDS.has(m.kind) && !m.media && !m.deleted);
+        if (!lacking.length) return json(res, 200, { ok: true, missing: 0, chat: r.jid });
+        const newest = lacking.reduce((a, b) => (b.ts > a.ts ? b : a));
+        anchor = rows.filter((m) => m.ts > newest.ts).sort((a, b) => a.ts - b.ts)[0] || null;
+        if (!anchor) return json(res, 409, { error: "the newest message without its file is the last of the chat; send anything to the chat and retry", missing: lacking.length });
+        const oldestLacking = lacking.reduce((a, b) => (b.ts < a.ts ? b : a));
+        const span = rows.filter((m) => m.ts >= oldestLacking.ts && m.ts < anchor.ts).length;
+        const id = await sock.fetchMessageHistory(Math.min(Math.max(span + 5, 10), 500), anchor.key, anchor.ts * 1000);
+        return json(res, 200, { ok: true, requested: id, missing: lacking.length, before_ts: anchor.ts, chat: r.jid });
+      }
+      anchor = before_id ? messages.find((m) => m.id === before_id && m.chat === r.jid && m.key) : messages.find((m) => m.chat === r.jid && m.key);
+      if (!anchor) return json(res, 404, { error: "no message of that chat to anchor the request" });
+      const id = await sock.fetchMessageHistory(Math.min(Number(count || 50), 500), anchor.key, anchor.ts * 1000);
+      return json(res, 200, { ok: true, requested: id, before_ts: anchor.ts, chat: r.jid });
     }
     if (req.method === "GET" && url.pathname === "/contacts") {
       const q = norm(url.searchParams.get("q") || "");

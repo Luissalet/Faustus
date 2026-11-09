@@ -63,6 +63,8 @@ class ChatBody(BaseModel):
 class HistoryBody(BaseModel):
     chat: str
     count: int = 50
+    before_id: str = ""          # anchor on this message instead of the oldest one kept
+    missing_media: bool = False  # ask again for the messages whose picture/video/voice download failed
 
 
 class IdBody(BaseModel):
@@ -284,7 +286,8 @@ def setup_whatsapp_routes() -> APIRouter:
     async def history(body: HistoryBody, request: Request) -> Dict[str, Any]:
         require_admin(request)
         try:
-            return await asyncio.to_thread(wa.history, body.chat, body.count)
+            return await asyncio.to_thread(wa.history, body.chat, body.count, before_id=body.before_id,
+                                           missing_media=body.missing_media)
         except wa.BridgeError as exc:
             raise HTTPException(409 if str(exc).startswith("ambiguous") else 503, str(exc))
 

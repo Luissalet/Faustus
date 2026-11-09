@@ -580,9 +580,15 @@ def logout() -> Dict[str, Any]:
     return _post("/logout", {})
 
 
-def history(chat: str, count: int = 50) -> Dict[str, Any]:
-    """Ask the phone for older messages of one chat (they arrive asynchronously)."""
-    return _post("/history", {"chat": chat, "count": int(count)})
+def history(chat: str, count: int = 50, *, before_id: str = "", missing_media: bool = False) -> Dict[str, Any]:
+    """Ask the phone for older messages of one chat (they arrive asynchronously). ``before_id`` anchors the request on
+    a given message; ``missing_media`` asks again for the stretch whose files failed to download, so they are fetched."""
+    body: Dict[str, Any] = {"chat": chat, "count": int(count)}
+    if before_id:
+        body["before_id"] = before_id
+    if missing_media:
+        body["missing_media"] = True
+    return _post("/history", body)
 
 
 def _get_bytes(path: str, params: Optional[Dict[str, Any]] = None, timeout: float = 30.0) -> Optional[tuple]:
