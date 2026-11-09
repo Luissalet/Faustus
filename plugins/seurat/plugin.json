@@ -2,12 +2,14 @@
   "schema": 1,
   "id": "seurat",
   "name": "Seurat's Hoard",
-  "purpose": "Voxel studio: draw voxel models in a 3D editor and turn pictures (sprites, pixel art, drawings) into voxel models, instantly (inflate, extrude, front + side silhouettes) or with the language model (DeepSeek on the Sparks by default), which sees the pictures, builds the model with operations and reviews its own renders. Exports MagicaVoxel .vox, GLB, STL for printing and PNG renders / isometric sprites. Assistants can create, edit, look at and export models.",
+  "purpose": "Voxel studio: draw voxel models in a 3D editor and turn pictures (sprites, pixel art, drawings) or a description into voxel models, instantly (inflate, extrude, front + side silhouettes) or with the language model (DeepSeek on the Sparks by default), which reasons at length, sculpts the shape from parts, gets the pictures painted onto it and reviews its own renders. Exports MagicaVoxel .vox, GLB, STL for printing and PNG renders / isometric sprites. Assistants can create, edit, look at and export models.",
   "capabilities": [
     "voxel-editor",
     "image-to-voxel",
     "sprite-to-voxel",
     "voxel-generation",
+    "text-to-voxel",
+    "voxel-scenes",
     "vox-export",
     "glb-export",
     "stl-export",
@@ -79,5 +81,5 @@
       "SEURAT_DATA_DIR"
     ]
   },
-  "notes": "Axes: x right, y up, z towards the viewer; c is a palette index (0 erases). reference_add then generate_start (poll generate_status) for a model-made voxel version; build_from_image for an instant one. model_ops edits with operations (layer copies pixel rows onto the front, side or top plane). model_look returns a picture; model_export writes .vox, .glb, .stl (millimetres) or PNG/sprites and returns the path. Every change keeps the previous content as a version."
+  "notes": "Axes: x right, y up, z towards the viewer; c is a palette index (0 erases). reference_add then generate_start (poll generate_status; with effort max a round takes several minutes) for a model-made voxel version, or generate_start with only a prompt and a size for an object or scene from a description; build_from_image for an instant one. model_ops edits with operations (line with r is a capsule, prism is a polygon with thickness for wings and fins). model_look returns a picture; model_export writes .vox, .glb, .stl (millimetres) or PNG/sprites and returns the path. Every change keeps the previous content as a version."
 }
