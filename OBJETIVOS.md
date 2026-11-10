@@ -2,11 +2,10 @@
 
 ## Paneles con datos, revisión con peces, bucle de mejora y Bases — 10-11-2026 (faustus#2389, faustus#2400)
 
-Integrado y probado (pruebas del área; en vivo paneles con muestra programada y una revisión con el modelo de las Sparks). Lo siguiente:
+Integrado y probado en vivo con el modelo de las Sparks: paneles con muestra programada; los seis flujos de la revisión con peces (`review`, `loop` con decisiones por hallazgo y escritura al fichero, `draft`, `brainstorm`, `drift` y `panel`); `loop_improve` de punta a punta sobre una carpeta real con guarda (aplicó la mejora y volvió a medir, -96,6 %); `loop_arms` con A/A (KEEP y DROP); Bases y `prompt_mirror` sobre datos reales; la bandeja del escritorio siguiendo un turno desde la ventana real. Lo siguiente:
 
-- **Escritorio, turnos en la bandeja:** verlo con la ventana real (insignia, menú por chat, aviso al terminar, salto al chat, segundo perfil); solo pasan las pruebas de nodo.
-- **Bucle de mejora en vivo:** un `loop_improve` completo sobre un repo real con guarda de tests, y `loop_arms` con A/A, con el modelo de las Sparks.
-- **Revisión con peces:** probar en vivo `loop` con `auto_apply` apagado (decisiones por hallazgo en la pantalla), `panel` con dos modelos distintos y `drift` sobre FAUSTUS.md por secciones.
+- **Revisión entre modelos con dos modelos vivos:** el `panel` se probó con uno de los dos servidores parado (queda como «no ejecutado» y la revisión termina); falta una pasada con dos modelos distintos respondiendo, cuando haya un segundo servidor en marcha.
+- **Escritorio:** ver el aviso de fin de turno y la insignia con preguntas pendientes en una sesión de uso normal (el aviso se vio el 10-11 de madrugada con un turno de 375 s; un turno de 17 s no avisa).
 - **Bases:** dibujar la vista `map`; editar una base desde la pestaña con formulario además de YAML.
 - **Paneles:** que una acción pueda encadenar otra; exportar e importar un panel con sus datos.
 
