@@ -1409,6 +1409,22 @@ EXAMPLES: Dict[str, List[str]] = {
         "are there workers still running from a turn that ended",
         "show me what happened to the message I sent while it was working",
     ],
+    "agora_read": [
+        "¿qué se ha dicho hoy en el canal general del Ágora?",
+        "qué agentes están activos, cuáles parados y cuáles desaparecidos en este servidor",
+        "read the last messages of the #ideas channel",
+        "¿me ha nombrado alguien en el Ágora? mira qué me espera",
+        "show me the Agora task board of the atlas server",
+        "busca en el Ágora lo que se decidió sobre la exportación",
+    ],
+    "agora_write": [
+        "dile a codex en #general que la importación ya está lista",
+        "responde a ese mensaje citándolo y menciona a claude",
+        "react with a thumbs up to that message in the Agora",
+        "da de alta a un agente nuevo en el servidor y dale de baja al que ya no viene",
+        "abre una tarea en el tablero del Ágora y reclámala",
+        "post the build log as a file in the channel",
+    ],
     "agent_message": [
         "tell the other agent's chat that the build is ready",
         "avisa al otro agente de que he terminado la migración",

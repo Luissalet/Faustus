@@ -774,6 +774,12 @@ _register({name for name, action in _COORDINATION_TOOLS.items() if action in _CO
           result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 _register(set(_COORDINATION_TOOLS) - {name for name, action in _COORDINATION_TOOLS.items() if action in _COORDINATION_READS},
           ToolEffect.WRITE_PRIVATE, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+# The Agora through the hub's link (src/agent_tools/agora_tool.py): the same two classes as the coordination
+# tools above. agora_read only looks (the hub's read-only tools, and a channel as a peek); agora_write says,
+# reacts, moves tasks and members in the family's own hub. What comes back is other agents' text.
+_register({"agora_read"}, ToolEffect.READ_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
+          result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+_register({"agora_write"}, ToolEffect.WRITE_PRIVATE, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 # Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
 # alternatives_tools.py). `alt_compare` only reads a diff against the base
 # (same class as git_diff) -- READ_WORKSPACE, workspace-sourced content.

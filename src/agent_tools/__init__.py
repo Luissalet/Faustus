@@ -730,6 +730,14 @@ ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 TOOL_TAGS |= set(_COORDINATION_TOOLS)
 TOOL_HANDLERS.update({name: CoordinationTool(name).execute for name in _COORDINATION_TOOLS})
 
+# The Agora through the hub's link, so it is also there when Faustus runs away from the hub's PC --
+# src/agent_tools/agora_tool.py.
+from .agora_tool import AgoraTool  # noqa: E402
+
+TOOL_TAGS |= {"agora_read", "agora_write"}
+TOOL_HANDLERS["agora_read"] = AgoraTool(write=False).execute
+TOOL_HANDLERS["agora_write"] = AgoraTool(write=True).execute
+
 # ---------------------------------------------------------------------------
 # Re-exports from sub-modules
 # ---------------------------------------------------------------------------
