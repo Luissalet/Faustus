@@ -1,5 +1,11 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex 404: evoluciones regionales — 10-11-2026
+
+HoardDex explica 130 contextos de evolución regional antes desconocidos por edición y forma, sin confundir evolución local y obtención de una forma ya evolucionada. Dos casos de Shedinja en Sol/Luna ya funcionaban y ganan procedencia y enlace a la Poké Ball; cuatro referencias de Sinistcha en Z-A siguen desconocidas. Z-A distingue el límite de traslado sin retorno. Fuente aprobada CAS1 y probada en web y Android visible ES/EN; Main pasa 853 TS + 23 CJS, tipos, MCP37/1767 y web. Los dos APK404 y sus JSON están publicados, con runtime idéntico al probado y 17.140 medios conservados;172 JSON en total. El x86 final está instalado por SHA y arranca con la colección restaurada. ARM64 sólo se compila e inspecciona; la paridad global sigue abierta.
+
+El emulador permanece visible y se maneja con el lanzador SDK y ADB, sin controlar Windows. El borrado de tres APK obsoletos fue rechazado automáticamente sin motivo indicado: se conservan y no se reintenta por otra vía. No se ejecutó un nuevo modelo de Faustus. Continúa el contraste de daño propio de las ediciones Pikachu/Eevee, todavía no habilitado.
+
 ## HoardDex 402 y procedimiento Android — 10-11-2026
 
 HoardDex incorpora reglas propias de Colosseum US para Psicoonda, Presente, Paliza y Escupir; XD conserva el aviso cuando falta contraste. La fuente está aprobada en CAS2. Main 402 pasa 849 TS + 23 CJS, tipos, 37 herramientas/1.754 consultas MCP y compilación web. Web y Android x86 visible comprueban las cuatro familias en español e inglés, errores, curación e inmunidades. Los paquetes finales conservan exactamente el runtime probado; el x86 está instalado por SHA y confirmado tras arrancar. ARM64 sólo se compila e inspecciona. Se conservan 168 JSON anteriores, 170 en total. Continúan las evoluciones por forma y los demás frentes; no se declara paridad global.
