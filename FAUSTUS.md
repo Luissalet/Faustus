@@ -17696,6 +17696,9 @@ Delivery podía crear pero no borrar. Ahora cada lista de `/delivery` tiene un b
 - Lo que no hace: no cambia nada del proyecto (solo ejecuta la orden de medida) ni decide qué optimizar.
 - Pruebas: `tests/test_panels.py`, `tests/test_loop_card.py` y vecinas (registro de herramientas, esquemas, skills, CSP): 409 pasan. En vivo en 7000: panel «Uso» creado con la herramienta, `panel_check` limpio con 779 caracteres visibles, visto en Studio (barra lateral, vista y gestión); una Loop Card que mide `python -c "import json, statistics, decimal"` (media 0,061 s, ruido 5,9 %, umbral 0,0073 s) y su comprobación «dentro del ruido» (-10,2 %, 0,86 umbrales), vista en la pantalla y borrada.
 - Correcciones de paso: `faustus.api` no existía en el ayudante (window.faustus era la función); ahora `faustus.api === faustus`. `faustus.tool` alcanza todas las herramientas, también las que ejecutan o cambian cosas, y la página puede llamar a cualquier API HTTPS.
+- Revisión independiente: `panel_check` añadía la cabecera del token interno a TODAS las peticiones de la página (CDN, imágenes externas); ahora solo va al origen del propio panel y nunca a un host que no sea Faustus o loopback (`tests/test_panels.py`, con dos servidores reales).
+- Descripciones de herramientas: `recipe_learn`, `delivery_package`, `commission_office` y `review_desk` pasaban del presupuesto de 250 tokens; ahora tienen una descripción corta y el detalle de cada acción va en su parámetro `action` (`tests/test_native_tool_description_budget.py` vuelve a pasar).
+- Desplegado en la Spark (código 9098d73e): panel «Uso» creado allí y comprobado con `panel_check`; el puente de WhatsApp volvió a arrancar solo tras el reinicio.
 
 ## 10-11-2026 · Cerebro en JSON Canvas y skills de Obsidian y del pez y el elefante
 
