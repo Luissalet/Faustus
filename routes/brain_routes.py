@@ -529,6 +529,47 @@ def setup_brain_routes() -> APIRouter:
         return {"ok": not errors, "errors": errors, "nodes": len(doc.get("nodes") or []),
                 "edges": len(doc.get("edges") or [])}
 
+    # ── Obsidian Bases (src/brain/bases.py) ─────────────────────────────
+    def _bases_call(owner: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        from src.brain import bases
+
+        out = bases.run(owner, args)
+        if out.get("error"):
+            status = 404 if str(out.get("error_class", "")).endswith("not_found") else 400
+            raise HTTPException(status_code=status, detail=out["error"])
+        return out
+
+    @router.get("/bases")
+    async def get_bases(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Every `.base` file in the vault with its views and whether it is valid."""
+        return await asyncio.to_thread(_bases_call, _owner(request), {"action": "list"})
+
+    @router.get("/bases/file")
+    async def get_base_file(request: Request, path: str, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """One base: its YAML and validation."""
+        return await asyncio.to_thread(_bases_call, _owner(request), {"action": "get", "path": path})
+
+    @router.put("/bases/file")
+    async def put_base_file(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Write a base (`path`, and `yaml` or a form `spec`) after validating it."""
+        payload = await _json_body(request)
+        return await asyncio.to_thread(_bases_call, _owner(request), {**payload, "action": "save"})
+
+    @router.delete("/bases/file")
+    async def delete_base_file(request: Request, path: str, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        return await asyncio.to_thread(_bases_call, _owner(request), {"action": "delete", "path": path})
+
+    @router.post("/bases/query")
+    async def post_base_query(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Evaluate a base (`path` or inline `yaml`, optional `view`) against the notes."""
+        payload = await _json_body(request)
+        return await asyncio.to_thread(_bases_call, _owner(request), {**payload, "action": "query"})
+
+    @router.post("/bases/validate")
+    async def post_base_validate(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        payload = await _json_body(request)
+        return await asyncio.to_thread(_bases_call, _owner(request), {**payload, "action": "validate"})
+
     @router.get("/tags")
     async def get_tags(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
         from src.brain import notes

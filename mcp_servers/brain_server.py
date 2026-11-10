@@ -412,6 +412,28 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="brain_base",
+            description=(
+                "Obsidian Bases (.base files) over the Cerebro's notes: `query` evaluates a base "
+                "(vault `path` or inline `yaml`) -- filters, formulas, sort, groupBy, limit, "
+                "summaries -- and returns each table/cards/list view as rows; `save` writes a "
+                "base from `yaml` or a `spec` (tags, folder, where, columns, view_type, group_by, "
+                "sort_by, summaries) after validating it; `validate`, `list`, `get`, `delete`. "
+                "Writing is refused without a configured owner."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "get", "query", "validate", "save", "delete"]},
+                    "path": {"type": "string"},
+                    "yaml": {"type": "string"},
+                    "spec": {"type": "object"},
+                    "view": {"type": "string"},
+                    "max_rows": {"type": "integer"},
+                },
+            },
+        ),
     ]
 
 
@@ -606,6 +628,16 @@ def _tool_canvas_import(owner: str, args: dict) -> list[TextContent]:
                                              dry_run=bool(args.get("dry_run")), prune=bool(args.get("prune"))))
 
 
+def _tool_base(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import bases
+    if str(args.get("action") or "query") in ("save", "delete") and not owner:
+        return _text_result(f"{_OWNER_SCOPE_ERROR}\n(refused: brain_base {args.get('action')})")
+    out = bases.run(owner, args)
+    if out.get("error"):
+        return _text_result(f"brain_base: {out['error']}")
+    return _text_result(bases.render_text(out))
+
+
 def _tool_sync(owner: str, args: dict) -> list[TextContent]:
     report = _engine["vault"].sync(owner, budget_s=25.0)
     return _json_result({"ok": True, "report": report})
@@ -624,6 +656,7 @@ _HANDLERS = {
     "brain_graph_ask": _tool_graph_ask,
     "brain_canvas_export": _tool_canvas_export,
     "brain_canvas_import": _tool_canvas_import,
+    "brain_base": _tool_base,
     "brain_sync": _tool_sync,
 }
 

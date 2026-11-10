@@ -371,6 +371,12 @@ def create_note(owner: str, title: str, *, folder: str = "Notes", content: str =
         suffix += 1
 
     fields = {"kind": "note", "created": db.now_iso(), "updated": db.now_iso()}
+    # Properties typed at the top of the content become the note's own properties
+    # (one header, not a second block lost in the body).
+    typed, rest = fm.split(str(content or ""))
+    if isinstance(typed, dict) and typed:
+        fields = {**typed, **{k: v for k, v in fields.items() if k not in typed}}
+        content = rest
     body = "\n" + str(content or "").strip("\n") + "\n" if content else "\n"
     vault._atomic_write(vault.abs_path(owner, rel_path), fm.join(fields, body))
     applied = vault.import_file(owner, rel_path)

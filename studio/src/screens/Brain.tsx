@@ -1,4 +1,4 @@
-import { Files, Network, Info } from 'lucide-react';
+import { Database, Files, Network, Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { createPortal } from 'react-dom';
@@ -30,6 +30,7 @@ import { Explorer } from './brain/Explorer';
 import { NoteView, type NoteMode } from './brain/NoteView';
 import { RightPanel } from './brain/RightPanel';
 import { GraphView } from './brain/GraphView';
+import { BasesView } from './brain/BasesView';
 import { QuickSwitcher } from './brain/QuickSwitcher';
 import { SettingsDrawer } from './brain/SettingsDrawer';
 import { TrashPanel } from './brain/TrashPanel';
@@ -51,7 +52,7 @@ export function BrainScreen() {
   const platform = usePlatform();
   const [params, setParams] = useSearchParams();
   const activePath = params.get('note') ?? '';
-  const view = params.get('view') === 'graph' ? 'graph' : 'note';
+  const view = params.get('view') === 'graph' ? 'graph' : params.get('view') === 'bases' ? 'bases' : 'note';
   const [mobilePane, setMobilePane] = useState<'files' | 'note' | 'graph' | 'info'>('files');
 
   const [status, setStatus] = useState<BrainStatus | null>(null);
@@ -267,9 +268,14 @@ export function BrainScreen() {
                 <button type="button" role="radio" aria-checked={view === 'graph'} onClick={() => setParams((p) => { const next = new URLSearchParams(p); next.set('view', 'graph'); return next; })} data-testid="brain-view-graph">
                   <Network size={13} aria-hidden="true" /> {t('Graph')}
                 </button>
+                <button type="button" role="radio" aria-checked={view === 'bases'} onClick={() => setParams((p) => { const next = new URLSearchParams(p); next.set('view', 'bases'); return next; })} data-testid="brain-view-bases">
+                  <Database size={13} aria-hidden="true" /> {t('Bases')}
+                </button>
               </div>
             )}
-            {(platform === 'mobile' ? mobilePane === 'graph' : view === 'graph') ? (
+            {platform !== 'mobile' && view === 'bases' ? (
+              <BasesView onOpenNote={openNote} />
+            ) : (platform === 'mobile' ? mobilePane === 'graph' : view === 'graph') ? (
               <GraphView center={activePath || undefined} onOpenNote={openNote} onOpenEntity={onEntityOpen} onVaultChanged={() => { void reloadTree(); reloadTags(); }} />
             ) : (
               <NoteView

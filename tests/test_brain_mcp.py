@@ -29,7 +29,7 @@ TOOL_NAMES = {
     "brain_search", "brain_read_note", "brain_write_note", "brain_append_note",
     "brain_entity", "brain_timeline", "brain_graph_neighbors", "brain_sync",
     "brain_facts_as_of", "brain_fact_history", "brain_graph_ask",
-    "brain_canvas_export", "brain_canvas_import",
+    "brain_canvas_export", "brain_canvas_import", "brain_base",
 }
 
 OWNER = "ada"

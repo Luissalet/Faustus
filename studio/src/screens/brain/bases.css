@@ -1,0 +1,24 @@
+/* Obsidian Bases in the Cerebro: a bar (base, view, actions) over the evaluated view. */
+.fs-bases { display: grid; gap: var(--fs-space-3); align-content: start; min-inline-size: 0; padding: var(--fs-space-3); overflow: auto; }
+.fs-bases__bar { display: flex; flex-wrap: wrap; gap: var(--fs-space-2); align-items: center; }
+.fs-bases__bar select { max-inline-size: 260px; }
+.fs-bases__grow { flex: 1 1 auto; }
+.fs-bases__muted { color: var(--fs-text-3); font-size: 12px; }
+.fs-bases__msg { margin: 0; font-size: 12px; }
+.fs-bases__msg[data-tone='bad'] { color: var(--fs-danger); }
+.fs-bases__msg[data-tone='warn'] { color: var(--fs-warning); }
+.fs-bases__msg[data-tone='good'] { color: var(--fs-success); }
+.fs-bases__tablewrap { overflow-x: auto; min-inline-size: 0; }
+.fs-bases__table { inline-size: 100%; border-collapse: collapse; font-size: 13px; }
+.fs-bases__table th { text-align: start; font-weight: 600; font-size: 12px; color: var(--fs-text-3); padding: 6px 8px; border-block-end: 1px solid var(--fs-border); position: sticky; inset-block-start: 0; background: var(--fs-surface-1); }
+.fs-bases__table td { padding: 6px 8px; border-block-end: 1px solid var(--fs-border); vertical-align: top; overflow-wrap: anywhere; }
+.fs-bases__link { padding: 0; background: none; border: 0; color: var(--fs-accent, inherit); cursor: pointer; font: inherit; text-align: start; text-decoration: underline; text-underline-offset: 2px; }
+.fs-bases__group { display: grid; gap: var(--fs-space-2); }
+.fs-bases__gh { margin: 0; font-size: 13px; }
+.fs-bases__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--fs-space-2); margin: 0; padding: 0; list-style: none; }
+.fs-bases__card { display: grid; gap: 4px; inline-size: 100%; text-align: start; padding: var(--fs-space-2) var(--fs-space-3); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 8px; color: inherit; font: inherit; cursor: pointer; }
+.fs-bases__list { margin: 0; padding-inline-start: 1.2em; display: grid; gap: 4px; font-size: 13px; }
+.fs-bases__form { display: grid; gap: var(--fs-space-2); }
+.fs-bases__form label { display: grid; gap: 4px; font-size: 12px; color: var(--fs-text-2); }
+.fs-bases__formrow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--fs-space-2); }
+.fs-bases__yaml { inline-size: 100%; font-family: var(--fs-font-mono, ui-monospace, monospace); font-size: 12px; }
