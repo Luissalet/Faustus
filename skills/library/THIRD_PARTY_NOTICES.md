@@ -29,11 +29,19 @@ require.
 | `obsidian-markdown`, `json-canvas` | https://github.com/kepano/obsidian-skills @ `3ccff5338ea700537839b21900aa5358a0402c98` (skills/obsidian-markdown and skills/json-canvas; reference pages not bundled) | MIT | © 2026 Steph Ango (@kepano) |
 | `json-canvas` (format rules) | https://github.com/obsidianmd/jsoncanvas @ `456f843cb293df4f4ab1763e22ccb46a80b307c8` (spec/1.0.md, the JSON Canvas 1.0 specification) | MIT | © 2024 Obsidian.md |
 | `fresh-context-review` | https://github.com/google/elephant-goldfish-model @ `bdcfe8cdaee99699c4b2cb7ad4e3b2c1a6b56a31` (skills egm-review and egm-review-loop, reviewer roles in agents/; persona files, standards and scripts not bundled) | Apache-2.0 | © Google LLC |
+| `elephant-goldfish-design`, `docs-drift-check` | https://github.com/google/elephant-goldfish-model @ `bdcfe8cdaee99699c4b2cb7ad4e3b2c1a6b56a31` (skills egm-brainstorm, egm-draft, egm-review, egm-review-loop, egm-resolve and egm-drift-report; persona files and scripts not bundled) | Apache-2.0 | © Google LLC |
+| `measured-improvement`, `steer-once`, `unattended-brief`, `cross-model-review` | https://github.com/github/lever @ `a0acf31d730d90248c30237225442bdd991f17b2` (skills find-the-loop, experiment-arms, steer-once, prompt-mirror, brief, progress-contract and cross-model-review; automations and templates not bundled) | MIT | © GitHub, Inc. |
+| `obsidian-bases`, `obsidian-cli`, `notes-from-templates`, `web-to-clean-markdown` | https://github.com/kepano/obsidian-skills @ `3ccff5338ea700537839b21900aa5358a0402c98` (skills obsidian-bases, obsidian-cli, knap and defuddle; reference pages not bundled) | MIT | © 2026 Steph Ango (@kepano) |
 
 The last three rows were added on 2026-11-10. The two note-format skills are
 rewritten around the Cerebro's own rules and the `brain_canvas_export` /
 `brain_canvas_import` tools; `fresh-context-review` maps the drafting/review
 split onto `delegate_agents` read-only workers started without shared context.
+
+The three rows after them were added later the same day. Those skills are
+written around Faustus's own tools (`goldfish_review`, Loop Cards with
+`loop_arms` and `loop_improve`, `prompt_mirror`, `brain_base`, the Cerebro and
+the built-in page readers) and run without the original command-line tools.
 The Apache-2.0 text is the one already carried below for `code-simplifier`.
 
 The rows from greensock/gsap-skills onwards were added on 2026-11-03. Each
