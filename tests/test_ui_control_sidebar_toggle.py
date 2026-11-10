@@ -24,6 +24,7 @@ def test_toggle_sidebar_on_shows_it():
     r = asyncio.run(do_ui_control("toggle sidebar on"))
     assert r.get("toggle_name") == "sidebar"
     assert r.get("state") is True
+    assert "shown" in r.get("results", "").lower()
     assert "error" not in r
 
 

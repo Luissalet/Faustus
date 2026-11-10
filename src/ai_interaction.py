@@ -788,7 +788,12 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
                 "ui_event": "toggle",
                 "toggle_name": toggle_name,
                 "state": state,
-                "results": "Sidebar shown" if state else "Sidebar hidden; the button where it was, or its shortcut, brings it back",
+                # Said as done: the screen applies it as this result arrives, and there is nothing for the agent to check.
+                "results": (
+                    "Sidebar shown on the user's screen. Done; nothing to verify."
+                    if state else
+                    "Sidebar hidden on the user's screen. Done; nothing to verify. The button left where it was, or its shortcut, brings it back."
+                ),
             }
         return {
             "ui_event": "toggle",
