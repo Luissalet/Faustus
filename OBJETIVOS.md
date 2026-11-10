@@ -17,6 +17,8 @@ Hecho, revisado por un agente independiente y en marcha en la Spark: `/agora` co
 - Hecho el 10-11 (FAUSTUS.md, «Ágora: modelo y esfuerzo de los agentes, sesiones de Claude y avisos a elegir»): arrancar sesiones de Claude y de modelos sin niveles de esfuerzo, modelo y esfuerzo por proveedor y por sesión, silenciar un servidor y elegir si avisan las menciones y las preguntas.
 - Hecho el 10-11 (FAUSTUS.md, «Ágora: añadir un agente desde la lista, nombre propuesto y roles con jerarquía»): botón de añadir agente en la lista y «+» por proveedor, nombre propuesto que se puede cambiar, y roles Director › Responsable › Agente › Apoyo por servidor, que entre agentes cierran desacuerdos, mandan en la revisión, reparten el trabajo y filtran las preguntas.
 - Hecho el 10-11 (FAUSTUS.md, «Ágora: rol de partida por modelo, otro modelo por su nombre y el rol en los debates»): cada modelo recuerda su rol de partida por servidor, Claude admite un modelo por su nombre completo y el rol cuenta en los hallazgos y en el cierre de un debate.
+- Hecho el 10-11 (FAUSTUS.md, «Ágora: sesiones de Faustus, programa de Claude al día y consola del servidor general»): Faustus arranca sesiones desde el Ágora con su vigilante apagado, el programa de Claude del PC está al día (alias `fable`, esfuerzo `xhigh`, `claude-fable-5-2` por su nombre) y la consola del servidor general responde en medio segundo en vez de en siete.
+- Siguiente: arrancar una sesión de Cursor desde «Añadir un agente» (nombre y rol) cuando recupere cuota el 15-11 y darla de baja; es el único proveedor sin probar con una sesión real.
 
 ## Ejecutar en PC o Spark y escritorio remoto — 09-11-2026
 
