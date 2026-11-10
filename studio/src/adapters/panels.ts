@@ -81,6 +81,51 @@ export const checkPanel = (id: string) => request<PanelCheck>(`${BASE}/${enc(id)
 export const pageHref = (id: string, bust?: number | string) => `${BASE}/${enc(id)}/page${bust !== undefined ? `?v=${bust}` : ''}`;
 export const checkImageHref = (id: string, bust: number) => `${BASE}/${enc(id)}/check.png?v=${bust}`;
 
+/* -- templates, the panel's database and its server actions -------------- */
+
+export interface PanelTemplate {
+  id: string; name: string; icon: string; description: string; source: string; tables: boolean;
+  actions: { name: string; label: string | null; schedule: string | null }[];
+}
+export async function listTemplates(): Promise<PanelTemplate[]> {
+  const r = await request<{ templates?: PanelTemplate[] }>(`${BASE}/templates`);
+  return Array.isArray(r.templates) ? r.templates : [];
+}
+export const createFromTemplate = (template: string, name?: string) =>
+  request<Panel & { template: string; actions: string[]; first_runs: { action: string; ok: boolean; error?: string }[] }>(
+    `${BASE}/from-template`, { method: 'POST', body: JSON.stringify({ template, ...(name ? { name } : {}) }) });
+
+export interface PanelColumn { name: string; type: string; pk: boolean }
+export interface PanelTable { name: string; type: 'table' | 'view'; columns: PanelColumn[]; rows: number | null }
+export const panelTables = (id: string) => request<{ tables: PanelTable[]; bytes: number }>(`${BASE}/${enc(id)}/db/tables`);
+export interface PanelRows {
+  columns: string[]; rows: Record<string, unknown>[]; row_count: number; offset: number; more: boolean; next_offset: number | null;
+}
+export const panelQuery = (id: string, sql: string, params: unknown[] = [], limit = 50, offset = 0) =>
+  request<PanelRows>(`${BASE}/${enc(id)}/db/query`, { method: 'POST', body: JSON.stringify({ sql, params, limit, offset }) });
+
+export interface PanelActionRun { at: string; ok: boolean; ms: number; saved: number; error: string | null; trigger: string }
+export interface PanelAction {
+  name: string; label?: string; tool?: string; app?: string; args?: Record<string, unknown>; url?: string; method?: string;
+  body?: unknown; headers?: Record<string, string>; every_minutes?: number; cron?: string; timeout_s?: number;
+  save: Record<string, unknown>[]; enabled: boolean;
+  schedule: string | null; next_run: string | null; last_run: string | null; last_ok: boolean | null; last_error: string | null;
+  last_ms: number | null; last_saved: number | null; runs: number; failures: number; last_preview: string | null;
+  history: PanelActionRun[];
+}
+export const panelActions = (id: string) => request<{ actions: PanelAction[] }>(`${BASE}/${enc(id)}/actions`);
+export const runPanelAction = (id: string, name: string) =>
+  request<{ ok: boolean; ms: number; saved: number }>(`${BASE}/${enc(id)}/actions/${enc(name)}/run`, { method: 'POST', body: '{}' });
+export const removePanelAction = (id: string, name: string) =>
+  request<{ removed: string }>(`${BASE}/${enc(id)}/actions/${enc(name)}`, { method: 'DELETE' });
+const SPEC_KEYS = ['label', 'tool', 'app', 'args', 'url', 'method', 'body', 'headers', 'every_minutes', 'cron', 'timeout_s', 'save'] as const;
+/** Pause or resume an action: its definition goes back unchanged except `enabled`. */
+export function setPanelActionEnabled(id: string, action: PanelAction, enabled: boolean) {
+  const spec: Record<string, unknown> = { enabled };
+  SPEC_KEYS.forEach((k) => { if (action[k] !== undefined && action[k] !== null) spec[k] = action[k]; });
+  return request<{ action: PanelAction }>(`${BASE}/${enc(id)}/actions/${enc(action.name)}`, { method: 'PUT', body: JSON.stringify(spec) });
+}
+
 /** The text of the "new panel" chat: an opening for the user to finish. */
 export function newPanelDraftHref(): string {
   return `/studio?draft=${enc(t('I want a panel that '))}`;

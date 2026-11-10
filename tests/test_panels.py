@@ -199,7 +199,8 @@ def test_agent_tools_round_trip():
 def test_mcp_server_lists_and_calls(monkeypatch):
     pytest.importorskip("mcp")
     import mcp_servers.panels_server as srv
-    assert [t.name for t in asyncio.run(srv.list_tools())] == NAMES
+    # The eight page tools first, then the database, action and template tools (tests/test_panel_apps.py).
+    assert [t.name for t in asyncio.run(srv.list_tools())][:8] == NAMES
     res = asyncio.run(srv.call_tool("panel_create", {"name": "Via MCP", "html": PAGE}))
     assert json.loads(res[0].text)["id"] == "via-mcp"
     assert "Error" in asyncio.run(srv.call_tool("panel_get", {"id": "nope"}))[0].text

@@ -3497,10 +3497,14 @@ BUILTIN_ACTIONS = {
 # Home-card watchers (src/watchers.py): weather, page watch, news brief, mail digest.
 from src.watchers import WATCH_ACTIONS as _WATCH_ACTIONS, WATCH_ACTION_INFO as _WATCH_ACTION_INFO  # noqa: E402
 BUILTIN_ACTIONS.update(_WATCH_ACTIONS)
+# A user panel's scheduled action (src/panel_actions.py): the prompt names {panel, action}.
+from src.panel_actions import scheduled_entry as _panel_action  # noqa: E402
+BUILTIN_ACTIONS["panel_action"] = _panel_action
 
 # Descriptions for the UI/API
 BUILTIN_ACTION_INFO = {
     **_WATCH_ACTION_INFO,
+    "panel_action": "Run one server action of a user panel (a tool or URL whose answer is saved in the panel's database or storage); created from the panel's actions, the prompt is {\"panel\": id, \"action\": name}",
     "probe_model_capabilities": "Probe an OpenAI-compatible model endpoint (tool calls, streaming tool calls, JSON mode, vision) and record what it actually did, apart from what it declares",
     "tidy_sessions": "Clean up empty chat sessions and auto-sort into folders",
     "tidy_documents": "Remove junk/empty documents",

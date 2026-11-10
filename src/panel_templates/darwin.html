@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Radar de Darwin</title>
+<script src="/api/panels/faustus-panel.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:20px;font:14px/1.45 system-ui,sans-serif;background:var(--fs-bg);color:var(--fs-text-1)}
+h1{font-size:20px;margin:0}h2{font-size:14px;margin:0 0 10px}
+.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grow{flex:1}
+.sub{color:var(--fs-text-3);margin:4px 0 14px;font-size:12.5px}
+button,select,input{border:1px solid var(--fs-border);background:var(--fs-surface-1);color:var(--fs-text-1);border-radius:8px;padding:5px 10px;font:inherit;font-size:12.5px}
+button{cursor:pointer;color:var(--fs-text-2)}button:hover{color:var(--fs-text-1)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:12px}.kpi b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.kpi span{color:var(--fs-text-3);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:12px}
+.card{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:14px;min-width:0}
+.bar{display:grid;grid-template-columns:minmax(80px,32%) 1fr 48px;gap:8px;align-items:center;margin:5px 0;font-size:12.5px;cursor:pointer;border-radius:6px;padding:1px 3px}
+.bar:hover,.bar.on{background:var(--fs-surface-2)}.bar .n{color:var(--fs-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.track{background:var(--fs-surface-2);border-radius:5px;height:10px}.fill{background:var(--fs-brand);height:10px;border-radius:5px}
+.v{color:var(--fs-text-3);font-variant-numeric:tabular-nums;text-align:right}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.item{padding:8px 0;border-bottom:1px solid var(--fs-border);font-size:12.5px}.item:last-child{border-bottom:0}
+.item a{color:var(--fs-text-1);font-weight:600;text-decoration:none}.item a:hover{text-decoration:underline}
+.meta{color:var(--fs-text-3);font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+.st{font-size:11px;border-radius:9px;padding:1px 8px;background:var(--fs-surface-2);color:var(--fs-text-2);margin-left:6px}
+.st[data-s=pendiente]{background:#e0b34133;color:#c99a1e}.st[data-s=aceptada]{background:#4fa86b33;color:#4fa86b}
+.st[data-s=descartada]{background:#d65a5a22;color:#d65a5a}.st[data-s=cubierta]{background:#4f9dde33;color:#4f9dde}
+.ch{display:inline-block;font-size:11px;border-radius:9px;padding:1px 7px;background:var(--fs-surface-2);color:var(--fs-text-2);margin-right:6px}
+svg{display:block;width:100%;height:70px}
+.msg{color:var(--fs-text-3);padding:12px 0}.err{color:#d65a5a}
+.more{margin-top:8px}
+</style></head><body>
+<div class="top"><h1>Radar de Darwin</h1><span class="grow"></span><button id="reload">Actualizar</button></div>
+<p class="sub" id="sub">Leyendo Darwin's Hoard…</p>
+<div class="kpis" id="kpis"></div>
+<div class="grid">
+  <div class="card"><h2>Propuestas por estado</h2><div id="states" class="msg">Leyendo…</div><p class="meta">Pulsa un estado para filtrar la lista.</p></div>
+  <div class="card"><h2>Aplicaciones con más propuestas</h2><div id="targets" class="msg">Leyendo…</div></div>
+</div>
+<div class="card" style="margin-bottom:12px"><h2>Evolución de las propuestas pendientes</h2><div id="trend" class="msg">Leyendo…</div></div>
+<div class="grid">
+  <div class="card">
+    <h2 id="ptitle">Propuestas</h2>
+    <div class="filters">
+      <select id="state" aria-label="Estado"><option value="">Todos los estados</option></select>
+      <select id="target" aria-label="Aplicación"><option value="">Todas las aplicaciones</option></select>
+      <input id="q" type="search" placeholder="Buscar repo o motivo" aria-label="Buscar">
+    </div>
+    <div id="props" class="msg">Leyendo…</div>
+    <button class="more" id="more" hidden>Ver más</button>
+  </div>
+  <div class="card"><h2>Últimas capturas y descubrimientos (14 días)</h2><div id="caps" class="msg">Leyendo…</div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const when=ts=>{if(!ts)return '';const d=new Date(ts*1000);return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`};
+const CH={radar:'radar','radar-ideas':'ideas del radar',tracker:'seguimiento',guide:'guía',agora:'Ágora',whatsapp:'WhatsApp',links:'Links',talos:'Talos',agent:'agente',manual:'manual',post:'publicación'};
+const call=(tool,args)=>faustus.tool(tool,args||{},'darwin').then(r=>r.result);
+let offset=0, total=0;
+
+function bars(el,rows,onPick,active){
+  const max=Math.max(1,...rows.map(r=>r[1]));
+  $(el).className='';
+  $(el).innerHTML=rows.length?rows.map(([k,v,label])=>`<div class="bar${active===k?' on':''}" data-k="${esc(k)}"><span class="n">${esc(label||k)}</span><div class="track"><div class="fill" style="width:${(100*v/max).toFixed(1)}%"></div></div><span class="v">${v}</span></div>`).join(''):'<p class="msg">Sin datos.</p>';
+  if(onPick)$(el).querySelectorAll('.bar').forEach(b=>b.onclick=()=>onPick(b.dataset.k));
+}
+
+async function overview(){
+  try{
+    const o=await call('darwin_overview');
+    const c=o.counts||{};
+    $('sub').textContent=`${c.sources??0} descubrimientos · ${c.captures??0} capturas · ${c.capabilities??0} capacidades en el árbol`;
+    $('kpis').innerHTML=[[c.proposals,'propuestas'],[(o.proposals_by_state||{}).pendiente,'pendientes'],[(o.proposals_by_state||{}).aceptada,'aceptadas'],[c.deliveries,'entregas'],[c.gaps_open,'huecos abiertos'],[o.proposals_untargeted,'sin aplicación']]
+      .map(([b,s])=>`<div class="kpi"><b>${b??0}</b><span>${s}</span></div>`).join('');
+    const states=Object.entries(o.proposals_by_state||{}).sort((a,b)=>b[1]-a[1]);
+    bars('states',states,k=>{$('state').value=$('state').value===k?'':k;offset=0;proposals();bars('states',states,null,$('state').value)},$('state').value);
+    const cur=$('state').value;
+    $('state').innerHTML='<option value="">Todos los estados</option>'+states.map(([s,n])=>`<option value="${esc(s)}">${esc(s)} (${n})</option>`).join('');$('state').value=cur;
+    const tg=(o.targets||[]).slice(0,12);
+    bars('targets',tg.map(t=>[t.target,t.proposals,`${t.target} · ${t.pending} pend.`]),k=>{$('target').value=k;offset=0;proposals()});
+    const curT=$('target').value;
+    $('target').innerHTML='<option value="">Todas las aplicaciones</option>'+(o.targets||[]).map(t=>`<option value="${esc(t.target)}">${esc(t.target)}</option>`).join('');$('target').value=curT;
+  }catch(e){$('sub').innerHTML='<span class="err">No se pudo leer Darwin: '+esc(e.message||e)+'</span>';$('states').textContent='';$('targets').textContent=''}
+}
+
+async function proposals(append){
+  if(!append)offset=0;
+  try{
+    const r=await call('darwin_proposals',{state:$('state').value,target:$('target').value,query:$('q').value.trim(),limit:25,offset});
+    total=r.total||0;
+    const html=(r.items||[]).map(p=>`<div class="item"><a href="${esc(p.url||'#')}" target="_blank" rel="noopener">${esc(p.title||p.repo||('#'+p.source_id))}</a><span class="st" data-s="${esc(p.state)}">${esc(p.state)}</span>
+      <div class="meta">${esc(p.target||'sin aplicación')}${p.radar_no?' · radar #'+p.radar_no:''}${p.agora_task?' · Ágora '+esc(p.agora_space||'')+' #'+p.agora_task:''} · ${when(p.updated)}${p.reason?' · '+esc(String(p.reason).slice(0,160)):''}</div></div>`).join('');
+    $('props').className='';
+    if(append)$('props').insertAdjacentHTML('beforeend',html);else $('props').innerHTML=html||'<p class="msg">Ninguna propuesta con estos filtros.</p>';
+    offset+=(r.items||[]).length;
+    $('ptitle').textContent=`Propuestas (${total})`;
+    $('more').hidden=offset>=total;
+  }catch(e){$('props').innerHTML='<p class="msg err">No se pudieron leer las propuestas: '+esc(e.message||e)+'</p>'}
+}
+
+async function captures(){
+  try{
+    const r=await call('darwin_changes_since',{since:Date.now()/1000-14*86400,limit:40});
+    const caps=(r.new_captures||[]).map(x=>({at:x.at,html:`<span class="ch">${esc(CH[x.channel]||x.channel)}</span>${esc(String(x.text||'').slice(0,200))}`}));
+    const srcs=(r.new_sources||[]).map(x=>({at:x.created,html:`<span class="ch">nuevo ${esc(x.kind||'')}</span>${esc(x.title||x.key)}`}));
+    const rows=caps.concat(srcs).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,40);
+    $('caps').className='';
+    $('caps').innerHTML=rows.length?rows.map(x=>`<div class="item">${x.html}<div class="meta">${when(x.at)}</div></div>`).join(''):'<p class="msg">Nada nuevo en los últimos 14 días.</p>';
+  }catch(e){$('caps').innerHTML='<p class="msg err">No se pudieron leer las capturas: '+esc(e.message||e)+'</p>'}
+}
+
+async function trend(){
+  try{
+    const r=await faustus.db.query('SELECT ts, pendientes, aceptadas, propuestas FROM resumen ORDER BY id DESC LIMIT 400');
+    const rows=r.rows.reverse();
+    if(rows.length<2){$('trend').className='msg';$('trend').textContent=rows.length?`Una muestra (${rows[0].pendientes} pendientes, ${String(rows[0].ts).replace('T',' ').slice(0,16)}). El panel guarda otra cada 6 horas.`:'Sin muestras todavía: el panel guarda una cada 6 horas.';return}
+    const W=600,H=70,vals=rows.map(x=>+x.pendientes||0),mx=Math.max(...vals,1),mn=Math.min(...vals);
+    const x=i=>i/(rows.length-1)*W,y=v=>H-4-((v-mn)/Math.max(1,mx-mn))*(H-8);
+    $('trend').className='';
+    $('trend').innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline fill="none" stroke="var(--fs-brand)" stroke-width="2" points="${vals.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ')}"/></svg>
+      <p class="meta">${rows.length} muestras desde ${String(rows[0].ts).replace('T',' ').slice(0,16)} · pendientes ahora ${vals[vals.length-1]} (mín. ${mn}, máx. ${mx}) · aceptadas ${rows[rows.length-1].aceptadas}</p>`;
+  }catch(e){$('trend').innerHTML='<p class="msg err">No se pudo leer la evolución: '+esc(e.message||e)+'</p>'}
+}
+
+let qt;
+$('state').onchange=()=>{offset=0;proposals();faustus.storage.set('filtros',{state:$('state').value,target:$('target').value}).catch(()=>{})};
+$('target').onchange=$('state').onchange;
+$('q').oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>proposals(),300)};
+$('more').onclick=()=>proposals(true);
+$('reload').onclick=()=>{overview();proposals();captures();trend()};
+(async()=>{
+  const f=await faustus.storage.get('filtros',{}).catch(()=>({}));
+  await overview();
+  if(f&&f.state)$('state').value=f.state;if(f&&f.target)$('target').value=f.target;
+  await Promise.all([proposals(),captures(),trend()]);
+})();
+</script></body></html>

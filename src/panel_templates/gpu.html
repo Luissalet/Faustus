@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GPU y modelos</title>
+<script src="/api/panels/faustus-panel.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:20px;font:14px/1.45 system-ui,sans-serif;background:var(--fs-bg);color:var(--fs-text-1)}
+h1{font-size:20px;margin:0}h2{font-size:14px;margin:0 0 10px}
+.top,.section{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grow{flex:1}
+.section{margin:22px 0 6px}.section h2{margin:0}
+.sub{color:var(--fs-text-3);margin:4px 0 16px;font-size:12.5px}
+button{border:1px solid var(--fs-border);background:var(--fs-surface-1);color:var(--fs-text-2);border-radius:8px;padding:5px 12px;cursor:pointer;font:inherit;font-size:12.5px}
+button:hover{color:var(--fs-text-1)}button.on{background:var(--fs-brand);color:#fff;border-color:var(--fs-brand)}button:disabled{opacity:.6;cursor:default}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:12px}.kpi b{display:block;font-size:19px;font-variant-numeric:tabular-nums}.kpi span{color:var(--fs-text-3);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:12px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:12px;margin-bottom:12px}
+.card{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:14px;min-width:0}
+.meter{display:grid;grid-template-columns:66px 1fr 108px;gap:8px;align-items:center;font-size:12.5px;margin:6px 0}
+.meter span:first-child{color:var(--fs-text-3)}
+.track{background:var(--fs-surface-2);border-radius:5px;height:10px;overflow:hidden}.fill{height:10px;border-radius:5px;background:var(--fs-brand)}
+.v{color:var(--fs-text-2);font-variant-numeric:tabular-nums;text-align:right}
+.muted{color:var(--fs-text-3);font-size:12px;margin:4px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--fs-border);vertical-align:top}th{color:var(--fs-text-3);font-weight:600}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{display:inline-block;padding:1px 7px;border-radius:9px;background:var(--fs-brand);color:#fff;font-size:11px}
+.chart{position:relative}.chart svg{display:block;width:100%;height:190px;overflow:visible}
+.chart text{fill:var(--fs-text-3);font-size:10px}.chart .gl{stroke:var(--fs-border);stroke-width:1}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--fs-text-2);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.tip{position:absolute;top:4px;pointer-events:none;background:var(--fs-surface-2);border:1px solid var(--fs-border);border-radius:6px;padding:5px 8px;font-size:12px;white-space:nowrap;display:none;z-index:2;color:var(--fs-text-1)}
+.err{color:#d65a5a}.msg{color:var(--fs-text-3);padding:14px 0}
+</style></head><body>
+<div class="top"><h1>GPU y modelos</h1><span class="grow"></span><button id="sample">Tomar muestra ahora</button></div>
+<p class="sub" id="sub">Leyendo el estado…</p>
+<div class="kpis" id="kpis"></div>
+<div class="grid" id="cards"></div>
+<div class="card"><h2>Modelos cargados</h2><div id="models" class="msg">Leyendo…</div></div>
+<div class="section"><h2>Histórico</h2><span class="grow"></span><span id="ranges"></span></div>
+<p class="muted" id="auto">Leyendo la acción programada…</p>
+<div class="charts" id="charts"><div class="card msg">Leyendo el histórico…</div></div>
+<div class="card"><h2>Modelos cargados durante el periodo</h2><div id="seen" class="msg">Leyendo…</div></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const localISO=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+const hhmm=s=>{const d=new Date(s);return isNaN(d)?'—':`${pad(d.getHours())}:${pad(d.getMinutes())}`};
+const day=t=>{const d=new Date(t);return `${pad(d.getDate())}/${pad(d.getMonth()+1)}`};
+const gb=mib=>((+mib||0)/1024).toFixed(1)+' GB';
+const gbB=b=>b==null?'—':(b/1073741824).toFixed(1)+' GB';
+const pct=(a,b)=>b?Math.max(0,Math.min(100,100*a/b)):0;
+const COLORS=['var(--fs-brand)','#4f9dde','#4fa86b','#c58af9','#e0b341','#e06c9f','#5fc4c0','#a3a3a3'];
+const RANGES=[[6,'6 h'],[24,'24 h'],[72,'3 días'],[168,'7 días']];
+let range=24, every=5;
+const charts={};
+
+function meter(label,value,max,text){return `<div class="meter"><span>${label}</span><div class="track"><div class="fill" style="width:${pct(value,max).toFixed(1)}%"></div></div><span class="v">${text}</span></div>`}
+
+async function live(){
+  try{
+    const u=await faustus.api('/api/system/usage');
+    const pool=u.gpu_pool||{}, gpus=u.gpu||[], ram=u.ram||{}, cpu=u.cpu||{};
+    $('sub').textContent=`${pool.name||'Sin GPU visible'} · ahora, ${hhmm(new Date())}`;
+    $('kpis').innerHTML=[
+      [(pool.util??0)+' %','uso máximo de GPU'],[(pool.util_avg??0)+' %','uso medio de GPU'],
+      [pool.mem_total?`${gb(pool.mem_used)} / ${gb(pool.mem_total)}`:'—','VRAM usada'],
+      [pool.temp!=null?pool.temp+' °C':'—','temperatura máxima'],[pool.power!=null?Math.round(pool.power)+' W':'—','potencia de las GPU'],
+      [ram.percent!=null?ram.percent+' %':'—','RAM del sistema'],[cpu.percent!=null?cpu.percent+' %':'—','CPU']
+    ].map(([b,s])=>`<div class="kpi"><b>${b}</b><span>${s}</span></div>`).join('');
+    $('cards').innerHTML=gpus.length?gpus.map(g=>`<div class="card"><h2>GPU ${g.index} · ${esc(g.name)}</h2>
+      ${meter('Uso',g.util,100,(g.util??0)+' %')}
+      ${meter('VRAM',g.mem_used,g.mem_total,`${gb(g.mem_used)} / ${gb(g.mem_total)}`)}
+      ${meter('Temp.',g.temp,95,(g.temp??'—')+' °C')}
+      ${meter('Potencia',g.power,g.power_limit,`${Math.round(g.power||0)} / ${Math.round(g.power_limit||0)} W`)}
+      <p class="muted">${(g.models||[]).length?'Modelos: '+g.models.map(m=>esc(m.name)).join(', '):'Sin modelos en esta tarjeta'}</p></div>`).join('')
+      :'<div class="card msg">nvidia-smi no ve ninguna GPU.</div>';
+    const ms=(u.resident&&u.resident.models)||[], ol=u.ollama||{}, ext=u.external_runners||[];
+    const head=`<p class="muted">Ollama ${ol.reachable?'responde en '+esc(ol.base):'no responde'}${ext.length?' · '+ext.length+' servidor(es) externos':''}</p>`;
+    $('models').className='';
+    $('models').innerHTML=head+(ms.length?`<table><thead><tr><th>Modelo</th><th>Motor</th><th>Cargado por</th><th>Memoria</th><th>GPU</th><th>Contexto</th></tr></thead><tbody>${ms.map(m=>`<tr><td>${esc(m.model)} ${m.generating?'<span class="tag">generando</span>':''}</td><td>${esc(m.engine||'')}</td><td>${esc(m.loaded_by||'')}</td><td class="n">${gbB(m.bytes)}</td><td>${(m.gpus||[]).map(x=>x.index).join(', ')||'CPU'}</td><td class="n">${m.context_length||'—'}</td></tr>`).join('')}</tbody></table>`:'<p class="msg">No hay ningún modelo cargado ahora.</p>');
+  }catch(e){$('sub').innerHTML='<span class="err">No se pudo leer /api/system/usage: '+esc(e.message||e)+'</span>'}
+}
+
+function chart(id,title,series,unit,max){
+  const pts=series.flatMap(s=>s.pts);
+  if(!pts.length) return `<div class="card"><h2>${title}</h2><p class="msg">Aún no hay muestras en este periodo.</p></div>`;
+  const W=600,H=190,L=38,R=8,T=8,B=22;
+  let t0=Infinity,t1=-Infinity,vm=0;
+  for(const [t,v] of pts){if(t<t0)t0=t;if(t>t1)t1=t;if(v>vm)vm=v}
+  const ymax=max??(vm>0?vm*1.15:1);
+  const x=t=>L+(t1===t0?.5:(t-t0)/(t1-t0))*(W-L-R), y=v=>T+(1-Math.min(v,ymax)/ymax)*(H-T-B);
+  let g='';
+  for(let i=0;i<=4;i++){const v=ymax*i/4,yy=y(v);g+=`<line class="gl" x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}"/><text x="${L-5}" y="${yy+3}" text-anchor="end">${v>=10?Math.round(v):v.toFixed(1)}</text>`}
+  const long=t1-t0>36*3600e3;
+  for(let i=0;i<=4;i++){const t=t0+(t1-t0)*i/4;g+=`<text x="${x(t)}" y="${H-6}" text-anchor="middle">${long?day(t)+' '+hhmm(t):hhmm(t)}</text>`}
+  const lines=series.map(s=>s.pts.length?`<polyline fill="none" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round" points="${s.pts.map(([t,v])=>x(t).toFixed(1)+','+y(v).toFixed(1)).join(' ')}"/>`:'').join('');
+  charts[id]={series,t0,t1,W,L,R,unit};
+  return `<div class="card"><h2>${title}</h2><div class="chart" data-chart="${id}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${g}${lines}<line class="cur" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="var(--fs-text-3)" stroke-dasharray="3 3" style="display:none"/></svg><div class="tip"></div></div>
+    <div class="legend">${series.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div></div>`;
+}
+
+function nearest(pts,t){let lo=0,hi=pts.length-1;while(hi-lo>1){const m=(lo+hi)>>1;if(pts[m][0]<t)lo=m;else hi=m}return Math.abs(pts[lo][0]-t)<=Math.abs(pts[hi][0]-t)?pts[lo]:pts[hi]}
+
+function hover(){
+  document.querySelectorAll('[data-chart]').forEach(el=>{
+    const c=charts[el.dataset.chart], svg=el.querySelector('svg'), tip=el.querySelector('.tip'), cur=el.querySelector('.cur');
+    el.onmousemove=ev=>{
+      const r=svg.getBoundingClientRect(), fx=(ev.clientX-r.left)/r.width*c.W;
+      const t=c.t0+Math.max(0,Math.min(1,(fx-c.L)/(c.W-c.L-c.R)))*(c.t1-c.t0);
+      const rows=c.series.filter(s=>s.pts.length).map(s=>{const p=nearest(s.pts,t);return `<div><i style="display:inline-block;width:8px;height:8px;background:${s.color};margin-right:5px"></i>${esc(s.name)}: <b>${(+p[1]).toFixed(1)}${c.unit}</b></div>`});
+      tip.innerHTML=`<div>${day(t)} ${hhmm(t)}</div>${rows.join('')}`;tip.style.display='block';
+      const px=ev.clientX-r.left;tip.style.left=Math.min(px+12,r.width-tip.offsetWidth-4)+'px';
+      cur.setAttribute('x1',fx);cur.setAttribute('x2',fx);cur.style.display='';
+    };
+    el.onmouseleave=()=>{tip.style.display='none';cur.style.display='none'};
+  });
+}
+
+async function history(){
+  const since=localISO(new Date(Date.now()-range*3600e3));
+  try{
+    const [m,g]=await Promise.all([
+      faustus.db.query('SELECT ts, modelos FROM muestras WHERE ts >= ? ORDER BY id',[since],{limit:10000}),
+      faustus.db.query('SELECT ts, idx, util, mem_used, temp FROM gpus WHERE ts >= ? ORDER BY id',[since],{limit:10000})]);
+    const T=s=>new Date(s).getTime(), by={};
+    g.rows.forEach(r=>{(by[r.idx]=by[r.idx]||[]).push(r)});
+    const idx=Object.keys(by).sort((a,b)=>a-b);
+    const ser=f=>idx.map((i,k)=>({name:'GPU '+i,color:COLORS[k%COLORS.length],pts:by[i].map(r=>[T(r.ts),f(r)])}));
+    $('charts').innerHTML=chart('u','Uso por GPU (%)',ser(r=>+r.util||0),' %',100)+chart('m','VRAM usada por GPU (GB)',ser(r=>(+r.mem_used||0)/1024),' GB')+chart('t','Temperatura por GPU (°C)',ser(r=>+r.temp||0),' °C');
+    hover();
+    const seen={};
+    m.rows.forEach(r=>{let list=[];try{list=JSON.parse(r.modelos||'[]')||[]}catch(e){}new Set(list).forEach(n=>{if(n){seen[n]=seen[n]||{n:0,last:r.ts};seen[n].n++;seen[n].last=r.ts}})});
+    const rows=Object.entries(seen).sort((a,b)=>b[1].n-a[1].n);
+    $('seen').className=rows.length?'':'msg';
+    $('seen').innerHTML=rows.length?`<table><thead><tr><th>Modelo</th><th>Muestras</th><th>Tiempo aprox.</th><th>Última vez</th></tr></thead><tbody>${rows.map(([n,v])=>`<tr><td>${esc(n)}</td><td class="n">${v.n}</td><td class="n">${v.n*every>=60?(v.n*every/60).toFixed(1)+' h':v.n*every+' min'}</td><td class="n">${day(v.last)} ${hhmm(v.last)}</td></tr>`).join('')}</tbody></table>`
+      :`${m.rows.length} muestras en el periodo y ningún modelo cargado en ellas.`;
+  }catch(e){$('charts').innerHTML='<div class="card err">No se pudo leer el histórico: '+esc(e.message||e)+'</div>'}
+}
+
+async function status(){
+  try{
+    const a=((await faustus.actions.list()).actions||[]).find(x=>x.name==='muestra');
+    if(!a){$('auto').textContent='Este panel no tiene la acción «muestra»: el histórico solo crece con «Tomar muestra ahora».';return}
+    if(a.every_minutes)every=a.every_minutes;
+    const when=a.every_minutes?`cada ${a.every_minutes} min`:(a.schedule||'solo a mano');
+    $('auto').textContent=`Muestra automática ${a.enabled===false?'en pausa':when} · ${a.runs||0} ejecuciones`+
+      (a.last_run?` · última a las ${hhmm(a.last_run)} ${a.last_ok?'correcta':'con error: '+(a.last_error||'')}`:'')+(a.next_run?` · próxima a las ${hhmm(a.next_run)}`:'');
+  }catch(e){$('auto').textContent='No se pudo leer la acción programada: '+(e.message||e)}
+}
+
+function setRange(h){range=h;document.querySelectorAll('#ranges button').forEach(b=>b.classList.toggle('on',+b.dataset.h===h));faustus.storage.set('range',h).catch(()=>{});history()}
+
+$('sample').onclick=async()=>{
+  const b=$('sample');b.disabled=true;b.textContent='Tomando muestra…';
+  try{await faustus.actions.run('muestra');await Promise.all([history(),status()])}
+  catch(e){$('auto').innerHTML='<span class="err">La muestra falló: '+esc(e.message||e)+'</span>'}
+  finally{b.disabled=false;b.textContent='Tomar muestra ahora'}
+};
+(async()=>{
+  RANGES.forEach(([h,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.h=h;b.onclick=()=>setRange(h);$('ranges').appendChild(b);$('ranges').append(' ')});
+  const saved=await faustus.storage.get('range',24).catch(()=>24);
+  await status();
+  live();setRange(+saved||24);
+  setInterval(()=>{if(!document.hidden)live()},10000);
+  setInterval(()=>{if(!document.hidden){history();status()}},60000);
+})();
+</script></body></html>

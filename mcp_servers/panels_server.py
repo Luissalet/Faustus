@@ -1,9 +1,10 @@
 """
 panels_server.py
 
-MCP server for the user's panels (`src/panels.py`): the same eight `panel_*` tools the chat has
-(create, update, get, list, delete, check, versions, restore), so the chat, the HTTP routes
-(`/api/panels*`) and this server share one implementation.
+MCP server for the user's panels (`src/panels.py`): the same fifteen `panel_*` tools the chat has
+(create, update, get, list, delete, check, versions, restore; the panel's database db_query/db_exec,
+its server actions action_set/action_list/action_run, from_template, and sources: what a panel can read), so the chat, the HTTP
+routes (`/api/panels*`) and this server share one implementation.
 
 * **stdout is the JSON-RPC stream.** `src/stdio_guard.py` is raised before anything else is imported.
 * panels are stored under DATA_DIR/panels (one user's Faustus); `panel_check` opens the page on the
@@ -29,7 +30,8 @@ except Exception:  # pragma: no cover - the server must start regardless
 server = Server("panels")
 
 _NAMES = ("panel_create", "panel_update", "panel_get", "panel_list", "panel_delete", "panel_check",
-          "panel_versions", "panel_restore")
+          "panel_versions", "panel_restore", "panel_db_query", "panel_db_exec", "panel_action_set",
+          "panel_action_list", "panel_action_run", "panel_from_template", "panel_sources")
 
 
 def _text(payload) -> list[TextContent]:

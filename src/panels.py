@@ -7,10 +7,14 @@ Layout, one folder per panel under DATA_DIR/panels/<id>/:
     index.html            the current page (self-contained)
     versions/<n>.html     every saved version (n = 1, 2, ...); restoring writes a new one
     storage.json          the panel's own key-value store (faustus.storage)
+    panel.db              the panel's own SQLite database (faustus.db, src/panel_db.py)
+    actions.json          its server actions, run now or on a schedule (faustus.actions, src/panel_actions.py)
+    actions_state.json    the last runs of those actions
 
 The page is served on Faustus' own origin (GET /api/panels/{id}/page) inside an iframe.
 `faustus-panel.js` (served by routes/panel_routes.py, see PANEL_HELPER_JS) gives it
-`faustus.api`, `faustus.tool`, `faustus.theme` and `faustus.storage`.
+`faustus.api`, `faustus.tool`, `faustus.theme`, `faustus.storage`, `faustus.db`,
+`faustus.actions` and `faustus.fetch`. Ready-made panels live in src/panel_templates.
 
 `check()` loads the page headless with Playwright and reports console errors, page
 errors, failed requests and a screenshot, so the agent can test a panel before
@@ -231,6 +235,11 @@ def reorder(ids: List[str]) -> List[Dict[str, Any]]:
 def delete(panel_id: str) -> Dict[str, Any]:
     with _lock:
         d = _existing(panel_id)
+        try:  # its scheduled actions go with it
+            from src import panel_actions
+            panel_actions.sync_schedule(panel_id, remove_all=True)
+        except Exception:  # noqa: BLE001 - a missing scheduler must not keep a panel alive
+            pass
         shutil.rmtree(d, ignore_errors=True)
         return {"deleted": panel_id}
 
@@ -424,6 +433,16 @@ PANEL_HELPER_JS = r"""/* faustus-panel.js -- helper for Faustus panels.
  *   faustus.tool(name, args, app)    run an agent tool, or a tool of a connected Hoard when `app` is given
  *   faustus.theme                    {vars:{--fs-*:value}, mode:'dark'|'light'}; also set on :root as CSS variables
  *   faustus.storage                  get(key), set(key, value), remove(key), all()  -- saved on the server per panel
+ *   faustus.db                       the panel's own SQLite database:
+ *                                      query(sql, params?, {limit, offset, timeout_s}?) -> {columns, rows:[{col:value}], more, next_offset}
+ *                                      exec(sql, params?)  exec(sql, [[..],[..]], {many:true})  exec([{sql, params}, ...])  -> {changes, last_row_id}
+ *                                      tables() -> {tables:[{name, columns, rows}], bytes}
+ *   faustus.actions                  list(), set(name, spec), remove(name), run(name)  -- server actions (tool or URL, now or every N minutes)
+ *   faustus.fetch(url, opts)         fetch from the server: /api/... (Faustus), hub:/api/... (the Hub) or any http(s) URL,
+ *                                    including localhost; -> {status, ok, body}; throws on a non-2xx answer unless opts.raw
+ *   faustus.hub(path, opts)          the Hoard Hub's routes, wherever the Hub runs -> the parsed answer (throws on an error);
+ *                                    the Ágora with spaces and tasks is the Hub's: faustus.hub('/api/agora/spaces'),
+ *                                    faustus.hub('/api/agora/tasks?space_id=faustus&status=active')
  *   faustus.onTheme(fn)              called when the theme changes
  */
 (function () {
@@ -496,6 +515,50 @@ PANEL_HELPER_JS = r"""/* faustus-panel.js -- helper for Faustus panels.
     set: function (key, value) { return req(base + '/' + encodeURIComponent(key), { method: 'PUT', body: { value: value } }); },
     remove: function (key) { return req(base + '/' + encodeURIComponent(key), { method: 'DELETE' }); },
     all: function () { return req(base); }
+  };
+  var pbase = '/api/panels/' + encodeURIComponent(id);
+  api.db = {
+    query: function (sql, params, opts) {
+      opts = opts || {};
+      return req(pbase + '/db/query', { body: { sql: sql, params: params === undefined ? null : params,
+        limit: opts.limit, offset: opts.offset, timeout_s: opts.timeout_s } });
+    },
+    exec: function (sql, params, opts) {
+      opts = opts || {};
+      var body = Array.isArray(sql) ? { batch: sql } : { sql: sql };
+      if (!Array.isArray(sql)) { if (opts.many) body.many = params; else body.params = params === undefined ? null : params; }
+      if (opts.timeout_s) body.timeout_s = opts.timeout_s;
+      return req(pbase + '/db/exec', { body: body });
+    },
+    tables: function () { return req(pbase + '/db/tables'); }
+  };
+  api.actions = {
+    list: function () { return req(pbase + '/actions'); },
+    set: function (name, spec) { return req(pbase + '/actions/' + encodeURIComponent(name), { method: 'PUT', body: spec || {} }); },
+    remove: function (name) { return req(pbase + '/actions/' + encodeURIComponent(name), { method: 'DELETE' }); },
+    run: function (name) { return req(pbase + '/actions/' + encodeURIComponent(name) + '/run', { method: 'POST', body: {} }); }
+  };
+  api.fetch = function (url, opts) {
+    opts = opts || {};
+    return req('/api/panels/fetch', { body: { url: url, method: opts.method, headers: opts.headers, body: opts.body,
+      timeout_s: opts.timeout_s } }).then(function (r) {
+      if (r && r.ok === false && !opts.raw) {
+        var b = r.body, msg = (b && typeof b === 'object' && (b.error || b.detail)) || ('HTTP ' + r.status);
+        var err = new Error(String(msg)); err.status = r.status; err.data = b; throw err;
+      }
+      return r;
+    });
+  };
+  api.hub = function (path, opts) {
+    opts = opts || {};
+    return req('/api/panels/hub', { body: { path: path, method: opts.method, body: opts.body, timeout_s: opts.timeout_s } })
+      .then(function (r) {
+        if (r && r.ok === false) {
+          var b = r.body, msg = (b && typeof b === 'object' && (b.error || b.detail)) || ('Hub HTTP ' + r.status);
+          var err = new Error(String(msg)); err.status = r.status; err.data = b; throw err;
+        }
+        return r ? r.body : r;
+      });
   };
   api.onTheme = function (fn) { listeners.push(fn); };
   api.theme = { vars: fallback, mode: 'dark' };

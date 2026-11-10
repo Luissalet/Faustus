@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ágora</title>
+<script src="/api/panels/faustus-panel.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:20px;font:14px/1.45 system-ui,sans-serif;background:var(--fs-bg);color:var(--fs-text-1)}
+h1{font-size:20px;margin:0}h2{font-size:14px;margin:0 0 8px}
+.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grow{flex:1}
+.sub{color:var(--fs-text-3);margin:4px 0 14px;font-size:12.5px}
+button,select,input{border:1px solid var(--fs-border);background:var(--fs-surface-1);color:var(--fs-text-1);border-radius:8px;padding:5px 10px;font:inherit;font-size:12.5px}
+button{cursor:pointer;color:var(--fs-text-2)}button:hover{color:var(--fs-text-1)}
+input{min-width:180px}
+.layout{display:grid;grid-template-columns:minmax(170px,230px) 1fr;gap:14px;align-items:start}
+@media (max-width:720px){.layout{grid-template-columns:1fr}}
+.spaces{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:6px;max-height:calc(100vh - 120px);overflow:auto}
+.sp{display:flex;gap:6px;align-items:center;width:100%;text-align:left;border:0;background:none;border-radius:6px;padding:6px 8px;color:var(--fs-text-2)}
+.sp:hover{background:var(--fs-surface-2)}.sp.on{background:var(--fs-brand);color:#fff}
+.sp .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sp .c{font-size:11px;font-variant-numeric:tabular-nums;opacity:.85}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.counts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.pill{border:1px solid var(--fs-border);border-radius:12px;padding:2px 10px;font-size:12px;background:var(--fs-surface-1);color:var(--fs-text-2);cursor:pointer}
+.pill.on{border-color:var(--fs-brand);color:var(--fs-text-1)}
+.list{display:grid;gap:8px}
+.task{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:10px 12px;cursor:pointer}
+.task:hover{border-color:var(--fs-text-3)}
+.row{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.id{color:var(--fs-text-3);font-variant-numeric:tabular-nums;font-size:12px}.title{font-weight:600;flex:1;min-width:200px}
+.meta{color:var(--fs-text-3);font-size:12px;margin-top:3px}
+.st{font-size:11px;border-radius:9px;padding:1px 8px;background:var(--fs-surface-2);color:var(--fs-text-2);white-space:nowrap}
+.st[data-s=open]{background:#4f9dde33;color:#4f9dde}.st[data-s=claimed],.st[data-s=in_progress]{background:#e0b34133;color:#c99a1e}
+.st[data-s=review],.st[data-s=approved]{background:#c58af933;color:#a86ee0}.st[data-s=changes],.st[data-s=blocked]{background:#d65a5a33;color:#d65a5a}
+.st[data-s=done]{background:#4fa86b33;color:#4fa86b}.st[data-s=dropped]{opacity:.7}
+.detail{margin-top:8px;padding-top:8px;border-top:1px solid var(--fs-border);font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fs-text-2);cursor:auto}
+.detail b{color:var(--fs-text-1)}
+.msg{color:var(--fs-text-3);padding:16px 0}.err{color:#d65a5a}
+</style></head><body>
+<div class="top"><h1>Ágora</h1><span class="grow"></span><button id="reload">Actualizar</button></div>
+<p class="sub" id="sub">Leyendo los espacios del Hub…</p>
+<div class="layout">
+  <nav class="spaces" id="spaces" aria-label="Espacios"><div class="msg">Leyendo…</div></nav>
+  <main>
+    <div class="filters">
+      <select id="status" aria-label="Estado">
+        <option value="active">Activas (en curso, revisión, bloqueadas)</option>
+        <option value="">Todas</option>
+        <option value="open">Abiertas sin dueño</option>
+        <option value="claimed">Reclamadas</option>
+        <option value="in_progress">En curso</option>
+        <option value="review">En revisión</option>
+        <option value="changes">Con cambios pedidos</option>
+        <option value="approved">Aprobadas</option>
+        <option value="blocked">Bloqueadas</option>
+        <option value="done">Hechas</option>
+        <option value="dropped">Descartadas</option>
+      </select>
+      <select id="owner" aria-label="Responsable"><option value="">Cualquier responsable</option></select>
+      <input id="q" type="search" placeholder="Buscar en título, cuerpo o resultado" aria-label="Buscar">
+    </div>
+    <div class="counts" id="counts"></div>
+    <div class="list" id="list"><div class="msg">Elige un espacio.</div></div>
+  </main>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ST={open:'abierta',claimed:'reclamada',in_progress:'en curso',review:'en revisión',changes:'cambios pedidos',approved:'aprobada',blocked:'bloqueada',done:'hecha',dropped:'descartada'};
+const ago=ts=>{if(!ts)return '';const s=Date.now()/1000-ts;if(s<90)return 'hace un momento';if(s<5400)return `hace ${Math.round(s/60)} min`;if(s<129600)return `hace ${Math.round(s/3600)} h`;return `hace ${Math.round(s/86400)} días`};
+let spaces=[], space='', tasks=[], open=new Set();
+const prefs={};
+
+async function loadSpaces(){
+  try{
+    const r=await faustus.hub('/api/agora/spaces');
+    spaces=(r&&r.spaces)||[];
+    spaces.sort((a,b)=>(b.last_activity||0)-(a.last_activity||0));
+    const total=spaces.reduce((n,s)=>n+((s.counts||{}).active||0),0);
+    $('sub').textContent=`${spaces.length} espacios · ${total} tareas activas en total`;
+    if(!space||!spaces.some(s=>s.id===space))space=(spaces.find(s=>(s.counts||{}).active)||spaces[0]||{}).id||'';
+    drawSpaces();
+  }catch(e){$('sub').innerHTML='<span class="err">No se pudo leer el Ágora del Hub: '+esc(e.message||e)+'</span>';$('spaces').innerHTML='<div class="msg">Sin datos.</div>'}
+}
+function drawSpaces(){
+  $('spaces').innerHTML=spaces.map(s=>{const c=s.counts||{};return `<button class="sp${s.id===space?' on':''}" data-id="${esc(s.id)}" title="${esc(s.description||'')}"><span class="t">${esc(s.title||s.id)}</span><span class="c">${c.active?c.active+' activas':''}${c.open?' · '+c.open+' abiertas':''}</span></button>`}).join('')||'<div class="msg">No hay espacios.</div>';
+  $('spaces').querySelectorAll('.sp').forEach(b=>b.onclick=()=>{space=b.dataset.id;open.clear();save();drawSpaces();loadTasks()});
+}
+async function loadTasks(){
+  if(!space){$('list').innerHTML='<div class="msg">Elige un espacio.</div>';return}
+  $('list').innerHTML='<div class="msg">Leyendo las tareas…</div>';
+  const st=$('status').value;
+  try{
+    const r=await faustus.hub(`/api/agora/tasks?space_id=${encodeURIComponent(space)}&limit=300${st?'&status='+encodeURIComponent(st):''}`);
+    tasks=(r&&r.tasks)||[];
+    const owners=[...new Set(tasks.map(t=>t.owner).filter(Boolean))].sort();
+    const cur=$('owner').value||prefs.owner||'';
+    $('owner').innerHTML='<option value="">Cualquier responsable</option>'+owners.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('');
+    $('owner').value=owners.includes(cur)?cur:'';
+    draw();
+  }catch(e){$('list').innerHTML='<div class="msg err">No se pudieron leer las tareas: '+esc(e.message||e)+'</div>'}
+}
+function visible(){
+  const q=$('q').value.trim().toLowerCase(), ow=$('owner').value;
+  return tasks.filter(t=>(!ow||t.owner===ow)&&(!q||[t.title,t.body,t.result,'#'+t.id].join(' ').toLowerCase().includes(q)));
+}
+function draw(){
+  const rows=visible(), by={};
+  tasks.forEach(t=>{by[t.status]=(by[t.status]||0)+1});
+  $('counts').innerHTML=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([s,n])=>`<span class="pill">${esc(ST[s]||s)}: ${n}</span>`).join('');
+  if(!rows.length){$('list').innerHTML=`<div class="msg">${tasks.length?'Ninguna tarea coincide con el filtro.':'No hay tareas con este estado en este espacio.'}</div>`;return}
+  $('list').innerHTML=rows.map(t=>`<div class="task" data-id="${t.id}">
+    <div class="row"><span class="id">#${t.id}</span><span class="title">${esc(t.title)}</span><span class="st" data-s="${esc(t.status)}">${esc(ST[t.status]||t.status)}</span></div>
+    <div class="meta">${esc(t.kind||'')} · prioridad ${t.priority??'—'}${t.owner?' · '+esc(t.owner):' · sin dueño'}${t.reviewer?' · revisa '+esc(t.reviewer):''} · ${ago(t.updated)}${(t.commits||[]).length?' · '+t.commits.length+' commits':''}${(t.labels||[]).length?' · '+t.labels.map(esc).join(', '):''}</div>
+    ${open.has(t.id)?`<div class="detail">${t.body?'<b>Encargo</b>\n'+esc(t.body.slice(0,4000))+'\n\n':''}${t.acceptance?'<b>Aceptación</b>\n'+esc(t.acceptance.slice(0,2000))+'\n\n':''}${t.result?'<b>Resultado</b>\n'+esc(String(t.result).slice(0,3000))+'\n\n':''}${(t.commits||[]).length?'<b>Commits</b> '+t.commits.map(esc).join(', ')+'\n':''}${(t.paths||[]).length?'<b>Rutas</b> '+t.paths.map(esc).join(', ')+'\n':''}<b>Creada por</b> ${esc(t.created_by||'')} ${ago(t.created)}${t.closed_at?' · cerrada '+ago(t.closed_at):''}</div>`:''}
+  </div>`).join('');
+  $('list').querySelectorAll('.task').forEach(el=>el.onclick=ev=>{if(ev.target.closest('.detail'))return;const id=+el.dataset.id;open.has(id)?open.delete(id):open.add(id);draw()});
+}
+function save(){faustus.storage.set('filtros',{space,status:$('status').value,owner:$('owner').value}).catch(()=>{})}
+$('status').onchange=()=>{save();loadTasks()};
+$('owner').onchange=()=>{prefs.owner=$('owner').value;save();draw()};
+$('q').oninput=draw;
+$('reload').onclick=async()=>{await loadSpaces();await loadTasks()};
+(async()=>{
+  const f=await faustus.storage.get('filtros',{}).catch(()=>({}));
+  if(f&&f.space)space=f.space;if(f&&f.status!==undefined)$('status').value=f.status;if(f&&f.owner)prefs.owner=f.owner;
+  await loadSpaces();await loadTasks();
+  setInterval(async()=>{if(!document.hidden){await loadSpaces();await loadTasks()}},60000);
+})();
+</script></body></html>

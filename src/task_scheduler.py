@@ -31,8 +31,14 @@ logger = logging.getLogger(__name__)
 #: Housekeeping whose success is not news (it still notifies on failure).
 QUIET_WHEN_DONE_ACTIONS = frozenset({
     "tidy_sessions", "tidy_documents", "tidy_research", "consolidate_memory",
-    "test_skills", "audit_skills", "learn_sender_signatures",
+    "test_skills", "audit_skills", "learn_sender_signatures", "panel_action",
 })
+
+#: Actions that only read a route or a tool and write a few rows (a user panel's
+#: scheduled sample, src/panel_actions.py). They use no model and take a moment,
+#: so they also run while a chat turn is going instead of waiting for Faustus to
+#: be idle: a GPU history with a hole every time the user chats is no history.
+LIGHT_BACKGROUND_ACTIONS = frozenset({"panel_action"})
 
 
 def _plain_line(text: str) -> str:
@@ -2208,12 +2214,17 @@ class TaskScheduler:
                 if foreground_active or breaker_until:
                     defer_to = (now + timedelta(minutes=15) if foreground_active
                                 else datetime.fromtimestamp(breaker_until, tz=timezone.utc).replace(tzinfo=None))
+                    light = []
                     for task in due:
+                        if (foreground_active and not breaker_until and (task.task_type or "") == "action"
+                                and (task.action or "") in LIGHT_BACKGROUND_ACTIONS):
+                            light.append((task.id, task.next_run))
+                            continue
                         self._note_postponed(task.id, task.next_run, defer_to)
                         task.next_run = defer_to
                     if due:
                         db.commit()
-                    candidates = []
+                    candidates = light
                 else:
                     db.rollback()
                 to_dispatch = []
@@ -2276,7 +2287,7 @@ class TaskScheduler:
                     task_id,
                     run_id,
                     release_executing=release_executing,
-                    gate_foreground=not bypass_model_slot,
+                    gate_foreground=not (bypass_model_slot or self._task_is_light(task_id)),
                 )
                 return
 
@@ -2813,6 +2824,7 @@ class TaskScheduler:
         "tidy_research",
         "test_skills",
         "audit_skills",
+        "panel_action",
     })
 
     _MODEL_BACKED_ACTIONS = frozenset({
@@ -2842,6 +2854,20 @@ class TaskScheduler:
             if task_type != "action":
                 return True
             return (getattr(task, "action", "") or "") in self._MODEL_BACKED_ACTIONS
+        finally:
+            db.close()
+
+    def _task_is_light(self, task_id: str) -> bool:
+        """A LIGHT_BACKGROUND_ACTIONS task: runs without waiting for Faustus to be idle."""
+        from core.database import SessionLocal, ScheduledTask
+
+        db = SessionLocal()
+        try:
+            task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
+            return bool(task) and (getattr(task, "task_type", "") or "") == "action" and (
+                getattr(task, "action", "") or "") in LIGHT_BACKGROUND_ACTIONS
+        except Exception:  # noqa: BLE001
+            return False
         finally:
             db.close()
 

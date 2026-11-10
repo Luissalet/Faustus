@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Uso</title>
+<script src="/api/panels/faustus-panel.js"></script>
+<style>
+body{margin:0;padding:20px;font:14px/1.45 system-ui,sans-serif;background:var(--fs-bg);color:var(--fs-text-1)}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--fs-text-3);margin:0 0 16px}
+.bar{display:flex;gap:6px;margin-bottom:16px}.bar button{border:1px solid var(--fs-border);background:var(--fs-surface-1);color:var(--fs-text-2);border-radius:8px;padding:5px 12px;cursor:pointer}
+.bar button.on{background:var(--fs-brand);color:#fff;border-color:var(--fs-brand)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px}
+.kpi{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:12px}.kpi b{display:block;font-size:20px}.kpi span{color:var(--fs-text-3);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.card{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:14px}.card h2{font-size:14px;margin:0 0 10px}
+.row{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;gap:8px;align-items:center;margin:5px 0;font-size:12.5px}
+.row .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fs-text-2)}.track{background:var(--fs-surface-2);border-radius:5px;height:10px}.fill{background:var(--fs-brand);height:10px;border-radius:5px}
+.v{color:var(--fs-text-3);font-variant-numeric:tabular-nums}.msg{color:var(--fs-text-3);padding:30px 0}
+</style></head><body>
+<h1>Uso</h1><p class="sub" id="sub">Cargando…</p>
+<div class="bar" id="bar"></div>
+<div id="out" class="msg">Cargando datos de uso…</div>
+<script>
+const fmt=n=>n>=1e9?(n/1e9).toFixed(2)+' B':n>=1e6?(n/1e6).toFixed(1)+' M':n>=1e3?(n/1e3).toFixed(1)+' k':String(Math.round(n));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function bars(title,rows){const max=Math.max(1,...rows.map(r=>r[1]));return `<div class="card"><h2>${title}</h2>${rows.length?rows.map(([n,v,label])=>`<div class="row"><span class="n" title="${esc(n)}">${esc(n)}</span><div class="track"><div class="fill" style="width:${(100*v/max).toFixed(1)}%"></div></div><span class="v">${label??fmt(v)}</span></div>`).join(''):'<p class="msg">Sin datos en este periodo.</p>'}</div>`}
+async function load(days){
+  document.querySelectorAll('#bar button').forEach(b=>b.classList.toggle('on',+b.dataset.d===days));
+  faustus.storage.set('days',days);
+  try{
+    const r=await faustus.api('/api/usage/recap?days='+days);
+    const t=r.total||{};
+    document.getElementById('sub').textContent=`Últimos ${r.days} días · desde ${String(r.since).slice(0,10)}`;
+    const models=Object.entries(r.by_model||{}).map(([m,v])=>[m,(v.input_tokens||0)+(v.output_tokens||0)]).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const turns=Object.entries(r.by_model||{}).map(([m,v])=>[m,v.turns||0,String(v.turns||0)]).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const tools=(r.top_tools||[]).slice(0,10).map(([n,c])=>[n,c,String(c)]);
+    const daysB=(r.busiest_days||[]).map(([d,c])=>[d,c,c+' turnos']);
+    document.getElementById('out').className='';
+    document.getElementById('out').innerHTML=`<div class="kpis">
+      <div class="kpi"><b>${r.chats??0}</b><span>conversaciones</span></div>
+      <div class="kpi"><b>${t.turns??0}</b><span>turnos</span></div>
+      <div class="kpi"><b>${fmt(t.input_tokens||0)}</b><span>tokens de entrada</span></div>
+      <div class="kpi"><b>${fmt(t.output_tokens||0)}</b><span>tokens de salida</span></div>
+      <div class="kpi"><b>${t.tool_calls??0}</b><span>llamadas a herramientas</span></div>
+      <div class="kpi"><b>${t.cache_hit_percent??0} %</b><span>caché de prompt</span></div>
+      <div class="kpi"><b>${((t.time_s||0)/3600).toFixed(1)} h</b><span>tiempo de modelo</span></div></div>
+      <div class="grid">${bars('Tokens por modelo',models)}${bars('Turnos por modelo',turns)}${bars('Herramientas más usadas',tools)}${bars('Días con más actividad',daysB)}</div>`;
+  }catch(e){document.getElementById('out').className='msg';document.getElementById('out').textContent='No se pudo leer el uso: '+(e.message||e)}
+}
+(async()=>{
+  const bar=document.getElementById('bar');
+  for(const d of [7,30,90,365]){const b=document.createElement('button');b.textContent=d===365?'1 año':d+' días';b.dataset.d=d;b.onclick=()=>load(d);bar.appendChild(b)}
+  load(await faustus.storage.get('days',30).catch(()=>30));
+})();
+</script></body></html>

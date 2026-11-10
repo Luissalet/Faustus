@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Notas y tablero</title>
+<script src="/api/panels/faustus-panel.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:20px;font:14px/1.45 system-ui,sans-serif;background:var(--fs-bg);color:var(--fs-text-1)}
+h1{font-size:20px;margin:0}
+.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.grow{flex:1}
+.sub{color:var(--fs-text-3);font-size:12.5px}
+button,input,textarea,select{border:1px solid var(--fs-border);background:var(--fs-surface-1);color:var(--fs-text-1);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px}
+button{cursor:pointer;color:var(--fs-text-2)}button:hover{color:var(--fs-text-1)}
+button.primary{background:var(--fs-brand);border-color:var(--fs-brand);color:#fff}
+.add{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.add input{flex:1;min-width:220px}
+.board{display:grid;grid-template-columns:repeat(4,minmax(200px,1fr));gap:12px;align-items:start;overflow-x:auto}
+@media (max-width:820px){.board{grid-template-columns:repeat(2,minmax(200px,1fr))}}
+.col{background:var(--fs-surface-1);border:1px solid var(--fs-border);border-radius:10px;padding:10px;min-height:120px}
+.col.over{border-color:var(--fs-brand)}
+.col h2{font-size:13px;margin:0 0 8px;display:flex;gap:6px;align-items:center}.col h2 span{color:var(--fs-text-3);font-weight:400}
+.card{background:var(--fs-surface-2);border:1px solid var(--fs-border);border-left:4px solid var(--c,var(--fs-border));border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:grab}
+.card.drag{opacity:.5}
+.card .t{font-weight:600;overflow-wrap:anywhere}.card .x{color:var(--fs-text-2);font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
+.card .m{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.card .m button{padding:1px 7px;font-size:12px}
+.card .d{color:var(--fs-text-3);font-size:11px;margin-left:auto}
+.dot{width:14px;height:14px;border-radius:50%;border:1px solid var(--fs-border);padding:0;background:var(--c)}
+.edit textarea{width:100%;min-height:80px;margin:4px 0}.edit input{width:100%}
+.empty{color:var(--fs-text-3);font-size:12.5px;padding:6px 2px}.err{color:#d65a5a}
+</style></head><body>
+<div class="top"><h1>Notas y tablero</h1><span class="sub" id="sub">Leyendo…</span><span class="grow"></span><input id="q" type="search" placeholder="Buscar" aria-label="Buscar"></div>
+<form class="add" id="add"><input id="new" placeholder="Escribe una nota y pulsa Intro (la primera línea es el título)" aria-label="Nueva nota" autocomplete="off">
+<select id="newcol" aria-label="Columna"></select><button class="primary" type="submit">Añadir</button></form>
+<div class="board" id="board"></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COLS=[['ideas','Notas e ideas'],['pendiente','Por hacer'],['curso','En curso'],['hecho','Hecho']];
+const COLORS=['','#4f9dde','#4fa86b','#e0b341','#d65a5a','#c58af9'];
+const pad=n=>String(n).padStart(2,'0');
+const now=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`};
+let cards=[], editing=null, dragId=null;
+const SETUP="CREATE TABLE IF NOT EXISTS tarjetas (id INTEGER PRIMARY KEY AUTOINCREMENT, titulo TEXT NOT NULL, texto TEXT NOT NULL DEFAULT '', columna TEXT NOT NULL DEFAULT 'ideas', orden REAL NOT NULL DEFAULT 0, color TEXT NOT NULL DEFAULT '', creado TEXT, actualizado TEXT)";
+
+async function load(){
+  try{
+    const r=await faustus.db.query('SELECT * FROM tarjetas ORDER BY orden, id',[],{limit:10000});
+    cards=r.rows;draw();
+  }catch(e){
+    if(/no such table/.test(e.message||'')){await faustus.db.exec(SETUP);return load()}
+    $('board').innerHTML='<p class="err">No se pudo leer el tablero: '+esc(e.message||e)+'</p>';
+  }
+}
+function draw(){
+  const q=$('q').value.trim().toLowerCase();
+  const vis=cards.filter(c=>!q||(c.titulo+' '+c.texto).toLowerCase().includes(q));
+  $('sub').textContent=`${cards.length} tarjetas${q?' · '+vis.length+' coinciden':''}`;
+  $('board').innerHTML=COLS.map(([k,label],ci)=>{
+    const list=vis.filter(c=>c.columna===k||(ci===0&&!COLS.some(x=>x[0]===c.columna)));
+    return `<section class="col" data-col="${k}"><h2>${label} <span>${list.length}</span></h2>${list.map(c=>card(c,ci)).join('')||'<div class="empty">Vacía</div>'}</section>`;
+  }).join('');
+  bind();
+}
+function card(c,ci){
+  if(editing===c.id)return `<div class="card edit" style="--c:${c.color||'var(--fs-border)'}" data-id="${c.id}"><input class="et" value="${esc(c.titulo)}" aria-label="Título"><textarea class="ex" aria-label="Texto">${esc(c.texto)}</textarea><div class="m">${COLORS.map(col=>`<button class="dot" type="button" data-color="${col}" style="--c:${col||'var(--fs-surface-1)'}" title="${col?'Color':'Sin color'}"></button>`).join('')}<span class="d"></span><button class="save primary" type="button">Guardar</button><button class="cancel" type="button">Cancelar</button></div></div>`;
+  return `<div class="card" draggable="true" style="--c:${c.color||'var(--fs-border)'}" data-id="${c.id}"><div class="t">${esc(c.titulo)}</div>${c.texto?`<div class="x">${esc(c.texto)}</div>`:''}
+    <div class="m">${ci>0?'<button class="left" type="button" title="Mover a la izquierda">←</button>':''}${ci<COLS.length-1?'<button class="right" type="button" title="Mover a la derecha">→</button>':''}<button class="ed" type="button">Editar</button><button class="del" type="button">Borrar</button><span class="d">${String(c.actualizado||c.creado||'').slice(5,16).replace('T',' ')}</span></div></div>`;
+}
+async function move(id,col,before){
+  const inCol=cards.filter(c=>c.columna===col&&c.id!==id).sort((a,b)=>a.orden-b.orden);
+  let orden;
+  if(before==null)orden=(inCol.length?inCol[inCol.length-1].orden:0)+1;
+  else{const i=inCol.findIndex(c=>c.id===before);const prev=i>0?inCol[i-1].orden:(inCol[0]?inCol[0].orden-1:0);orden=(prev+(inCol[i]?inCol[i].orden:prev+2))/2}
+  await faustus.db.exec('UPDATE tarjetas SET columna=?, orden=?, actualizado=? WHERE id=?',[col,orden,now(),id]);
+  await load();
+}
+function bind(){
+  document.querySelectorAll('.card').forEach(el=>{
+    const id=+el.dataset.id, c=cards.find(x=>x.id===id), ci=COLS.findIndex(x=>x[0]===c.columna);
+    const on=(sel,fn)=>{const b=el.querySelector(sel);if(b)b.onclick=fn};
+    on('.left',()=>move(id,COLS[Math.max(0,ci-1)][0]));
+    on('.right',()=>move(id,COLS[Math.min(COLS.length-1,ci+1)][0]));
+    on('.ed',()=>{editing=id;draw()});
+    on('.cancel',()=>{editing=null;draw()});
+    on('.del',async()=>{if(confirm('¿Borrar la tarjeta «'+c.titulo+'»?')){await faustus.db.exec('DELETE FROM tarjetas WHERE id=?',[id]);load()}});
+    let color=c.color;
+    el.querySelectorAll('.dot').forEach(d=>d.onclick=()=>{color=d.dataset.color;el.style.setProperty('--c',color||'var(--fs-border)')});
+    on('.save',async()=>{const t=el.querySelector('.et').value.trim();if(!t)return;await faustus.db.exec('UPDATE tarjetas SET titulo=?, texto=?, color=?, actualizado=? WHERE id=?',[t,el.querySelector('.ex').value,color||'',now(),id]);editing=null;load()});
+    el.ondragstart=ev=>{dragId=id;el.classList.add('drag');ev.dataTransfer.effectAllowed='move'};
+    el.ondragend=()=>{el.classList.remove('drag')};
+  });
+  document.querySelectorAll('.col').forEach(col=>{
+    col.ondragover=ev=>{ev.preventDefault();col.classList.add('over')};
+    col.ondragleave=()=>col.classList.remove('over');
+    col.ondrop=ev=>{ev.preventDefault();col.classList.remove('over');if(dragId==null)return;
+      const target=ev.target.closest('.card');move(dragId,col.dataset.col,target&&+target.dataset.id!==dragId?+target.dataset.id:null);dragId=null};
+  });
+}
+$('newcol').innerHTML=COLS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
+$('add').onsubmit=async ev=>{
+  ev.preventDefault();const raw=$('new').value.trim();if(!raw)return;
+  const [first,...rest]=raw.split(/\n| \/\/ /);const col=$('newcol').value;
+  const top=cards.filter(c=>c.columna===col).reduce((m,c)=>Math.min(m,c.orden),1);
+  try{await faustus.db.exec('INSERT INTO tarjetas (titulo, texto, columna, orden, creado, actualizado) VALUES (?, ?, ?, ?, ?, ?)',[first.slice(0,200),rest.join('\n'),col,top-1,now(),now()]);
+    $('new').value='';faustus.storage.set('columna',col).catch(()=>{});load()}
+  catch(e){alert('No se pudo guardar: '+(e.message||e))}
+};
+$('q').oninput=draw;
+(async()=>{$('newcol').value=await faustus.storage.get('columna','ideas').catch(()=>'ideas');load()})();
+</script></body></html>
