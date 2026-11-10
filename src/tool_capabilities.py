@@ -682,6 +682,15 @@ _register({"commission_office"}, ToolEffect.WRITE_PRIVATE)
 # Review desk (src/review_desk.py): reads the named version files (confined like
 # read_file in chat) and keeps snapshots and comments under DATA_DIR/review_desks.
 _register({"review_desk"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE)
+# User panels (src/panels.py): pages stored under DATA_DIR/panels. panel_check opens the page headless
+# on the loopback server and writes a screenshot next to it; nothing runs on the server itself.
+_register({"panel_list", "panel_get", "panel_versions"}, ToolEffect.READ_PRIVATE)
+_register({"panel_create", "panel_update", "panel_delete", "panel_restore", "panel_check"}, ToolEffect.WRITE_PRIVATE)
+# Loop Cards (src/loop_card.py): create/check run the measuring command the caller names, in the folder it names.
+_register({"loop_card_create", "loop_card_check"}, ToolEffect.EXECUTE_CODE, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
+          result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
+_register({"loop_card_list", "loop_card_get"}, ToolEffect.READ_PRIVATE)
+_register({"loop_card_delete"}, ToolEffect.WRITE_PRIVATE)
 _register({"derivation_graph"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
           result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,

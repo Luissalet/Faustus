@@ -29,6 +29,8 @@ export const TOOL_PLACEMENT: Record<string, { context: ToolContext; hint: string
   '/context': { context: 'chat', hint: 'Conversation context and token use' },
   '/workflows': { context: 'automations', hint: 'Reusable workflows' },
   '/recipes': { context: 'automations', hint: 'Learned recipes and their real runs' },
+  '/loops': { context: 'project', hint: 'Metric, noise and what counts as an improvement' },
+  '/panels': { context: 'library', hint: 'Your own pages in the sidebar' },
 };
 
 export const CONTEXT_LABELS: Record<ToolContext, string> = {
@@ -55,6 +57,6 @@ export function toolsIn(context: ToolContext, creatorAvailable = false): Tool[] 
 export function toolHref(path: string, projectId?: string | null, sessionId?: string | null): string {
   if (path === '/source-control') return projectId ? `/projects/${encodeURIComponent(projectId)}?tab=repos` : '/source-control';
   const params = new URLSearchParams();
-  if (projectId && ['/alternatives', '/agora', '/context', '/completion', '/deltas'].includes(path)) params.set('project', projectId);
+  if (projectId && ['/alternatives', '/agora', '/context', '/completion', '/deltas', '/loops'].includes(path)) params.set('project', projectId);
   return params.size ? `${path}?${params}` : path;
 }

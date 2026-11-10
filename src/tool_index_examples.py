@@ -1270,6 +1270,62 @@ EXAMPLES: Dict[str, List[str]] = {
         "añade el acuerdo firmado como nueva versión del alcance y enlaza la entrega al hito",
         "pasa la reunión de ayer al expediente: qué se decidió, qué prometimos y qué preguntas quedan",
     ],
+    "panel_create": [
+        "hazme un panel con mis conversaciones por día y los tokens por modelo",
+        "build me a sidebar panel that shows my usage and cost",
+        "quiero una pestaña propia con un cambiador de tema",
+    ],
+    "panel_update": [
+        "cambia el panel de uso para que el gráfico sea de barras",
+        "rename the usage panel and move it to the top",
+        "añade un filtro por fecha al panel",
+    ],
+    "panel_get": [
+        "enséñame el código del panel de uso",
+        "read the usage panel before changing it",
+    ],
+    "panel_list": [
+        "qué paneles tengo en la barra lateral",
+        "list my panels",
+    ],
+    "panel_delete": [
+        "borra el panel de pruebas",
+        "delete the poster panel",
+    ],
+    "panel_check": [
+        "prueba que el panel se pinta sin errores",
+        "check the new panel for console errors",
+    ],
+    "panel_versions": [
+        "qué versiones tiene el panel de uso",
+        "show the history of that panel",
+    ],
+    "panel_restore": [
+        "vuelve a la versión anterior del panel",
+        "restore version 2 of the usage panel",
+    ],
+    "loop_card_create": [
+        "antes de optimizar los tests, mide cuánto ruido tiene el tiempo",
+        "create a loop card for the benchmark: run it 5 times and find the noise",
+        "qué métrica nos dice que esto mejora y cuánto varía",
+    ],
+    "loop_card_check": [
+        "mide otra vez y dime si es mejora o ruido",
+        "check the loop card after my change",
+        "compara con la línea base de la tarjeta",
+    ],
+    "loop_card_list": [
+        "qué tarjetas de bucle tengo",
+        "list the loop cards of this project",
+    ],
+    "loop_card_get": [
+        "enséñame la tarjeta de bucle completa",
+        "show the loop card with its check history",
+    ],
+    "loop_card_delete": [
+        "borra la tarjeta de bucle del benchmark",
+        "delete that loop card",
+    ],
     "decision_map": [
         "si cambia la unidad de medida, qué entregables hay que rehacer",
         "link this requirement to the decision and the deliverable it affects",

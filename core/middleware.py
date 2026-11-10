@@ -191,6 +191,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         is_report = path.startswith("/api/research/report/")
         # The runner a chat's runnable html block loads (routes/sandbox_routes.py).
         is_sandbox_app = path == "/api/sandbox/app"
+        # A user panel's page (routes/panel_routes.py): the user's own self-contained app, framed by
+        # Studio on this origin. Inline script is the point of it; it may load libraries from the
+        # usual public CDNs and call any HTTPS API (the owner's own page, like any app they open).
+        is_panel_page = path.startswith("/api/panels/") and path.endswith("/page")
 
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -207,6 +211,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             from routes.sandbox_routes import RUNNER_CSP
             response.headers["X-Frame-Options"] = "SAMEORIGIN"
             response.headers["Content-Security-Policy"] = RUNNER_CSP
+        elif is_panel_page:
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+                "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+                "img-src 'self' data: blob: https:; "
+                "media-src 'self' data: blob:; "
+                "worker-src 'self' blob:; "
+                "connect-src 'self' https: wss:; "
+                "frame-ancestors 'self'"
+            )
         elif is_report:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "

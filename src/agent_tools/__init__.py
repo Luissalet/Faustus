@@ -125,6 +125,13 @@ from .contract_tools import CriteriaCheckTool
 from .prior_art_tools import PriorArtTool
 from .uncertainty_tool import UncertaintyNextObservationTool
 from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOfficeTool, ReviewDeskTool
+from .panel_tools import (
+    PanelCreateTool, PanelUpdateTool, PanelGetTool, PanelListTool, PanelDeleteTool,
+    PanelCheckTool, PanelVersionsTool, PanelRestoreTool,
+)
+from .loop_card_tools import (
+    LoopCardCreateTool, LoopCardCheckTool, LoopCardListTool, LoopCardGetTool, LoopCardDeleteTool,
+)
 from .ci_tools import CiFailuresTool
 from .coordination_tool import CoordinationTool
 from src.coordination.tools import NAMES as _COORDINATION_TOOLS
@@ -394,6 +401,20 @@ TOOL_HANDLERS = {
     "uncertainty_next_observation": UncertaintyNextObservationTool().execute,
     # Reproducible delivery package: editables/exports reopened from source and zip (src/delivery_package.py).
     "delivery_package": DeliveryPackageTool().execute,
+    # User panels (src/panels.py) and Loop Cards (src/loop_card.py).
+    "panel_create": PanelCreateTool().execute,
+    "panel_update": PanelUpdateTool().execute,
+    "panel_get": PanelGetTool().execute,
+    "panel_list": PanelListTool().execute,
+    "panel_delete": PanelDeleteTool().execute,
+    "panel_check": PanelCheckTool().execute,
+    "panel_versions": PanelVersionsTool().execute,
+    "panel_restore": PanelRestoreTool().execute,
+    "loop_card_create": LoopCardCreateTool().execute,
+    "loop_card_check": LoopCardCheckTool().execute,
+    "loop_card_list": LoopCardListTool().execute,
+    "loop_card_get": LoopCardGetTool().execute,
+    "loop_card_delete": LoopCardDeleteTool().execute,
     # Scope comparator: initial request / agreement / new request, effects from the decision map (src/scope_compare.py).
     "scope_compare": ScopeCompareTool().execute,
     # Commission office: scope versions, milestones, deliveries, contacts, files (src/commission_office.py).
@@ -634,6 +655,20 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "uncertainty_next_observation",
              # Delivery package -- src/agent_tools/delivery_tool.py.
              "delivery_package", "scope_compare", "commission_office", "review_desk",
+             # User panels -- src/agent_tools/panel_tools.py; Loop Cards -- src/agent_tools/loop_card_tools.py.
+             "panel_create",
+             "panel_update",
+             "panel_get",
+             "panel_list",
+             "panel_delete",
+             "panel_check",
+             "panel_versions",
+             "panel_restore",
+             "loop_card_create",
+             "loop_card_check",
+             "loop_card_list",
+             "loop_card_get",
+             "loop_card_delete",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
              "inspect_image",
              # Autonomous bug hunter -- src/agent_tools/bug_hunt_tools.py.

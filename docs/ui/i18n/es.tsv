@@ -10782,3 +10782,64 @@ observations	observaciones
 Become parameters	Pasan a parámetros
 Stay as seen	Se quedan como se vieron
 observation	observación
+Baseline	Línea base
+Before improving something, find the loop: the number that says whether it got better, how much it moves by itself, and the smallest change that counts. A later measurement is only a win or a loss when it passes that threshold; anything else is noise.	Antes de mejorar algo, encuentra el bucle: el número que dice si mejoró, cuánto se mueve solo y el cambio más pequeño que cuenta. Una medida posterior solo es una mejora o un empeoramiento si supera ese umbral; todo lo demás es ruido.
+Better	Mejor
+Better is	Es mejor
+Change it in a chat	Cambiarlo en un chat
+Command that measures it	Orden que lo mide
+Counts as better from	Cuenta como mejora desde
+Create one with the command that measures what you want to improve.	Crea una con la orden que mide lo que quieres mejorar.
+Delete the loop card "{name}" with its history? The project is not touched.	¿Borrar la tarjeta de bucle «{name}» con su historial? El proyecto no se toca.
+Delete the panel "{name}" with all its versions and stored data?	¿Borrar el panel «{name}» con todas sus versiones y datos guardados?
+Down	Bajar
+Failed request	Petición fallida
+Folder to run in (optional)	Carpeta donde ejecutar (opcional)
+Higher	Más alto
+I want a panel that 	Quiero un panel que 
+I want to change the panel "{name}" so that 	Quiero cambiar el panel «{name}» para que 
+Icon	Icono
+It may have been deleted.	Puede que se haya borrado.
+JSON path	Ruta JSON
+JSON path, e.g. stats.p95	Ruta JSON, p. ej. stats.p95
+Last check	Última comprobación
+Loop cards	Tarjetas de bucle
+Lower	Más bajo
+Manage panels	Gestionar paneles
+Measure again	Medir de nuevo
+Measure and save	Medir y guardar
+New loop card	Nueva tarjeta de bucle
+New panel	Nuevo panel
+No description	Sin descripción
+No loop cards yet	Aún no hay tarjetas de bucle
+No panels yet	Aún no hay paneles
+Noise (std. dev.)	Ruido (desv. típica)
+Open in a window	Abrir en ventana aparte
+Page error	Error de la página
+Panel name	Nombre del panel
+Panels	Paneles
+Read the number from	Leer el número de
+Reading the loop cards	Leyendo las tarjetas de bucle
+Reading the panel	Leyendo el panel
+Reading the panels	Leyendo los paneles
+Reading the versions	Leyendo las versiones
+Regex, number in the group	Regex, el número en el grupo
+Renders without errors	Se pinta sin errores
+Run time	Tiempo de ejecución
+Runs	Repeticiones
+Screenshot of the panel	Captura del panel
+Start a chat with "New panel" and say what the page should show or do.	Abre un chat con «Nuevo panel» y cuenta qué debe mostrar o hacer la página.
+Text (regex with one group)	Texto (regex con un grupo)
+This metric is noisy: only large changes will count. Make the measurement steadier before trusting small wins.	Esta métrica tiene mucho ruido: solo contarán los cambios grandes. Haz la medida más estable antes de fiarte de mejoras pequeñas.
+This panel does not exist	Este panel no existe
+Up	Subir
+Version {n}	Versión {n}
+What do you want to improve?	¿Qué quieres mejorar?
+Within the noise	Dentro del ruido
+Worse	Peor
+Your own pages. Describe one in a chat and Faustus builds it, tests it and keeps it in the sidebar; every change is saved as a version you can go back to.	Tus propias páginas. Descríbela en un chat y Faustus la construye, la prueba y la deja en la barra lateral; cada cambio se guarda como una versión a la que puedes volver.
+higher is better	más alto es mejor
+lower is better	más bajo es mejor
+run time (s)	tiempo de ejecución (s)
+{n} problem found	{n} problema encontrado
+{n} problems found	{n} problemas encontrados

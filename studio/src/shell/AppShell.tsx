@@ -2,10 +2,11 @@ import { syncLangFromServer, t, useLang } from '../i18n';
 import { clearThemeAttribute, syncThemeFromServer } from './theme';
 import { applyTheme, getTheme, syncAppearanceFromServer, useAppearance } from './appearance';
 import { useNavSize } from './navSize';
-import { Search, Settings2 } from 'lucide-react';
+import { PanelsTopLeft, Plus, Search, Settings2 } from 'lucide-react';
+import { newPanelDraftHref, panelIcon, usePanels } from '../adapters/panels';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { lazyChunk, RouteErrorBoundary } from './lazyChunk';
-import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router';
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router';
 import { Skeleton } from '../components';
 import { NotFound } from '../screens/NotFound';
 
@@ -41,6 +42,9 @@ const AgoraScreen = lazyChunk(() => import('../screens/Agora').then((m) => ({def
 const StateMirrorScreen = lazyChunk(() => import('../screens/StateMirror').then((m) => ({ default: m.StateMirrorScreen })));
 const RecipesScreen = lazyChunk(() => import('../screens/Recipes').then((m) => ({ default: m.RecipesScreen })));
 const DeliveryScreen = lazyChunk(() => import('../screens/Delivery').then((m) => ({ default: m.DeliveryScreen })));
+const LoopCardsScreen = lazyChunk(() => import('../screens/LoopCards').then((m) => ({ default: m.LoopCardsScreen })));
+const PanelsScreen = lazyChunk(() => import('../screens/Panels').then((m) => ({ default: m.PanelsScreen })));
+const PanelViewScreen = lazyChunk(() => import('../screens/Panels').then((m) => ({ default: m.PanelViewScreen })));
 const DeltasScreen = lazyChunk(() => import('../screens/Deltas').then((m) => ({ default: m.DeltasScreen })));
 const CompletionScreen = lazyChunk(() => import('../screens/Completion').then((m) => ({ default: m.CompletionScreen })));
 const SettingsScreen = lazyChunk(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
@@ -198,6 +202,8 @@ function Rail() {
         </div>
       )}
 
+      {platform !== 'mobile' && <PanelsGroup />}
+
       <div className="fs-nav__spacer" />
 
       {platform !== 'mobile' && (
@@ -218,6 +224,38 @@ function Rail() {
 }
 
 /**
+ * The user's own panels: icon and name, one click to open, and a "New panel" entry that
+ * starts a chat with the request half written. Hidden entirely until there is something
+ * to show or the list has loaded (the entry to create one is always there).
+ */
+function PanelsGroup() {
+  const panels = usePanels();
+  return (
+    <div className="fs-nav__tools fs-nav__panels" data-testid="nav-panels">
+      <div className="fs-nav__tools-head">{t('Panels')}</div>
+      {(panels ?? []).map((panel) => {
+        const Icon = panelIcon(panel.icon);
+        return (
+          <NavLink key={panel.id} to={`/panels/${panel.id}`} className="fs-nav__tool" title={panel.description || panel.name}
+            data-testid={`nav-panel-${panel.id}`}>
+            <Icon size={13} aria-hidden="true" />
+            <span>{panel.name}</span>
+          </NavLink>
+        );
+      })}
+      <Link to={newPanelDraftHref()} className="fs-nav__tool" data-testid="nav-panel-new" title={t('New panel')}>
+        <Plus size={13} aria-hidden="true" />
+        <span>{t('New panel')}</span>
+      </Link>
+      <NavLink to="/panels" end className="fs-nav__tool" data-testid="nav-panels-manage" title={t('Manage panels')}>
+        <PanelsTopLeft size={13} aria-hidden="true" />
+        <span>{t('Manage panels')}</span>
+      </NavLink>
+    </div>
+  );
+}
+
+/**
  * Re-mounts its child on every path change so the entrance animation runs.
  * Studio owns its own scrolling (transcript up, composer pinned), so main
  * is told which screen it holds and hands over the height.
@@ -229,7 +267,7 @@ function RouteStage() {
     || pathname === '/agora';
   // A project's Agora (group chat) and its board use the full width.
   const projectFull = /^\/projects\/[^/]+$/.test(pathname) && /[?&](tab=(agora|objetivos|tasks|board|requisitos)|view=agora)(&|$)/.test(search);
-  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : projectFull ? 'full' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') || pathname.startsWith('/creator') || pathname.startsWith('/whatsapp') || pathname.startsWith('/brain') ? 'wide' : undefined;
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : projectFull ? 'full' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') || pathname.startsWith('/creator') || pathname.startsWith('/whatsapp') || pathname.startsWith('/brain') || pathname.startsWith('/panels') ? 'wide' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">
@@ -281,6 +319,9 @@ function RouteBody() {
         <Route path="/deltas" element={<DeltasScreen />} />
         <Route path="/recipes" element={<RecipesScreen />} />
         <Route path="/delivery" element={<DeliveryScreen />} />
+        <Route path="/loops" element={<LoopCardsScreen />} />
+        <Route path="/panels" element={<PanelsScreen />} />
+        <Route path="/panels/:panelId" element={<PanelViewScreen />} />
         <Route path="/completion" element={<CompletionScreen />} />
         <Route path="/cookbook" element={<CookbookScreen />} />
         <Route path="/context" element={<ContextScreen />} />

@@ -1313,6 +1313,8 @@ Context reduction keeps the user's latest instruction rather than a synthetic to
 
 ## Recently integrated
 
+On 10 November 2026: **user panels** and **Loop Cards**. Describe a page you want in a chat and Faustus builds it as a self-contained panel, checks it headless (console errors, failed requests, screenshot) and mounts it in the sidebar under Panels, with versions you can restore and a management screen; panels read Faustus through `faustus.api`, run any agent or Hoard tool through `faustus.tool`, follow the theme and keep their own storage (`panel_*` tools, `/api/panels`, skill `panel-builder`). A **Loop Card** measures a command N times before an optimisation, stores the baseline with its noise and the smallest change that counts, and later says better, worse or within the noise (`loop_card_*` tools, `/api/loop-cards`, Studio `/loops`). The WhatsApp bridge runs on Baileys 7, is kept alive by a keeper wherever Faustus is placed (PC or Spark) and recovers pictures whose download failed.
+
 On 8 October 2026: explicit reasoning effort kept through chat generation, read-only mode enforced at the chat API and every tool execution gate, tool documentation in guide-only turns and type checks on `manage_research` arguments, together with the execution-continuity work (approval resumes with evidence, answer-only maths turns, room for an answer after thinking). The DGX Spark backend (§278) is active. Measurements of the Spark models are in FAUSTUS.md.
 
 ## Verified Spark deployment

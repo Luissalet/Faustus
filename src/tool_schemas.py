@@ -3345,6 +3345,172 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "panel_create",
+            "description": "Create a user panel: a self-contained HTML page (inline CSS and JS, no build step) that Faustus mounts in the Studio sidebar under Panels. Use when the user asks for their own mini-app inside Faustus: a usage/cost dashboard, a viewer, a tracker, a theme switcher, a poster or design board. In the page include <script src=\"/api/panels/faustus-panel.js\"></script> for faustus.api(path) (any /api/* route of Faustus), faustus.tool(name, args, app?) (run an agent tool or a connected Hoard's tool), faustus.theme / --fs-* CSS variables (the app's colours) and faustus.storage (server-side key-value per panel). Always run panel_check afterwards and fix what it reports. Crear un panel propio en la barra lateral.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Name shown in the sidebar (max 60 characters)"},
+                    "html": {"type": "string", "description": "The complete HTML page"},
+                    "icon": {"type": "string", "description": "A lucide icon name in kebab-case, e.g. bar-chart-3, box, book-open, palette (default layout-dashboard)"},
+                    "description": {"type": "string", "description": "One line on what the panel is for"},
+                    "id": {"type": "string", "description": "Optional fixed id (lowercase letters, digits, hyphens); default derived from the name"}
+                },
+                "required": ["name", "html"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_update",
+            "description": "Change an existing user panel: replace its HTML (every change is saved as a new version that can be restored), rename it, change its icon or description, or move it in the sidebar (order, 0 = first). Read the current page with panel_get first and send the whole new HTML, then run panel_check. Modificar o renombrar un panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Panel id"},
+                    "html": {"type": "string", "description": "The complete new HTML page (omit to keep the page)"},
+                    "name": {"type": "string"},
+                    "icon": {"type": "string", "description": "lucide icon name in kebab-case"},
+                    "description": {"type": "string"},
+                    "order": {"type": "integer", "description": "Position in the sidebar, 0 first"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_get",
+            "description": "Read one user panel: name, icon, version and its full HTML. Use before changing a panel. Leer el código de un panel.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string", "description": "Panel id"}}, "required": ["id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_list",
+            "description": "List the user's panels (id, name, icon, version, order). Use to find a panel before editing it or to see what already exists. Listar los paneles.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_delete",
+            "description": "Permanently delete a user panel with all its versions and stored data. Only when the user asked for it. Borrar un panel.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string", "description": "Panel id"}}, "required": ["id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_check",
+            "description": "Test a panel before handing it over: open its page in headless Chromium inside Faustus and report the HTTP status, visible text, console errors, uncaught page errors, failed or 4xx/5xx requests and a screenshot path (look at it with inspect_image). Repeat panel_update + panel_check until ok is true. Probar un panel y ver sus errores.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Panel id"},
+                    "wait_ms": {"type": "integer", "description": "Extra time to let the page fetch data before observing (default 1500, max 10000)"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_versions",
+            "description": "List the saved versions of a panel (newest first) with date and size. Ver el historial de versiones de un panel.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string", "description": "Panel id"}}, "required": ["id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_restore",
+            "description": "Go back to a saved version of a panel. The restored page is saved as a new version, so nothing is lost. Volver a una versión anterior del panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Panel id"},
+                    "version": {"type": "integer", "description": "Version number from panel_versions"}
+                },
+                "required": ["id", "version"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "loop_card_create",
+            "description": "Find the feedback loop BEFORE trying to improve something: run a measuring command N times (default 5), read one number from each run (regex with one capture group, JSON path, or the run time), and store a Loop Card with the mean, median, standard deviation, min/max, coefficient of variation and the improvement threshold (the larger of 2 x the standard deviation and 1 % of the mean). A later change only counts as better when the metric moves past that threshold in the right direction. Changes nothing in the project except what the command itself does. Use for 'how do we measure that this got faster/better', 'before optimising, find the metric and its noise', 'cuánto ruido tiene esta medida'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "What is being improved, in one sentence"},
+                    "command": {"type": "string", "description": "Shell command that produces the metric; must exit 0"},
+                    "extract": {
+                        "description": "How to read the number: {kind:'regex', pattern:'took (\\d+\\.?\\d*) ms'} (one capture group; the last match counts), {kind:'json', path:'stats.p95'}, or {kind:'time'} / 'time' for the command's wall time in seconds",
+                        "anyOf": [
+                            {"type": "object", "properties": {"kind": {"type": "string", "enum": ["regex", "json", "time"]}, "pattern": {"type": "string"}, "path": {"type": "string"}}},
+                            {"type": "string"}
+                        ]
+                    },
+                    "direction": {"type": "string", "enum": ["up", "down"], "description": "up = higher is better (accuracy, throughput); down = lower is better (time, errors). Default down"},
+                    "repeats": {"type": "integer", "description": "Number of runs, 2-50 (default 5)"},
+                    "cwd": {"type": "string", "description": "Folder to run in (default: the turn's active workspace)"},
+                    "timeout_s": {"type": "integer", "description": "Per-run timeout in seconds (default 300)"}
+                },
+                "required": ["goal", "command", "extract"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "loop_card_check",
+            "description": "Measure again against a Loop Card's baseline and say win, loss or noise: runs the card's command (or a different `command`, e.g. after a change) N times and compares the mean with the baseline mean using the card's improvement threshold. Returns the difference, its size against the noise (in standard deviations and in thresholds) and notes when this measurement was itself noisier. rebase=true adopts the new measurement as the baseline. Use after a change to decide if it really helped: 'mide otra vez', 'did that really speed it up or is it noise'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Loop card id"},
+                    "command": {"type": "string", "description": "Optional different command (same extraction); default the card's own"},
+                    "repeats": {"type": "integer", "description": "Number of runs (default: the card's)"},
+                    "rebase": {"type": "boolean", "description": "Replace the baseline with this measurement"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "loop_card_list",
+            "description": "List the Loop Cards of this project (or all): goal, metric mean, noise, threshold and the last verdict. Listar las tarjetas de bucle.",
+            "parameters": {"type": "object", "properties": {"project": {"type": "string", "description": "Project id (default: this chat's project, or all)"}}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "loop_card_get",
+            "description": "Read one Loop Card in full: command, extraction, baseline runs and statistics, and the history of checks.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string", "description": "Loop card id"}}, "required": ["id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "loop_card_delete",
+            "description": "Delete a Loop Card (its history goes with it; the project is untouched). Only when the user asked.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string", "description": "Loop card id"}}, "required": ["id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delivery_package",
             "description": "Reproducible delivery package for a client: collects editable sources, exports, data sources explicitly authorised to share, instructions, examples and stated limitations into one folder plus zip with ENTREGA.md and manifest.json (SHA-256 per file). Every editable and export is reopened by a reader for its format (STL, OBJ, GLB/glTF, 3MF, PLY, STEP, PDF, PPTX, DOCX, XLSX, CSV, images, HTML, JSON, notebooks, Python, text, ZIP; container signature for .blend/video/audio/FBX) before copying and again from the extracted zip; ready=true only if all of them open, instructions and limitations exist and the zip reopens identically. Data without authorized=true is left out and listed. software_root attaches the verified client handoff (the report code_graph_handoff wrote; run that first). action=build (default) / list / show {id} / reverify {id} / readers / delete {id} (removes Faustus' own folder, zip and manifest; the source files are never touched). Readers check structure, not visual quality or correctness.",
             "parameters": {

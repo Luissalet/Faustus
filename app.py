@@ -246,6 +246,8 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/global-model/v1/chat/completions",  # global LLM prefill/nonstream may take minutes
     "/api/shell/stream",    # SSE
     "/api/research",        # multi-minute jobs
+    "/api/panels",  # panel_check opens a headless browser; loop cards run measuring commands N times
+    "/api/loop-cards",
     "/api/delivery-packages",  # copies, zips and reopens every file twice; large 3D/video deliveries take minutes
     "/api/model/download",  # tmux setup may run pip installs
     "/api/model/probe",     # SSE; iterates models with up to 8s timeout each
@@ -1340,6 +1342,11 @@ app.include_router(setup_derivation_routes())
 # Reproducible delivery packages (Hangar E33, src/delivery_package.py).
 from routes.delivery_routes import setup_delivery_routes
 app.include_router(setup_delivery_routes())
+# User panels (src/panels.py) and Loop Cards (src/loop_card.py).
+from routes.panel_routes import setup_panel_routes
+app.include_router(setup_panel_routes())
+from routes.loop_card_routes import setup_loop_card_routes
+app.include_router(setup_loop_card_routes())
 
 # Isolated, comparable alternatives (W2-G / CMP-13): worktree/snapshot_dir/
 # doc_version experiments, three-way apply/combine against the main copy
@@ -1993,6 +2000,17 @@ async def serve_workflows(request: Request):
 async def serve_recipes(request: Request):
     """Studio Recipes: learned procedures, a structural dry run (never a
     verification) and the real execution with its per-step and criteria results."""
+    return await serve_index(request)
+
+@app.get("/panels")
+@app.get("/panels/{panel_id}")
+async def serve_panels(request: Request, panel_id: str = ""):
+    """Studio Panels: the user's own pages in the sidebar, and their management screen."""
+    return await serve_index(request)
+
+@app.get("/loops")
+async def serve_loops(request: Request):
+    """Studio Loop Cards: metric, noise and improvement threshold per goal."""
     return await serve_index(request)
 
 @app.get("/delivery")

@@ -1,0 +1,39 @@
+/* Panels: the manager list and the framed viewer. Status is a word first; the tint repeats it. */
+
+.fs-pnl { display: grid; gap: var(--fs-space-4); min-inline-size: 0; padding-block-end: var(--fs-space-6); }
+.fs-pnl__lede { margin-block-start: var(--fs-space-2); }
+.fs-pnl__muted { color: var(--fs-text-3); font-size: 11px; min-inline-size: 0; overflow-wrap: anywhere; }
+.fs-pnl__grow { flex: 1 1 auto; }
+.fs-pnl__list { display: grid; gap: var(--fs-space-3); margin: 0; padding: 0; list-style: none; }
+.fs-pnl__row { display: grid; gap: var(--fs-space-3); padding: var(--fs-space-3); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 8px; }
+.fs-pnl__main { display: flex; gap: var(--fs-space-3); align-items: center; min-inline-size: 0; }
+.fs-pnl__titles { display: grid; gap: 2px; flex: 1 1 auto; min-inline-size: 0; }
+.fs-pnl__name { all: unset; cursor: pointer; font-weight: 600; color: var(--fs-text-1); overflow-wrap: anywhere; }
+.fs-pnl__name:hover { text-decoration: underline; }
+.fs-pnl__name:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 2px; }
+.fs-pnl__rename { display: flex; gap: var(--fs-space-2); align-items: center; flex-wrap: wrap; }
+.fs-pnl__icon { inline-size: 150px; }
+.fs-pnl__actions { display: flex; gap: var(--fs-space-2); align-items: center; flex-wrap: wrap; }
+.fs-pnl__link { color: var(--fs-brand); font-size: 12px; text-decoration: none; }
+.fs-pnl__link:hover { text-decoration: underline; }
+.fs-pnl__del { display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; padding: 0; background: transparent; border: 1px solid var(--fs-border); border-radius: 6px; color: var(--fs-text-2); cursor: pointer; margin-inline-start: auto; }
+.fs-pnl__del:hover { color: var(--fs-text-1); background: var(--fs-surface-2); }
+.fs-pnl__why { margin: 0; font-size: 12px; }
+.fs-pnl__why[data-tone='bad'], .fs-pnl__verdict[data-tone='bad'] { color: var(--fs-danger, #d65a5a); }
+.fs-pnl__verdict[data-tone='good'] { color: var(--fs-success, #4fa86b); }
+.fs-pnl__verdict { margin: 0; font-weight: 600; }
+.fs-pnl__check { display: grid; gap: var(--fs-space-2); padding-block-start: var(--fs-space-2); border-block-start: 1px solid var(--fs-border); }
+.fs-pnl__problems { margin: 0; padding-inline-start: 18px; font-size: 12px; overflow-wrap: anywhere; }
+.fs-pnl__shot { max-inline-size: 100%; inline-size: 520px; border: 1px solid var(--fs-border); border-radius: 6px; }
+.fs-pnl__versions ul { display: grid; gap: var(--fs-space-2); margin: 0; padding: 0; list-style: none; }
+.fs-pnl__versions li { display: flex; gap: var(--fs-space-3); align-items: center; flex-wrap: wrap; font-size: 12px; }
+
+.fs-pnl--view { display: flex; flex-direction: column; gap: var(--fs-space-2); block-size: calc(100vh - 96px); min-block-size: 360px; padding: 0; }
+.fs-pnl__bar { display: flex; gap: var(--fs-space-3); align-items: center; flex-wrap: wrap; }
+.fs-pnl__bar-title { margin: 0; font-size: 16px; font-weight: 600; }
+.fs-pnl__frame { flex: 1 1 auto; inline-size: 100%; min-block-size: 0; border: 1px solid var(--fs-border); border-radius: 8px; background: var(--fs-bg, transparent); }
+
+/* Sidebar group */
+.fs-nav__panels { display: grid; gap: 2px; margin-block-start: var(--fs-space-3); }
+.fs-nav__tool-btn { all: unset; box-sizing: border-box; cursor: pointer; inline-size: 100%; }
+.fs-nav__tool-btn:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 1px; }

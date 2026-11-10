@@ -246,6 +246,20 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "alt_start",
     "alt_compare",
     "alt_apply",
+    # User panels and Loop Cards: private per-user records; the loop tools run a command.
+    "panel_create",
+    "panel_update",
+    "panel_get",
+    "panel_list",
+    "panel_delete",
+    "panel_check",
+    "panel_versions",
+    "panel_restore",
+    "loop_card_create",
+    "loop_card_check",
+    "loop_card_list",
+    "loop_card_get",
+    "loop_card_delete",
     # Autonomous bug hunter (src/agent_tools/bug_hunt_tools.py): generates
     # and runs pytest files under the workspace -- same privilege class as
     # bash/write_file above.

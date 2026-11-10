@@ -2,6 +2,8 @@ import {
   Activity,
   BookOpenCheck,
   PackageCheck,
+  PanelsTopLeft,
+  Repeat,
   Bot,
   Brain,
   CalendarDays,
@@ -125,6 +127,10 @@ export const TOOLS: Tool[] = [
   { path: '/recipes', label: 'Recipes', icon: BookOpenCheck },
   // Delivery packages: editables and exports reopened from the sources and from the zip.
   { path: '/delivery', label: 'Delivery', icon: PackageCheck },
+  // Loop cards: the metric of a goal, its noise and what counts as an improvement.
+  { path: '/loops', label: 'Loop cards', icon: Repeat },
+  // The user's own panels (their list lives in the sidebar group; this is the manager).
+  { path: '/panels', label: 'Panels', icon: PanelsTopLeft },
 ];
 
 /**
@@ -170,6 +176,9 @@ export const SERVER_ROUTES = [
   '/workflows',
   '/recipes',
   '/delivery',
+  '/loops',
+  '/panels',
+  '/panels/{panel_id}',
   '/creator',
   // The paths the interface this one replaced owned. Still served, still in
   // bookmarks; the router redirects each to the screen that took over.
