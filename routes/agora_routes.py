@@ -14,6 +14,9 @@ counts as read by them.
   up to 1 MB each and a server list draws thirty of them at 48 px
 * ``GET  /api/agora/where``     -> whether the hub is on this machine or on another one, reached through its link
   (``src/hub_link.py``): folders are then chosen on the hub's machine, where the agents work
+* ``GET  /api/agora/file/<id>`` -> a file a message carries; ``GET /api/agora/space-icon/<space>`` -> a server's own
+  picture. Files come as the hub gives them: shown in place only when it is a picture, plain text or a PDF, a
+  download otherwise, and never sniffed, so nothing an agent attaches ever runs as a page of this app
 
 A hub that is down answers 200 with ``{"ok": false, "error": ...}`` so the page can say so and keep its draft.
 """
@@ -36,6 +39,8 @@ from src import hub_link
 PERSON_SURFACE = "faustus-studio"
 _PATH = re.compile(r"^[a-z0-9_][a-z0-9_/\-]{0,120}$")
 _APP = re.compile(r"^[a-z0-9][a-z0-9_.\-]{0,63}$")
+_FILE = re.compile(r"^[0-9a-f]{32}$")
+_SPACE = re.compile(r"^[a-z0-9][a-z0-9_.\-]{0,63}$")
 _MAX_BYTES = 12_000_000
 _ICON_PX = 128
 _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -43,8 +48,9 @@ _icons: Dict[str, Tuple[bytes, str]] = {}
 
 
 def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = None, body: Optional[dict] = None,
-                timeout: float = 30.0, raw: bool = False) -> Tuple[Optional[int], Any, str]:
-    """``(status, payload, content_type)``; status None when the hub did not answer. Never raises."""
+                timeout: float = 30.0, raw: bool = False, with_headers: bool = False) -> Tuple[Any, ...]:
+    """``(status, payload, content_type)``; status None when the hub did not answer. Never raises.
+    ``with_headers`` adds a fourth item, the answer's headers."""
     where = hub_link.location()
     token = hub_link.token(where)
     headers = {"Accept": "*/*" if raw else "application/json", "X-Hoard-Person": PERSON_SURFACE,
@@ -57,10 +63,13 @@ def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = Non
         headers["Content-Type"] = "application/json"
     url = where["url"] + path + ("?" + urllib.parse.urlencode(query) if query else "")
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    answer: Dict[str, str] = {}
+    more = (lambda *items: (*items, answer)) if with_headers else (lambda *items: items)
     try:
         with _opener.open(req, timeout=timeout) as resp:
             blob = resp.read(_MAX_BYTES)
             status, ctype = resp.status, resp.headers.get("Content-Type", "")
+            answer.update({k: v for k, v in resp.headers.items()})
     except urllib.error.HTTPError as exc:
         try:
             blob = exc.read(_MAX_BYTES)
@@ -68,13 +77,13 @@ def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = Non
             blob = b""
         status, ctype = exc.code, exc.headers.get("Content-Type", "") if exc.headers else ""
     except Exception:  # noqa: BLE001 - refused, timed out, bad URL
-        return None, None, ""
+        return more(None, None, "")
     if raw:
-        return status, blob, ctype
+        return more(status, blob, ctype)
     try:
-        return status, (json.loads(blob.decode("utf-8")) if blob else None), ctype
+        return more(status, (json.loads(blob.decode("utf-8")) if blob else None), ctype)
     except (ValueError, UnicodeDecodeError):
-        return status, None, ctype
+        return more(status, None, ctype)
 
 
 def small_icon(blob: bytes, ctype: str) -> Tuple[bytes, str]:
@@ -138,6 +147,31 @@ def setup_agora_routes() -> APIRouter:
                 _icons[app_id] = cached
         return Response(content=cached[0], media_type=cached[1].split(";")[0], headers={"Cache-Control": "private, max-age=86400"})
 
+    @router.get("/api/agora/file/{file_id}")
+    async def attached_file(file_id: str, request: Request):
+        require_admin(request)
+        if not _FILE.match(file_id):
+            return Response(status_code=404)
+        status, blob, ctype, headers = await asyncio.to_thread(
+            hub_request, "GET", "/api/agora/file/" + file_id, raw=True, timeout=60.0, with_headers=True)
+        if status != 200 or blob is None:
+            return Response(status_code=404 if status in (None, 404) else 502)
+        return Response(content=blob, media_type=(ctype or "application/octet-stream").split(";")[0], headers={
+            "Content-Disposition": headers.get("Content-Disposition") or "attachment",
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400"})
+
+    @router.get("/api/agora/space-icon/{space_id}")
+    async def space_icon(space_id: str, request: Request):
+        require_admin(request)
+        if not _SPACE.match(space_id):
+            return Response(status_code=404)
+        status, blob, ctype = await asyncio.to_thread(
+            hub_request, "GET", "/api/agora/space_icon", query={"space_id": space_id}, raw=True, timeout=10.0)
+        if status != 200 or not blob or not (ctype or "").startswith("image/"):
+            return Response(status_code=404)
+        return Response(content=blob, media_type=ctype.split(";")[0], headers={
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400"})
+
     @router.get("/api/agora/x/{path:path}")
     async def read(path: str, request: Request):
         require_admin(request)
@@ -159,7 +193,9 @@ def setup_agora_routes() -> APIRouter:
         if not isinstance(body, dict):
             return JSONResponse({"ok": False, "error": "the body must be a JSON object"}, status_code=400)
         body.pop("_person", None)
-        status, payload, _ = await asyncio.to_thread(hub_request, "POST", "/api/agora/" + path, body=body, timeout=40.0)
+        # A file travels inside the body, and through a tunnel when the hub is on another machine: give it time.
+        status, payload, _ = await asyncio.to_thread(hub_request, "POST", "/api/agora/" + path, body=body,
+                                                     timeout=180.0 if path == "file_add" else 40.0)
         return _answer(status, payload)
 
     return router

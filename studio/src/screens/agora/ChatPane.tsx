@@ -1,12 +1,15 @@
-import { ArrowDown, Check, Copy, CornerUpLeft, MoreHorizontal, Send, X } from 'lucide-react';
+import { ArrowDown, Check, Copy, CornerUpLeft, MoreHorizontal, Paperclip, Send, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import {
-  addTask, editTask, getTask, readTarget, reopenThread, resolveThread, reviewTask, say as sendMessage,
-  type AgoraGuild, type AgoraMessage, type AgoraPage, type AgoraTask, type AgoraThreadInfo, type Target,
+  addTask, editTask, getTask, MAX_FILE_BYTES, MAX_FILES_PER_MESSAGE, react as reactTo, readTarget, reopenThread, resolveThread, reviewTask,
+  say as sendMessage, sendFile,
+  type AgoraGuild, type AgoraMessage, type AgoraPage, type AgoraTask, type AgoraThreadInfo, type MessageFile, type Target,
 } from '../../adapters/agora';
 import { Button, IconButton, Menu, Skeleton, type MenuItem } from '../../components';
 import { Rich } from '../rich';
 import { t } from '../../i18n';
+import { usePlatform } from '../../shell/platform';
+import { Carrying, Files, Quoted, ReactButton, Reactions } from './MessageExtras';
 import {
   agentColor, agentInitials, clock, composerBus, dayLabel, findTask, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
   THREAD_KIND_LABEL, type View,
@@ -42,16 +45,21 @@ function buildItems(messages: AgoraMessage[], seenUpto: number, viewer: string):
   return out;
 }
 
-const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOpen, onReply }: {
-  message: AgoraMessage; head: boolean; viewer: string; guild: AgoraGuild; onOpen: (view: View) => void; onReply: (author: string) => void;
+const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOpen, onReply, onReact, onJump }: {
+  message: AgoraMessage; head: boolean; viewer: string; guild: AgoraGuild; onOpen: (view: View) => void; onReply: (message: AgoraMessage) => void;
+  onReact: (id: number, emoji: string, on?: boolean) => void; onJump: (id: number) => void;
 }) {
   const [whole, setWhole] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Where there is no pointer to hover with, a tap on the message brings its buttons.
+  const [tools, setTools] = useState(false);
   if (message.kind === 'system') {
     return <div className="fs-agx-msg fs-agx-msg--system" data-testid="agora-message"><span>{message.body.length > 320 ? message.body.slice(0, 320) + '…' : message.body}</span><time>{clock(message.created)}</time></div>;
   }
   const mine = message.author === viewer;
   const toMe = message.mentions.includes(viewer);
+  // A message sent with files and no text arrives with their names as its text: the files already say it.
+  const namesOnly = Boolean(message.files?.length) && message.body.split(' · ').sort().join('\n') === message.files!.map((f) => f.name).sort().join('\n');
   const long = message.body.length > LONG_BODY && !whole;
   const body = long ? message.body.slice(0, LONG_BODY) + '…' : message.body;
   const refs = [...new Set([...message.body.matchAll(/#(\d{1,6})\b/g)].map((m) => Number(m[1])))]
@@ -59,8 +67,9 @@ const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOp
   const label = KIND_LABEL[message.kind] || '';
   const copy = () => { void navigator.clipboard?.writeText(message.body).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }).catch(() => undefined); };
   return (
-    <article className="fs-agx-msg" data-head={head || undefined} data-mine={mine || undefined} data-tome={toMe || undefined}
-      data-kind={message.kind} style={{ '--agx-c': agentColor(message.author) } as CSSProperties} data-testid="agora-message">
+    <article className="fs-agx-msg" id={'agx-m-' + message.id} data-head={head || undefined} data-mine={mine || undefined} data-tome={toMe || undefined}
+      data-kind={message.kind} data-tools={tools || undefined} style={{ '--agx-c': agentColor(message.author) } as CSSProperties} data-testid="agora-message"
+      onClick={(e) => { if (byTouch() && !(e.target as HTMLElement).closest('a,button,input,textarea')) setTools((v) => !v); }}>
       {head
         ? <span className="fs-agx-avatar" aria-hidden="true">{agentInitials(message.author)}</span>
         : <time className="fs-agx-msg__gutter">{clock(message.created)}</time>}
@@ -73,7 +82,8 @@ const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOp
             {message.mentions.length > 0 && <span className="fs-agx-msg__to">→ {message.mentions.slice(0, 6).map((m) => '@' + m).join(' ')}{message.mentions.length > 6 ? ' …' : ''}</span>}
           </header>
         )}
-        <div className="fs-agx-msg__body"><Rich text={body} /></div>
+        {message.reply && <Quoted quote={message.reply} onJump={onJump} />}
+        {!namesOnly && <div className="fs-agx-msg__body"><Rich text={body} /></div>}
         {long && <button type="button" className="fs-agx-link" onClick={() => setWhole(true)}>{t('Show the whole message ({n} characters)', { n: message.body.length })}</button>}
         {message.body_truncated && <p className="fs-muted">{t('This message is longer than what the page loads.')}</p>}
         {refs.length > 0 && (
@@ -86,14 +96,20 @@ const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOp
             ))}
           </div>
         )}
+        <Files files={message.files} />
+        <Reactions reactions={message.reactions} onToggle={(emoji, on) => onReact(message.id, emoji, on)} />
       </div>
       <div className="fs-agx-msg__tools">
-        {!mine && <IconButton size="sm" icon={CornerUpLeft} label={t('Reply to {name}', { name: message.author })} onClick={() => onReply(message.author)} />}
+        <ReactButton onPick={(emoji) => onReact(message.id, emoji, true)} />
+        <IconButton size="sm" icon={CornerUpLeft} label={t('Answer quoting {name}', { name: message.author })} onClick={() => onReply(message)} testId="agora-quote-button" />
         <IconButton size="sm" icon={copied ? Check : Copy} label={t('Copy the text')} onClick={copy} />
       </div>
     </article>
   );
 });
+
+/** A finger has no hover: there a tap on a message shows what can be done with it. With a mouse, hovering does. */
+const byTouch = () => typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches;
 
 interface Prompt { title: string; placeholder: string; confirm: string; run: (text: string) => Promise<unknown>; optional?: boolean }
 
@@ -186,8 +202,15 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
   const [below, setBelow] = useState(false);
+  // What the next message takes along: the message it answers and the files already sent to the server.
+  const [quote, setQuote] = useState<AgoraMessage | null>(null);
+  const [carried, setCarried] = useState<MessageFile[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const filePicker = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const phone = usePlatform() === 'mobile';
   const pinned = useRef(true);
   const jump = useRef<'bottom' | 'new' | null>('bottom');
   const active = useRef(scope);
@@ -204,7 +227,17 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
       setMessages((old) => {
         const known = new Set(old.map((m) => m.id));
         const fresh = page.messages.filter((m) => !known.has(m.id));
-        return fresh.length ? [...old, ...fresh].sort((a, b) => a.id - b.id) : old;
+        // What is already on screen keeps its place but takes the reactions others put on it meanwhile.
+        const again = new Map(page.messages.filter((m) => known.has(m.id)).map((m) => [m.id, m]));
+        let touched = false;
+        const kept = old.map((m) => {
+          const now = again.get(m.id);
+          if (!now || JSON.stringify(now.reactions ?? []) === JSON.stringify(m.reactions ?? [])) return m;
+          touched = true;
+          return { ...m, reactions: now.reactions };
+        });
+        if (!fresh.length) return touched ? kept : old;
+        return [...kept, ...fresh].sort((a, b) => a.id - b.id);
       });
     }
   }, [viewer]);
@@ -218,6 +251,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(''); setMessages([]); setInfo({ thread: null, task: null }); setMore(null); setPrompt(null); setKind('comment');
+    setQuote(null); setCarried([]); setUploading(0); setDragging(false);
     draftOf.current = scope;
     try { setDraft(window.sessionStorage.getItem('agora:draft:' + scope) || ''); } catch { setDraft(''); }
     pinned.current = true;
@@ -330,9 +364,28 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
     window.requestAnimationFrame(() => { input.current?.focus(); input.current?.setSelectionRange(at, at); setCaret(at); });
   };
 
+  // Files go to the server as soon as they are chosen, pasted or dropped; the message then only names them.
+  const attach = useCallback((picked: File[]) => {
+    const mine = scope;
+    const room = MAX_FILES_PER_MESSAGE - carried.length - uploading;   // the ones on their way count too
+    if (picked.length > room) notify(t('A message carries up to {n} files.', { n: MAX_FILES_PER_MESSAGE }), 'warn');
+    for (const file of picked.slice(0, Math.max(0, room))) {
+      if (file.size > MAX_FILE_BYTES) { notify(t('{name} is over 10 MB.', { name: file.name }), 'warn'); continue; }
+      if (!file.size) { notify(t('{name} is empty.', { name: file.name }), 'warn'); continue; }
+      setUploading((n) => n + 1);
+      sendFile(space, file).then((sent) => { if (active.current === mine) setCarried((old) => (old.length < MAX_FILES_PER_MESSAGE ? [...old, sent] : old)); })
+        .catch((e: Error) => notify(e.message, 'warn'))
+        .finally(() => { if (active.current === mine) setUploading((n) => Math.max(0, n - 1)); });
+    }
+  }, [carried.length, notify, scope, space, uploading]);
+
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if ((!text && !carried.length) || sending || uploading > 0) return;
+    // What was sent belongs to the conversation it was written in: if the person has moved on to another one
+    // meanwhile, that one's draft, quote and files are left as they are.
+    const mine = scope;
+    const here = () => active.current === mine;
     setSending(true);
     try {
       const command = /^\/(tarea|task)\s+(.+)/is.exec(text);
@@ -340,14 +393,14 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
       if (command) {
         const made = await addTask(space, { title: command[2].split('\n')[0].slice(0, 300), body: command[2].split('\n').slice(1).join('\n').trim() });
         notify(t('Task #{id} created', { id: made.task.id }));
-        setDraft('');
-        if (made.task.thread_id) onOpen({ kind: 'thread', id: String(made.task.thread_id) });
+        if (here()) setDraft('');
+        if (here() && made.task.thread_id) onOpen({ kind: 'thread', id: String(made.task.thread_id) });
       } else if (decide && info.thread && !info.task) {
         await resolveThread(space, info.thread.id, decide[2]);
-        notify(t('Decision recorded')); setDraft(''); await reload();
+        notify(t('Decision recorded')); if (here()) setDraft(''); await reload();
       } else {
-        const sent = await sendMessage(space, target, text, kind);
-        setDraft(''); setKind('comment'); pinned.current = true;
+        const sent = await sendMessage(space, target, text, kind, [], { replyTo: quote?.id, files: carried.map((f) => f.id) });
+        if (here()) { setDraft(''); setKind('comment'); setQuote(null); setCarried([]); pinned.current = true; }
         if (sent.mentions.length) notify(t('Mentioned: {names}', { names: sent.mentions.slice(0, 8).join(', ') }));
         await reload();
       }
@@ -362,7 +415,8 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
       if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); choose(mention.options[pick] ?? mention.options[0]); return; }
       if (event.key === 'Escape') { setCaret(0); return; }
     }
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); }
+    // On a phone Enter is a new line (its keyboard has no Shift + Enter to make one); the button sends.
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !phone) { event.preventDefault(); void send(); }
   };
 
   useLayoutEffect(() => {
@@ -373,7 +427,19 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   }, [draft]);
 
   const items = useMemo(() => buildItems(messages, seenUpto, viewer), [messages, seenUpto, viewer]);
-  const reply = useCallback((author: string) => { composerBus.insert('@' + author + ' '); }, []);
+  const reply = useCallback((message: AgoraMessage) => { setQuote(message); input.current?.focus(); }, []);
+  const reactOn = useCallback((id: number, emoji: string, on?: boolean) => {
+    reactTo(space, id, emoji, on)
+      .then((out) => setMessages((old) => old.map((m) => (m.id === id ? { ...m, reactions: out.reactions } : m))))
+      .catch((e: Error) => notify(e.message, 'warn'));
+  }, [notify, space]);
+  const jumpTo = useCallback((id: number) => {
+    const row = scroller.current?.querySelector('#agx-m-' + id);
+    if (!row) { notify(t('That message is further back: load earlier messages to reach it.')); return; }
+    (row as HTMLElement).scrollIntoView({ block: 'center' });
+    row.setAttribute('data-flash', '');
+    window.setTimeout(() => row.removeAttribute('data-flash'), 1600);
+  }, [notify]);
   const debate = info.thread && !info.task && ['debate', 'question', 'decision', 'review'].includes(info.thread.kind);
   const runPrompt = async () => {
     if (!prompt || (!prompt.optional && !promptText.trim())) return;
@@ -384,7 +450,10 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   };
 
   return (
-    <section className="fs-agx-chat" data-testid="agora-chat" aria-busy={busy || undefined}>
+    <section className="fs-agx-chat" data-testid="agora-chat" aria-busy={busy || undefined} data-dragging={dragging || undefined}
+      onDragOver={(e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={(e) => { if (e.dataTransfer?.files?.length) { e.preventDefault(); setDragging(false); attach([...e.dataTransfer.files]); } }}>
       {info.task && <TaskBar task={info.task} guild={guild} ask={(p) => { setPrompt(p); setPromptText(''); }} act={act} />}
       {!info.task && info.thread && view.kind === 'thread' && <ThreadBar thread={info.thread} guild={guild} ask={(p) => { setPrompt(p); setPromptText(''); }} />}
       <div className="fs-agx-chat__scroll" ref={scroller} onScroll={onScroll} role="log" aria-live={loading ? 'off' : 'polite'} aria-busy={loading || undefined} aria-label={t('Messages')}>
@@ -403,7 +472,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
           ? <div key={item.key} className="fs-agx-day"><span>{item.label}</span></div>
           : item.type === 'new'
             ? <div key={item.key} className="fs-agx-new"><span>{t('New')}</span></div>
-            : <MessageRow key={item.key} message={item.message} head={item.head} viewer={viewer} guild={guild} onOpen={onOpen} onReply={reply} />)}
+            : <MessageRow key={item.key} message={item.message} head={item.head} viewer={viewer} guild={guild} onOpen={onOpen} onReply={reply} onReact={reactOn} onJump={jumpTo} />)}
       </div>
       {below && <button type="button" className="fs-agx-chat__jump" onClick={toBottom}><ArrowDown size={14} aria-hidden="true" /> {t('Latest messages')}</button>}
       {prompt ? (
@@ -436,14 +505,19 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
               {KINDS.map((k) => <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}>{t(k === 'comment' ? 'Plain comment' : KIND_LABEL[k])}</button>)}
             </div>
           )}
+          <Carrying quote={quote} files={carried} sending={uploading} onDropQuote={() => setQuote(null)}
+            onDropFile={(id) => setCarried((old) => old.filter((f) => f.id !== id))} />
           <div className="fs-agx-composer__box">
+            <input ref={filePicker} type="file" multiple hidden onChange={(e) => { attach([...(e.target.files ?? [])]); e.target.value = ''; }} data-testid="agora-file-input" />
+            <IconButton icon={Paperclip} label={t('Attach files')} onClick={() => filePicker.current?.click()} testId="agora-attach" />
             <textarea ref={input} value={draft} rows={1} maxLength={20000} placeholder={placeholder} aria-label={placeholder}
+              onPaste={(e) => { const pasted = [...(e.clipboardData?.files ?? [])]; if (pasted.length) { e.preventDefault(); attach(pasted); } }}
               aria-autocomplete="list" aria-controls={mention ? 'agora-mention-list' : undefined} aria-activedescendant={mention ? 'agora-mention-' + pick : undefined}
               onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
               onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)} onKeyDown={onKey} data-testid="agora-input" />
-            <IconButton icon={Send} label={t('Send')} disabled={!draft.trim() || sending} onClick={() => void send()} testId="agora-send" />
+            <IconButton icon={Send} label={t('Send')} disabled={(!draft.trim() && !carried.length) || sending || uploading > 0} onClick={() => void send()} testId="agora-send" />
           </div>
-          <p className="fs-agx-composer__hint">{t('Enter sends · Shift + Enter new line · @ mentions · /tarea Title creates a task')}</p>
+          <p className="fs-agx-composer__hint">{t('Enter sends · Shift + Enter new line · @ mentions · paste or drop files · /tarea Title creates a task')}</p>
         </div>
       )}
     </section>

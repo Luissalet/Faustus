@@ -16,8 +16,13 @@ def client(monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "false")
     calls = []
 
-    def fake(method, path, *, query=None, body=None, timeout=30.0, raw=False):
+    def fake(method, path, *, query=None, body=None, timeout=30.0, raw=False, with_headers=False):
         calls.append({"method": method, "path": path, "query": query, "body": body, "timeout": timeout, "raw": raw})
+        if path.startswith("/api/agora/file/"):
+            kind = {"a" * 32: ("image/png", 'inline; filename="foto.png"'), "b" * 32: ("application/octet-stream", 'attachment; filename="datos.bin"')}.get(path.rsplit("/", 1)[1])
+            return (200, b"bytes", kind[0], {"Content-Disposition": kind[1]}) if kind else (404, b"", "", {})
+        if path == "/api/agora/space_icon":
+            return {"atlas": (200, b"\x89PNG-own", "image/png"), "odd": (200, b"<html>", "text/html")}.get(query["space_id"], (404, b"", ""))
         if path == "/api/agora/down":
             return None, None, ""
         if path == "/api/agora/refused":
@@ -143,3 +148,37 @@ def test_the_request_to_the_hub_carries_the_token_and_the_persons_page(monkeypat
     monkeypatch.delenv(agora_routes.hub_link.ENV, raising=False)
     monkeypatch.setattr(agora_routes.hub_link.hoard_hub, "hub_location", lambda: {"url": "http://127.0.0.1:9", "token_file": "", "configured": False})
     assert agora_routes.hub_request("GET", "/api/agora/guild", timeout=2.0) == (None, None, "")
+
+
+def test_a_file_comes_as_the_hub_gives_it_and_never_as_a_page_of_this_app(client):
+    http, calls = client
+    picture = http.get("/api/agora/file/" + "a" * 32)
+    assert picture.status_code == 200 and picture.content == b"bytes" and picture.headers["content-type"] == "image/png"
+    assert picture.headers["content-disposition"] == 'inline; filename="foto.png"'
+    assert picture.headers["x-content-type-options"] == "nosniff"
+    other = http.get("/api/agora/file/" + "b" * 32)
+    assert other.headers["content-disposition"] == 'attachment; filename="datos.bin"'
+    assert calls[-1]["path"] == "/api/agora/file/" + "b" * 32 and calls[-1]["raw"] is True
+    assert http.get("/api/agora/file/" + "c" * 32).status_code == 404
+    before = len(calls)
+    for bad in ("abc", "A" * 32, "a" * 31 + "/", "..%2F" + "a" * 27):
+        assert http.get("/api/agora/file/" + bad).status_code == 404
+    assert len(calls) == before                                # only an id is ever asked of the hub
+
+
+def test_a_servers_own_picture_is_served_only_when_it_is_a_picture(client):
+    http, calls = client
+    own = http.get("/api/agora/space-icon/atlas")
+    assert own.status_code == 200 and own.content == b"\x89PNG-own" and own.headers["content-type"] == "image/png"
+    assert calls[-1]["path"] == "/api/agora/space_icon" and calls[-1]["query"] == {"space_id": "atlas"}
+    assert http.get("/api/agora/space-icon/odd").status_code == 404        # the hub answered something that is not an image
+    assert http.get("/api/agora/space-icon/none").status_code == 404
+    assert http.get("/api/agora/space-icon/Not%20A%20Space").status_code == 404
+
+
+def test_a_file_on_its_way_to_the_hub_is_given_time(client):
+    http, calls = client
+    http.post("/api/agora/x/file_add", json={"space_id": "atlas", "name": "a.txt", "content_base64": "aG9sYQ=="})
+    assert calls[-1]["path"] == "/api/agora/file_add" and calls[-1]["timeout"] == 180.0
+    http.post("/api/agora/x/react", json={"space_id": "atlas", "message_id": 3, "emoji": "👍"})
+    assert calls[-1]["timeout"] == 40.0

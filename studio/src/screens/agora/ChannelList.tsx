@@ -4,7 +4,7 @@ import {
   Pencil, Plus, Scale, Settings2, SquarePen, Users, Volume2, type LucideIcon,
   Pin, PinOff,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { BOARD_COLUMNS, type AgoraGuild, type AgoraTaskRow, type BoardColumn } from '../../adapters/agora';
 import type { GroupState } from '../../adapters/group';
 import { speakerName } from '../../adapters/group';
@@ -53,12 +53,23 @@ function Row({ current, icon: Icon, label, onClick, unread = 0, mentions = 0, co
   );
 }
 
-function Section({ id, title, count, folded, onFold, action, children }: {
+/** Where a dragged channel lands: before or after another one, or at the end of a category. */
+export interface ChannelDrop { ref?: string; place: 'before' | 'after' | 'end'; category: string }
+const DRAG_TYPE = 'application/x-agora-channel';
+
+function Section({ id, title, count, folded, onFold, action, children, onDropChannel }: {
   id: string; title: string; count?: number; folded: boolean; onFold: (id: string) => void; action?: ReactNode; children: ReactNode;
+  onDropChannel?: (slug: string) => void;
 }) {
+  const [over, setOver] = useState(false);
+  const drop = onDropChannel ? {
+    onDragOver: (e: DragEvent<HTMLElement>) => { if (e.dataTransfer.types.includes(DRAG_TYPE)) { e.preventDefault(); setOver(true); } },
+    onDragLeave: () => setOver(false),
+    onDrop: (e: DragEvent<HTMLElement>) => { const slug = e.dataTransfer.getData(DRAG_TYPE); setOver(false); if (slug) { e.preventDefault(); onDropChannel(slug); } },
+  } : {};
   return (
     <section className="fs-agx-cat" data-folded={folded || undefined} data-testid={'agora-cat-' + id}>
-      <header className="fs-agx-cat__head">
+      <header className="fs-agx-cat__head" data-drop={over || undefined} {...drop}>
         <button type="button" className="fs-agx-cat__toggle" aria-expanded={!folded} onClick={() => onFold(id)}>
           {folded ? <ChevronRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
           <span>{title}</span>
@@ -71,9 +82,41 @@ function Section({ id, title, count, folded, onFold, action, children }: {
   );
 }
 
-export function ChannelList({ guild, view, onOpen, onAction, rooms, hidden, embedded }: {
+/** A channel in the list. Its own ones can be dragged to another place or another category. */
+function ChannelRow({ channel, current, onOpen, onMove }: {
+  channel: AgoraGuild['channels'][number]; current: boolean; onOpen: () => void; onMove: (slug: string, to: ChannelDrop) => void;
+}) {
+  const [drop, setDrop] = useState<'before' | 'after' | null>(null);
+  const category = channel.category || 'chat';
+  const side = (e: DragEvent<HTMLLIElement>): 'before' | 'after' => {
+    const box = e.currentTarget.getBoundingClientRect();
+    return channel.builtin || e.clientY > box.top + box.height / 2 ? 'after' : 'before';
+  };
+  return (
+    <li className="fs-agx-chanrow" data-drop={drop || undefined} draggable={!channel.builtin}
+      onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, channel.slug); e.dataTransfer.effectAllowed = 'move'; }}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG_TYPE)) { e.preventDefault(); setDrop(side(e)); } }}
+      onDragLeave={() => setDrop(null)}
+      onDrop={(e) => {
+        const slug = e.dataTransfer.getData(DRAG_TYPE);
+        const place = side(e);
+        setDrop(null);
+        if (slug && slug !== channel.slug) { e.preventDefault(); onMove(slug, { ref: channel.slug, place, category }); }
+      }}>
+      <button type="button" className="fs-agx-row" aria-current={current ? 'page' : undefined} data-unread={channel.unread > 0 || undefined}
+        onClick={onOpen} title={channel.topic || channel.title} data-testid={'agora-channel-' + channel.slug}>
+        <Hash size={16} aria-hidden="true" className="fs-agx-row__icon" />
+        <span className="fs-agx-row__label">{channel.title}</span>
+        {channel.mentions > 0 && <CountBadge n={channel.mentions} mentions />}
+        {channel.mentions === 0 && channel.unread > 0 && <CountBadge n={channel.unread} />}
+      </button>
+    </li>
+  );
+}
+
+export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, rooms, hidden, embedded }: {
   guild: AgoraGuild; view: View; onOpen: (view: View) => void; onAction: (action: ListAction, arg?: string) => void;
-  rooms: GroupState[] | null; hidden: boolean; embedded: boolean;
+  onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean;
 }) {
   const space = guild.space;
   const storeKey = 'agora:folded:' + space.id;
@@ -149,11 +192,11 @@ export function ChannelList({ guild, view, onOpen, onAction, rooms, hidden, embe
 
         {categories.map(([category, channels]) => (
           <Section key={category} id={'cat-' + category} title={category === 'chat' ? t('Text channels') : category} folded={folded.has('cat-' + category)} onFold={fold}
+            onDropChannel={(slug) => onMoveChannel(slug, { place: 'end', category })}
             action={<IconButton size="sm" icon={Plus} label={t('New channel')} onClick={() => onAction('new-channel', category)} testId={'agora-new-channel-' + category} />}>
             {channels.map((channel) => (
-              <Row key={channel.slug} current={is('channel', channel.slug)} icon={Hash} label={channel.title} unread={channel.unread}
-                mentions={channel.mentions} title={channel.topic || channel.title} onClick={() => onOpen({ kind: 'channel', id: channel.slug })}
-                testId={'agora-channel-' + channel.slug} />
+              <ChannelRow key={channel.slug} channel={channel} current={is('channel', channel.slug)}
+                onOpen={() => onOpen({ kind: 'channel', id: channel.slug })} onMove={onMoveChannel} />
             ))}
           </Section>
         ))}

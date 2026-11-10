@@ -9,7 +9,7 @@ import { t } from '../i18n';
 
 export type BoardColumn = 'open' | 'in_progress' | 'review' | 'done';
 export const BOARD_COLUMNS: BoardColumn[] = ['open', 'in_progress', 'review', 'done'];
-export type Presence = 'person' | 'working' | 'idle' | 'waiting' | 'away' | 'offline' | 'no_quota';
+export type Presence = 'person' | 'working' | 'idle' | 'waiting' | 'away' | 'offline' | 'no_quota' | 'invited';
 
 export interface ServerCounts { open: number; active: number; review: number; blocked: number; waiting: number }
 export interface AgoraServer {
@@ -53,9 +53,13 @@ export interface AgoraGuild {
   task_counts: Record<string, number>; column_counts: Record<BoardColumn, number>; members: AgoraMember[]; members_older?: number;
   providers: QuotaProvider[];
 }
+export interface MessageReaction { emoji: string; count: number; agents: string[]; mine: boolean }
+export interface MessageFile { id: string; name: string; type: string; size: number; inline: boolean }
+/** The message another one quotes; `gone` when it is no longer there. */
+export interface MessageQuote { id: number; author: string | null; excerpt: string; gone?: boolean }
 export interface AgoraMessage {
   id: number; thread_id: number; author: string; kind: string; body: string; mentions: string[]; created: number;
-  body_truncated?: boolean;
+  body_truncated?: boolean; reactions?: MessageReaction[]; reply?: MessageQuote | null; files?: MessageFile[];
 }
 export interface AgoraTask {
   id: number; title: string; body: string; status: string; owner: string | null; reviewer: string | null; kind: string;
@@ -130,9 +134,75 @@ export const readTarget = (space: string, target: Target, opts: { limit?: number
   agoraPost<AgoraPage>('channel_read', { space_id: space, ...targetArgs(target), limit: opts.limit ?? 60,
     ...(opts.before ? { before_id: opts.before } : {}), ...(opts.peek ? { peek: true } : {}) });
 
-export const say = (space: string, target: Target, body: string, kind = 'comment', mentions: string[] = []) =>
+/** `carry`: the message it quotes and the files it takes along (sent first with `sendFile`). */
+export const say = (space: string, target: Target, body: string, kind = 'comment', mentions: string[] = [],
+  carry: { replyTo?: number; files?: string[] } = {}) =>
   agoraPost<{ message_id: number; mentions: string[]; channel: string | null; thread: AgoraThreadInfo }>(
-    'channel_post', { space_id: space, ...targetArgs(target), body, kind, mentions });
+    'channel_post', { space_id: space, ...targetArgs(target), body, kind, mentions,
+      ...(carry.replyTo ? { reply_to: carry.replyTo } : {}), ...(carry.files?.length ? { files: carry.files } : {}) });
+
+/** Put a reaction on a message or take it back (without `on`, it toggles). */
+export const react = (space: string, messageId: number, emoji: string, on?: boolean) =>
+  agoraPost<{ message_id: number; on: boolean; reactions: MessageReaction[] }>(
+    'react', { space_id: space, message_id: messageId, emoji, ...(on === undefined ? {} : { on }) });
+
+export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_FILES_PER_MESSAGE = 10;
+export const fileUrl = (id: string) => '/api/agora/file/' + encodeURIComponent(id);
+
+function asBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('unreadable file'));
+    reader.onload = () => { const text = String(reader.result || ''); resolve(text.slice(text.indexOf(',') + 1)); };
+    reader.readAsDataURL(blob);
+  });
+}
+/** Send a file to the server so the next message can carry it. */
+export async function sendFile(space: string, file: File): Promise<MessageFile> {
+  const made = await agoraPost<{ file: MessageFile }>('file_add', {
+    space_id: space, name: file.name || 'file', type: file.type || '', content_base64: await asBase64(file) });
+  return made.file;
+}
+
+/* ── Who is on a server ── */
+export const getMembers = (space: string, q = '', signal?: AbortSignal) =>
+  agoraGet<{ members: AgoraMember[]; total: number }>('members', { space_id: space, q }, signal);
+export const addMember = (space: string, id: string, note = '') =>
+  agoraPost<{ member: AgoraMember; added: boolean; registered: boolean }>('member_add', { space_id: space, id, ...(note ? { note } : {}) });
+export interface MemberRemoval { removed: string; freed_tasks: number[]; handed_tasks: number[]; handed_to: string | null; left_in_review: number[]; forgotten: boolean }
+export const removeMember = (space: string, id: string, opts: { to?: string; reason?: string } = {}) =>
+  agoraPost<MemberRemoval>('member_remove', { space_id: space, id, ...(opts.to ? { to_agent: opts.to } : {}), ...(opts.reason ? { reason: opts.reason } : {}) });
+export const pruneMembers = (space: string, days: number, dryRun: boolean) =>
+  agoraPost<{ removed: string[]; kept: { id: string; why: string }[]; dry_run: boolean; older_than_days: number }>(
+    'members_prune', { space_id: space, older_than_days: days, dry_run: dryRun });
+
+/* ── Sessions the hub can start: its console runs the providers' own programs on the PC ── */
+export interface ConsoleModel { id: string; name?: string; label?: string; efforts?: string[]; default_effort?: string | null }
+export interface ConsoleLeader {
+  id: string; name: string; agent_id: string; catalog: ConsoleModel[]; model?: string | null; effort?: string | null;
+  detail?: string | null; state?: string | null; auth_state?: string | null;
+}
+export interface ConsoleWorker {
+  id: string; parent_id: string; agent_id: string; model: string; effort: string; task: string; state: string;
+  detail?: string | null; result?: string | null; created_at?: number; updated_at?: number;
+}
+export const getConsole = (space: string, signal?: AbortSignal) =>
+  agoraGet<{ leaders: ConsoleLeader[]; workers: ConsoleWorker[] }>('console/overview', { space_id: space }, signal);
+export const launchWorker = (space: string, input: { leader_id: string; model: string; effort: string; task: string }) =>
+  agoraPost<{ worker: ConsoleWorker; warning?: string }>('console/worker', { space_id: space, action: 'create', ...input });
+export const stopWorker = (space: string, workerId: string) =>
+  agoraPost<{ worker_id: string; state: string }>('console/worker', { space_id: space, action: 'stop', worker_id: workerId });
+
+/* ── How a server looks ── */
+/** A picture as the server's icon: a data URL already made small. */
+export const setSpaceIcon = (space: string, dataUrl: string) =>
+  agoraPost<{ meta: AgoraSpaceInfo['meta'] }>('space_icon_set', { space_id: space, image_base64: dataUrl });
+/** `icon` is `img:<stamp>` when the server has its own picture; the stamp keeps a browser from showing an older one. */
+export const spaceIconUrl = (space: string, icon: string) =>
+  '/api/agora/space-icon/' + encodeURIComponent(space) + '?v=' + encodeURIComponent(icon.slice(4));
+export const reorderChannels = (space: string, order: string[]) =>
+  agoraPost<{ order: string[] }>('channels_reorder', { space_id: space, order });
 
 export const createChannel = (space: string, input: { title: string; topic?: string; category?: string }) =>
   agoraPost<{ channel: AgoraChannel }>('channel_create', { space_id: space, ...input });

@@ -1,18 +1,18 @@
 import {
-  Activity, Archive, BookOpen, Check, ExternalLink, GitPullRequest, Hash, Inbox, Kanban, Lock, MessagesSquare, PackageCheck, PanelLeft,
+  Activity, Archive, ArrowDown, ArrowUp, BookOpen, Check, ExternalLink, GitPullRequest, Hash, Inbox, Kanban, Lock, MessagesSquare, PackageCheck, PanelLeft,
   Pencil, RefreshCw, Scale, Search, SquarePen, Users, Volume2, X, type LucideIcon,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
-  getGuild, getServers, markSpaceSeen, pulse, setSpaceMeta, updateChannel,
+  getGuild, getServers, markSpaceSeen, pulse, reorderChannels, setSpaceMeta, updateChannel,
   type AgoraGuild, type AgoraServer,
 } from '../../adapters/agora';
 import { listGroups, type GroupState } from '../../adapters/group';
 import type { Project } from '../../adapters/projects';
 import { EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
 import { t } from '../../i18n';
-import { ChannelList, type ListAction } from './ChannelList';
+import { ChannelList, type ChannelDrop, type ListAction } from './ChannelList';
 import { ChatPane } from './ChatPane';
 import { MembersPane } from './MembersPane';
 import { RoomsPane } from './RoomsPane';
@@ -60,7 +60,8 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   const [dialog, setDialog] = useState<DialogState>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [membersOpen, setMembersOpen] = useState(() => recall('agora:members') !== '0' && window.innerWidth > 1180);
-  const [channelsOpen, setChannelsOpen] = useState(false);
+  // On a phone the way in is the list of servers and channels, unless the link already says where to go.
+  const [channelsOpen, setChannelsOpen] = useState(() => window.innerWidth <= 767 && !new URLSearchParams(window.location.search).has('c'));
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
   const noticeTimer = useRef<number | null>(null);
 
@@ -71,11 +72,11 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   }, []);
   useEffect(() => () => { if (noticeTimer.current) window.clearTimeout(noticeTimer.current); }, []);
 
-  const open = useCallback((next: View, space?: string) => {
+  const open = useCallback((next: View, space?: string, keepList = false, inPlace = false) => {
     const target = space ?? spaceId;
     if (!(next.kind === 'view' && (next.id === 'inbox' || next.id === 'search'))) remember('agora:last-view:' + target, viewKey(next));
     if (!lockedSpace) remember('agora:last-space', target);
-    setChannelsOpen(false);
+    if (!keepList) setChannelsOpen(false);
     if (target !== spaceId && lockedSpace) { navigate('/agora?space_id=' + encodeURIComponent(target) + '&c=' + encodeURIComponent(viewKey(next))); return; }
     if (target !== spaceId) setGuild(null);
     setParams((old) => {
@@ -85,13 +86,14 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
       merged.delete('mode'); merged.delete('s');
       if (!(next.kind === 'view' && next.id === 'search')) merged.delete('q');
       return merged;
-    });
+    }, inPlace ? { replace: true } : undefined);
   }, [lockedSpace, navigate, setParams, spaceId]);
 
   const selectServer = useCallback((id: string) => {
     if (id === spaceId) return;
     setGuild(null);
-    open(parseView(recall('agora:last-view:' + id)), id);
+    // On a phone a server is chosen from the list, and the list stays to choose where in it.
+    open(parseView(recall('agora:last-view:' + id)), id, window.innerWidth <= 767);
   }, [open, spaceId]);
 
   // The server view and the server list, refreshed when the Agora says something changed.
@@ -145,6 +147,13 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   const server = servers?.find((s) => s.id === spaceId);
   const ready = guild && guild.space.id === spaceId ? guild : null;
 
+  // A link to the conversation behind a channel (a notification, the inbox) opens the channel itself.
+  useEffect(() => {
+    if (!ready || view.kind !== 'thread') return;
+    const channel = ready.channels.find((c) => c.thread_id === Number(view.id) && !c.archived);
+    if (channel) open({ kind: 'channel', id: channel.slug }, undefined, true, true);   // in place: Back does not come here again
+  }, [open, ready, view]);
+
   const onAction = useCallback((action: ListAction, arg?: string) => {
     if (action === 'edit-server') setDialog({ kind: 'edit-server' });
     else if (action === 'folders') setDialog({ kind: 'edit-server', focus: 'folders' });
@@ -164,6 +173,30 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
     else if (action === 'council') navigate('/agora?space_id=' + encodeURIComponent(spaceId) + '&mode=council');
     else if (action === 'classic') navigate('/agora?space_id=' + encodeURIComponent(spaceId) + '&mode=groups');
   }, [navigate, notify, open, ready, refresh, server?.hidden, server?.position, servers, spaceId]);
+
+  // A channel takes another place in the list (and another category, when it lands in one): general stays first.
+  const moveChannel = useCallback((slug: string, to: ChannelDrop) => {
+    if (!ready) return;
+    const moving = ready.channels.find((c) => c.slug === slug);
+    if (!moving || moving.builtin) return;
+    const order = ready.channels.filter((c) => !c.builtin && c.slug !== slug).map((c) => c.slug);
+    let index = order.length;
+    if (to.place === 'end') {
+      const last = [...ready.channels].reverse().find((c) => (c.category || 'chat') === to.category && !c.builtin && c.slug !== slug);
+      index = last ? order.indexOf(last.slug) + 1 : order.length;
+    } else if (to.ref) {
+      const at = order.indexOf(to.ref);
+      index = at < 0 ? 0 : to.place === 'before' ? at : at + 1;
+    }
+    order.splice(index, 0, slug);
+    void (async () => {
+      try {
+        if ((moving.category || 'chat') !== to.category) await updateChannel(spaceId, slug, { category: to.category });
+        await reorderChannels(spaceId, order);
+        refresh();
+      } catch (failure) { notify((failure as Error).message, 'warn'); }
+    })();
+  }, [notify, ready, refresh, spaceId]);
 
   const head = useMemo(() => {
     if (!ready) return { icon: Hash, title: '', hint: '' };
@@ -186,7 +219,12 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   }, [ready, rooms, view]);
 
   const channel = ready && view.kind === 'channel' ? ready.channels.find((c) => c.slug === view.id) : undefined;
+  const siblings = channel && ready ? ready.channels.filter((c) => (c.category || 'chat') === (channel.category || 'chat')) : [];
+  const place = channel ? siblings.findIndex((c) => c.slug === channel.slug) : -1;
   const channelMenu = channel && [
+    // The same as dragging it in the list, for the keyboard.
+    ...(!channel.builtin && place > 0 && !siblings[place - 1].builtin ? [{ label: t('Move up'), icon: ArrowUp, onSelect: () => moveChannel(channel.slug, { ref: siblings[place - 1].slug, place: 'before' as const, category: channel.category || 'chat' }) }] : []),
+    ...(!channel.builtin && place >= 0 && place < siblings.length - 1 ? [{ label: t('Move down'), icon: ArrowDown, onSelect: () => moveChannel(channel.slug, { ref: siblings[place + 1].slug, place: 'after' as const, category: channel.category || 'chat' }) }] : []),
     { label: t('Change the topic…'), icon: Pencil, onSelect: () => {
       const topic = window.prompt(t('Topic of #{name}', { name: channel.slug }), channel.topic);
       if (topic !== null) void updateChannel(spaceId, channel.slug, { topic }).then(refresh).catch((e: Error) => notify(e.message, 'warn'));
@@ -209,7 +247,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           : <nav className="fs-agx-rail" aria-label={t('Servers')} />
       )}
       {ready
-        ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)} />
+        ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} onMoveChannel={moveChannel} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)} />
         : <aside className="fs-agx-channels"><div className="fs-agx-channels__scroll"><Skeleton label={t('Loading channels')} count={8} height="28px" /></div></aside>}
       <main className="fs-agx-main">
         <header className="fs-agx-main__head">
@@ -259,7 +297,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           )}
         </div>
       </main>
-      {ready && membersOpen && <MembersPane guild={ready} onOpen={open} />}
+      {ready && membersOpen && <MembersPane guild={ready} onOpen={open} notify={notify} onChanged={refresh} />}
       {channelsOpen && <button type="button" className="fs-agx-scrim" aria-label={t('Close the channel list')} onClick={() => setChannelsOpen(false)} />}
 
       <AddServerDialog open={dialog?.kind === 'add-server'} servers={servers ?? []} onClose={() => setDialog(null)} notify={notify}

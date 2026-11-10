@@ -46,9 +46,15 @@ export function agentInitials(agent: string | null | undefined): string {
 
 export const PRESENCE_LABEL: Record<Presence, string> = {
   person: 'Here', working: 'At work', idle: 'Idle', waiting: 'Waiting', away: 'No heartbeat lately',
-  offline: 'Offline', no_quota: 'Out of quota',
+  offline: 'Offline', no_quota: 'Out of quota', invited: 'Has not come in yet',
 };
 export const isOnline = (m: AgoraMember) => m.presence !== 'offline';
+/** A size a person reads: 3,4 MB, 120 KB. */
+export function fileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toLocaleString(locale(), { maximumFractionDigits: 1 }) + ' MB';
+  if (bytes >= 1024) return Math.round(bytes / 1024).toLocaleString(locale()) + ' KB';
+  return bytes + ' B';
+}
 
 export const COLUMN_LABEL: Record<BoardColumn, string> = { open: 'To do', in_progress: 'In progress', review: 'In review', done: 'Done' };
 export const STATUS_LABEL: Record<string, string> = {

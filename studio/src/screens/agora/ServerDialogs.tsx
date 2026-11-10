@@ -1,7 +1,7 @@
-import { CornerLeftUp, Folder, FolderOpen, FolderPlus, HardDrive, Home, Plus, Trash2 } from 'lucide-react';
+import { CornerLeftUp, Folder, FolderOpen, FolderPlus, HardDrive, Home, ImagePlus, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import {
-  addTask, createChannel, createServerSpace, hubFolders, hubIsRemote, openThread, setSpaceMeta, updateSpace,
+  addTask, createChannel, createServerSpace, hubFolders, hubIsRemote, openThread, setSpaceIcon, setSpaceMeta, spaceIconUrl, updateSpace,
   type AgoraGuild, type AgoraServer, type AgoraThreadInfo, type HubFolders,
 } from '../../adapters/agora';
 import { pickNative } from '../../adapters/composer';
@@ -123,15 +123,59 @@ function FolderPicker({ label, hint, value, onChange, multiple = false, recent =
   );
 }
 
-function Look({ icon, color, onIcon, onColor }: { icon: string; color: string; onIcon: (v: string) => void; onColor: (v: string) => void }) {
+const ICON_PX = 128;
+
+/** A picture someone chose, made a square of 128 px a side (cut to its centre), as a data URL. */
+function squarePicture(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error(t('That file is not a picture the browser can read.'))); };
+    image.onload = () => {
+      const side = Math.min(image.naturalWidth, image.naturalHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = ICON_PX; canvas.height = ICON_PX;
+      const pen = canvas.getContext('2d');
+      URL.revokeObjectURL(url);
+      if (!pen || !side) { reject(new Error(t('That file is not a picture the browser can read.'))); return; }
+      pen.imageSmoothingQuality = 'high';
+      pen.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, ICON_PX, ICON_PX);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    image.src = url;
+  });
+}
+
+/** How a server shows in the list: a picture of its own, or a letter or emoji, and a colour. */
+function Look({ icon, color, onIcon, onColor, picture, onPicture, spaceId }: {
+  icon: string; color: string; onIcon: (v: string) => void; onColor: (v: string) => void;
+  picture: string; onPicture: (dataUrl: string) => void; spaceId?: string;
+}) {
+  const chooser = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState('');
+  const own = icon.startsWith('img:');
+  const shown = picture || (own && spaceId ? spaceIconUrl(spaceId, icon) : '');
+  const choose = (file: File | undefined) => {
+    if (!file) return;
+    setError('');
+    squarePicture(file).then(onPicture).catch((e: Error) => setError(e.message));
+  };
   return (
-    <div className="fs-agx-form__row">
-      <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Letter or emoji')}</span>
-        <input className="fs-field fs-agx-form__glyph" value={icon} maxLength={16} placeholder="A" onChange={(e) => onIcon(e.target.value)} /></label>
-      <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Colour')}</span>
-        <input type="color" className="fs-agx-form__color" value={color || ROLE_COLORS.person} onChange={(e) => onColor(e.target.value)} /></label>
-      {color && <Button size="sm" variant="ghost" label={t('No colour')} onClick={() => onColor('')} />}
-    </div>
+    <>
+      <div className="fs-agx-form__row">
+        {shown && <span className="fs-agx-sicon" data-kind="image" aria-hidden="true"><img src={shown} alt="" /></span>}
+        <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Letter or emoji')}</span>
+          <input className="fs-field fs-agx-form__glyph" value={own || picture ? '' : icon} maxLength={16} placeholder="A" disabled={Boolean(picture)}
+            onChange={(e) => onIcon(e.target.value)} /></label>
+        <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Colour')}</span>
+          <input type="color" className="fs-agx-form__color" value={color || ROLE_COLORS.person} onChange={(e) => onColor(e.target.value)} /></label>
+        {color && <Button size="sm" variant="ghost" label={t('No colour')} onClick={() => onColor('')} />}
+        <input ref={chooser} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => { choose(e.target.files?.[0]); e.target.value = ''; }} data-testid="agora-server-picture-input" />
+        <Button size="sm" variant="secondary" icon={ImagePlus} label={shown ? t('Another picture…') : t('A picture…')} onClick={() => chooser.current?.click()} testId="agora-server-picture" />
+        {shown && <Button size="sm" variant="ghost" label={t('No picture')} onClick={() => { onPicture(''); if (own) onIcon(''); }} />}
+      </div>
+      {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
+    </>
   );
 }
 
@@ -146,6 +190,7 @@ export function AddServerDialog({ open, servers, onClose, onCreated, notify }: {
   const [instructions, setInstructions] = useState('');
   const [icon, setIcon] = useState('');
   const [color, setColor] = useState('');
+  const [picture, setPicture] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
@@ -157,7 +202,7 @@ export function AddServerDialog({ open, servers, onClose, onCreated, notify }: {
     if (!open) return;
     const controller = new AbortController();
     made.current = { name: '' };
-    setName(''); setWorkspace([]); setFolders([]); setAbout(''); setInstructions(''); setIcon(''); setColor(''); setError(''); setBusy('');
+    setName(''); setWorkspace([]); setFolders([]); setAbout(''); setInstructions(''); setIcon(''); setColor(''); setPicture(''); setError(''); setBusy('');
     listProjects(controller.signal).then(setProjects).catch(() => undefined);
     recentFolders(controller.signal).then(setRecent).catch(() => undefined);
     return () => controller.abort();
@@ -186,7 +231,8 @@ export function AddServerDialog({ open, servers, onClose, onCreated, notify }: {
         made.current.spaceId = space.id;
       }
       const spaceId = made.current.spaceId;
-      if (folders.length || icon.trim() || color) await setSpaceMeta(spaceId, { folders, icon: icon.trim(), color });
+      if (folders.length || icon.trim() || color) await setSpaceMeta(spaceId, { folders, icon: picture ? '' : icon.trim(), color });
+      if (picture) await setSpaceIcon(spaceId, picture);
       notify(t('Server {name} created', { name: title }));
       onCreated(spaceId); onClose();
     } catch (e) { setError((e as Error).message); }
@@ -216,7 +262,7 @@ export function AddServerDialog({ open, servers, onClose, onCreated, notify }: {
           <textarea className="fs-field fs-agx-form__area" value={about} maxLength={2000} onChange={(e) => setAbout(e.target.value)} /></label>
         <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Instructions for its chats')}</span>
           <textarea className="fs-field fs-agx-form__area" value={instructions} maxLength={20000} onChange={(e) => setInstructions(e.target.value)} placeholder={t('Optional: how to work in this project')} /></label>
-        <Look icon={icon} color={color} onIcon={setIcon} onColor={setColor} />
+        <Look icon={icon} color={color} onIcon={setIcon} onColor={setColor} picture={picture} onPicture={setPicture} />
         {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
         {orphans.length > 0 && (
           <section className="fs-agx-form__adopt">
@@ -245,13 +291,14 @@ export function EditServerDialog({ open, guild, focus, onClose, onSaved, notify 
   const [folders, setFolders] = useState<string[]>(space.meta.folders);
   const [icon, setIcon] = useState(space.meta.icon);
   const [color, setColor] = useState(space.meta.color);
+  const [picture, setPicture] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const remote = useHubRemote(open);
   useEffect(() => {
     if (!open) return;
     setTitle(space.title); setAbout(space.description); setWorkspace(space.workspace ? [space.workspace] : []);
-    setFolders(space.meta.folders); setIcon(space.meta.icon); setColor(space.meta.color); setError('');
+    setFolders(space.meta.folders); setIcon(space.meta.icon); setColor(space.meta.color); setPicture(''); setError('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, space.id]);
   const save = async () => {
@@ -262,7 +309,9 @@ export function EditServerDialog({ open, guild, focus, onClose, onSaved, notify 
       if (about.trim() !== (space.description || '')) changes.description = about.trim();
       if ((workspace[0] ?? '') !== (space.workspace || '')) changes.workspace = workspace[0] ?? '';
       if (Object.keys(changes).length) await updateSpace(space.id, space.revision, changes);
-      await setSpaceMeta(space.id, { folders, icon: icon.trim(), color });
+      // A new picture replaces whatever icon there was; the one it already had stays as long as nothing else is chosen.
+      await setSpaceMeta(space.id, picture ? { folders, color } : { folders, icon: icon.trim(), color });
+      if (picture) await setSpaceIcon(space.id, picture);
       if (space.project_id && !remote) {
         for (const folder of folders.filter((f) => !space.meta.folders.includes(f))) {
           try { await addContextRoot(space.project_id, folder); } catch { /* the project may already read it */ }
@@ -282,7 +331,7 @@ export function EditServerDialog({ open, guild, focus, onClose, onSaved, notify 
               <input className="fs-field" value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} /></label>
             <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('What it is about')}</span>
               <textarea className="fs-field fs-agx-form__area" value={about} maxLength={4000} onChange={(e) => setAbout(e.target.value)} /></label>
-            <Look icon={icon} color={color} onIcon={setIcon} onColor={setColor} />
+            <Look icon={icon} color={color} onIcon={setIcon} onColor={setColor} picture={picture} onPicture={setPicture} spaceId={space.id} />
           </>
         )}
         <FolderPicker label={t('Working folder')} hint={remote ? t('Where its agents read and write, on the PC.') : t('Where its agents read and write.')} value={workspace} onChange={setWorkspace} remote={remote} />

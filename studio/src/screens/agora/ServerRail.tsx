@@ -1,6 +1,6 @@
 import { Compass, Home, Inbox, Plus } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
-import { iconUrl, type AgoraServer } from '../../adapters/agora';
+import { iconUrl, spaceIconUrl, type AgoraServer } from '../../adapters/agora';
 import { BrandMark } from '../../shell/BrandMark';
 import { t, tn } from '../../i18n';
 import { agentInitials } from './util';
@@ -22,6 +22,12 @@ export function ServerIcon({ server, size = 44 }: { server: Pick<AgoraServer, 'i
   const [broken, setBroken] = useState(false);
   const style = { '--agx-c': server.color || undefined, inlineSize: size, blockSize: size } as CSSProperties;
   const own = (server.icon || '').trim();
+  if (own.startsWith('img:') && !broken) {
+    return <span className="fs-agx-sicon" style={style} data-kind="image" aria-hidden="true">
+      <img src={spaceIconUrl(server.id, own)} alt="" loading="lazy" onError={() => setBroken(true)} />
+    </span>;
+  }
+  if (own.startsWith('img:')) return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{agentInitials(server.title)}</span>;
   if (own && own.length <= 4) return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{own}</span>;
   const app = own || server.icon_app || '';
   if (app === 'faustus') return <span className="fs-agx-sicon" style={style} data-kind="brand" aria-hidden="true"><BrandMark size={Math.round(size * 0.6)} /></span>;
