@@ -47,7 +47,7 @@ _OWNER_SCOPE_ERROR = (
 #: Tools whose actions write. Reads degrade to install-wide without a
 #: configured owner; every write here is refused instead, same policy as
 #: the context engine and memory servers.
-_WRITE_ACTIONS = {"brain_write_note", "brain_append_note", "brain_sync"}
+_WRITE_ACTIONS = {"brain_write_note", "brain_append_note", "brain_sync", "brain_canvas_import"}
 
 
 def _configured_owner() -> str:
@@ -357,6 +357,61 @@ async def list_tools() -> list[Tool]:
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
+        Tool(
+            name="brain_canvas_export",
+            description=(
+                "Export the Cerebro to a JSON Canvas 1.0 `.canvas` file (opens in "
+                "Obsidian): the note graph or the entity graph, whole or a centre "
+                "with its neighbours up to `depth` hops, filtered by kinds/tags. "
+                "Nodes are laid out without overlaps, grouped and coloured by "
+                "kind, edges labelled. `mode` file points at the vault notes, "
+                "text copies excerpts. Saved to Canvas/<name>.canvas in the vault "
+                "when `save` is true; `include_canvas` returns the document."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "enum": ["notes", "entities"]},
+                    "center": {"type": "string", "description": "Note path or title, entity id or name."},
+                    "depth": {"type": "integer", "minimum": 0, "maximum": 6},
+                    "kinds": {"type": "array", "items": {"type": "string"}},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "group_by": {"type": "string", "enum": ["kind", "folder", "tag", "none"]},
+                    "layout": {"type": "string", "enum": ["auto", "force", "layers"]},
+                    "mode": {"type": "string", "enum": ["file", "text"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 2000},
+                    "name": {"type": "string"},
+                    "save": {"type": "boolean"},
+                    "include_canvas": {"type": "boolean"},
+                },
+            },
+        ),
+        Tool(
+            name="brain_canvas_import",
+            description=(
+                "Import a JSON Canvas 1.0 document (`canvas`, object or JSON text, "
+                "or `path` to a .canvas file) into the Cerebro as notes and "
+                "[[wikilinks]] under Canvas/<name>/, idempotent by node id: text "
+                "and link nodes become notes, file nodes join existing notes, "
+                "groups become canvas/<group> tags, edges labelled links. "
+                "`dry_run` previews, `prune` removes notes whose node is gone, "
+                "`undo` removes the import called `name`. Refused without a "
+                "configured owner."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "canvas": {"type": "object"},
+                    "path": {"type": "string", "description": "A .canvas file (absolute or vault-relative)."},
+                    "name": {"type": "string"},
+                    "folder": {"type": "string"},
+                    "dry_run": {"type": "boolean"},
+                    "prune": {"type": "boolean"},
+                    "undo": {"type": "boolean"},
+                    "purge": {"type": "boolean"},
+                },
+            },
+        ),
     ]
 
 
@@ -507,6 +562,50 @@ async def _tool_graph_ask(owner: str, args: dict) -> list[TextContent]:
     return _json_result(result)
 
 
+def _str_list(value) -> list | None:
+    if isinstance(value, str):
+        value = [v for v in value.split(",") if v.strip()]
+    return [str(v) for v in value] if isinstance(value, list) and value else None
+
+
+def _tool_canvas_export(owner: str, args: dict) -> list[TextContent]:
+    # Called directly, like every other handler here: a worker thread under
+    # this stdio server never returned on Windows.
+    from src.brain import canvas
+    out = canvas.export_canvas(
+        owner, scope=str(args.get("scope") or "notes"), center=args.get("center") or None,
+        depth=int(args.get("depth", 1) or 0), kinds=_str_list(args.get("kinds")), tags=_str_list(args.get("tags")),
+        group_by=args.get("group_by") or None, layout=str(args.get("layout") or "auto"),
+        mode=str(args.get("mode") or "file"), limit=_limit(args.get("limit"), 300, 2000),
+        save=bool(args.get("save", False)), name=str(args.get("name") or ""))
+    if not args.get("include_canvas") and out["stats"]["nodes"] > 40:
+        out = {k: v for k, v in out.items() if k != "canvas"}
+        out["canvas_omitted"] = "pass include_canvas=true to receive the document inline"
+    return _json_result(out)
+
+
+def _tool_canvas_import(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import canvas, vault
+    folder = str(args.get("folder") or "Canvas")
+    if args.get("undo"):
+        return _json_result(canvas.remove_import(owner, str(args.get("name") or ""), folder=folder,
+                                                 purge=bool(args.get("purge"))))
+    raw = args.get("canvas")
+    name = str(args.get("name") or "")
+    path = str(args.get("path") or "").strip()
+    if raw is None and path:
+        full = os.path.expanduser(path)
+        if not os.path.isabs(full):
+            full = os.path.join(vault.vault_root(owner), *path.replace("\\", "/").split("/"))
+        with open(full, "rb") as fh:
+            raw = fh.read()
+        name = name or os.path.splitext(os.path.basename(full))[0]
+    if raw is None:
+        raise ValueError("give `canvas` (the document) or `path` (a .canvas file)")
+    return _json_result(canvas.import_canvas(owner, raw, name=name or "Canvas", folder=folder,
+                                             dry_run=bool(args.get("dry_run")), prune=bool(args.get("prune"))))
+
+
 def _tool_sync(owner: str, args: dict) -> list[TextContent]:
     report = _engine["vault"].sync(owner, budget_s=25.0)
     return _json_result({"ok": True, "report": report})
@@ -523,6 +622,8 @@ _HANDLERS = {
     "brain_fact_history": _tool_fact_history,
     "brain_graph_neighbors": _tool_neighbors,
     "brain_graph_ask": _tool_graph_ask,
+    "brain_canvas_export": _tool_canvas_export,
+    "brain_canvas_import": _tool_canvas_import,
     "brain_sync": _tool_sync,
 }
 

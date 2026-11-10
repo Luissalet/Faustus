@@ -21,6 +21,7 @@ import {
   type Transform,
 } from './graphSim';
 import { t, tn } from '../../i18n';
+import { CanvasActions } from './CanvasActions';
 
 /**
  * The vault's graph view (global by default; local when `center` is set): a
@@ -50,7 +51,7 @@ function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }: { center?: string; onOpenNote: (path: string) => void; onOpenEntity: (id: string) => void; compact?: boolean }) {
+export function GraphView({ center, onOpenNote, onOpenEntity, onVaultChanged, compact = false }: { center?: string; onOpenNote: (path: string) => void; onOpenEntity: (id: string) => void; onVaultChanged?: () => void; compact?: boolean }) {
   const [scope, setScope] = useState<GraphScope>('notes');
   const [local, setLocal] = useState(Boolean(center));
   const [depth, setDepth] = useState(2);
@@ -64,6 +65,8 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  /** Bumped after a canvas import so the graph is read again. */
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     setLocal(Boolean(center));
@@ -78,7 +81,7 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
       .catch((e) => setError(e))
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [scope, local, center, depth]);
+  }, [scope, local, center, depth, reloadKey]);
 
   // Track both dimensions (not just width) — the canvas has to fill the
   // centre panel's actual height, which changes with the window and with
@@ -359,6 +362,15 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
             <input type="range" min={1} max={3} value={depth} onChange={(e) => setDepth(Number(e.target.value))} aria-label={t('Local graph depth')} />
             <span>{depth}</span>
           </label>
+        )}
+        {!compact && (
+          <CanvasActions
+            scope={scope}
+            center={scope === 'notes' && local && center ? center : undefined}
+            depth={scope === 'notes' && local && center ? depth : undefined}
+            kinds={off.size ? Object.keys(counts).filter((k) => !off.has(k)) : undefined}
+            onImported={() => { setReloadKey((k) => k + 1); onVaultChanged?.(); }}
+          />
         )}
       </div>
 

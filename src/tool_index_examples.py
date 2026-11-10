@@ -1086,6 +1086,16 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué relaciones conocíamos entonces y cuáles eran válidas en esa fecha",
         "muestra los vecinos de esta persona con sus fuentes y fechas",
     ],
+    "brain_canvas_export": [
+        "exporta mi cerebro a un canvas de obsidian",
+        "saca un .canvas con esta nota y sus vecinos a dos saltos",
+        "export my knowledge graph as a json canvas file",
+    ],
+    "brain_canvas_import": [
+        "importa este fichero .canvas a mi cerebro",
+        "mete en mis notas el canvas de obsidian que he dibujado",
+        "import this json canvas into my second brain as notes and links",
+    ],
     "graph_ask": [
         "en qué ciudad vive la persona que creó este proyecto según lo que sabes de mí",
         "qué herramienta usan en común estos dos proyectos de mi grafo",

@@ -391,6 +391,104 @@ def setup_brain_routes() -> APIRouter:
         except vault.VaultPathError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    # ── JSON Canvas (src/brain/canvas.py) ───────────────────────────────
+
+    def _canvas_export_kwargs(payload: Dict[str, Any]) -> Dict[str, Any]:
+        def as_list(value: Any) -> Optional[list]:
+            if isinstance(value, str):
+                value = [v for v in value.split(",") if v.strip()]
+            return [str(v) for v in value] if isinstance(value, list) and value else None
+
+        return {
+            "scope": str(payload.get("scope") or "notes"),
+            "center": payload.get("center") or None,
+            "depth": _limit(payload.get("depth", 1), 1, 6) if payload.get("depth") not in (0, "0") else 0,
+            "kinds": as_list(payload.get("kinds")),
+            "tags": as_list(payload.get("tags")),
+            "group_by": payload.get("group_by") or None,
+            "layout": str(payload.get("layout") or "auto"),
+            "mode": str(payload.get("mode") or "file"),
+            "include_unresolved": bool(payload.get("include_unresolved", True)),
+            "limit": _limit(payload.get("limit", 300), 300, 2000),
+            "excerpt_chars": _limit(payload.get("excerpt_chars", 600), 600, 4000),
+            "save": bool(payload.get("save", False)),
+            "name": str(payload.get("name") or ""),
+        }
+
+    @router.post("/canvas/export")
+    async def post_canvas_export(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """The notes or entities graph (or a subgraph) as a JSON Canvas 1.0
+        document; `save` also writes it to `Canvas/<name>.canvas` in the vault."""
+        from src.brain import canvas
+
+        payload = await _json_body(request)
+        try:
+            return await asyncio.to_thread(canvas.export_canvas, _owner(request), **_canvas_export_kwargs(payload))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.get("/canvas/export.canvas")
+    async def get_canvas_file(request: Request, scope: str = "notes", center: str = "", depth: int = 1,
+                              kinds: str = "", tags: str = "", group_by: str = "", mode: str = "file",
+                              limit: int = 300, name: str = "", _u: str = Depends(require_user)):
+        """The same export as a file download (`<name>.canvas`)."""
+        from fastapi.responses import Response
+        from urllib.parse import quote
+        from src.brain import canvas
+
+        kwargs = _canvas_export_kwargs({"scope": scope, "center": center, "depth": depth, "kinds": kinds,
+                                        "tags": tags, "group_by": group_by, "mode": mode, "limit": limit,
+                                        "name": name})
+        try:
+            out = await asyncio.to_thread(canvas.export_canvas, _owner(request), **kwargs)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return Response(canvas.dumps(out["canvas"]), media_type="application/json",
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(out['file_name'])}"})
+
+    @router.post("/canvas/import")
+    async def post_canvas_import(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Write a `.canvas` into the vault as notes and wikilinks, idempotent
+        by node id. Body: `canvas` (object or JSON text), `name`, `folder`,
+        `dry_run`, `prune`."""
+        from src.brain import canvas
+
+        payload = await _json_body(request)
+        if payload.get("canvas") is None:
+            raise HTTPException(status_code=400, detail="canvas is required")
+        try:
+            return await asyncio.to_thread(
+                canvas.import_canvas, _owner(request), payload["canvas"],
+                name=str(payload.get("name") or "Canvas"), folder=str(payload.get("folder") or "Canvas"),
+                dry_run=bool(payload.get("dry_run", False)), prune=bool(payload.get("prune", False)))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.delete("/canvas/import")
+    async def delete_canvas_import(request: Request, name: str = "", folder: str = "Canvas", purge: bool = False,
+                                   _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Undo an import: its notes to the trash (or gone with `purge`)."""
+        from src.brain import canvas
+
+        try:
+            return await asyncio.to_thread(canvas.remove_import, _owner(request), name, folder=folder, purge=purge)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.post("/canvas/validate")
+    async def post_canvas_validate(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Check a document against JSON Canvas 1.0."""
+        from src.brain import canvas
+
+        payload = await _json_body(request)
+        try:
+            doc = canvas.load(payload.get("canvas"))
+        except ValueError as exc:
+            return {"ok": False, "errors": [str(exc)]}
+        errors = canvas.validate(doc)
+        return {"ok": not errors, "errors": errors, "nodes": len(doc.get("nodes") or []),
+                "edges": len(doc.get("edges") or [])}
+
     @router.get("/tags")
     async def get_tags(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
         from src.brain import notes

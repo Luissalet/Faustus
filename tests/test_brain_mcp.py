@@ -29,6 +29,7 @@ TOOL_NAMES = {
     "brain_search", "brain_read_note", "brain_write_note", "brain_append_note",
     "brain_entity", "brain_timeline", "brain_graph_neighbors", "brain_sync",
     "brain_facts_as_of", "brain_fact_history", "brain_graph_ask",
+    "brain_canvas_export", "brain_canvas_import",
 }
 
 OWNER = "ada"
@@ -245,3 +246,19 @@ def test_brain_graph_ask_plans_over_the_owners_graph(monkeypatch):
     assert only["plan"][0]["op"] == "retrieval" and only["steps"] == []
     assert "question" in _call("brain_graph_ask", {})[0].text
 
+
+
+def test_brain_canvas_export_and_import_through_mcp(monkeypatch):
+    from src.brain import notes
+    monkeypatch.setenv("ODYSSEUS_MCP_BRAIN_OWNER", OWNER)
+    notes.create_note(OWNER, "Faustus", content="Usa [[Ollama]].")
+    notes.create_note(OWNER, "Ollama", content="Servidor de modelos.")
+    out = json.loads(_call("brain_canvas_export", {"include_canvas": True})[0].text)
+    assert out["ok"] and len(out["canvas"]["edges"]) == 1
+    doc = {"nodes": [{"id": "a", "type": "text", "x": 0, "y": 0, "width": 200, "height": 80, "text": "Idea"},
+                     {"id": "b", "type": "text", "x": 300, "y": 0, "width": 200, "height": 80, "text": "[[Faustus]]"}],
+           "edges": [{"id": "e", "fromNode": "a", "toNode": "b", "label": "mejora"}]}
+    out = json.loads(_call("brain_canvas_import", {"canvas": doc, "name": "Mcp"})[0].text)
+    assert out["created"] == 1 and out["linked_existing"] == 1 and out["edges_written"] == 1
+    monkeypatch.delenv("ODYSSEUS_MCP_BRAIN_OWNER")
+    assert "ODYSSEUS_MCP_BRAIN_OWNER" in _call("brain_canvas_import", {"canvas": doc, "name": "X"})[0].text

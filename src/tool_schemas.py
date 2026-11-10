@@ -4762,6 +4762,58 @@ FUNCTION_TOOL_SCHEMAS.extend(_pdf_function_schemas())
 from src.coordination.tools import NAMES as _coordination_tools
 FUNCTION_TOOL_SCHEMAS.extend(_emit_schema(name) for name in sorted(_coordination_tools))
 
+# The Cerebro as JSON Canvas 1.0 files (src/brain/canvas.py).
+FUNCTION_TOOL_SCHEMAS.extend([
+    {"type": "function", "function": {
+        "name": "brain_canvas_export",
+        "description": (
+            "Export the Cerebro (note graph of notes and [[wikilinks]], or entity graph with relations) to a "
+            "JSON Canvas 1.0 `.canvas` file that Obsidian opens. Whole graph or a subgraph: center (note path, "
+            "title or entity) plus depth hops, kinds, tags, limit. Nodes never overlap, are grouped and coloured "
+            "by kind; edges carry sides and labels. mode=file points at the vault notes, mode=text copies excerpts. "
+            "Saves Canvas/<name>.canvas in the vault (and save_path if given); returns stats and validation."),
+        "parameters": {"type": "object", "properties": {
+            "scope": {"type": "string", "enum": ["notes", "entities"]},
+            "center": {"type": "string", "description": "Note path, note title, entity id or name. Omit for the whole graph."},
+            "depth": {"type": "integer", "minimum": 0, "maximum": 6, "description": "Hops around center (default 1)."},
+            "kinds": {"type": "array", "items": {"type": "string"}, "description": "Keep only these node kinds (note, memory, entity, project... or entity types)."},
+            "tags": {"type": "array", "items": {"type": "string"}, "description": "Keep only notes with any of these tags (nested tags match)."},
+            "group_by": {"type": "string", "enum": ["kind", "folder", "tag", "none"]},
+            "layout": {"type": "string", "enum": ["auto", "force", "layers"]},
+            "mode": {"type": "string", "enum": ["file", "text"]},
+            "include_unresolved": {"type": "boolean", "description": "Keep links to notes that do not exist yet (default true)."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 2000},
+            "excerpt_chars": {"type": "integer", "minimum": 80, "maximum": 4000},
+            "name": {"type": "string", "description": "File name without .canvas."},
+            "save": {"type": "boolean", "description": "Write Canvas/<name>.canvas in the vault (default true)."},
+            "save_path": {"type": "string", "description": "Also write the file here (a folder or a full path)."},
+            "include_canvas": {"type": "boolean", "description": "Return the whole document inline even when it is big."},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "brain_canvas_import",
+        "description": (
+            "Import a JSON Canvas 1.0 `.canvas` (from Obsidian or any canvas editor, or one exported by "
+            "brain_canvas_export) into the Cerebro, idempotent by node id: text nodes become notes, link nodes notes "
+            "with their URL, file nodes join the note they point at, a text node that is only [[Title]] refers to "
+            "that note, groups become canvas/<group> tags, edges become [[wikilinks]] (with their label) inside a "
+            "managed block. Notes the brain generates (memories, entities) are never rewritten: edges leaving them "
+            "go to the canvas index note. Re-importing an edited canvas updates only what changed; prune deletes "
+            "notes whose node is gone; dry_run reports without writing. undo=true removes an import by name "
+            "(notes to the brain trash, or deleted with purge)."),
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "A .canvas file: absolute, or relative to the vault."},
+            "canvas": {"type": "object", "description": "The canvas document itself, instead of path."},
+            "name": {"type": "string", "description": "Import name; notes go to Canvas/<name>/. Defaults to the file name."},
+            "folder": {"type": "string", "description": "Parent folder in the vault (default Canvas)."},
+            "dry_run": {"type": "boolean"},
+            "prune": {"type": "boolean"},
+            "undo": {"type": "boolean", "description": "Remove the import called name instead of importing."},
+            "purge": {"type": "boolean", "description": "With undo: delete for good instead of moving to the trash."},
+        }},
+    }},
+])
+
 # HTTP and agent calls share the same validated extraction/batch contracts.
 from src.reach.extract import ExtractRequest as _ReachExtractRequest
 from src.reach.batch import BatchReadRequest as _ReachBatchReadRequest

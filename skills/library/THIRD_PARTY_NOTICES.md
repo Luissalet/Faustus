@@ -26,6 +26,15 @@ require.
 | `unslop-interface` | https://github.com/heydamir/unslop @ `a6f121eee5f29c2f74976b75456feae8b66afb3a` | CC BY 4.0 | Damir Sokolovsky (@heydamir) |
 | `browser-motion-graphics` | https://github.com/bangtutorial/bang-motion @ `c1aa65e921c970d858705fcb4a53a8294d1a4131` (translated from Indonesian and condensed; starters and scripts not bundled) | MIT | © 2026 Bang Tutorial |
 | `game-design-document`, `game-sprint-stories`, `game-playtest-report`, `game-balance-check`, `game-release-checklist` | https://github.com/Donchitos/Claude-Code-Game-Studios @ `05ad7c8a5b8aa2aa86bbd3439ae7cf7295cac418` — design-system, create-stories + sprint-plan, playtest-report, balance-check and release-checklist skills | MIT | © 2026 Donchitos |
+| `obsidian-markdown`, `json-canvas` | https://github.com/kepano/obsidian-skills @ `3ccff5338ea700537839b21900aa5358a0402c98` (skills/obsidian-markdown and skills/json-canvas; reference pages not bundled) | MIT | © 2026 Steph Ango (@kepano) |
+| `json-canvas` (format rules) | https://github.com/obsidianmd/jsoncanvas @ `456f843cb293df4f4ab1763e22ccb46a80b307c8` (spec/1.0.md, the JSON Canvas 1.0 specification) | MIT | © 2024 Obsidian.md |
+| `fresh-context-review` | https://github.com/google/elephant-goldfish-model @ `bdcfe8cdaee99699c4b2cb7ad4e3b2c1a6b56a31` (skills egm-review and egm-review-loop, reviewer roles in agents/; persona files, standards and scripts not bundled) | Apache-2.0 | © Google LLC |
+
+The last three rows were added on 2026-11-10. The two note-format skills are
+rewritten around the Cerebro's own rules and the `brain_canvas_export` /
+`brain_canvas_import` tools; `fresh-context-review` maps the drafting/review
+split onto `delegate_agents` read-only workers started without shared context.
+The Apache-2.0 text is the one already carried below for `code-simplifier`.
 
 The rows from greensock/gsap-skills onwards were added on 2026-11-03. Each
 was read at the pinned commit above, checked against that repo's own

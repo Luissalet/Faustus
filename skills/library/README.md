@@ -78,6 +78,23 @@ Every one is tagged (`gsap`, `animation`, `ffmpeg`, `video`, `design`,
 `gamedev`, `unity`, plus Spanish keywords) so the per-turn skill selector
 matches them once installed.
 
+## Vault notes, canvases and fresh-context review
+
+Added 2026-11-10 (sources and licences in `THIRD_PARTY_NOTICES.md`):
+
+- `obsidian-markdown` — the vault dialect: wikilinks with headings, blocks
+  and aliases, embeds, callouts, properties, nested tags, block ids,
+  comments; with the Cerebro's own rules (mirrored notes keep `source` and
+  `kind`, the generated zone is not edited).
+- `json-canvas` — writing and checking a JSON Canvas 1.0 `.canvas` by hand,
+  and moving the Cerebro in and out of one with `brain_canvas_export` and
+  `brain_canvas_import`.
+- `fresh-context-review` — the session that drafted a document reviews it
+  through `delegate_agents` read-only workers started without the
+  conversation or shared context, one angle each, then triages every
+  finding; repeated with new workers until no blocker or major finding is
+  left.
+
 ## Format
 
 Every skill here uses the exact dialect `services/memory/skill_format.py`
@@ -125,7 +142,7 @@ disk for that user.
 - **planning** — intent-driven development, rules distillation, evaluation
   harnesses, prompt optimisation, multi-perspective deliberation, context
   budgeting, sub-agent orchestration.
-- **writing** — none shipped yet; reserved for prose/documentation skills.
+- **writing** — prose and note formats: `obsidian-markdown`, `json-canvas`.
 
 See `src/skill_library.py` for the module that lists and installs these, and
 `routes/skill_library_routes.py` for the API.

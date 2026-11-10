@@ -224,6 +224,24 @@ endpoint `brain_ask` si existe, luego el de utilidad y por último el global.
 La parte de planificación y de fusión adapta técnicas de KAG (Apache-2.0); la
 atribución está en `THIRD_PARTY_NOTICES.md`.
 
+### JSON Canvas (`.canvas`)
+
+| Método | Ruta | Body / query | Respuesta |
+| --- | --- | --- | --- |
+| `POST` | `/canvas/export` | `{"scope"? (notes\|entities), "center"?, "depth"? (0-6, 1), "kinds"?, "tags"?, "group_by"? (kind\|folder\|tag\|none), "layout"? (auto\|force\|layers), "mode"? (file\|text), "include_unresolved"?, "limit"? (300, máx. 2000), "excerpt_chars"?, "save"?, "name"?}` | `{ok, canvas, stats, errors, path, saved_to, truncated, file_name, ...}` |
+| `GET` | `/canvas/export.canvas` | los mismos como query | el `.canvas` como descarga |
+| `POST` | `/canvas/import` | `{"canvas" (objeto o texto JSON), "name", "folder"? (Canvas), "dry_run"?, "prune"?}` | `{created, updated, unchanged, linked_existing, refs_unresolved, edges_written, edges_duplicate, edges_via_index, stale, pruned, written, notes, index_note, canvas_path}` |
+| `DELETE` | `/canvas/import?name=&purge=` | — | `{removed, cleaned, canvas_file_removed}` |
+| `POST` | `/canvas/validate` | `{"canvas"}` | `{ok, errors, nodes, edges}` |
+
+`src/brain/canvas.py`. La exportación coloca los nodos sin solapes (fuerza
+dirigida sin azar o columnas por distancia al centro, encajadas en una
+rejilla), agrupa y colorea por tipo y etiqueta las aristas. La importación
+escribe en `Canvas/<name>/` y es idempotente por id de nodo (frontmatter
+`canvas` + `canvas_id`); las flechas van a un bloque gestionado
+`%% canvas:<name> %%` de la nota de origen, salvo cuando el origen es una nota
+que genera el Cerebro: entonces van a la nota índice del lienzo.
+
 ## Servidor MCP `brain`
 
 `mcp_servers/brain_server.py`. La bóveda sobre la que trabaja la fija la
@@ -243,6 +261,8 @@ escribir en la bóveda de nadie en particular.
 | `brain_facts_as_of` | `entity_id?` \| `name?`, `rel?`, `as_of?`, `known_at?`, `include_closed?`, `limit?` | Relaciones con ambos ejes de tiempo (vigente por defecto; `as_of` = mundo, `known_at` = lo que se sabia). Solo lectura. |
 | `brain_graph_neighbors` | `path?`, `depth?` (1-4), `scope?` (`notes`\|`entities`) | El grafo local alrededor de una nota, o el grafo entero de entidades si no se da `path`. Sólo lectura. |
 | `brain_graph_ask` | `question`, `plan_only?`, `max_steps?`, `top_k?`, `alpha?` | Responde una pregunta de dos o tres saltos: plan por operadores, pasos en paralelo, grafo y texto fusionados. Usa el modelo global; sólo lectura. |
+| `brain_canvas_export` | `scope?`, `center?`, `depth?`, `kinds?`, `tags?`, `group_by?`, `layout?`, `mode?`, `limit?`, `name?`, `save?`, `include_canvas?` | El grafo (o un subgrafo) como JSON Canvas 1.0; con más de 40 nodos el documento sólo va en línea con `include_canvas`. |
+| `brain_canvas_import` | `canvas?` \| `path?`, `name?`, `folder?`, `dry_run?`, `prune?`, `undo?`, `purge?` | Importa un `.canvas` como notas y enlaces (o lo deshace con `undo`). Se rechaza sin propietario configurado. |
 | `brain_sync` | — | Sincroniza la bóveda ahora mismo (importa ediciones manuales, reexporta, reindexa). |
 
 `brain_entity`/`brain_timeline` aceptan `name` como alternativa a

@@ -662,6 +662,12 @@ _register({"brain_graph"}, ToolEffect.READ_PRIVATE,
 # calls through the endpoint the turn already uses; nothing is written.
 _register({"graph_ask"}, ToolEffect.READ_PRIVATE,
           result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+# JSON Canvas (src/brain/canvas.py): export reads the private graph and writes a
+# .canvas into the vault (or a path the caller names); import writes notes into
+# the same private vault. Imported canvas text comes from outside.
+_register({"brain_canvas_export"}, ToolEffect.READ_PRIVATE, ToolEffect.WRITE_PRIVATE)
+_register({"brain_canvas_import"}, ToolEffect.WRITE_PRIVATE,
+          result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 # Recipes learned from finished work, the derivation graph and the decision map
 # (src/derivation_ops.py): records under DATA_DIR; the graph hashes files the
 # caller names inside the workspace and may register results in Atlas's Hoard

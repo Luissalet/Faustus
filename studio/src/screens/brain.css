@@ -630,6 +630,20 @@
   flex: 1;
   min-inline-size: 160px;
 }
+.fs-brain__canvas-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.fs-brain__canvas-msg {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  flex-basis: 100%;
+}
+.fs-brain__canvas-msg[data-tone='error'] {
+  color: var(--fs-danger, #c0392b);
+}
 .fs-brain__local-toggle,
 .fs-brain__depth {
   display: inline-flex;

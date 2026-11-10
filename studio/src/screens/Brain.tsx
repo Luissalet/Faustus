@@ -270,7 +270,7 @@ export function BrainScreen() {
               </div>
             )}
             {(platform === 'mobile' ? mobilePane === 'graph' : view === 'graph') ? (
-              <GraphView center={activePath || undefined} onOpenNote={openNote} onOpenEntity={onEntityOpen} />
+              <GraphView center={activePath || undefined} onOpenNote={openNote} onOpenEntity={onEntityOpen} onVaultChanged={() => { void reloadTree(); reloadTags(); }} />
             ) : (
               <NoteView
                 note={note}

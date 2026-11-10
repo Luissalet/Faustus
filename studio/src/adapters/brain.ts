@@ -431,6 +431,71 @@ export function loadGraph(params: GraphParams, signal?: AbortSignal): Promise<Br
   return getJson<unknown>(`${BASE}/graph${query({ center: params.center, depth: params.depth, kinds: params.kinds?.join(','), scope: params.scope })}`, signal).then(brainGraphFrom);
 }
 
+/* ── JSON Canvas (src/brain/canvas.py) ───────────────────────────────── */
+
+export interface CanvasExportParams {
+  scope: GraphScope;
+  center?: string;
+  depth?: number;
+  kinds?: string[];
+  mode?: 'file' | 'text';
+  name?: string;
+  save?: boolean;
+}
+
+export interface CanvasExportResult {
+  ok: boolean;
+  name: string;
+  fileName: string;
+  /** Vault-relative path when it was saved in the vault. */
+  path: string | null;
+  nodes: number;
+  edges: number;
+  groups: number;
+  truncated: boolean;
+  errors: string[];
+  canvas: unknown;
+}
+
+export async function exportCanvas(params: CanvasExportParams): Promise<CanvasExportResult> {
+  const raw = obj(await send(`${BASE}/canvas/export`, 'POST', {
+    scope: params.scope, center: params.center || null, depth: params.depth ?? 1, kinds: params.kinds ?? null,
+    mode: params.mode ?? 'file', name: params.name ?? '', save: params.save ?? true,
+  }));
+  const stats = obj(raw.stats);
+  return {
+    ok: bool(raw.ok), name: str(raw.name), fileName: str(raw.file_name, 'Cerebro.canvas'), path: strOrNull(raw.path),
+    nodes: num(stats.nodes), edges: num(stats.edges), groups: num(stats.groups), truncated: bool(raw.truncated),
+    errors: strArray(raw.errors), canvas: raw.canvas ?? { nodes: [], edges: [] },
+  };
+}
+
+export interface CanvasImportResult {
+  name: string;
+  folder: string;
+  created: number;
+  updated: number;
+  unchanged: number;
+  linkedExisting: number;
+  edgesWritten: number;
+  edgesViaIndex: number;
+  stale: string[];
+}
+
+export async function importCanvas(canvasText: string, name: string): Promise<CanvasImportResult> {
+  const raw = obj(await send(`${BASE}/canvas/import`, 'POST', { canvas: canvasText, name }));
+  return {
+    name: str(raw.name), folder: str(raw.folder), created: num(raw.created), updated: num(raw.updated),
+    unchanged: num(raw.unchanged), linkedExisting: num(raw.linked_existing), edgesWritten: num(raw.edges_written),
+    edgesViaIndex: num(raw.edges_via_index), stale: strArray(raw.stale),
+  };
+}
+
+/** The `.canvas` text a download should contain (tab-indented, as the format's reference editor writes it). */
+export function canvasFileText(canvas: unknown): string {
+  return `${JSON.stringify(canvas, null, '\t')}\n`;
+}
+
 /* ── Tags & unresolved links ─────────────────────────────────────────── */
 
 export interface TagCount {
