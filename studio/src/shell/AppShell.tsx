@@ -1,8 +1,8 @@
 import { syncLangFromServer, t, useLang } from '../i18n';
 import { clearThemeAttribute, syncThemeFromServer } from './theme';
 import { applyTheme, getTheme, syncAppearanceFromServer, useAppearance } from './appearance';
-import { useNavSize } from './navSize';
-import { flipNav, NavToggle, useNavCombo } from './navToggle';
+import { useNavPeek, useNavSize } from './navSize';
+import { flipNav, NavPeek, NavToggle, useNavCombo } from './navToggle';
 import { matchesCombo } from '../adapters/settings';
 import { PanelsTopLeft, Plus, Search, Settings2 } from 'lucide-react';
 import { newPanelDraftHref, panelIcon, usePanels } from '../adapters/panels';
@@ -188,6 +188,7 @@ function Rail() {
         </NavLink>
       ))}
 
+      {platform === 'mobile' && <AgoraNavLink tab />}
       {platform === 'mobile' && <button type="button" className="fs-nav__item" onClick={() => setPaletteOpen(true)} data-testid="nav-more" aria-label={t('Search and navigate')}>
         <span className="fs-nav__node"><Search size={14} aria-hidden="true" /></span><span className="fs-nav__label">{t('More')}</span>
       </button>}
@@ -386,6 +387,7 @@ export function AppShell() {
   // The phone's tab bar is the only way around there; it is never put away.
   const navMode = platform === 'mobile' && nav.mode === 'hidden' ? 'rail' : nav.mode;
   const navCombo = useNavCombo();
+  const peek = useNavPeek();
   useEffect(() => {
     void syncLangFromServer();
     void syncThemeFromServer();
@@ -434,7 +436,7 @@ export function AppShell() {
 
   return (
     <BrowserRouter>
-      <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={navMode} data-theme-source={theme.name !== 'studio' && theme.colors ? 'faustus' : undefined} data-resizing={nav.resizing || undefined} style={nav.style}>
+      <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={navMode} data-peek={(navMode === 'hidden' && peek) || undefined} data-theme-source={theme.name !== 'studio' && theme.colors ? 'faustus' : undefined} data-resizing={nav.resizing || undefined} style={nav.style}>
         <a className="fs-skip-link" href="#fs-main">
           {t('Skip to content')}
         </a>
@@ -462,6 +464,7 @@ export function AppShell() {
             <NavToggle />
           </div>
         )}
+        {navMode === 'hidden' && <NavPeek />}
         <RouteStage />
         {paletteLoaded && (
           <Suspense fallback={null}>

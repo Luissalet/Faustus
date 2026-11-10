@@ -24,3 +24,5 @@ html[data-desktop-window='on'] .fs-shell { inset-block-start: 40px; }
 html[data-desktop-window='on'] .fs-shell .fs-nav__toggle,
 html[data-desktop-window='on'] .fs-shell .fs-nav-gutter { display: none; }
 html[data-desktop-window='on'] .fs-shell[data-nav='hidden'] { grid-template-columns: minmax(0, 1fr); }
+/* No strip is left there, so the edge that calls the sidebar out is a sliver of the page, top to bottom. */
+html[data-desktop-window='on'] .fs-shell .fs-nav-edge { inset-block-start: 0; inline-size: 8px; }

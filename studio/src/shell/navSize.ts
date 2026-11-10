@@ -17,6 +17,10 @@ import { useCallback, useEffect, useState, useSyncExternalStore, type CSSPropert
  * `hidden` returns to. The state lives in this module, not in a component,
  * so the button, the shortcut, the palette and the agent all move the same
  * sidebar.
+ *
+ * Put away, it can still look out: the mouse at the left edge shows it over
+ * the page for as long as the mouse stays on it (`peek`). That is never
+ * stored — a reload finds it put away.
  */
 
 export type NavMode = 'wide' | 'rail' | 'hidden';
@@ -89,8 +93,12 @@ const subscribe = (listener: () => void) => {
   };
 };
 
+/** Looking out over the page while put away; only ever true while hidden. */
+let peeking = false;
+
 function commit(next: NavStored): void {
   if (next === current()) return;
+  if (next.mode !== 'hidden') peeking = false;
   state = next;
   write(next);
   listeners.forEach((listener) => listener());
@@ -106,6 +114,22 @@ export function setNavHidden(hidden: boolean): void {
 
 export function toggleNavHidden(): void {
   setNavHidden(!navHidden());
+}
+
+export function navPeeking(): boolean {
+  return peeking && navHidden();
+}
+
+/** Show the put-away sidebar over the page, or let it go again. Nothing happens while it is not put away. */
+export function setNavPeek(on: boolean): void {
+  const next = on && navHidden();
+  if (peeking === next) return;
+  peeking = next;
+  listeners.forEach((listener) => listener());
+}
+
+export function useNavPeek(): boolean {
+  return useSyncExternalStore(subscribe, navPeeking, () => false);
 }
 
 /** Whether the sidebar is put away, for whatever draws the button. */
@@ -186,6 +210,10 @@ export function useNavSize() {
     [choose, mode, reset, width],
   );
 
-  const style = { '--fs-nav-w': mode === 'hidden' ? `${HIDDEN_WIDTH}px` : mode === 'rail' ? `${RAIL_WIDTH}px` : `${width}px` } as CSSProperties;
+  const style = {
+    '--fs-nav-w': mode === 'hidden' ? `${HIDDEN_WIDTH}px` : mode === 'rail' ? `${RAIL_WIDTH}px` : `${width}px`,
+    // Looking out, it is as wide as the person left it.
+    ...(mode === 'hidden' ? { '--fs-nav-peek-w': `${width}px` } : null),
+  } as CSSProperties;
   return { mode, width, resizing, style, handle: { onPointerDown, onDoubleClick: reset, onKeyDown } };
 }

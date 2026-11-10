@@ -867,10 +867,61 @@ button.fs-nav__item { border: 0; background: transparent; font: inherit; cursor:
   color: var(--fs-text-2);
 }
 
+/* Put away, the sidebar looks out when the mouse reaches the left edge:
+   over the page, not beside it, and gone when the mouse leaves it. The
+   edge starts under the button, so reaching for the button is not a call. */
+.fs-nav-edge {
+  position: absolute;
+  inset-block: calc(var(--fs-space-5) + 44px) 0;
+  inset-inline-start: 0;
+  z-index: 2;
+  inline-size: var(--fs-nav-w, 44px);
+}
+
+.fs-shell[data-nav='hidden'][data-peek] > .fs-nav {
+  display: flex;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 40;
+  inline-size: var(--fs-nav-peek-w, 236px);
+  background: var(--fs-surface-1);
+  box-shadow: var(--fs-shadow-overlay);
+  animation: fs-nav-peek var(--fs-duration-fast) var(--fs-ease-out);
+}
+
+@keyframes fs-nav-peek {
+  from {
+    opacity: 0;
+    translate: -12px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-shell[data-nav='hidden'][data-peek] > .fs-nav {
+    animation: none;
+  }
+}
+
 @media (max-width: 767px) {
   .fs-nav__toggle,
-  .fs-nav-gutter {
+  .fs-nav-gutter,
+  .fs-nav-edge {
     display: none;
+  }
+
+  /* A tab with something waiting: the count rides on the icon's corner. */
+  .fs-nav__item .fs-nav__node {
+    position: relative;
+  }
+
+  .fs-nav__item .fs-nav__badge {
+    position: absolute;
+    inset-block-start: -7px;
+    inset-inline-start: 12px;
+    margin: 0;
+    background: var(--fs-brand);
+    color: var(--fs-on-brand);
   }
 }
 

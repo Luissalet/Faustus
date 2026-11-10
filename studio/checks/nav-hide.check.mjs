@@ -59,6 +59,23 @@ try {
   assert.equal(m.navHidden(), false);
   assert.deepEqual(JSON.parse(window.localStorage.getItem(KEY)), { mode: 'rail', width: 300, back: 'rail' }, 'it comes back as the rail it was');
 
+  // Looking out over the page: only while put away, never stored, and over when the sidebar comes back.
+  assert.equal(m.navPeeking(), false);
+  m.setNavPeek(true);
+  assert.equal(m.navPeeking(), false, 'a sidebar that is there has nothing to look out from');
+  m.setNavHidden(true);
+  m.setNavPeek(true);
+  assert.equal(m.navPeeking(), true);
+  assert.equal(JSON.parse(window.localStorage.getItem(KEY)).mode, 'hidden', 'looking out is not a choice that is stored');
+  m.setNavPeek(false);
+  assert.equal(m.navPeeking(), false);
+  m.setNavPeek(true);
+  m.setNavHidden(false);
+  assert.equal(m.navPeeking(), false, 'bringing it back ends the look');
+  m.setNavHidden(true);
+  assert.equal(m.navPeeking(), false, 'and putting it away again does not start one');
+  m.setNavHidden(false);
+
   // The button: says what it will do, carries the person's own shortcut, and moves the state.
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -92,6 +109,7 @@ try {
   assert.ok(shell.includes("{platform !== 'mobile' && <NavToggle />}"), 'the sidebar carries the button');
   assert.ok(/navMode === 'hidden' && \(\s*<div className="fs-nav-gutter"[^>]*>\s*<NavToggle \/>/.test(shell), 'and so does the place it leaves');
   assert.ok(shell.includes("platform === 'mobile' && nav.mode === 'hidden' ? 'rail'"), "the phone's tab bar is never put away");
+  assert.ok(shell.includes("{navMode === 'hidden' && <NavPeek />}") && shell.includes("data-peek={(navMode === 'hidden' && peek) || undefined}"), 'put away, its edge calls it out');
   assert.ok(shell.includes('matchesCombo(event, navCombo)'), 'the shortcut works on every screen');
   assert.ok(read('studio/src/shell/DesktopBar.tsx').includes('<NavToggle className="fs-desktop-bar__nav" />'), "the desktop window's bar has it");
   assert.ok(read('studio/src/shell/CommandPalette.tsx').includes('flipNav()'), 'the palette has it');
@@ -101,7 +119,8 @@ try {
   const css = read('studio/src/styles/shell.css');
   assert.ok(css.includes(".fs-shell[data-nav='hidden'] > .fs-nav,"), 'hidden means not drawn');
   assert.ok(shell.includes('<span className="fs-nav__name"><span>Faustus</span></span>') && css.includes('.fs-nav__name::before'), 'on a narrow sidebar the name gives way to the button, whole');
-  for (const key of ['Hide the sidebar', 'Show the sidebar', 'Show or hide the conversations']) {
+  assert.ok(css.includes(".fs-shell[data-nav='hidden'][data-peek] > .fs-nav {") && css.includes('.fs-nav-edge {'), 'looking out, it is drawn over the page');
+  for (const key of ['Hide the sidebar', 'Show the sidebar', 'Keep the sidebar open', 'Show or hide the conversations']) {
     assert.ok(read('docs/ui/i18n/es.tsv').split('\n').some((line) => line.startsWith(key + '\t')), 'Spanish for: ' + key);
   }
   console.log('ok nav-hide');
