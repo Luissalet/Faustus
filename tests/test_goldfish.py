@@ -179,6 +179,22 @@ def test_draft_brainstorm_panel_and_drift(tmp_path):
     assert nodrift["status"] == "failed" and "source files" in nodrift["error"]
 
 
+def test_panel_with_a_model_that_is_down():
+    class OneDown(Model):
+        async def __call__(self, owner, run, messages, role="goldfish", model="", tag=""):
+            if model == "m2":
+                raise RuntimeError("503: the engine is not answering")
+            return await super().__call__(owner, run, messages, role=role, model=model, tag=tag)
+
+    model = OneDown()
+    panel = run_flow({"flow": "panel", "text": DOC, "models": ["m1", "m2"]}, model)
+    assert panel["status"] == "done", panel.get("error")
+    statuses = panel["panel"]["statuses"]
+    assert statuses["m1"] == "completed" and statuses["m2"].startswith("not run")
+    proofs = [c for c in model.calls if c["tag"].startswith("proof-")]
+    assert proofs and all(c["model"] == "m1" for c in proofs)
+
+
 def test_bad_arguments():
     with pytest.raises(G.GoldfishError):
         G.start("alice", {"flow": "nope", "text": "x"}, background=False)

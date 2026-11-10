@@ -1022,6 +1022,7 @@ async def flow_panel(owner: str, run: Dict[str, Any], ask: Ask, log: Callable[..
 
     replies = await asyncio.gather(*(one(i, m) for i, m in enumerate(models)))
     statuses = {m: ("completed" if data is not None else f"not run ({err})") for m, data, err in replies}
+    answered = [m for m, data, _err in replies if data is not None]
     flat: List[Dict[str, Any]] = []
     for mi, (m, data, _err) in enumerate(replies):
         items = (data.get("findings") if isinstance(data, Mapping) else data) or []
@@ -1064,8 +1065,16 @@ async def flow_panel(owner: str, run: Dict[str, Any], ask: Ask, log: Callable[..
 
         async def prove(c: Dict[str, Any]) -> None:
             msg = (f"Reported defect at {c['location']}: {c['mechanism']}\nFailing case: {c['failing_case']}\n\n{packet}")
-            text = await ask(owner, run, [{"role": "system", "content": PROOF_SYSTEM}, {"role": "user", "content": msg}],
-                             role="goldfish", model=models[(models.index(c['models'][0]) + 1) % len(models)], tag=f"proof-{c['cid']}")
+            # The prover is another model that answered; one that is down cannot disprove anything.
+            pool = [m for m in answered if m not in c["models"]] or answered or models
+            prover = pool[(models.index(c["models"][0]) + 1) % len(pool)]
+            try:
+                text = await ask(owner, run, [{"role": "system", "content": PROOF_SYSTEM}, {"role": "user", "content": msg}],
+                                 role="goldfish", model=prover, tag=f"proof-{c['cid']}")
+            except Exception as exc:  # noqa: BLE001 - a failed proof drops that finding, never the run
+                c["proof"] = {"error": f"{type(exc).__name__}: {exc}"[:300], "prover": prover}
+                c["survives"] = False
+                return
             data = fresh_llm.parse_json(text)
             c["proof"] = data if isinstance(data, Mapping) else {"error": "no proof table"}
             c["survives"] = bool(isinstance(data, Mapping) and data.get("survives") is True
