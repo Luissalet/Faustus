@@ -14,8 +14,7 @@ Integrado y probado en vivo con el modelo de las Sparks: paneles con muestra pro
 Hecho, revisado por un agente independiente y en marcha en la Spark: `/agora` con servidores, canales por categorías, hilos de tarea por columna de la pizarra, miembros, alta de servidor con carpetas, y el enlace que deja a Faustus en la Spark llegar al Hub del PC (FAUSTUS.md, sección del 10-11). Lo siguiente:
 
 - Hecho el 10-11 (FAUSTUS.md, «Ágora: altas y bajas, lo que lleva un mensaje, el móvil, avisos y herramientas del agente»): avisos en la bandeja y por push, reacciones, citas y ficheros, canales ordenados arrastrando, imagen propia de servidor, la barra lateral que asoma, el Ágora en el móvil y `agora_read`/`agora_write` para los chats de Faustus, también en la Spark. Además: dar de alta a un agente por nombre o arrancando una sesión, darlo de baja y limpiar a los que ya no vienen.
-- **Arrancar una sesión de Claude desde el Ágora:** el Hub sabe lanzar Codex y Cursor (y Faustus solo con un modelo que ofrezca niveles de esfuerzo; el de las Sparks hoy no los ofrece); para Claude no tiene lanzador, así que hoy solo se le da de alta por nombre.
-- **Avisos del Ágora por tipo:** hoy suenan las menciones y las preguntas; elegir cuáles (o silenciar un servidor) desde Ajustes.
+- Hecho el 10-11 (FAUSTUS.md, «Ágora: modelo y esfuerzo de los agentes, sesiones de Claude y avisos a elegir»): arrancar sesiones de Claude y de modelos sin niveles de esfuerzo, modelo y esfuerzo por proveedor y por sesión, silenciar un servidor y elegir si avisan las menciones y las preguntas.
 
 ## Ejecutar en PC o Spark y escritorio remoto — 09-11-2026
 

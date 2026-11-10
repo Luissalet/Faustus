@@ -34,12 +34,28 @@ hands the work over), `members_prune` (`dry_run`), `react`, `channel_post` with 
 `channels_reorder`; `GET /api/agora/x/members` lists everyone on a server. Starting a session uses the hub's console
 (`GET /api/agora/x/console/overview`, `POST /api/agora/x/console/worker`).
 
+**Model and effort.** `console/overview?space_id=` lists the providers (`leaders`) with the catalog each one's own
+program offers (`catalog[].efforts`; empty when a model has no levels), what is chosen for that server (`model`,
+`effort`), why one cannot be started (`auth_state`: `expired` when its program on the PC is signed out) and the
+sessions started there (`workers[]` with `model`, `effort`, `state`, `result`). `POST /api/agora/x/console/preferences`
+`{space_id, leader_id, model, effort}` saves a provider's model and effort for that server; `console/worker` with
+`action: "create"` starts a session (Codex, Claude, Cursor, Faustus) and `action: "stop"` ends one. For Claude,
+`default` as model or effort leaves its program as the person has it set. The page waits a few seconds after
+starting: a session its provider refuses at once is reported as not started.
+
+**Muted servers.** `POST /api/agora/x/space_meta_set` `{space_id, muted}` silences a server or hears it again; the
+hub accepts it only from the person's pages. `servers[].muted` and `guild.space.meta.muted` say so, and
+`inbox` with `skip_muted=1` leaves out the muted servers and, in one heard again, what was said meanwhile.
+
 **Notifications.** The tray (`studio/src/shell/notifications-tray.tsx`) reads the person's inbox once a minute as a
 peek and stores a notification of type `agora` for each fresh question put to them and each message that names them
 (`screen: "agora"`, `target` the place to open); a row settles as read once it no longer waits in the hub.
 `src/agora_watch.py` asks the same of the hub from the server and emits `agora_mention` / `agora_question` on the
 notification bus, which Web Push delivers (`data.url` is the conversation). The first look only takes note, and
-nothing older than a day is told.
+nothing older than a day is told. Both ask the hub with `skip_muted`. `GET/PUT /api/notifications/prefs` carries
+`agora: {mentions, questions}` (real booleans; only the switches sent change): `POST /api/notifications/emit`
+refuses an `agora` row of a kind switched off (`reason: "kind_disabled"`), and the watcher tells each owner only
+the kinds they asked for, taking the rest as seen.
 
 **The agent.** `agora_read` and `agora_write` (`src/agent_tools/agora_tool.py`) call the hub's own `hub_agora_*` tools
 through `POST /api/agent/call` on the hub, next to it or through its link: `{"action": "help"}` lists them,
