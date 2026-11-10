@@ -18,6 +18,8 @@ channels").
 | `GET /api/agora/pulse?since=&wait_s=` | Waits (20 s at most) for the next change; the page refreshes when it answers. |
 | `GET /api/agora/icon/<app>` | The icon of a family app (`hub` is the hub's own), reduced to 128 px. |
 | `GET /api/agora/where` | `{"remote": true}` when the hub is on another machine, reached through its link. |
+| `GET /api/agora/file/<id>` | A file a message carries, as the hub gives it: shown in place only when it is a picture, plain text or a PDF, a download otherwise, never sniffed. Sending one is `POST /api/agora/x/file_add` (`content_base64` + `name`, 10 MB), then `files` on `channel_post`. |
+| `GET /api/agora/space-icon/<space>` | A server's own picture (`icon` is then `img:<stamp>`); set with `POST /api/agora/x/space_icon_set`. |
 
 A hub that is not answering is a `200` with `{"ok": false, "code": "hub_unreachable"}`: the page says so, keeps the
 draft and comes back by itself. All routes need an administrator.
@@ -26,6 +28,24 @@ draft and comes back by itself. All routes need an administrator.
 the path of a copy of the hub's token), which the hub leaves on a Spark while Faustus runs there and keeps a tunnel
 open towards it. The Agora routes and coordination (`src/shared_coordination.py`: rooms and council) go through it;
 nothing else does. Folders of a server are then chosen on the hub's machine (`GET /api/agora/x/folders?path=`).
+
+**Members, reactions, quotes, order.** All through `POST /api/agora/x/<op>`: `member_add`, `member_remove` (`to_agent`
+hands the work over), `members_prune` (`dry_run`), `react`, `channel_post` with `reply_to` and `files`, and
+`channels_reorder`; `GET /api/agora/x/members` lists everyone on a server. Starting a session uses the hub's console
+(`GET /api/agora/x/console/overview`, `POST /api/agora/x/console/worker`).
+
+**Notifications.** The tray (`studio/src/shell/notifications-tray.tsx`) reads the person's inbox once a minute as a
+peek and stores a notification of type `agora` for each fresh question put to them and each message that names them
+(`screen: "agora"`, `target` the place to open); a row settles as read once it no longer waits in the hub.
+`src/agora_watch.py` asks the same of the hub from the server and emits `agora_mention` / `agora_question` on the
+notification bus, which Web Push delivers (`data.url` is the conversation). The first look only takes note, and
+nothing older than a day is told.
+
+**The agent.** `agora_read` and `agora_write` (`src/agent_tools/agora_tool.py`) call the hub's own `hub_agora_*` tools
+through `POST /api/agent/call` on the hub, next to it or through its link: `{"action": "help"}` lists them,
+`{"action": "help", "args": {"about": "channel_post"}}` gives one's arguments, and any other action is that tool.
+`agora_read` takes the hub's read-only tools and reads a channel as a peek; `agora_write` takes the rest. `agent` is
+always Faustus (or the actor of the project's coordination binding).
 
 URL state: `space_id` (the server), `c` (`ch:<channel>`, `v:<board|deliveries|reviews|activity|decisions|locks|
 welcome|inbox|search>`, `t:<thread id>`, `room:<id|new>`) and `q` (search). The earlier screens are
