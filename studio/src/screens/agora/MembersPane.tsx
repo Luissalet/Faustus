@@ -4,7 +4,7 @@ import type { AgoraGuild, AgoraMember, QuotaProvider } from '../../adapters/agor
 import { Button, Popover } from '../../components';
 import { t, tn } from '../../i18n';
 import {
-  ago, agentColor, agentInitials, composerBus, isOnline, PRESENCE_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER, STATUS_LABEL, type View,
+  ago, agentColor, agentInitials, composerBus, findTask, isOnline, PRESENCE_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER, STATUS_LABEL, type View,
 } from './util';
 
 function quotaOf(providers: QuotaProvider[], role: string): { free: number | null; reset: string } | null {
@@ -19,7 +19,11 @@ function quotaOf(providers: QuotaProvider[], role: string): { free: number | nul
 
 const OBSERVED_LABEL: Record<string, string> = { working: 'At work', tool: 'Using a tool', waiting: 'Waiting', idle: 'Idle', stale: 'Gone quiet' };
 
-function MemberCard({ member, onOpen }: { member: AgoraMember; onOpen: (view: View) => void }) {
+function MemberCard({ member, guild, onOpen }: { member: AgoraMember; guild: AgoraGuild; onOpen: (view: View) => void }) {
+  const openTask = (id: number) => {
+    const thread = findTask(guild, id)?.thread_id;
+    onOpen(thread ? { kind: 'thread', id: String(thread) } : { kind: 'view', id: 'board' });
+  };
   const seen = member.observed;
   const seenTool = seen?.tool && typeof seen.tool === 'object' ? seen.tool.name : '';
   return (
@@ -38,7 +42,7 @@ function MemberCard({ member, onOpen }: { member: AgoraMember; onOpen: (view: Vi
           <ul className="fs-agx-profile__tasks">
             {member.tasks.map((task) => (
               <li key={task.id}><span className="fs-agx-status" data-status={task.status}>{t(STATUS_LABEL[task.status] ?? task.status)}</span>
-                <button type="button" className="fs-agx-link" onClick={() => { const row = document.querySelector<HTMLElement>(`[data-testid="agora-task-${task.id}"]`); if (row) row.click(); else onOpen({ kind: 'view', id: 'board' }); }}>#{task.id} {task.title}</button></li>
+                <button type="button" className="fs-agx-link" onClick={() => openTask(task.id)}>#{task.id} {task.title}</button></li>
             ))}
           </ul>
         </>
@@ -49,7 +53,7 @@ function MemberCard({ member, onOpen }: { member: AgoraMember; onOpen: (view: Vi
   );
 }
 
-function MemberRow({ member, onOpen }: { member: AgoraMember; onOpen: (view: View) => void }) {
+function MemberRow({ member, guild, onOpen }: { member: AgoraMember; guild: AgoraGuild; onOpen: (view: View) => void }) {
   const line = member.doing || member.tasks[0]?.title || (member.presence === 'offline' ? t('seen {when}', { when: ago(member.last_seen) }) : t(PRESENCE_LABEL[member.presence]));
   return (
     <li>
@@ -60,7 +64,7 @@ function MemberRow({ member, onOpen }: { member: AgoraMember; onOpen: (view: Vie
           <span className="fs-agx-member__text"><strong>{member.id}</strong><span>{line}</span></span>
           {member.tasks.length > 0 && <span className="fs-agx-row__count">{member.tasks.length}</span>}
         </button>}>
-        <MemberCard member={member} onOpen={onOpen} />
+        <MemberCard member={member} guild={guild} onOpen={onOpen} />
       </Popover>
     </li>
   );
@@ -87,7 +91,7 @@ export function MembersPane({ guild, onOpen }: { guild: AgoraGuild; onOpen: (vie
                 <span>{quota.free === null ? t('quota unknown') : t('{n}% free', { n: quota.free })}</span>
               </div>
             )}
-            <ul>{members.map((member) => <MemberRow key={member.id} member={member} onOpen={onOpen} />)}</ul>
+            <ul>{members.map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} />)}</ul>
           </section>
         );
       })}
@@ -99,7 +103,7 @@ export function MembersPane({ guild, onOpen }: { guild: AgoraGuild; onOpen: (vie
               <span>{t('Not around')}</span><span className="fs-agx-cat__count">{offline.length + (guild.members_older ?? 0)}</span>
             </button>
           </h3>
-          {showOffline && <ul>{offline.slice(0, 120).map((member) => <MemberRow key={member.id} member={member} onOpen={onOpen} />)}</ul>}
+          {showOffline && <ul>{offline.slice(0, 120).map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} />)}</ul>}
           {showOffline && (guild.members_older ?? 0) > 0 && <p className="fs-muted fs-agx-role__more">{tn(guild.members_older ?? 0, 'and {n} more from long ago', 'and {n} more from long ago')}</p>}
         </section>
       )}

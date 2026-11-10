@@ -74,6 +74,10 @@ def test_a_broken_or_foreign_link_file_is_no_link(tmp_path, monkeypatch):
     assert hub_link.link() is None
     path.write_text(json.dumps({"url": "http://example.com:8811", "token_file": "/x"}), encoding="utf-8")
     assert hub_link.link() is None                                  # only this machine's own loopback
+    for foreign in ("http://localhost:1@evil.example/", "http://127.0.0.1.evil.example:8811", "https://127.0.0.1:8811",
+                    "http://127.0.0.1:8811/elsewhere", "http://127.0.0.1"):
+        path.write_text(json.dumps({"url": foreign, "token_file": "/x"}), encoding="utf-8")
+        assert hub_link.link() is None, foreign
     path.write_text(json.dumps({"url": "http://127.0.0.1:8811/"}), encoding="utf-8")
     assert hub_link.link() == {"url": "http://127.0.0.1:8811", "token_file": ""}
 

@@ -85,6 +85,24 @@ def test_pulse_waits_at_most_twenty_seconds_and_icons_are_cached(client):
     assert http.get("/api/agora/icon/..%2Fx").status_code == 404
 
 
+def test_big_icons_are_made_small_and_odd_ones_are_left_alone():
+    from io import BytesIO
+
+    Image = pytest.importorskip("PIL.Image")
+    import os
+    big = BytesIO()
+    Image.frombytes("RGB", (1024, 1024), os.urandom(1024 * 1024 * 3)).save(big, format="PNG")   # noise does not compress
+    blob, ctype = agora_routes.small_icon(big.getvalue(), "image/png")
+    assert ctype == "image/png" and len(blob) < len(big.getvalue()) / 10
+    with Image.open(BytesIO(blob)) as small:
+        assert max(small.size) == 128
+    svg = b"<svg xmlns='http://www.w3.org/2000/svg'/>" + b" " * 30_000
+    assert agora_routes.small_icon(svg, "image/svg+xml") == (svg, "image/svg+xml")
+    assert agora_routes.small_icon(b"tiny", "image/png") == (b"tiny", "image/png")
+    junk = b"not an image" * 4000
+    assert agora_routes.small_icon(junk, "image/png") == (junk, "image/png")
+
+
 def test_the_request_to_the_hub_carries_the_token_and_the_persons_page(monkeypatch, tmp_path):
     seen = {}
 

@@ -5,6 +5,32 @@ production activation are separate from the private interface verification.
 
 Conversation uses Studio's native transcript and composer. New Studio rooms use a collapsible **Debate**, with observed activity and a single final answer from the members' chosen reporter. Native questions remain outside the fold. **Members → Edit members → Conversation** also keeps the separate-reply **Group chat** format available. The native group API and MCP expose the same `debate` option; see [working groups](groups.md). These settings preserve existing sessions and history.
 
+## Servers and channels
+
+`/agora` (without `mode`) is the server view; `studio/src/screens/agora/` draws it and `routes/agora_routes.py`
+forwards to the hub. The hub owns the data (`docs/AGORA.md` in the Hoard Hub repository, section "Servers and
+channels").
+
+| Route | What it does |
+| --- | --- |
+| `GET /api/agora/x/<path>` | The hub's `GET /api/agora/<path>`: `servers`, `guild`, `channels`, `channels/<slug>`, `feed`, `search`, `folders`, `tasks/<id>`, `threads/<id>`, `decisions`, `locks`, `inbox`… read as the person signed in. |
+| `POST /api/agora/x/<op>` | The hub's `POST /api/agora/<op>`: `channel_post`, `channel_create`, `channel_update`, `channel_read`, `seen`, `space_create`, `space_update`, `space_meta_set`, `task_add`, `task_edit`, `task_review`, `task_done`, `thread_open`, `resolve`… written as the person signed in. |
+| `GET /api/agora/pulse?since=&wait_s=` | Waits (20 s at most) for the next change; the page refreshes when it answers. |
+| `GET /api/agora/icon/<app>` | The icon of a family app (`hub` is the hub's own), reduced to 128 px. |
+| `GET /api/agora/where` | `{"remote": true}` when the hub is on another machine, reached through its link. |
+
+A hub that is not answering is a `200` with `{"ok": false, "code": "hub_unreachable"}`: the page says so, keeps the
+draft and comes back by itself. All routes need an administrator.
+
+**The hub on another machine.** `src/hub_link.py` reads the file named by `FAUSTUS_HUB_LINK` (a loopback address and
+the path of a copy of the hub's token), which the hub leaves on a Spark while Faustus runs there and keeps a tunnel
+open towards it. The Agora routes and coordination (`src/shared_coordination.py`: rooms and council) go through it;
+nothing else does. Folders of a server are then chosen on the hub's machine (`GET /api/agora/x/folders?path=`).
+
+URL state: `space_id` (the server), `c` (`ch:<channel>`, `v:<board|deliveries|reviews|activity|decisions|locks|
+welcome|inbox|search>`, `t:<thread id>`, `room:<id|new>`) and `q` (search). The earlier screens are
+`/agora?mode=groups|council|development`.
+
 ## Continue work in a space
 
 Open **Ágora** in Studio and select an Ágora. The existing general space is

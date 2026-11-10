@@ -8,6 +8,8 @@ import { agentInitials } from './util';
 function serverHint(server: AgoraServer): string {
   const c = server.counts;
   const bits = [server.title];
+  if (server.mentions) bits.push(tn(server.mentions, '{n} mention', '{n} mentions'));
+  else if (server.unread) bits.push(tn(server.unread, '{n} unread', '{n} unread'));
   if (c.waiting) bits.push(tn(c.waiting, '{n} thread waits for you', '{n} threads wait for you'));
   if (c.active) bits.push(tn(c.active, '{n} task in progress', '{n} tasks in progress'));
   if (c.review) bits.push(tn(c.review, '{n} in review', '{n} in review'));
@@ -50,7 +52,7 @@ export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden
           {glyph === 'home'
             ? <span className="fs-agx-sicon" data-kind="home" aria-hidden="true"><Home size={22} /></span>
             : <ServerIcon server={server} />}
-          {attention > 0 && <span className="fs-agx-badge" data-tone="alert">{attention > 99 ? '99+' : attention}</span>}
+          {attention > 0 && <span className="fs-agx-badge" data-tone="alert" aria-hidden="true">{attention > 99 ? '99+' : attention}</span>}
           {attention === 0 && server.online > 0 && <span className="fs-agx-rail__live" aria-hidden="true" />}
         </button>
       </li>
@@ -62,9 +64,10 @@ export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden
         {homeServer && row(homeServer, 'home')}
         <li className="fs-agx-rail__item" data-current={inboxOpen || undefined}>
           <span className="fs-agx-rail__pill" aria-hidden="true" />
-          <button type="button" className="fs-agx-rail__btn" title={t('What waits for you in every server')} aria-label={t('Your inbox')} onClick={onInbox} data-testid="agora-inbox-button">
+          <button type="button" className="fs-agx-rail__btn" title={t('What waits for you in every server')}
+            aria-label={waiting > 0 ? t('Your inbox') + ' · ' + tn(waiting, '{n} thing waits for you', '{n} things wait for you') : t('Your inbox')} onClick={onInbox} data-testid="agora-inbox-button">
             <span className="fs-agx-sicon" data-kind="home" aria-hidden="true"><Inbox size={20} /></span>
-            {waiting > 0 && <span className="fs-agx-badge" data-tone="alert">{waiting > 99 ? '99+' : waiting}</span>}
+            {waiting > 0 && <span className="fs-agx-badge" data-tone="alert" aria-hidden="true">{waiting > 99 ? '99+' : waiting}</span>}
           </button>
         </li>
         <li className="fs-agx-rail__sep" aria-hidden="true" />

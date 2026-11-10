@@ -118,7 +118,8 @@ export const getServers = (signal?: AbortSignal) =>
 export const getGuild = (space: string, signal?: AbortSignal) => agoraGet<AgoraGuild>('guild', { space_id: space, done_limit: 30 }, signal);
 
 export async function pulse(since: string, signal?: AbortSignal): Promise<{ version: string; changed: boolean }> {
-  return unwrap(await fetch('/api/agora/pulse' + query({ since, wait_s: 20 }), { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } }));
+  return unwrap(await fetch('/api/agora/pulse' + query({ since, wait_s: 20 }), {
+    signal, credentials: 'same-origin', headers: { Accept: 'application/json', [CLIENT_VERSION_HEADER]: CLIENT_API_VERSION } }));
 }
 
 /** A conversation is a channel of the space or any thread (a task's, a debate…). */
@@ -158,8 +159,9 @@ export const setSpaceMeta = (space: string, meta: Record<string, unknown>) =>
 export const updateSpace = (space: string, revision: number, changes: Record<string, unknown>) =>
   agoraPost<{ space: AgoraSpaceInfo }>('space_update', { space_id: space, expected_revision: revision, ...changes });
 
-export const getFeed = <T = FeedItem>(space: string, kind: 'deliveries' | 'reviews' | 'activity', before?: number | null, signal?: AbortSignal) =>
-  agoraGet<{ items: T[]; next_before: number | null }>('feed', { space_id: space, kind, limit: 40, before: before ?? undefined }, signal);
+/** `before` is the `next_before` the previous page gave, passed back as it came. */
+export const getFeed = <T = FeedItem>(space: string, kind: 'deliveries' | 'reviews' | 'activity', before?: string | number | null, signal?: AbortSignal) =>
+  agoraGet<{ items: T[]; next_before: string | number | null }>('feed', { space_id: space, kind, limit: 40, before: before ?? undefined }, signal);
 export const getDecisions = (space: string, signal?: AbortSignal) =>
   agoraGet<{ decisions: Decision[] }>('decisions', { space_id: space, limit: 100 }, signal);
 export const getLocks = (signal?: AbortSignal) => agoraGet<{ locks: AgoraLock[] }>('locks', undefined, signal);
@@ -173,8 +175,6 @@ export const editTask = (space: string, task: AgoraTask, changes: Record<string,
 export const reviewTask = (space: string, task: AgoraTask, verdict: 'approve' | 'changes', body: string) =>
   agoraPost<{ task: AgoraTask }>('task_review', { space_id: space, task_id: task.id, verdict, body,
     expected_submission_revision: task.submission_revision });
-export const closeTask = (space: string, id: number, result: string) =>
-  agoraPost<{ task: AgoraTask }>('task_done', { space_id: space, task_id: id, result, force: true, reason: result });
 export const dropTask = (space: string, id: number, reason: string) =>
   agoraPost<{ task: AgoraTask }>('task_release', { space_id: space, task_id: id, drop: true, reason });
 

@@ -10,7 +10,8 @@ counts as read by them.
 * ``POST /api/agora/x/<op>``    -> hub ``POST /api/agora/<op>`` (channel_post, channel_create, task_add, task_edit,
   task_review, resolve, escalate, space_meta_set, console/message…)
 * ``GET  /api/agora/pulse``     -> the hub's change token, waiting up to 20 s for a change
-* ``GET  /api/agora/icon/<app>``-> the icon of a family app (``hub`` is the hub's own)
+* ``GET  /api/agora/icon/<app>``-> the icon of a family app (``hub`` is the hub's own), made small: the originals weigh
+  up to 1 MB each and a server list draws thirty of them at 48 px
 * ``GET  /api/agora/where``     -> whether the hub is on this machine or on another one, reached through its link
   (``src/hub_link.py``): folders are then chosen on the hub's machine, where the agents work
 
@@ -36,6 +37,7 @@ PERSON_SURFACE = "faustus-studio"
 _PATH = re.compile(r"^[a-z0-9_][a-z0-9_/\-]{0,120}$")
 _APP = re.compile(r"^[a-z0-9][a-z0-9_.\-]{0,63}$")
 _MAX_BYTES = 12_000_000
+_ICON_PX = 128
 _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 _icons: Dict[str, Tuple[bytes, str]] = {}
 
@@ -73,6 +75,24 @@ def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = Non
         return status, (json.loads(blob.decode("utf-8")) if blob else None), ctype
     except (ValueError, UnicodeDecodeError):
         return status, None, ctype
+
+
+def small_icon(blob: bytes, ctype: str) -> Tuple[bytes, str]:
+    """The icon as a PNG of at most ``_ICON_PX`` a side; the original when it is not a raster image or cannot be read."""
+    if "svg" in (ctype or "").lower() or len(blob) < 24_000:
+        return blob, ctype or "image/png"
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+        with Image.open(BytesIO(blob)) as image:
+            image = image.convert("RGBA")
+            image.thumbnail((_ICON_PX, _ICON_PX))
+            out = BytesIO()
+            image.save(out, format="PNG", optimize=True)
+        return out.getvalue(), "image/png"
+    except Exception:  # noqa: BLE001 - no imaging library, or a file it does not read: the original still shows
+        return blob, ctype or "image/png"
 
 
 def _answer(status: Optional[int], payload: Any) -> JSONResponse:
@@ -113,10 +133,10 @@ def setup_agora_routes() -> APIRouter:
             status, blob, ctype = await asyncio.to_thread(hub_request, "GET", path, raw=True, timeout=10.0)
             if status != 200 or not blob:
                 return Response(status_code=404)
-            cached = (blob, ctype or "image/png")
+            cached = await asyncio.to_thread(small_icon, blob, ctype or "image/png")
             if len(_icons) < 200:
                 _icons[app_id] = cached
-        return Response(content=cached[0], media_type=cached[1].split(";")[0], headers={"Cache-Control": "private, max-age=3600"})
+        return Response(content=cached[0], media_type=cached[1].split(";")[0], headers={"Cache-Control": "private, max-age=86400"})
 
     @router.get("/api/agora/x/{path:path}")
     async def read(path: str, request: Request):

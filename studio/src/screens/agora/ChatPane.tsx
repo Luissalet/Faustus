@@ -209,10 +209,16 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
     }
   }, [viewer]);
 
+  // The newest message on screen, and the conversation the draft in the box belongs to.
+  const newest = useRef(0);
+  useEffect(() => { newest.current = messages.length ? messages[messages.length - 1].id : 0; }, [messages]);
+  const draftOf = useRef(scope);
+
   // Open the conversation: the latest page, counted as read.
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(''); setMessages([]); setInfo({ thread: null, task: null }); setMore(null); setPrompt(null); setKind('comment');
+    draftOf.current = scope;
     try { setDraft(window.sessionStorage.getItem('agora:draft:' + scope) || ''); } catch { setDraft(''); }
     pinned.current = true;
     readTarget(space, target, { limit: 60 }).then((page) => { if (alive) apply(page, 'reset'); })
@@ -222,15 +228,37 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
 
-  // Something changed in the Agora: bring what is new here.
+  // Something changed in the Agora: bring what is new here. When more than a page arrived since the last look
+  // (agents talking fast), walk back until what is already on screen so no message falls in between; if that is
+  // further than a few pages, show the latest ones and leave the rest behind «Load earlier messages».
   useEffect(() => {
     if (loading || !version) return;
     const mine = scope;
-    readTarget(space, target, { limit: 40, peek: document.hidden }).then((page) => { if (active.current === mine) apply(page, 'merge'); }).catch(() => undefined);
+    void (async () => {
+      try {
+        const first = await readTarget(space, target, { limit: 40, peek: document.hidden });
+        if (active.current !== mine) return;
+        const known = newest.current;
+        const gathered = [...first.messages];
+        let page = first;
+        let reached = !known || !gathered.length || gathered[0].id <= known || !page.pagination.has_more;
+        for (let turn = 0; !reached && turn < 6; turn += 1) {
+          page = await readTarget(space, target, { limit: 100, before: page.pagination.next_before_id ?? undefined, peek: true });
+          if (active.current !== mine) return;
+          gathered.unshift(...page.messages);
+          reached = !page.messages.length || page.messages[0].id <= known || !page.pagination.has_more;
+        }
+        if (reached) { apply({ ...first, messages: gathered }, 'merge'); return; }
+        setInfo({ thread: first.thread, task: first.task ?? null });
+        setMessages(gathered);
+        setMore(page.pagination.has_more ? page.pagination.next_before_id : null);
+      } catch { /* the next change brings it */ }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
 
-  useEffect(() => { try { window.sessionStorage.setItem('agora:draft:' + scope, draft); } catch { /* private mode */ } }, [draft, scope]);
+  // Saved under the conversation the text was written in: changing conversation never writes one's draft into another.
+  useEffect(() => { try { window.sessionStorage.setItem('agora:draft:' + draftOf.current, draft); } catch { /* private mode */ } }, [draft]);
   useEffect(() => composerBus.listen((text) => {
     setDraft((old) => (old && !old.endsWith(' ') && !old.endsWith('\n') ? old + ' ' : old) + text);
     input.current?.focus();
@@ -262,9 +290,11 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
     const box = scroller.current;
     const height = box?.scrollHeight ?? 0;
     setOlder(true);
+    const mine = scope;
     try {
       const page = await readTarget(space, target, { limit: 60, before: more, peek: true });
-      setMessages((old) => [...page.messages, ...old]);
+      if (active.current !== mine) return;     // the reader moved to another conversation meanwhile
+      setMessages((old) => { const known = new Set(old.map((m) => m.id)); return [...page.messages.filter((m) => !known.has(m.id)), ...old]; });
       setMore(page.pagination.has_more ? page.pagination.next_before_id : null);
       window.requestAnimationFrame(() => { if (box) box.scrollTop = box.scrollHeight - height; });
     } catch (e) { notify((e as Error).message, 'warn'); }
@@ -357,7 +387,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
     <section className="fs-agx-chat" data-testid="agora-chat" aria-busy={busy || undefined}>
       {info.task && <TaskBar task={info.task} guild={guild} ask={(p) => { setPrompt(p); setPromptText(''); }} act={act} />}
       {!info.task && info.thread && view.kind === 'thread' && <ThreadBar thread={info.thread} guild={guild} ask={(p) => { setPrompt(p); setPromptText(''); }} />}
-      <div className="fs-agx-chat__scroll" ref={scroller} onScroll={onScroll} role="log" aria-live="polite" aria-label={t('Messages')}>
+      <div className="fs-agx-chat__scroll" ref={scroller} onScroll={onScroll} role="log" aria-live={loading ? 'off' : 'polite'} aria-busy={loading || undefined} aria-label={t('Messages')}>
         {loading && <Skeleton label={t('Loading the conversation')} count={6} height="44px" />}
         {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
         {!loading && !error && more !== null && (
@@ -386,12 +416,12 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
       ) : (
         <div className="fs-agx-composer" data-testid="agora-composer">
           {mention && (
-            <ul className="fs-agx-mentions" role="listbox" aria-label={t('Mention')}>
+            <ul className="fs-agx-mentions" role="listbox" id="agora-mention-list" aria-label={t('Mention')}>
               {mention.options.map((id, index) => {
                 const member = members.find((m) => m.id === id);
                 return (
                   <li key={id}>
-                    <button type="button" role="option" aria-selected={index === pick} onMouseDown={(e) => { e.preventDefault(); choose(id); }}>
+                    <button type="button" role="option" id={'agora-mention-' + index} aria-selected={index === pick} onMouseDown={(e) => { e.preventDefault(); choose(id); }}>
                       <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id) } as CSSProperties}>{id === 'here' ? '@' : agentInitials(id)}</span>
                       <strong>{id}</strong>
                       <span className="fs-muted">{id === 'here' ? t('everyone around lately') : member?.doing || (member ? t(member.presence === 'offline' ? 'Offline' : 'Around') : '')}</span>
@@ -408,6 +438,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
           )}
           <div className="fs-agx-composer__box">
             <textarea ref={input} value={draft} rows={1} maxLength={20000} placeholder={placeholder} aria-label={placeholder}
+              aria-autocomplete="list" aria-controls={mention ? 'agora-mention-list' : undefined} aria-activedescendant={mention ? 'agora-mention-' + pick : undefined}
               onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
               onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)} onKeyDown={onKey} data-testid="agora-input" />
             <IconButton icon={Send} label={t('Send')} disabled={!draft.trim() || sending} onClick={() => void send()} testId="agora-send" />

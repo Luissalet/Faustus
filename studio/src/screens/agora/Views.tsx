@@ -1,13 +1,14 @@
-import { FolderOpen, FolderPlus, Inbox, Lock, Plus, Search, Trash2 } from 'lucide-react';
-import { useEffect, useState, type CSSProperties, type DragEvent } from 'react';
+import { ArrowRight, FolderOpen, FolderPlus, Inbox, Lock, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import {
   BOARD_COLUMNS, editTask, getDecisions, getFeed, getInbox, getLocks, getTask, searchAgora, setSpaceMeta,
   type ActivityItem, type AgoraGuild, type AgoraLock, type AgoraServer, type AgoraTaskRow, type BoardColumn, type Decision, type FeedItem,
   type PersonInbox, type SearchHit,
 } from '../../adapters/agora';
 import { pickNative } from '../../adapters/composer';
-import { Button, EmptyState, IconButton, Skeleton } from '../../components';
+import { Button, EmptyState, IconButton, Menu, Skeleton } from '../../components';
 import { Rich } from '../rich';
+import { CountBadge } from './ChannelList';
 import { t, tn } from '../../i18n';
 import { ago, agentColor, agentInitials, COLUMN_LABEL, STATUS_LABEL, stamp, THREAD_KIND_LABEL, type View } from './util';
 import '../studio.css';
@@ -29,9 +30,12 @@ export function BoardView({ guild, onOpen, onNewTask, notify }: { guild: AgoraGu
   const [filter, setFilter] = useState('');
   const needle = filter.trim().toLowerCase();
   const match = (task: AgoraTaskRow) => !needle || `#${task.id} ${task.title} ${task.owner ?? ''} ${task.kind} ${task.repo ?? ''}`.toLowerCase().includes(needle);
-  const drop = async (event: DragEvent, column: BoardColumn) => {
+  const drop = (event: DragEvent, column: BoardColumn) => {
     event.preventDefault(); setOver(null);
-    const id = Number(event.dataTransfer.getData('text/agora-task'));
+    return move(Number(event.dataTransfer.getData('text/agora-task')), column);
+  };
+  // Dragging and the card's own menu do the same thing, so the board is not for the mouse only.
+  const move = async (id: number, column: BoardColumn) => {
     const status = DROP_STATUS[column];
     if (!id) return;
     if (!status) { notify(t('A task enters review when its owner submits it.'), 'warn'); return; }
@@ -60,21 +64,27 @@ export function BoardView({ guild, onOpen, onNewTask, notify }: { guild: AgoraGu
               <header><h3>{t(COLUMN_LABEL[column])}</h3><span className="fs-agx-cat__count">{needle ? tasks.length : total}</span></header>
               <ul>
                 {tasks.map((task) => (
-                  <li key={task.id}>
-                    <button type="button" className="fs-agx-card" draggable data-status={task.status} data-unread={task.unread > 0 || undefined}
+                  <li key={task.id} className="fs-agx-card" data-status={task.status} data-unread={task.unread > 0 || undefined}>
+                    <button type="button" className="fs-agx-card__open" draggable
                       onDragStart={(e) => { e.dataTransfer.setData('text/agora-task', String(task.id)); e.dataTransfer.effectAllowed = 'move'; }}
                       onClick={() => task.thread_id && onOpen({ kind: 'thread', id: String(task.thread_id) })} data-testid={'agora-card-' + task.id}>
                       <span className="fs-agx-card__top"><span className="fs-agx-card__id">#{task.id}</span>
                         <span className="fs-agx-tag" data-kind={task.kind}>{task.kind}</span>
                         {task.priority <= 1 && <span className="fs-agx-tag" data-kind="prio">P{task.priority}</span>}
                         {task.status !== column && <span className="fs-agx-status" data-status={task.status}>{t(STATUS_LABEL[task.status] ?? task.status)}</span>}
-                        {task.mentions > 0 ? <span className="fs-agx-badge" data-tone="alert">{task.mentions}</span> : task.unread > 0 ? <span className="fs-agx-badge">{task.unread}</span> : null}
+                        {task.mentions > 0 ? <CountBadge n={task.mentions} mentions /> : task.unread > 0 ? <CountBadge n={task.unread} /> : null}
                       </span>
                       <strong>{task.title}</strong>
                       <span className="fs-agx-card__foot"><Who id={task.owner} /><span>{task.owner ?? t('unassigned')}</span>
                         {task.waiting_on.length > 0 && <span className="fs-agx-card__wait">{t('waits for')} {task.waiting_on.map((i) => '#' + i).join(', ')}</span>}
                         <time>{ago(task.updated)}</time></span>
                     </button>
+                    <span className="fs-agx-card__menu">
+                      <Menu align="end" testId={'agora-card-menu-' + task.id}
+                        items={(Object.keys(DROP_STATUS) as BoardColumn[]).filter((to) => to !== column).map((to) => (
+                          { label: t('Move to {column}', { column: t(COLUMN_LABEL[to]) }), icon: ArrowRight, onSelect: () => void move(task.id, to) }))}
+                        trigger={<IconButton size="sm" icon={MoreHorizontal} label={t('Move #{id}…', { id: task.id })} testId={'agora-card-move-' + task.id} />} />
+                    </span>
                   </li>
                 ))}
                 {!tasks.length && <li className="fs-agx-cat__empty">{t('Nothing here.')}</li>}
@@ -90,25 +100,46 @@ export function BoardView({ guild, onOpen, onNewTask, notify }: { guild: AgoraGu
 
 /* ── Feeds ── */
 
-function useFeed<T>(space: string, kind: 'deliveries' | 'reviews' | 'activity', version: string) {
-  const [items, setItems] = useState<T[] | null>(null);
-  const [next, setNext] = useState<number | null>(null);
+/**
+ * One feed of a server. A change in the Agora brings the first page again; if the reader had asked for earlier
+ * pages they stay, with the fresh page on top. Nothing of another server or feed is shown while the new one loads,
+ * and a page that arrives late for a feed the reader already left is dropped.
+ */
+function useFeed<T extends { id: number }>(space: string, kind: 'deliveries' | 'reviews' | 'activity', version: string) {
+  const scope = space + ':' + kind;
+  const [state, setState] = useState<{ scope: string; items: T[]; next: string | number | null; extended: boolean } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const current = useRef(scope);
+  current.current = scope;
   useEffect(() => {
     const controller = new AbortController();
-    getFeed<T>(space, kind, null, controller.signal).then((page) => { setItems(page.items); setNext(page.next_before); setError(''); })
-      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
+    getFeed<T>(space, kind, null, controller.signal).then((page) => {
+      setError('');
+      setState((old) => {
+        if (!old || old.scope !== scope || !old.extended) return { scope, items: page.items, next: page.next_before, extended: false };
+        const fresh = new Set(page.items.map((item) => item.id));
+        return { ...old, items: [...page.items, ...old.items.filter((item) => !fresh.has(item.id))] };
+      });
+    }).catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
-  }, [space, kind, version]);
+  }, [space, kind, scope, version]);
+  const mine = state && state.scope === scope ? state : null;
   const more = async () => {
-    if (!next || busy) return;
+    if (!mine?.next || busy) return;
     setBusy(true);
-    try { const page = await getFeed<T>(space, kind, next); setItems((old) => [...(old ?? []), ...page.items]); setNext(page.next_before); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      const page = await getFeed<T>(space, kind, mine.next);
+      if (current.current !== scope) return;
+      setState((old) => {
+        if (!old || old.scope !== scope) return old;
+        const known = new Set(old.items.map((item) => item.id));
+        return { scope, items: [...old.items, ...page.items.filter((item) => !known.has(item.id))], next: page.next_before, extended: true };
+      });
+    } catch (e) { if (current.current === scope) setError((e as Error).message); }
     finally { setBusy(false); }
   };
-  return { items, next, error, busy, more };
+  return { items: mine ? mine.items : null, next: mine ? mine.next : null, error, busy, more };
 }
 
 export function DeliveriesView({ guild, version, onOpen, reviews = false }: { guild: AgoraGuild; version: string; onOpen: Open; reviews?: boolean }) {

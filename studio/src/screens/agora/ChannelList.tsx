@@ -8,7 +8,7 @@ import { BOARD_COLUMNS, type AgoraGuild, type AgoraTaskRow, type BoardColumn } f
 import type { GroupState } from '../../adapters/group';
 import { speakerName } from '../../adapters/group';
 import { IconButton, Menu } from '../../components';
-import { t } from '../../i18n';
+import { t, tn } from '../../i18n';
 import { agentColor, agentInitials, COLUMN_LABEL, recall, remember, THREAD_KIND_LABEL, viewKey, type View } from './util';
 
 export type ListAction = 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'open-project' | 'council' | 'classic';
@@ -23,6 +23,16 @@ const VIEW_ICON: Record<string, LucideIcon> = {
 };
 const SHOWN_PER_COLUMN = 60;
 
+/** A count the eye reads as a number and a screen reader as what it counts. */
+export function CountBadge({ n, mentions = false }: { n: number; mentions?: boolean }) {
+  return (
+    <span className="fs-agx-badge" data-tone={mentions ? 'alert' : undefined}>
+      <span aria-hidden="true">{n > 99 ? '99+' : n}</span>
+      <span className="fs-sr-only">{mentions ? tn(n, '{n} mention', '{n} mentions') : tn(n, '{n} unread', '{n} unread')}</span>
+    </span>
+  );
+}
+
 function Row({ current, icon: Icon, label, onClick, unread = 0, mentions = 0, count, tone, title, lead, testId }: {
   current: boolean; icon: LucideIcon; label: string; onClick: () => void; unread?: number; mentions?: number; count?: number;
   tone?: 'alert' | 'muted' | 'ok' | 'warn'; title?: string; lead?: ReactNode; testId?: string;
@@ -34,8 +44,8 @@ function Row({ current, icon: Icon, label, onClick, unread = 0, mentions = 0, co
         <Icon size={16} aria-hidden="true" className="fs-agx-row__icon" />
         <span className="fs-agx-row__label">{label}</span>
         {lead}
-        {mentions > 0 && <span className="fs-agx-badge" data-tone="alert">{mentions > 99 ? '99+' : mentions}</span>}
-        {mentions === 0 && unread > 0 && <span className="fs-agx-badge">{unread > 99 ? '99+' : unread}</span>}
+        {mentions > 0 && <CountBadge n={mentions} mentions />}
+        {mentions === 0 && unread > 0 && <CountBadge n={unread} />}
         {count !== undefined && mentions === 0 && unread === 0 && count > 0 && <span className="fs-agx-row__count">{count}</span>}
       </button>
     </li>

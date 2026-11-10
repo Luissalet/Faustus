@@ -1,5 +1,5 @@
 import { CornerLeftUp, Folder, FolderOpen, FolderPlus, HardDrive, Home, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   addTask, createChannel, createServerSpace, hubFolders, hubIsRemote, openThread, setSpaceMeta, updateSpace,
   type AgoraGuild, type AgoraServer, type AgoraThreadInfo, type HubFolders,
@@ -127,7 +127,7 @@ function Look({ icon, color, onIcon, onColor }: { icon: string; color: string; o
   return (
     <div className="fs-agx-form__row">
       <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Letter or emoji')}</span>
-        <input className="fs-field fs-agx-form__glyph" value={icon} maxLength={4} placeholder="A" onChange={(e) => onIcon(e.target.value)} /></label>
+        <input className="fs-field fs-agx-form__glyph" value={icon} maxLength={16} placeholder="A" onChange={(e) => onIcon(e.target.value)} /></label>
       <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Colour')}</span>
         <input type="color" className="fs-agx-form__color" value={color || ROLE_COLORS.person} onChange={(e) => onColor(e.target.value)} /></label>
       {color && <Button size="sm" variant="ghost" label={t('No colour')} onClick={() => onColor('')} />}
@@ -151,9 +151,12 @@ export function AddServerDialog({ open, servers, onClose, onCreated, notify }: {
   const [projects, setProjects] = useState<Project[]>([]);
   const [recent, setRecent] = useState<RecentFolder[]>([]);
   const remote = useHubRemote(open);
+  // What this attempt has already made: if a later step fails, Create again goes on from there.
+  const made = useRef<{ name: string; projectId?: string; spaceId?: string }>({ name: '' });
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
+    made.current = { name: '' };
     setName(''); setWorkspace([]); setFolders([]); setAbout(''); setInstructions(''); setIcon(''); setColor(''); setError(''); setBusy('');
     listProjects(controller.signal).then(setProjects).catch(() => undefined);
     recentFolders(controller.signal).then(setRecent).catch(() => undefined);
@@ -167,17 +170,25 @@ export function AddServerDialog({ open, servers, onClose, onCreated, notify }: {
     if (!title) { setError(t('Give the server a name.')); return; }
     setBusy('new'); setError('');
     try {
+      if (made.current.name !== title) made.current = { name: title };
       // With the hub on another machine the folders are the agents' (on the PC): the server keeps them, and the project
       // here gets none, because those paths do not exist where Faustus runs.
-      const project = await createProject({ name: title, folder: title, workspace: remote ? '' : workspace[0] ?? '', instructions: instructions.trim() });
-      for (const folder of remote ? [] : folders) {
-        try { await addContextRoot(project.id, folder); } catch (e) { notify(t('{path}: {reason}', { path: folder, reason: (e as Error).message }), 'warn'); }
+      if (!made.current.projectId) {
+        const project = await createProject({ name: title, folder: title, workspace: remote ? '' : workspace[0] ?? '', instructions: instructions.trim() });
+        made.current.projectId = project.id;
+        for (const folder of remote ? [] : folders) {
+          try { await addContextRoot(project.id, folder); } catch (e) { notify(t('{path}: {reason}', { path: folder, reason: (e as Error).message }), 'warn'); }
+        }
       }
-      const space = await createServerSpace(title, { project_id: project.id, workspace: workspace[0] ?? '',
-        description: about.trim() || t('Work in {name}: rooms, tasks, reviews and decisions of this project.', { name: title }) });
-      if (folders.length || icon.trim() || color) await setSpaceMeta(space.id, { folders, icon: icon.trim(), color });
+      if (!made.current.spaceId) {
+        const space = await createServerSpace(title, { project_id: made.current.projectId, workspace: workspace[0] ?? '',
+          description: about.trim() || t('Work in {name}: rooms, tasks, reviews and decisions of this project.', { name: title }) });
+        made.current.spaceId = space.id;
+      }
+      const spaceId = made.current.spaceId;
+      if (folders.length || icon.trim() || color) await setSpaceMeta(spaceId, { folders, icon: icon.trim(), color });
       notify(t('Server {name} created', { name: title }));
-      onCreated(space.id); onClose();
+      onCreated(spaceId); onClose();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(''); }
   };
@@ -303,7 +314,7 @@ export function NewChannelDialog({ open, guild, category, onClose, onCreated, no
   const known = [...new Set(guild.channels.map((c) => c.category || 'chat'))];
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }} title={t('New channel')} testId="agora-new-channel-dialog" className="fs-agx-dialog"
-      description={t('A named conversation of this server. Agents write in it with `agora say <channel> "…"` and are mentioned with @id.')}
+      description={t('A named conversation of this server. Agents read and write in it, and @id mentions one of them.')}
       footer={<><Button label={t('Cancel')} onClick={onClose} /><Button variant="primary" label={t('Create the channel')} loading={busy} disabled={!title.trim()} onClick={() => void create()} testId="agora-create-channel" /></>}>
       <form className="fs-agx-form" onSubmit={(e) => { e.preventDefault(); void create(); }}>
         <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Name')}</span>

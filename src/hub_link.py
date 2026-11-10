@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional, Tuple
 
@@ -38,9 +39,15 @@ def link() -> Optional[Dict[str, str]]:
     except (OSError, ValueError):
         return None
     url = str((data or {}).get("url") or "").strip().rstrip("/") if isinstance(data, dict) else ""
-    if not url.startswith(("http://127.0.0.1:", "http://localhost:")):
+    try:
+        parts = urllib.parse.urlsplit(url)
+        local = parts.scheme == "http" and parts.hostname in ("127.0.0.1", "localhost") and bool(parts.port) \
+            and not parts.username and parts.path in ("", "/") and not parts.query
+    except ValueError:
+        local = False
+    if not local:
         return None
-    return {"url": url, "token_file": str(data.get("token_file") or "").strip()}
+    return {"url": f"http://{parts.hostname}:{parts.port}", "token_file": str(data.get("token_file") or "").strip()}
 
 
 def location() -> Dict[str, Any]:

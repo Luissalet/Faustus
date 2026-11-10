@@ -11091,3 +11091,11 @@ welcome	bienvenida
 {n} thread waits for you	{n} hilo te espera
 {n} threads wait for you	{n} hilos te esperan
 {path}: {reason}	{path}: {reason}
+A named conversation of this server. Agents read and write in it, and @id mentions one of them.	Una conversación con nombre de este servidor. Los agentes leen y escriben en ella, y @id menciona a uno de ellos.
+Move #{id}…	Mover #{id}…
+Move to {column}	Mover a {column}
+{n} mention	{n} mención
+{n} mentions	{n} menciones
+{n} thing waits for you	{n} cosa te espera
+{n} things wait for you	{n} cosas te esperan
+{n} unread	{n} sin leer
