@@ -94,3 +94,13 @@ async def test_native_send_exposes_and_persists_debate_mode(group_api):
         assert snapshot['group']['debate'] is True
         assert snapshot['turns'][0]['debate'] is True
         assert len([t for t in snapshot['turns'] if t['request_id'].startswith('final:')]) == 1
+
+async def test_a_store_that_cannot_be_read_is_said_as_unavailable_not_as_a_crash(group_api,monkeypatch):
+    from src.hoard_link.coordination.council_store import CouncilStoreError
+    app,c,_=group_api
+    def away(*args,**kwargs):
+        raise CouncilStoreError('coordination','Canonical coordination import is pending; original records are retained')
+    monkeypatch.setattr(c.store,'list',away)
+    async with AsyncClient(transport=ASGITransport(app=app),base_url='http://127.0.0.1') as client:
+        response=await client.get('/api/groups?space_id=atlas')
+        assert response.status_code==503 and 'import is pending' in response.json()['detail']

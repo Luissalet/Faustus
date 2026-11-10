@@ -103,7 +103,14 @@ def setup_group_routes(coordinator):
     @router.get("")
     def list_groups(request: Request, space_id: str = ""):
         args = {"space_id": space_id} if space_id else {}
-        return {"groups": coordinator.store.list(owner(request), **args)}
+        user = owner(request)
+        from src.hoard_link.coordination.council_store import CouncilStoreError
+        try:
+            return {"groups": coordinator.store.list(user, **args)}
+        except CouncilStoreError as error:
+            # The shared store cannot be read right now (the hub is away, or its first import has not finished):
+            # said as what it is, so a page can show it, instead of an unexplained failure.
+            raise HTTPException(503, f"Group rooms cannot be read right now: {error}") from error
 
     @router.post("")
     def create(request: Request, body: GroupCreate):
