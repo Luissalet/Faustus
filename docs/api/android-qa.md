@@ -1,5 +1,14 @@
 # Android emulator QA
 
+## Version 1.0.6: system surfaces and rendering transitions
+
+Header coordinates are not sufficient when a system bar, cutout or the actual IME intercepts input. The procedure now distinguishes that app defect from a body row that can be scrolled into view. A dispatch acknowledgement can also precede the visible transition; a bounded fresh observation is preferable to replaying the input.
+
+Root reproduced the native HoardDex427 close control at(467,77) under the observed status region0..85: before/after PNGs were byte-identical after tapping, while AndroidBack closed the menu. HoardDex428 measures the modal's own safe area; its close centre(467,162) responds in the visible SDK emulator. Root verified ES list, EN grid, exterior/Back, navigation and Undo, restoring the collection and preferences. The web fading portal initially retained two close controls before its hidden state settled; no second tap was needed. Receipts: Research/hoarddex-drawer-safearea/{RED427,NATIVE428,WEB428}.json.
+
+This is retained procedure guidance from Root's observed QA, not a new Faustus inference run, efficiency measurement, installed-skill update or autonomous success. Do not retry the rejected2361 launch or change bindings, servers, device settings or ownership to test it.
+
+
 ## Version 1.0.5: observed content bounds and keyboard state
 
 The procedure now distinguishes physical screen bounds from the unobscured content area below a fixed header and above navigation. It checks that a picker opened before typing, uses current translated labels, and distinguishes actual IME visibility from a stale input-view flag before dismissing the keyboard.
