@@ -10852,3 +10852,242 @@ run time (s)	tiempo de ejecución (s)
 {n} problems found	{n} problemas encontrados
 Only in	Solo en
 Search only in	Buscar solo en
+#{id} moved to {column}	#{id} pasa a {column}
+A debate or question closed with its resolution in writing lands here: the decision log of this server.	Un debate o una pregunta que se cierra con su resolución por escrito acaba aquí: el registro de decisiones de este servidor.
+A debate, a question or a note with its own conversation. Closing it with a decision puts it in the decision log.	Un debate, una pregunta o una nota con su propia conversación. Al cerrarlo con una decisión pasa al registro de decisiones.
+A named conversation of this server. Agents write in it with `agora say <channel> "…"` and are mentioned with @id.	Una conversación con nombre dentro de este servidor. Los agentes escriben en ella con `agora say <canal> "…"` y se les menciona con @id.
+A server is a project with its agora: its channels, its task board, its rooms of models and the agents that work in it.	Un servidor es un proyecto con su ágora: sus canales, su tablero de tareas, sus salas de modelos y los agentes que trabajan en él.
+A task enters review when its owner submits it.	Una tarea entra en revisión cuando quien la lleva la entrega.
+A word, a phrase or a task number	Una palabra, una frase o un número de tarea
+Add a context folder	Añadir carpeta de contexto
+Add a server	Añadir servidor
+Add a server: a new project with its agora	Añadir servidor: un proyecto nuevo con su ágora
+Add as a server	Añadir como servidor
+Addressed to	Para
+Agrees	De acuerdo
+Approve #{id}	Aprobar #{id}
+Approves	Aprueba
+Archive the channel	Archivar el canal
+Around	Por aquí
+Ask for changes	Pedir cambios
+Ask for changes on #{id}	Pedir cambios en #{id}
+Asks for changes	Pide cambios
+Assign to	Asignar a
+Assign to {name}	Asignar a {name}
+Assigned to {name}	Asignada a {name}
+At work	Trabajando
+Change the topic…	Cambiar el tema…
+Changes asked	Cambios pedidos
+Channel #{name} created	Canal #{name} creado
+Channel archived	Canal archivado
+Channel options	Opciones del canal
+Channels	Canales
+Channels of {name}	Canales de {name}
+Choose a folder on the PC	Elegir una carpeta del PC
+Choose a folder…	Elegir carpeta…
+Choose this folder	Elegir esta carpeta
+Classic room view	Vista clásica de salas
+Close #{id} as done	Cerrar #{id} como hecha
+Close the channel list	Cerrar la lista de canales
+Connection lost: {reason}. What you see may be out of date.	Sin conexión: {reason}. Lo que ves puede estar desfasado.
+Context folders	Carpetas de contexto
+Context folders…	Carpetas de contexto…
+Create the channel	Crear el canal
+Create the server	Crear el servidor
+Create the task	Crear la tarea
+Ctrl + Enter confirms	Ctrl + Enter confirma
+Cursor	Cursor
+Debates and questions closed with their resolution in writing	Debates y preguntas cerrados con su resolución por escrito
+Decide and close	Decidir y cerrar
+Decision recorded	Decisión registrada
+Decision: {text}	Decisión: {text}
+Deliberation rooms	Salas de deliberación
+Disagrees	En desacuerdo
+Drag a card to To do, In progress or Done; review goes through its owner.	Arrastra una tarjeta a Pendiente, En curso o Hecho; a revisión la manda quien la lleva.
+Drives	Unidades
+Drop #{id}	Descartar #{id}
+Drop it	Descartarla
+Drop it…	Descartarla…
+Dropped task	Descartada
+Edit server	Editar servidor
+Edit server…	Editar servidor…
+Enter sends · Shift + Enter new line · @ mentions · /tarea Title creates a task	Enter envía · Mayús + Enter salto de línea · @ menciona · /tarea Título crea una tarea
+Every message of this server, newest first	Todos los mensajes de este servidor, del más reciente al más antiguo
+Every message of this server, newest first, with the thread it belongs to.	Todos los mensajes de este servidor, del más reciente al más antiguo, con el hilo al que pertenecen.
+Every task of this server by state	Todas las tareas de este servidor por estado
+Files, merges, models and apps taken right now	Ficheros, fusiones, modelos y apps ocupados ahora mismo
+Filter by title, owner or kind	Filtrar por título, responsable o tipo
+Filter tasks	Filtrar tareas
+First message	Primer mensaje
+For the agents	Para los agentes
+Give the server a name.	Ponle un nombre al servidor.
+Gone quiet	Sin actividad
+Handoff	Traspaso
+Here	Aquí
+Hidden servers	Servidores ocultos
+Hide members	Ocultar miembros
+Hide this server	Ocultar este servidor
+Home folder	Carpeta personal
+Idle	En reposo
+In every server	En todos los servidores
+In review	En revisión
+Information	Información
+Instructions for its chats	Instrucciones para sus chats
+It lands in To do with its own thread; an agent claims it, or you assign it now.	Entra en Pendiente con su propio hilo; un agente la reclama, o la asignas ahora.
+Its session: {state}	Su sesión: {state}
+Keep this server on view	Mantener este servidor a la vista
+Kind of message	Tipo de mensaje
+Kind of thread	Tipo de hilo
+Leases are shared by every server: files, merges, models and apps taken right now.	Los bloqueos son comunes a todos los servidores: ficheros, fusiones, modelos y apps ocupados ahora mismo.
+Leave it unassigned	Dejarla sin asignar
+Letter or emoji	Letra o emoji
+Load earlier messages	Cargar mensajes anteriores
+Loading activity	Cargando la actividad
+Loading channels	Cargando los canales
+Loading deliveries	Cargando las implementaciones
+Loading locks	Cargando los bloqueos
+Loading the server	Cargando el servidor
+Loading your inbox	Cargando tu bandeja
+Mark as done…	Marcar como hecha…
+Mark everything as read	Marcar todo como leído
+Mention	Mencionar
+Mentioned: {names}	Mencionados: {names}
+Message #{name}	Escribe en #{name}
+New channel	Canal nuevo
+New channel…	Canal nuevo…
+New room of models…	Sala de modelos nueva…
+New task…	Tarea nueva…
+New thread	Hilo nuevo
+New thread…	Hilo nuevo…
+No activity yet	Todavía no hay actividad
+No colour	Sin color
+No decisions yet	Todavía no hay decisiones
+No deliveries yet	Todavía no hay implementaciones
+No extra folders: agents of this server only know its working folder.	Sin carpetas extra: los agentes de este servidor solo conocen su carpeta de trabajo.
+No folders inside.	No hay carpetas dentro.
+No heartbeat lately	Sin latido reciente
+No message, task or thread has “{q}”.	Ningún mensaje, tarea ni hilo contiene «{q}».
+No open threads.	No hay hilos abiertos.
+No rooms yet: several models talking with you and each other.	Aún no hay salas: varios modelos hablando contigo y entre ellos.
+None yet	Ninguna todavía
+Not around	Desconectados
+Nothing has been said here yet. Write the first message: agents read it on their next turn, and a mention queues it for them.	Aquí todavía no se ha dicho nada. Escribe el primer mensaje: los agentes lo leen en su siguiente turno, y una mención se lo deja en cola.
+Nothing is locked	No hay nada bloqueado
+Nothing waits for review	No hay nada esperando revisión
+Nothing waits for you	No te espera nada
+Offline	Desconectado
+On its plate	Lo que lleva
+Open again	Reabierta
+Open in the hub	Abrir en el Hub
+Open its project	Abrir su proyecto
+Open this server in the hub console	Abrir este servidor en la consola del Hub
+Optional: how to work in this project	Opcional: cómo se trabaja en este proyecto
+Other folders its agents should know: documents, references, a sibling repository.	Otras carpetas que sus agentes deben conocer: documentos, referencias, un repositorio hermano.
+Others	Otros
+Out of quota	Sin cuota
+P0 · urgent	P0 · urgente
+P1 · high	P1 · alta
+P2 · normal	P2 · normal
+P3 · someday	P3 · algún día
+Paste a path or choose a folder	Pega una ruta o elige una carpeta
+Plain comment	Comentario
+Priority changed	Prioridad cambiada
+Priority {n}	Prioridad {n}
+Projects without a server yet	Proyectos que aún no tienen servidor
+Question for you	Pregunta para ti
+Questions the agents escalate to you, messages that mention you and submissions without a reviewer show up here, from every server.	Las preguntas que los agentes te escalan, los mensajes que te mencionan y las entregas sin revisor aparecen aquí, de todos los servidores.
+Quota: {n}% free	Cuota: {n} % libre
+Reopen	Reabrir
+Reopen this thread	Reabrir este hilo
+Reply in this thread	Responde en este hilo
+Reply to {name}	Responder a {name}
+Rooms of models	Salas de modelos
+Search the Agora	Buscar en el Ágora
+See all {n} on the board	Ver las {n} en el tablero
+Server saved	Servidor guardado
+Server {name} created	Servidor {name} creado
+Servers and channels	Servidores y canales
+Several models talking with you and each other	Varios modelos hablando contigo y entre ellos
+Show members	Mostrar miembros
+Show only the servers you keep on view	Mostrar solo los servidores que tienes a la vista
+Show the whole message ({n} characters)	Mostrar el mensaje entero ({n} caracteres)
+Show {n} hidden server	Mostrar {n} servidor oculto
+Show {n} hidden servers	Mostrar {n} servidores ocultos
+Showing the first 2000 folders.	Se muestran las primeras 2000 carpetas.
+Submitted, without a reviewer	Entregadas, sin revisor
+Task #{id} created	Tarea #{id} creada
+Task actions	Acciones de la tarea
+Tasks sent to review, approved or closed appear here with their commits and result.	Las tareas enviadas a revisión, aprobadas o cerradas aparecen aquí con sus commits y su resultado.
+Text channels	Canales de texto
+The Agora is not answering	El Ágora no responde
+The Hoard Hub is not answering. The Agora lives there, on the PC, and comes back when the Hub does.	El Hoard Hub no responde. El Ágora vive allí, en el PC, y vuelve cuando vuelva el Hub.
+The agents work on the PC, so the folder is chosen there.	Los agentes trabajan en el PC, así que la carpeta se elige allí.
+The conversation of the whole server	La conversación de todo el servidor
+The decision, in writing: it goes to the decision log	La decisión, por escrito: va al registro de decisiones
+The project this server is about	El proyecto del que trata este servidor
+They mention you	Te mencionan
+This message is longer than what the page loads.	Este mensaje es más largo de lo que carga la página.
+Thread opened	Hilo abierto
+Thread {id}	Hilo {id}
+Threads	Hilos
+To do	Pendiente
+Topic of #{name}	Tema de #{name}
+Waiting	Esperando
+What has to change	Qué hay que cambiar
+What is talked about here	De qué se habla aquí
+What it is about	De qué trata
+What this server is, the folders it reads and how agents join	Qué es este servidor, qué carpetas lee y cómo entran los agentes
+What waits for a reviewer or for changes	Lo que espera a un revisor o tiene cambios pedidos
+What waits for you in every server	Lo que te espera en todos los servidores
+What was done (optional)	Qué se hizo (opcional)
+What was sent to review, approved or closed	Lo que se envió a revisión, se aprobó o se cerró
+What was sent to review, approved or closed, with commits and result	Lo que se envió a revisión, se aprobó o se cerró, con commits y resultado
+What you checked	Qué has comprobado
+When an agent claims a task it takes its files, a repository merge, a model or an app; the leases show up here.	Cuando un agente reclama una tarea ocupa sus ficheros, la fusión de un repositorio, un modelo o una app; esos bloqueos se ven aquí.
+When an agent submits a task, it shows up here with its commits so you or another agent can review it.	Cuando un agente entrega una tarea aparece aquí con sus commits para que tú u otro agente la reviséis.
+Where its agents read and write, on the PC.	Donde leen y escriben sus agentes, en el PC.
+Where its agents read and write.	Donde leen y escriben sus agentes.
+Where something was said	Dónde se dijo algo
+Whoever claims it	Quien la reclame
+Why (optional)	Por qué (opcional)
+Why it needs another look	Por qué hay que volver a mirarlo
+Work	Trabajo
+Your inbox	Tu bandeja
+activity	actividad
+and {n} more from long ago	y {n} más de hace tiempo
+board	tablero
+decided by {name}	lo decidió {name}
+decisions	decisiones
+deliberation	deliberación
+deliveries	implementaciones
+everyone around lately	todos los que andan por aquí
+ideas, design, bugs…	ideas, diseño, errores…
+integrated as equivalent	integrada como equivalente
+locks	bloqueos
+opened by {name}	lo abrió {name}
+owner {name}	la lleva {name}
+quota unknown	cuota sin datos
+review exempt	exenta de revisión
+reviewed	revisada
+reviewer {name}	revisa {name}
+reviews	revisiones
+seen {when}	visto {when}
+until {time}	hasta {time}
+waiting for you	te espera
+waits for	espera a
+welcome	bienvenida
+{n} agent around	{n} agente por aquí
+{n} agents around	{n} agentes por aquí
+{n} around now	{n} por aquí ahora
+{n} d ago	hace {n} d
+{n} in review	{n} en revisión
+{n} lease held	{n} bloqueo en su poder
+{n} leases held	{n} bloqueos en su poder
+{n} member	{n} miembro
+{n} members	{n} miembros
+{n} more	{n} más
+{n} task in progress	{n} tarea en curso
+{n} tasks in progress	{n} tareas en curso
+{n} thread waits for you	{n} hilo te espera
+{n} threads wait for you	{n} hilos te esperan
+{path}: {reason}	{path}: {reason}

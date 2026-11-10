@@ -1,13 +1,17 @@
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router';
 import { Button, Skeleton } from '../../components';
-import { createSpace, getProjectCoordination, projectSpace, spaces, type CoordinationSpace } from '../../adapters/coordination';
+import { getProjectCoordination, projectSpace, spaces, type CoordinationSpace } from '../../adapters/coordination';
+import { createServerSpace, getServers } from '../../adapters/agora';
 import type { Project } from '../../adapters/projects';
 import { AgoraBoardView } from '../group/AgoraBoard';
+import { AgoraApp } from '../agora/AgoraApp';
 import { StudioScreen } from '../Studio';
 import { t } from '../../i18n';
 import '../group.css';
+
+const asSpace = (s: { id: string; title: string; description: string; revision: number; project_id?: string; workspace?: string }): CoordinationSpace =>
+  ({ id: s.id, title: s.title, description: s.description, revision: s.revision, members: [], project_id: s.project_id, workspace: s.workspace });
 
 /** The project's own agora: the space bound to it, else the one its coordination uses. */
 export function useProjectSpace(project: Project) {
@@ -19,7 +23,9 @@ export function useProjectSpace(project: Project) {
     setLoading(true);
     void (async () => {
       try {
-        const all = await spaces(controller.signal);
+        // The servers of the Agora first: that read also reaches a hub that is on another machine.
+        const servers = await getServers(controller.signal).then((r) => r.servers).catch(() => null);
+        const all = servers ? servers.map(asSpace) : await spaces(controller.signal);
         let selected = projectSpace(all, project.id, null);
         if (!selected) {
           const view = await getProjectCoordination(project.id, controller.signal).catch(() => null);
@@ -33,8 +39,8 @@ export function useProjectSpace(project: Project) {
     return () => controller.abort();
   }, [project.id]);
   const create = useCallback(async () => {
-    const created = await createSpace(project.name, { project_id: project.id, workspace: project.workspace || '',
-      description: t('Work in {name}: rooms, tasks, reviews and decisions of this project.', { name: project.name }) });
+    const created = asSpace(await createServerSpace(project.name, { project_id: project.id, workspace: project.workspace || '',
+      description: t('Work in {name}: rooms, tasks, reviews and decisions of this project.', { name: project.name }) }));
     setSpace(created); setError('');
     return created;
   }, [project]);
@@ -58,11 +64,11 @@ function CreateAgora({ project, create }: { project: Project; create: () => Prom
 export function ProjectAgora({ project, selected, onSelect }: { project: Project; selected: string; onSelect: (id: string) => void }) {
   const { space, loading, create } = useProjectSpace(project);
   if (loading) return <Skeleton label={t('Loading the agora')} count={3} height="56px" />;
+  // The project's server: its channels, task threads by state, rooms and members.
+  if (space) return <div className="fs-project-agora-shell" data-testid="project-agora"><AgoraApp lockedSpace={space.id} project={project} embedded /></div>;
   return (
     <div className="fs-project-agora-shell" data-testid="project-agora">
-      <StudioScreen groupContext={{project, selected, onSelect, spaceId: space?.id ?? null,
-        ensureSpace: async () => (await create()).id, navigation: space ?
-          <Link className="fs-chip" to={`/agora?space_id=${encodeURIComponent(space.id)}&mode=council`}>{t('Deliberation')}</Link> : undefined}} />
+      <StudioScreen groupContext={{project, selected, onSelect, spaceId: null, ensureSpace: async () => (await create()).id}} />
     </div>
   );
 }

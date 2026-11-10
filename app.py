@@ -1637,6 +1637,9 @@ app.include_router(setup_plugin_marketplace_routes())
 # Spheres (personal / work) of the family hub, proxied for the Studio header chip.
 from routes.hoard_hub_routes import setup_hoard_hub_routes
 app.include_router(setup_hoard_hub_routes())
+# The Agora as servers and channels: the hub's spaces proxied for Studio, written as the person signed in.
+from routes.agora_routes import setup_agora_routes
+app.include_router(setup_agora_routes())
 from routes.sparks_routes import setup_sparks_routes
 app.include_router(setup_sparks_routes())
 

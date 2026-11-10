@@ -32,6 +32,14 @@ async def recovery_io(function, *args, **kwargs):
         raise
 
 
+def _hub_post(path, body, timeout):
+    """POST to the hub: through the link when Faustus does not run next to it (on a Spark), else the family's own way."""
+    from src import hub_link
+    if hub_link.link():
+        return hub_link.post(path, body, timeout)
+    return family._post(path, body, timeout)
+
+
 def _transport(path, args):
     from src.family_services import configure
     configure()
@@ -39,7 +47,7 @@ def _transport(path, args):
         return {'ok': False, 'error': {'type': 'CouncilStoreError',
                 'outcome_unknown': False,
                 'detail': 'Canonical coordination import is pending; original records are retained'}}
-    status_code, result = family._post(path, args, 30)
+    status_code, result = _hub_post(path, args, 30)
     if isinstance(result, dict) and 'ok' in result:
         return {**result, 'status': status_code}
     writing = path.endswith('/bind') or args.get('operation') not in READ_METHODS
@@ -117,5 +125,9 @@ def resume_import(group_coordinator):
 def call(tool, args=None):
     from src.family_services import configure as configure_family
     configure_family()
-    raw = family.call('hub', tool, args or {}, timeout=30)
+    from src import hub_link
+    if hub_link.link():
+        _status, raw = hub_link.post('/api/agent/call', {'tool': tool, 'arguments': args or {}, 'timeout_s': 30}, 35)
+    else:
+        raw = family.call('hub', tool, args or {}, timeout=30)
     return raw.get('result') if isinstance(raw, dict) else {'ok': False, 'error': 'Shared coordination unavailable'}

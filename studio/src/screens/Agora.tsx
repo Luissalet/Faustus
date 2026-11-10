@@ -7,6 +7,7 @@ import {rooms, spaces, type CoordinationRoom, type CoordinationSpace} from '../a
 import {t} from '../i18n';
 import {CouncilScreen} from './Council';
 import {GroupScreen} from './group/Group';
+import {AgoraApp} from './agora/AgoraApp';
 import './agora.css';
 
 const modes = [
@@ -16,11 +17,22 @@ const modes = [
 ];
 
 /**
+ * The Agora. Without a `mode` it is the server view: every project as a
+ * server with its channels, task threads by board column, rooms of models
+ * and members. `mode=groups|council|development` keeps the earlier screens
+ * (rooms as a group chat, deliberation, the hub console) one link away.
+ */
+export function AgoraScreen() {
+  const [params] = useSearchParams();
+  return params.get('mode') ? <ClassicAgora /> : <div className="fs-project-agora-shell" data-testid="agora" data-mode="servers"><AgoraApp /></div>;
+}
+
+/**
  * Every agora in one place. A project's own agora also lives inside the
  * project (its Agora tab, with the board in Objectives); this screen is the
  * view across all of them, with Deliberation and the Hub's full task view.
  */
-export function AgoraScreen() {
+function ClassicAgora() {
   const [params, setParams] = useSearchParams();
   const spaceId = params.get('space_id') || 'ecosystem';
   const mode = modes.some((m) => m.id === params.get('mode')) ? params.get('mode')! : 'groups';
@@ -73,6 +85,7 @@ export function AgoraScreen() {
     <header className="fs-agora__head">
       <h1 className="fs-agora__title">{t('Agora')}</h1>
       <CoordinationSpaces value={spaceId} onChange={chooseSpace} homeLink={false} />
+      <Link className="fs-chip" to={'/agora?space_id=' + encodeURIComponent(spaceId)} data-testid="agora-servers-link">{t('Servers and channels')}</Link>
       {project && <Link className="fs-chip fs-agora__project" to={`/projects/${encodeURIComponent(project)}?tab=agora`} data-testid="agora-project-link">
         <FolderKanban size={14} aria-hidden="true" /> {t('Open in its project')}
       </Link>}
