@@ -11433,3 +11433,8 @@ Support#rank	Apoyo
 The name must end with a letter or a digit.	El nombre tiene que acabar en letra o número.
 The name must start with {prefix}	El nombre tiene que empezar por {prefix}
 {name} is now {role}	{name} es ahora {role}
+Another model…	Otro modelo…
+As its own program takes it. Once a session starts with it, it stays in the list.	Tal como lo admite su propio programa. Cuando una sesión arranque con él, se queda en la lista.
+Full name of the model	Nombre completo del modelo
+The full name of a model starts with {prefix}	El nombre completo de un modelo empieza por {prefix}
+The role the sessions of this model start with on this server.	El rol con el que arrancan las sesiones de este modelo en este servidor.

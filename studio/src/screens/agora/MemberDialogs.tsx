@@ -1,7 +1,7 @@
 import { RefreshCw, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addMember, getConsole, launchWorker, pruneMembers, removeMember, setConsolePreferences, setMemberRank, stopWorker, suggestWorkerName,
+  addMember, getConsole, launchWorker, pruneMembers, removeMember, setConsolePreferences, setMemberRank, setModelRank, stopWorker, suggestWorkerName,
   type AgoraGuild, type AgoraMember, type ConsoleLeader, type ConsoleModel, type ConsoleWorker,
 } from '../../adapters/agora';
 import { Button, Dialog, IconButton, Skeleton } from '../../components';
@@ -63,6 +63,9 @@ function slug(text: string): string {
  * given work before it has said anything, and shows as invited until it does.
  */
 /** The ranks to choose from, highest first, in the person's words. */
+/** The entry of the model list that lets the person write a model's full name. */
+const OTHER_MODEL = '::other';
+
 export function RankOptions() {
   return <>{RANKS.map((r) => <option key={r} value={r}>{t(RANK_LABEL[r])}</option>)}</>;
 }
@@ -93,6 +96,12 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
   const [nameTouched, setNameTouched] = useState(false);
   const [nameAsked, setNameAsked] = useState(0);
   const [rank, setRank] = useState<string>(DEFAULT_RANK);
+  /** Until the person picks a role, the one they last started that model with is the one shown. */
+  const [rankTouched, setRankTouched] = useState(false);
+  /** The role of an agent added by name: its own choice, apart from the one of a session. */
+  const [nameRank, setNameRank] = useState<string>(DEFAULT_RANK);
+  /** A model asked for by its full name, where the provider's program takes any. */
+  const [otherModel, setOtherModel] = useState('');
   /** Which showing of the dialog this is: what was still under way when it closed or changed server is left alone. */
   const showing = useRef(0);
   useEffect(() => { showing.current += 1; }, [open, space]);
@@ -101,7 +110,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
     if (!open) return;
     setMode('session'); setProvider((PROVIDERS as readonly string[]).includes(preset ?? '') ? (preset as (typeof PROVIDERS)[number]) : 'codex');
     setName(''); setNote(''); setError(''); setTask(''); setLeaders(null); setUnable([]); setWorkers([]); setConsoleError(''); setBusy(false);
-    setSessionName(''); setNameTouched(false); setRank(DEFAULT_RANK);
+    setSessionName(''); setNameTouched(false); setRank(DEFAULT_RANK); setRankTouched(false); setNameRank(DEFAULT_RANK); setOtherModel('');
   }, [open, space, preset]);
 
   // What the hub can start is asked once the person looks at it: it probes the programs installed on the PC.
@@ -121,13 +130,14 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
   }, [open, mode, leaders, space, preset]);
 
   // A name is proposed for the provider and model chosen, until the person writes their own.
+  const wantedModel = model === OTHER_MODEL ? otherModel.trim().toLowerCase() : model;
   useEffect(() => {
     if (!open || !leader || nameTouched) return;
     const controller = new AbortController();
-    suggestWorkerName(space, leader, model, controller.signal).then((out) => setSessionName(out.name ?? ''))
+    suggestWorkerName(space, leader, wantedModel, controller.signal).then((out) => setSessionName(out.name ?? ''))
       .catch(() => { /* an older hub proposes none: the session still gets a name of its own */ });
     return () => controller.abort();
-  }, [open, space, leader, model, nameTouched, nameAsked]);
+  }, [open, space, leader, wantedModel, nameTouched, nameAsked]);
   const sessionId = sessionName.trim().toLowerCase();
   const nameProblem = !sessionId ? '' : !VALID_ID.test(sessionId) ? t('The name needs at least two letters or digits.')
     : /[-_.]$/.test(sessionId) ? t('The name must end with a letter or a digit.')
@@ -141,8 +151,16 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
   }, [name, provider]);
   const already = guild.members.some((m) => m.id === id);
   const chosen = leaders?.find((l) => l.id === leader);
-  const chosenModel = chosen?.catalog.find((c) => c.id === model);
+  // A model named by hand has the effort levels of the provider's other models.
+  const chosenModel = model === OTHER_MODEL ? chosen?.catalog[0] : chosen?.catalog.find((c) => c.id === model);
   const efforts = chosenModel?.efforts ?? [];
+  const modelProblem = model === OTHER_MODEL && wantedModel && !new RegExp('^' + leader + '-[a-z0-9][a-z0-9.-]{1,60}$').test(wantedModel)
+    ? t('The full name of a model starts with {prefix}', { prefix: leader + '-' }) : '';
+  // The role shown is the one the person last started that model with here, until they pick another.
+  const keptRank = chosen?.model_ranks?.[wantedModel];
+  useEffect(() => {
+    if (open && mode === 'session' && !rankTouched) setRank(keptRank ?? DEFAULT_RANK);
+  }, [open, mode, rankTouched, keptRank, leader, wantedModel]);
 
   const pickLeader = (next: string) => {
     // A name the person wrote goes with them to the other provider: what they wrote stays, its beginning changes.
@@ -154,7 +172,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
   };
   const pickModel = (next: string) => {
     setModel(next);
-    const m = chosen?.catalog.find((c) => c.id === next);
+    const m = next === OTHER_MODEL ? chosen?.catalog[0] : chosen?.catalog.find((c) => c.id === next);
     setEffort((old) => effortFor(m, old));
   };
 
@@ -165,7 +183,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
       const made = await addMember(space, id, note.trim());
       // The agent is on the server by now: a role that could not be saved is said, and the list still shows it.
       let roleError = '';
-      if (rank !== DEFAULT_RANK) { try { await setMemberRank(space, id, rank); } catch (e) { roleError = (e as Error).message; } }
+      if (nameRank !== DEFAULT_RANK) { try { await setMemberRank(space, id, nameRank); } catch (e) { roleError = (e as Error).message; } }
       notify(made.added ? t('{name} is on the server', { name: id }) : t('{name} was already on the server', { name: id }));
       if (roleError) notify(t('Its role could not be saved: {why}', { why: roleError }), 'warn');
       onDone(); onClose();
@@ -188,13 +206,14 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
     } catch { /* the lists stay as they were */ }
   };
   const launch = async () => {
-    if (!leader || !model || !task.trim() || nameProblem) return;
+    if (!leader || !wantedModel || !task.trim() || nameProblem || modelProblem) return;
     const mine = showing.current;
     setBusy(true); setError('');
     try {
+      // The role always goes: the hub keeps it as what the person starts that model with here.
       const made = await launchWorker(space, {
-        leader_id: leader, model, effort: efforts.length ? effort : '', task: task.trim(),
-        ...(sessionId ? { name: sessionId } : {}), ...(rank !== DEFAULT_RANK ? { rank } : {}),
+        leader_id: leader, model: wantedModel, effort: efforts.length ? effort : '', task: task.trim(),
+        ...(sessionId ? { name: sessionId } : {}), rank,
       });
       if (mine !== showing.current) return;
       let worker = made.worker;
@@ -237,7 +256,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
         <Button label={t('Cancel')} onClick={onClose} />
         {mode === 'name'
           ? <Button variant="primary" label={t('Add to the server')} loading={busy} disabled={!VALID_ID.test(id) || already} onClick={() => void register()} testId="agora-add-agent-confirm" />
-          : <Button variant="primary" label={t('Start the session')} loading={busy} disabled={!leader || !model || !task.trim() || Boolean(nameProblem)} onClick={() => void launch()} testId="agora-launch-agent-confirm" />}
+          : <Button variant="primary" label={t('Start the session')} loading={busy} disabled={!leader || !wantedModel || !task.trim() || Boolean(nameProblem) || Boolean(modelProblem)} onClick={() => void launch()} testId="agora-launch-agent-confirm" />}
       </>}>
       <div className="fs-agx-form">
         <div className="fs-seg" role="radiogroup" aria-label={t('How it joins')}>
@@ -260,7 +279,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
               <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('What it is for (optional)')}</span>
                 <input className="fs-field" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} /></label>
               <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Role')}</span>
-                <select className="fs-field" value={rank} onChange={(e) => setRank(e.target.value)} data-testid="agora-add-agent-rank"><RankOptions /></select></label>
+                <select className="fs-field" value={nameRank} onChange={(e) => setNameRank(e.target.value)} data-testid="agora-add-agent-rank"><RankOptions /></select></label>
             </div>
           </>
         ) : (
@@ -278,6 +297,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
                   <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('Model')}</span>
                     <select className="fs-field" value={model} onChange={(e) => pickModel(e.target.value)} data-testid="agora-launch-model">
                       {(chosen?.catalog ?? []).map((m) => <option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
+                      {chosen?.takes_model_names && <option value={OTHER_MODEL}>{t('Another model…')}</option>}
                     </select></label>
                   {efforts.length > 1 && (
                     <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Effort')}</span>
@@ -286,13 +306,19 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
                       </select></label>
                   )}
                 </div>
+                {model === OTHER_MODEL && (
+                  <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Full name of the model')}</span>
+                    <input className="fs-field" value={otherModel} maxLength={70} spellCheck={false} placeholder={leader + '-…'}
+                      onChange={(e) => setOtherModel(e.target.value)} data-testid="agora-launch-model-name" />
+                    <span className="fs-muted" data-testid="agora-launch-model-problem">{modelProblem || t('As its own program takes it. Once a session starts with it, it stays in the list.')}</span></label>
+                )}
                 <div className="fs-agx-form__row">
                   <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('Name')}</span>
                     <input className="fs-field" value={sessionName} maxLength={41} spellCheck={false}
                       onChange={(e) => { setSessionName(e.target.value); setNameTouched(true); }} data-testid="agora-launch-name" /></label>
                   <IconButton size="sm" icon={RefreshCw} label={t('Propose a name')} onClick={() => { setNameTouched(false); setNameAsked((n) => n + 1); }} testId="agora-launch-name-again" />
                   <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Role')}</span>
-                    <select className="fs-field" value={rank} onChange={(e) => setRank(e.target.value)} data-testid="agora-launch-rank"><RankOptions /></select></label>
+                    <select className="fs-field" value={rank} onChange={(e) => { setRank(e.target.value); setRankTouched(true); }} data-testid="agora-launch-rank"><RankOptions /></select></label>
                 </div>
                 {nameProblem && <p className="fs-muted" data-testid="agora-launch-name-problem">{nameProblem}</p>}
                 {chosen?.live_state?.state === 'auth_expired' && (
@@ -439,34 +465,42 @@ export function AgentModelsDialog({ open, guild, onClose, onSaved, notify }: {
 }) {
   const space = guild.space.id;
   const [leaders, setLeaders] = useState<ConsoleLeader[] | null>(null);
-  const [choice, setChoice] = useState<Record<string, { model: string; effort: string }>>({});
+  const [choice, setChoice] = useState<Record<string, { model: string; effort: string; rank: string }>>({});
   /** What each provider had when the dialog opened: only what the person moves is saved. */
-  const [initial, setInitial] = useState<Record<string, { model: string; effort: string }>>({});
+  const [initial, setInitial] = useState<Record<string, { model: string; effort: string; rank: string }>>({});
+  /** The roles the person moved here, by provider and model: they stay while another model is looked at. */
+  const [roles, setRoles] = useState<Record<string, Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     if (!open) return;
-    setLeaders(null); setChoice({}); setInitial({}); setError('');
+    setLeaders(null); setChoice({}); setInitial({}); setRoles({}); setError('');
     const controller = new AbortController();
     getConsole(space, controller.signal).then((data) => {
       const rows = data.leaders ?? [];
       setLeaders(rows);
       const found = Object.fromEntries(rows.filter((l) => (l.catalog ?? []).length > 0).map((l) => {
         const m = l.catalog.find((c) => c.id === l.model) ?? l.catalog[0];
-        return [l.id, { model: m.id, effort: effortFor(m, l.effort) }];
+        return [l.id, { model: m.id, effort: effortFor(m, l.effort), rank: l.model_ranks?.[m.id] ?? DEFAULT_RANK }];
       }));
       setChoice(found); setInitial(found);
     }).catch((e: Error) => { if (!controller.signal.aborted) { setLeaders([]); setError(e.message); } });
     return () => controller.abort();
   }, [open, space]);
 
-  const changed = (leaders ?? []).filter((l) => {
-    const now = choice[l.id]; const was = initial[l.id];
-    return now && was && (now.model !== was.model || now.effort !== was.effort);
-  });
+  /** The role a provider's model starts with: what the person moved here, else what the hub keeps, else the usual. */
+  const roleOf = (leader: ConsoleLeader, model: string) => roles[leader.id]?.[model] ?? leader.model_ranks?.[model] ?? DEFAULT_RANK;
+  /** The roles the person moved for a provider's models, also for a model that is no longer the one shown. */
+  const rolesMoved = (l: ConsoleLeader) => Object.entries(roles[l.id] ?? {}).filter(([model, rank]) => rank !== (l.model_ranks?.[model] ?? DEFAULT_RANK));
+  const prefMoved = (l: ConsoleLeader) => { const now = choice[l.id]; const was = initial[l.id]; return Boolean(now && was) && (now.model !== was.model || now.effort !== was.effort); };
+  const changed = (leaders ?? []).filter((l) => prefMoved(l) || rolesMoved(l).length > 0);
   const pick = (leader: ConsoleLeader, model: string, effort?: string) => {
     const m = leader.catalog.find((c) => c.id === model);
-    setChoice((old) => ({ ...old, [leader.id]: { model, effort: effortFor(m, effort ?? old[leader.id]?.effort) } }));
+    setChoice((old) => ({ ...old, [leader.id]: { model, effort: effortFor(m, effort ?? old[leader.id]?.effort), rank: roleOf(leader, model) } }));
+  };
+  const pickRole = (leader: ConsoleLeader, rank: string) => {
+    setRoles((old) => ({ ...old, [leader.id]: { ...old[leader.id], [choice[leader.id].model]: rank } }));
+    setChoice((old) => ({ ...old, [leader.id]: { ...old[leader.id], rank } }));
   };
   const save = async () => {
     setBusy(true); setError('');
@@ -474,9 +508,16 @@ export function AgentModelsDialog({ open, guild, onClose, onSaved, notify }: {
       let waits = false;
       for (const leader of changed) {
         const saved = choice[leader.id];
-        const out = await setConsolePreferences(space, { leader_id: leader.id, ...saved });
-        setInitial((old) => ({ ...old, [leader.id]: saved }));       // saved: if a later one fails, this one is not sent again
-        if (out.applies_to === 'queued_until_native_session_idle') waits = true;
+        if (prefMoved(leader)) {
+          const out = await setConsolePreferences(space, { leader_id: leader.id, model: saved.model, effort: saved.effort });
+          setInitial((old) => ({ ...old, [leader.id]: saved }));     // saved: if a later one fails, this one is not sent again
+          if (out.applies_to === 'queued_until_native_session_idle') waits = true;
+        }
+        // Each role the person moved, also of a model they went on from: it is said apart from model and effort.
+        for (const [model, rank] of rolesMoved(leader)) {
+          await setModelRank(space, leader.id, model, rank);
+          setLeaders((old) => (old ?? []).map((l) => (l.id === leader.id ? { ...l, model_ranks: { ...l.model_ranks, [model]: rank } } : l)));
+        }
       }
       notify(waits ? t('Saved. Faustus takes it as soon as its session is free.') : t('Saved'));
       onSaved(); onClose();
@@ -509,6 +550,8 @@ export function AgentModelsDialog({ open, guild, onClose, onSaved, notify }: {
                         {efforts.map((level) => <option key={level} value={level}>{effortLabel(level)}</option>)}
                       </select></label>
                   )}
+                  <label className="fs-agx-form__field fs-agx-form__field--role" title={t('The role the sessions of this model start with on this server.')}><span className="fs-agx-form__label">{t('Role')}</span>
+                    <select className="fs-field" value={now.rank} onChange={(e) => pickRole(leader, e.target.value)} data-testid={'agora-models-rank-' + leader.id}><RankOptions /></select></label>
                 </>
               ) : <span className="fs-muted fs-agx-tune__off" title={leader.detail || undefined}>{unavailableWhy(leader)}</span>}
             </div>

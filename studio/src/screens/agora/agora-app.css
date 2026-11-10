@@ -292,6 +292,9 @@
 .fs-agx-member__text { display: grid; min-inline-size: 0; flex: 1; }
 .fs-agx-member__text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 600; color: color-mix(in srgb, var(--agx-c) 50%, var(--fs-text-1)); }
 .fs-agx-member__text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fs-text-3); font-size: 11px; }
+.fs-agx-member__text .fs-agx-member__line { display: flex; align-items: center; gap: 6px; }
+.fs-agx-member__line > span:last-child { min-inline-size: 0; }
+.fs-agx-member__text .fs-agx-rank { overflow: visible; font-size: 10px; }
 .fs-agx-profile-pop { inline-size: 320px; max-inline-size: 90vw; }
 .fs-agx-profile { display: grid; gap: var(--fs-space-2); }
 .fs-agx-profile header { display: flex; align-items: center; gap: var(--fs-space-3); }
@@ -471,3 +474,4 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 .fs-agx-profile__rank { display: flex; align-items: center; gap: var(--fs-space-2); margin-block: var(--fs-space-2); color: var(--fs-text-2); font-size: var(--fs-label-size); }
 .fs-agx-profile__rank .fs-field { flex: 1; min-inline-size: 0; }
 .fs-agx-form__row > .fs-icon-btn { align-self: flex-end; margin-block-end: 2px; }
+.fs-agx-form__field--role { flex: 0 0 8.5rem; }

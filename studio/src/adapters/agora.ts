@@ -188,6 +188,10 @@ export interface ConsoleLeader {
   detail?: string | null; state?: string | null; auth_state?: string | null;
   /** What the provider's own program on the PC was last seen doing; `auth_expired` when its last call was refused for its sign-in. */
   live_state?: { state?: string | null; detail?: string | null } | null;
+  /** The role a session of each model starts with on this server, where the person chose one. */
+  model_ranks?: Record<string, string>;
+  /** Whether a model can also be asked for by its full name (its program takes any). */
+  takes_model_names?: boolean;
 }
 export interface ConsoleWorker {
   id: string; parent_id: string; agent_id: string; model: string; effort: string; task: string; state: string;
@@ -206,6 +210,9 @@ export const setMemberRank = (space: string, member: string, rank: string) =>
 export const stopWorker = (space: string, workerId: string) =>
   agoraPost<{ worker_id: string; state: string }>('console/worker', { space_id: space, action: 'stop', worker_id: workerId });
 /** The model and effort a provider's agents use on this server: its sessions started from here and its console turns. */
+/** The role the sessions of one model start with on a server. The hub takes it only from the person's pages. */
+export const setModelRank = (space: string, leader: string, model: string, rank: string) =>
+  agoraPost<{ ok: boolean; model_ranks: Record<string, string> }>('console/model_rank', { space_id: space, leader_id: leader, model, rank });
 export const setConsolePreferences = (space: string, input: { leader_id: string; model: string; effort: string }) =>
   agoraPost<{ ok: boolean; leader_id: string; model: string; effort: string; verified: boolean; applies_to: string; warning?: string | null }>(
     'console/preferences', { space_id: space, ...input });

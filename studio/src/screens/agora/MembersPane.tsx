@@ -98,8 +98,9 @@ function MemberRow({ member, guild, onOpen, onRemove, started, onStop, onRank }:
         <button type="button" className="fs-agx-member" data-presence={member.presence} style={{ '--agx-c': agentColor(member.id) } as CSSProperties}
           title={member.id + ' · ' + t(PRESENCE_LABEL[member.presence])} data-testid={'agora-member-' + member.id}>
           <span className="fs-agx-avatar" data-presence={member.presence} aria-hidden="true">{agentInitials(member.id)}</span>
-          <span className="fs-agx-member__text"><strong>{member.id}</strong><span>{line}</span></span>
-          <RankMark member={member} />
+          {/* The role goes under the name, so a long name is not cut short to make room for it. */}
+          <span className="fs-agx-member__text"><strong>{member.id}</strong>
+            <span className="fs-agx-member__line"><RankMark member={member} /><span>{line}</span></span></span>
           {member.tasks.length > 0 && <span className="fs-agx-row__count">{member.tasks.length}</span>}
         </button>}>
         <MemberCard member={member} guild={guild} onOpen={onOpen} onRemove={onRemove} started={started} onStop={onStop} onRank={onRank} />
