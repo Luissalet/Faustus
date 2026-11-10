@@ -2,7 +2,7 @@
 
 ## Version 1.0.6: system surfaces and rendering transitions
 
-Header coordinates are not sufficient when a system bar, cutout or the actual IME intercepts input. The procedure now distinguishes that app defect from a body row that can be scrolled into view. A dispatch acknowledgement can also precede the visible transition; a bounded fresh observation is preferable to replaying the input.
+When the actual IME covers the intended target, use an observed permitted dismissal and a fresh readback. A header control persistently behind a system bar or cutout is an app defect, distinct from a body row that can be scrolled into view. A dispatch acknowledgement can also precede the visible transition; a bounded fresh observation is preferable to replaying the input.
 
 Root reproduced the native HoardDex427 close control at(467,77) under the observed status region0..85: before/after PNGs were byte-identical after tapping, while AndroidBack closed the menu. HoardDex428 measures the modal's own safe area; its close centre(467,162) responds in the visible SDK emulator. Root verified ES list, EN grid, exterior/Back, navigation and Undo, restoring the collection and preferences. The web fading portal initially retained two close controls before its hidden state settled; no second tap was needed. Receipts: Research/hoarddex-drawer-safearea/{RED427,NATIVE428,WEB428}.json.
 
