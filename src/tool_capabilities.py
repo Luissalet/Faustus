@@ -692,11 +692,36 @@ _register({"review_desk"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE)
 # on the loopback server and writes a screenshot next to it; nothing runs on the server itself.
 _register({"panel_list", "panel_get", "panel_versions"}, ToolEffect.READ_PRIVATE)
 _register({"panel_create", "panel_update", "panel_delete", "panel_restore", "panel_check"}, ToolEffect.WRITE_PRIVATE)
+# A panel's own SQLite database (src/panel_db.py) under DATA_DIR/panels/<id>/panel.db.
+_register({"panel_db_query", "panel_action_list"}, ToolEffect.READ_PRIVATE)
+_register({"panel_db_exec"}, ToolEffect.WRITE_PRIVATE)
+# Panel server actions (src/panel_actions.py) call the agent tool, Hoard tool or URL the panel names and save
+# its answer in the panel; templates (src/panel_templates) create a panel and run its actions once.
+# panel_sources lists routes and asks the Hub for its apps and their tools (and fetches a route when probing).
+_register({"panel_sources"}, ToolEffect.READ_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
+          result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+_register({"panel_action_set", "panel_action_run", "panel_from_template"}, ToolEffect.WRITE_PRIVATE,
+          ToolEffect.BROKERED_NETWORK_READ, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 # Loop Cards (src/loop_card.py): create/check run the measuring command the caller names, in the folder it names.
 _register({"loop_card_create", "loop_card_check"}, ToolEffect.EXECUTE_CODE, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
           result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"loop_card_list", "loop_card_get"}, ToolEffect.READ_PRIVATE)
 _register({"loop_card_delete"}, ToolEffect.WRITE_PRIVATE)
+# Loop Card plan (src/loop_card.py) only rewrites the card. Arms run the measuring command per variant; the
+# improvement loop (src/loop_arms.py) also writes proposals into isolated alternatives, calls a model and merges the
+# winner into the folder. The prompt mirror (src/prompt_mirror.py) reads the owner's chats and saves its report.
+_register({"loop_card_plan"}, ToolEffect.WRITE_PRIVATE)
+_register({"loop_arms"}, ToolEffect.EXECUTE_CODE, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
+          result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
+_register({"loop_improve"}, ToolEffect.EXECUTE_CODE, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE,
+          ToolEffect.WRITE_PRIVATE, result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
+_register({"prompt_mirror"}, ToolEffect.READ_PRIVATE, ToolEffect.WRITE_PRIVATE)
+# Goldfish reviews (src/goldfish.py): read the document and its reading list, call models, keep reports under
+# DATA_DIR and, with write_back, write the fixed document back to its file or Cerebro note.
+_register({"goldfish_review"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE, ToolEffect.WRITE_PRIVATE,
+          result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
+# Obsidian Bases (src/brain/bases.py): reads the private vault index, writes .base files into the vault.
+_register({"brain_base"}, ToolEffect.READ_PRIVATE, ToolEffect.WRITE_PRIVATE)
 _register({"derivation_graph"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE,
           result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED)
 _register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,

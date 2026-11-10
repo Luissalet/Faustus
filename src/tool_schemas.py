@@ -3346,7 +3346,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "panel_create",
-            "description": "Create a user panel: a self-contained HTML page (inline CSS and JS, no build step) that Faustus mounts in the Studio sidebar under Panels. Use when the user asks for their own mini-app inside Faustus: a usage/cost dashboard, a viewer, a tracker, a theme switcher, a poster or design board. In the page include <script src=\"/api/panels/faustus-panel.js\"></script> for faustus.api(path) (any /api/* route of Faustus), faustus.tool(name, args, app?) (run an agent tool or a connected Hoard's tool), faustus.theme / --fs-* CSS variables (the app's colours) and faustus.storage (server-side key-value per panel). Always run panel_check afterwards and fix what it reports. Crear un panel propio en la barra lateral.",
+            "description": "Create a user panel: a self-contained HTML page (inline CSS and JS, no build step) that Faustus mounts in the Studio sidebar under Panels. Use when the user asks for their own mini-app inside Faustus. Call panel_sources first to see what data exists; never guess paths. In the page include <script src=\"/api/panels/faustus-panel.js\"></script> for faustus.api(path) (Faustus' /api routes), faustus.hub(path) (the Hoard Hub, e.g. faustus.hub('/api/agora/tasks?space_id=faustus&status=active')), faustus.tool(name, args, app?) (agent or Hoard tool), faustus.db (own SQLite), faustus.storage and the --fs-* theme variables. Run panel_check afterwards and fix what it reports. Crear un panel propio en la barra lateral.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -3444,6 +3444,129 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "panel_sources",
+            "description": "What a user panel can read, so the page never guesses a path: Faustus' routes (faustus.api) with the shape of their answer, the Hoard Hub's routes (faustus.hub: the Ágora with spaces and tasks, apps, placement) and every connected Hoard with its tools (faustus.tool). app=<id> gives that Hoard's tools with arguments; probe=<path> or hub:<path> fetches one route now and shows its live shape. Call it first when building a panel. Qué datos puede leer un panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app": {"type": "string", "description": "A Hoard id (darwin, links, ledger...): its tools with their arguments"},
+                    "probe": {"type": "string", "description": "A path to fetch now and describe: /api/... (Faustus) or hub:/api/... (the Hub)"},
+                    "tools": {"type": "boolean", "description": "List each Hoard's tool names (default true; false is faster)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_db_query",
+            "description": "Read a user panel's own SQLite database (the one its page uses through faustus.db): run one SQL statement and get its rows as objects, a page at a time (default 200, more with offset). Without sql it lists the tables and views with columns and row counts. Use to look at the data a panel collected or to check a table before writing the page. Consultar la base de datos de un panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Panel id"},
+                    "sql": {"type": "string", "description": "One SQL statement (SELECT, PRAGMA, WITH...); omit to list the tables"},
+                    "params": {"anyOf": [{"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "null"}]}}, {"type": "object"}], "description": "Positional list or named object for ? / :name placeholders"},
+                    "limit": {"type": "integer", "description": "Rows per page (default 200, max 10000)"},
+                    "offset": {"type": "integer", "description": "Rows to skip: next_offset of the previous page"},
+                    "timeout_s": {"type": "number", "description": "Interrupt after this many seconds (default 10, max 120)"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_db_exec",
+            "description": "Change a user panel's own SQLite database in one transaction: create tables and indexes, insert seed data, update or delete rows. Give one statement with params, the same statement with many parameter sets, a batch of {sql, params}, or a script of several statements without params. Any SQL is allowed; only a time limit applies. Crear tablas y sembrar datos en un panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Panel id"},
+                    "sql": {"type": "string", "description": "A statement, or a script of several statements"},
+                    "params": {"anyOf": [{"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "null"}]}}, {"type": "object"}], "description": "Positional list or named object for the statement"},
+                    "many": {"type": "array", "description": "Parameter sets: runs sql once per item", "items": {"anyOf": [{"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "null"}]}}, {"type": "object"}]}},
+                    "batch": {"type": "array", "description": "Statements to run in order: [{sql, params}]",
+                              "items": {"type": "object", "properties": {"sql": {"type": "string"}, "params": {"anyOf": [{"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "null"}]}}, {"type": "object"}]}}}},
+                    "timeout_s": {"type": "number", "description": "Interrupt after this many seconds (default 10, max 120)"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_action_set",
+            "description": "Create, replace, pause or remove a server action of a user panel: call an agent tool (with app, a Hoard's tool) or a URL (/api/... of Faustus, hub:/api/... of the Hub, http(s)://...) on demand or every N minutes through Faustus' scheduler, and save the answer in the panel's database (table with column paths, or SQL) or storage. Use so a panel collects history while closed: a GPU sample every 5 minutes, Hoard counts every hour. Acción programada de un panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Panel id"},
+                    "name": {"type": "string", "description": "Action name: lowercase letters, digits, - and _"},
+                    "label": {"type": "string"},
+                    "tool": {"type": "string", "description": "Agent tool name, or the Hoard's tool when app is given"},
+                    "app": {"type": "string", "description": "Hoard id for tool (e.g. darwin)"},
+                    "args": {"type": "object", "description": "Arguments of the tool"},
+                    "url": {"type": "string", "description": "Instead of tool: /api/..., hub:/api/... or http(s)://..."},
+                    "method": {"type": "string", "description": "GET (default), POST, PUT, PATCH or DELETE"},
+                    "body": {"anyOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}, {"type": "string"}], "description": "Request body for the URL"},
+                    "every_minutes": {"type": "integer", "description": "Run every N minutes (under 60: */N; otherwise whole hours or days)"},
+                    "cron": {"type": "string", "description": "Instead of every_minutes: a cron expression"},
+                    "save": {"anyOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}], "description": "Where the answer goes: {table, columns:{col: path}, rows?: path to a list, keep?: newest rows kept} | {sql, columns:{param: path}} | {storage: key, value?: path, append?, keep?}; a list for several. Paths are dotted (gpu_pool.util, gpu.0.util, models[].name); $ the answer or item, $root.x, $now, $ts, $date"},
+                    "enabled": {"type": "boolean", "description": "false pauses its schedule"},
+                    "run_now": {"type": "boolean", "description": "Also run it once now and report the result"},
+                    "remove": {"type": "boolean", "description": "Remove the action named name"}
+                },
+                "required": ["id", "name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_action_list",
+            "description": "List a user panel's server actions: source (tool or URL), schedule, whether paused, last run with its result or error, next run and run count. Ver las acciones programadas de un panel.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string", "description": "Panel id"}}, "required": ["id"]}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_action_run",
+            "description": "Run one server action of a user panel now: call its tool or URL, save the answer where the action says and report how much was saved and a preview of the answer. Use to test an action or fill a panel at once. Ejecutar ya la acción de un panel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Panel id"},
+                    "name": {"type": "string", "description": "Action name"}
+                },
+                "required": ["id", "name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "panel_from_template",
+            "description": "Create a ready-made user panel from a template with its page, tables and scheduled actions, and run those actions once: gpu (GPUs, loaded models and history every 5 minutes), agora (Ágora tasks per space with filters), darwin (Darwin proposals by state, latest captures), notas (quick notes and kanban board in its own database), uso (usage). Without template it lists them. Crear un panel desde una plantilla.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template": {"type": "string", "description": "Template id: gpu, agora, darwin, notas or uso; omit to list"},
+                    "name": {"type": "string", "description": "Name in the sidebar (default the template's)"},
+                    "id": {"type": "string", "description": "Optional fixed panel id"},
+                    "first_run": {"type": "boolean", "description": "Run the template's actions once now (default true)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "loop_card_create",
             "description": "Find the feedback loop BEFORE trying to improve something: run a measuring command N times (default 5), read one number from each run (regex with one capture group, JSON path, or the run time), and store a Loop Card with the mean, median, standard deviation, min/max, coefficient of variation and the improvement threshold (the larger of 2 x the standard deviation and 1 % of the mean). A later change only counts as better when the metric moves past that threshold in the right direction. Changes nothing in the project except what the command itself does. Use for 'how do we measure that this got faster/better', 'before optimising, find the metric and its noise', 'cuánto ruido tiene esta medida'.",
             "parameters": {
@@ -3461,7 +3584,12 @@ FUNCTION_TOOL_SCHEMAS = [
                     "direction": {"type": "string", "enum": ["up", "down"], "description": "up = higher is better (accuracy, throughput); down = lower is better (time, errors). Default down"},
                     "repeats": {"type": "integer", "description": "Number of runs, 2-50 (default 5)"},
                     "cwd": {"type": "string", "description": "Folder to run in (default: the turn's active workspace)"},
-                    "timeout_s": {"type": "integer", "description": "Per-run timeout in seconds (default 300)"}
+                    "timeout_s": {"type": "integer", "description": "Per-run timeout in seconds (default 300)"},
+                    "keep_bar_pct": {"type": "number", "description": "Pre-registered keep bar: improvement needed, in % of the baseline"},
+                    "keep_bar_abs": {"type": "number", "description": "Pre-registered keep bar in metric units"},
+                    "min_pairs": {"type": "integer", "description": "Paired runs required before any arm verdict (default 6)"},
+                    "guard_command": {"type": "string", "description": "Command that must still exit 0 after a change (e.g. the tests)"},
+                    "stop_rule": {"type": "string", "description": "When to stop, re-plan or ask"}
                 },
                 "required": ["goal", "command", "extract"]
             }
@@ -3478,7 +3606,8 @@ FUNCTION_TOOL_SCHEMAS = [
                     "id": {"type": "string", "description": "Loop card id"},
                     "command": {"type": "string", "description": "Optional different command (same extraction); default the card's own"},
                     "repeats": {"type": "integer", "description": "Number of runs (default: the card's)"},
-                    "rebase": {"type": "boolean", "description": "Replace the baseline with this measurement"}
+                    "rebase": {"type": "boolean", "description": "Replace the baseline with this measurement"},
+                    "change": {"type": "string", "description": "What changed, for the card's ledger"}
                 },
                 "required": ["id"]
             }
@@ -4810,6 +4939,126 @@ FUNCTION_TOOL_SCHEMAS.extend([
             "prune": {"type": "boolean"},
             "undo": {"type": "boolean", "description": "Remove the import called name instead of importing."},
             "purge": {"type": "boolean", "description": "With undo: delete for good instead of moving to the trash."},
+        }},
+    }},
+])
+
+# Loop Card plans, experiment arms, the improvement loop and the prompt mirror (src/loop_card.py,
+# src/loop_arms.py, src/prompt_mirror.py); goldfish reviews (src/goldfish.py); Obsidian Bases (src/brain/bases.py).
+FUNCTION_TOOL_SCHEMAS.extend([
+    {"type": "function", "function": {
+        "name": "loop_card_plan",
+        "description": (
+            "Pre-register what counts as a win on a Loop Card before trying changes: a keep bar (keep_bar_pct of the "
+            "baseline or keep_bar_abs in metric units, on top of clearing the noise), min_pairs before any verdict, a "
+            "guard_command that must still pass after a change (the tests), a stop_rule, a timebox. Changing the bar after "
+            "results exist is written to the card's ledger with `reason`. Use for 'decide before measuring what counts as "
+            "better', 'qué mejora es suficiente'."),
+        "parameters": {"type": "object", "properties": {
+            "id": {"type": "string", "description": "Loop card id"},
+            "keep_bar_pct": {"type": "number"}, "keep_bar_abs": {"type": "number"},
+            "min_pairs": {"type": "integer", "minimum": 2, "maximum": 50},
+            "guard_command": {"type": "string"}, "stop_rule": {"type": "string"},
+            "timebox_min": {"type": "integer"}, "outcome": {"type": "string", "description": "What the user will notice"},
+            "reason": {"type": "string"},
+        }, "required": ["id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "loop_arms",
+        "description": (
+            "Experiment arms on a Loop Card: measure several variants (each a different command and/or folder) against the "
+            "card's own command as control, in paired rounds with a shuffled order, plus an identical A/A control for the noise "
+            "floor. Verdict per arm: KEEP (won every pair, reached the keep bar, 95 % bootstrap interval excludes zero), MINOR, "
+            "DROP (worse, or failed more runs than the control, or the guard command failed) or INCONCLUSIVE (too few pairs, "
+            "inside the noise). Every arm goes to the card's ledger. Use for 'which of these options is really faster', "
+            "'compara estas variantes con la línea base'."),
+        "parameters": {"type": "object", "properties": {
+            "id": {"type": "string", "description": "Loop card id"},
+            "arms": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"}, "command": {"type": "string"}, "cwd": {"type": "string"},
+                "label": {"type": "string", "description": "The idea this arm tests"}}}},
+            "rounds": {"type": "integer", "minimum": 2, "maximum": 30, "description": "Paired rounds (default 6)"},
+            "min_pairs": {"type": "integer"}, "aa": {"type": "boolean", "description": "Measure the A/A noise floor (default true)"},
+            "guard_command": {"type": "string"},
+        }, "required": ["id", "arms"]},
+    }},
+    {"type": "function", "function": {
+        "name": "loop_improve",
+        "description": (
+            "Improvement loop on a Loop Card, in the background: a model lists N distinct hypotheses (rejected ideas from the "
+            "ledger are excluded), N fresh workers each rewrite the named files for one hypothesis, every proposal becomes an "
+            "isolated alternative next to an untouched control, the guard command must pass, the arms are measured in paired "
+            "rounds, and the best KEEP is merged into the folder (three-way) and re-measured; `iterations` repeats from the new "
+            "code. Actions: start (default), status, list, cancel, delete. Use for 'haz que este script sea más rápido y "
+            "demuéstralo', 'optimise this and keep only what really helps'."),
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["start", "status", "list", "cancel", "delete"]},
+            "id": {"type": "string", "description": "Loop card id (start, list)"},
+            "job": {"type": "string", "description": "Run id (status, cancel, delete)"},
+            "files": {"type": "array", "items": {"type": "string"}, "description": "Files, relative to the card's folder, a proposal may change"},
+            "proposals": {"type": "integer", "minimum": 1, "maximum": 6}, "iterations": {"type": "integer", "minimum": 1, "maximum": 5},
+            "rounds": {"type": "integer", "minimum": 2, "maximum": 30}, "guard_command": {"type": "string"},
+            "apply": {"type": "boolean", "description": "Merge the winner into the folder (default true)"},
+            "keep_alternatives": {"type": "boolean"}, "model": {"type": "string"}, "hints": {"type": "string"},
+            "workspace": {"type": "string"}, "wait_s": {"type": "integer", "description": "Wait up to this many seconds"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "prompt_mirror",
+        "description": (
+            "Scorecard of how the user directs Faustus, from their own chats (machine traffic left out): typed messages, status "
+            "asks, repeated corrections by class, kickoffs with and without a done-when and a stop condition, chats stuck with no "
+            "measurement, prompts typed again and again, assistant concessions; then three suggestions with the user's own "
+            "redacted message as the before and the Faustus piece that removes the need, compared with the previous run. Reads "
+            "only. Use for 'cómo te pido las cosas', 'what do I keep correcting', 'coach me'."),
+        "parameters": {"type": "object", "properties": {
+            "days": {"type": "integer", "minimum": 1, "maximum": 365},
+            "redact_terms": {"type": "string", "description": "Comma-separated names to hide in quotes"},
+            "action": {"type": "string", "enum": ["run", "history"]},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "goldfish_review",
+        "description": (
+            "Review or write a document with fresh workers that never see this conversation (goldfish), while the side that "
+            "holds the context (the elephant: `context`) judges and fixes. flow: review (five stages: zoom out, comprehension, "
+            "critic, zoom out, implementation readiness), loop (review, classify, fix, repeat until two clean rounds, cap 5), "
+            "draft (write from `brief` section by section, then loop), brainstorm (seven lenses on a concept, concepts brief), "
+            "panel (several models blind, only agreed or proven findings), drift (document vs source). Background; actions: "
+            "start, status (artifact=<report>), list, resolve, cancel, delete, roles."),
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["start", "status", "list", "resolve", "cancel", "delete", "roles"]},
+            "flow": {"type": "string", "enum": ["review", "loop", "draft", "brainstorm", "panel", "drift"]},
+            "id": {"type": "string", "description": "Run id"},
+            "path": {"type": "string", "description": "Document: a file path or brain:<note path>"},
+            "text": {"type": "string"}, "brief": {"type": "string"},
+            "context": {"type": "string", "description": "Elephant-only context: decisions, constraints. Never shown to reviewers"},
+            "context_files": {"type": "array", "items": {"type": "string"}, "description": "Reading list for the reviewers"},
+            "reviewers": {"type": "array", "items": {"type": "string"}}, "standards": {"type": "object"},
+            "preset": {"type": "string", "enum": ["full", "feature_spec", "implementation"]},
+            "stages": {"type": "array", "items": {"type": "integer"}}, "max_rounds": {"type": "integer"},
+            "auto_apply": {"type": "boolean"}, "write_back": {"type": "boolean"}, "double": {"type": "boolean"},
+            "model": {"type": "string"}, "elephant_model": {"type": "string"},
+            "models": {"type": "array", "items": {"type": "string"}}, "panel_mode": {"type": "string", "enum": ["defects", "plan"]},
+            "max_findings": {"type": "integer"}, "save_to": {"type": "string"},
+            "mode": {"type": "string", "enum": ["auto_accept", "continue", "decisions"]}, "decisions": {"type": "object"},
+            "artifact": {"type": "string"}, "wait_s": {"type": "integer"},
+        }},
+    }},
+    {"type": "function", "function": {
+        "name": "brain_base",
+        "description": (
+            "Obsidian Bases (.base files) over the Cerebro's notes. query evaluates a base (path in the vault, or `yaml`) with "
+            "its filters (and/or/not, file.hasTag, file.inFolder, comparisons), formulas, sort, groupBy, limit and summaries, "
+            "and returns each table/cards/list view as rows. save writes a base from `yaml` or a small `spec` (tags, folder, "
+            "where, columns, view_type, group_by, sort_by, summaries) after validating it; validate checks YAML, expressions "
+            "and formula references; list, get, delete. Use for 'tabla de mis notas con etiqueta libro', 'make a base of my "
+            "tasks grouped by status'."),
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "get", "query", "validate", "save", "delete"]},
+            "path": {"type": "string", "description": "Vault path of the .base (a bare name goes to Bases/)"},
+            "yaml": {"type": "string"}, "spec": {"type": "object"}, "view": {"type": "string"},
+            "max_rows": {"type": "integer"}, "overwrite": {"type": "boolean"},
         }},
     }},
 ])

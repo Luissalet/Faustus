@@ -248,6 +248,8 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/research",        # multi-minute jobs
     "/api/panels",  # panel_check opens a headless browser; loop cards run measuring commands N times
     "/api/loop-cards",
+    "/api/loop-improve",  # improvement runs and the prompt mirror read and write job files
+    "/api/goldfish",
     "/api/delivery-packages",  # copies, zips and reopens every file twice; large 3D/video deliveries take minutes
     "/api/model/download",  # tmux setup may run pip installs
     "/api/model/probe",     # SSE; iterates models with up to 8s timeout each
@@ -1351,6 +1353,9 @@ from routes.panel_routes import setup_panel_routes
 app.include_router(setup_panel_routes())
 from routes.loop_card_routes import setup_loop_card_routes
 app.include_router(setup_loop_card_routes())
+# Draft with an elephant, review with goldfish (src/goldfish.py).
+from routes.goldfish_routes import setup_goldfish_routes
+app.include_router(setup_goldfish_routes())
 
 # Isolated, comparable alternatives (W2-G / CMP-13): worktree/snapshot_dir/
 # doc_version experiments, three-way apply/combine against the main copy
@@ -2018,6 +2023,11 @@ async def serve_panels(request: Request, panel_id: str = ""):
 @app.get("/loops")
 async def serve_loops(request: Request):
     """Studio Loop Cards: metric, noise and improvement threshold per goal."""
+    return await serve_index(request)
+
+@app.get("/goldfish")
+async def serve_goldfish(request: Request):
+    """Studio goldfish reviews: staged review, loop, draft, brainstorm, panel and drift runs."""
     return await serve_index(request)
 
 @app.get("/delivery")

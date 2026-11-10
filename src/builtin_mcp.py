@@ -171,6 +171,9 @@ _BUILTIN_SERVERS = {
     # User panels (src/panels.py) and Loop Cards (src/loop_card.py): the same tools as the chat.
     "panels": ("mcp_servers/panels_server.py", "Built-in: User panels"),
     "loop_cards": ("mcp_servers/loop_cards_server.py", "Built-in: Loop cards"),
+    # Draft with an elephant, review with goldfish (src/goldfish.py): the same `goldfish_review` tool as the chat.
+    # Owner-scoped through ODYSSEUS_MCP_GOLDFISH_OWNER.
+    "goldfish": ("mcp_servers/goldfish_server.py", "Built-in: Goldfish reviews"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool
@@ -179,7 +182,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"panels", "loop_cards", "delivery", "derivations", "code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "godot", "github"})
+NATIVE_TWIN_SERVERS = frozenset({"panels", "loop_cards", "goldfish", "delivery", "derivations", "code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "godot", "github"})
 
 # Single tools of other built-in servers that copy a native tool of the same name and accept nothing the native one
 # does not (checked against the live schemas by tests/test_native_twin_tools.py). Same treatment as the servers above:

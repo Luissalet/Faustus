@@ -30,6 +30,7 @@ export const TOOL_PLACEMENT: Record<string, { context: ToolContext; hint: string
   '/workflows': { context: 'automations', hint: 'Reusable workflows' },
   '/recipes': { context: 'automations', hint: 'Learned recipes and their real runs' },
   '/loops': { context: 'project', hint: 'Metric, noise and what counts as an improvement' },
+  '/goldfish': { context: 'library', hint: 'Fresh-context review and drafting of documents' },
   '/panels': { context: 'library', hint: 'Your own pages in the sidebar' },
 };
 

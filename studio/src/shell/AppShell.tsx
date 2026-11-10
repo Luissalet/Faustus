@@ -46,6 +46,7 @@ const StateMirrorScreen = lazyChunk(() => import('../screens/StateMirror').then(
 const RecipesScreen = lazyChunk(() => import('../screens/Recipes').then((m) => ({ default: m.RecipesScreen })));
 const DeliveryScreen = lazyChunk(() => import('../screens/Delivery').then((m) => ({ default: m.DeliveryScreen })));
 const LoopCardsScreen = lazyChunk(() => import('../screens/LoopCards').then((m) => ({ default: m.LoopCardsScreen })));
+const GoldfishScreen = lazyChunk(() => import('../screens/Goldfish').then((m) => ({ default: m.GoldfishScreen })));
 const PanelsScreen = lazyChunk(() => import('../screens/Panels').then((m) => ({ default: m.PanelsScreen })));
 const PanelViewScreen = lazyChunk(() => import('../screens/Panels').then((m) => ({ default: m.PanelViewScreen })));
 const DeltasScreen = lazyChunk(() => import('../screens/Deltas').then((m) => ({ default: m.DeltasScreen })));
@@ -325,6 +326,7 @@ function RouteBody() {
         <Route path="/recipes" element={<RecipesScreen />} />
         <Route path="/delivery" element={<DeliveryScreen />} />
         <Route path="/loops" element={<LoopCardsScreen />} />
+        <Route path="/goldfish" element={<GoldfishScreen />} />
         <Route path="/panels" element={<PanelsScreen />} />
         <Route path="/panels/:panelId" element={<PanelViewScreen />} />
         <Route path="/completion" element={<CompletionScreen />} />

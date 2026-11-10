@@ -86,6 +86,10 @@ from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool, ReachE
 from .brain_graph_tool import BrainGraphTool
 from .graph_ask_tool import GraphAskTool
 from .brain_canvas_tools import BrainCanvasExportTool, BrainCanvasImportTool
+# Obsidian Bases over the Cerebro, goldfish reviews, experiment arms, the improvement loop and the prompt mirror.
+from .brain_bases_tools import BrainBaseTool
+from .goldfish_tools import GoldfishReviewTool
+from .loop_lab_tools import LoopCardPlanTool, LoopArmsTool, LoopImproveTool, PromptMirrorTool
 from .derivation_tools import RecipeLearnTool, DerivationGraphTool, DecisionMapTool
 from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
@@ -129,6 +133,8 @@ from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOffi
 from .panel_tools import (
     PanelCreateTool, PanelUpdateTool, PanelGetTool, PanelListTool, PanelDeleteTool,
     PanelCheckTool, PanelVersionsTool, PanelRestoreTool,
+    PanelDbQueryTool, PanelDbExecTool, PanelActionSetTool, PanelActionListTool, PanelActionRunTool,
+    PanelFromTemplateTool, PanelSourcesTool,
 )
 from .loop_card_tools import (
     LoopCardCreateTool, LoopCardCheckTool, LoopCardListTool, LoopCardGetTool, LoopCardDeleteTool,
@@ -300,6 +306,15 @@ TOOL_HANDLERS = {
     # The Cerebro as JSON Canvas files -- src/brain/canvas.py.
     "brain_canvas_export": BrainCanvasExportTool().execute,
     "brain_canvas_import": BrainCanvasImportTool().execute,
+    # Obsidian Bases (.base) over the Cerebro's notes (src/brain/bases.py).
+    "brain_base": BrainBaseTool().execute,
+    # Draft with an elephant, review with goldfish (src/goldfish.py).
+    "goldfish_review": GoldfishReviewTool().execute,
+    # Loop Card plan, experiment arms, improvement loop (src/loop_arms.py) and prompt mirror (src/prompt_mirror.py).
+    "loop_card_plan": LoopCardPlanTool().execute,
+    "loop_arms": LoopArmsTool().execute,
+    "loop_improve": LoopImproveTool().execute,
+    "prompt_mirror": PromptMirrorTool().execute,
     # Recipes learned from finished work, selective rebuild of derived results and the
     # decision/effect map -- src/derivation_ops.py.
     "recipe_learn": RecipeLearnTool().execute,
@@ -414,6 +429,14 @@ TOOL_HANDLERS = {
     "panel_check": PanelCheckTool().execute,
     "panel_versions": PanelVersionsTool().execute,
     "panel_restore": PanelRestoreTool().execute,
+    # A panel's own database, server actions and templates (src/panel_db.py, src/panel_actions.py, src/panel_templates).
+    "panel_db_query": PanelDbQueryTool().execute,
+    "panel_db_exec": PanelDbExecTool().execute,
+    "panel_action_set": PanelActionSetTool().execute,
+    "panel_action_list": PanelActionListTool().execute,
+    "panel_action_run": PanelActionRunTool().execute,
+    "panel_from_template": PanelFromTemplateTool().execute,
+    "panel_sources": PanelSourcesTool().execute,
     "loop_card_create": LoopCardCreateTool().execute,
     "loop_card_check": LoopCardCheckTool().execute,
     "loop_card_list": LoopCardListTool().execute,
@@ -608,7 +631,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # src/agent_tools/alternatives_tools.py.
              "alt_start", "alt_compare", "alt_apply",
              # Reach (R1) -- src/agent_tools/reach_tools.py.
-             "reach_read", "reach_search", "reach_doctor", "reach_extract", "reach_read_many", "reach_browser", "reach_crawl", "reach_recipe", "brain_graph", "graph_ask", "brain_canvas_export", "brain_canvas_import", "recipe_learn", "derivation_graph", "decision_map",
+             "reach_read", "reach_search", "reach_doctor", "reach_extract", "reach_read_many", "reach_browser", "reach_crawl", "reach_recipe", "brain_graph", "graph_ask", "brain_canvas_export", "brain_canvas_import", "brain_base", "goldfish_review", "recipe_learn", "derivation_graph", "decision_map",
              # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_impact", "code_graph_architecture",
@@ -668,11 +691,20 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "panel_check",
              "panel_versions",
              "panel_restore",
+             "panel_db_query",
+             "panel_db_exec",
+             "panel_action_set",
+             "panel_action_list",
+             "panel_action_run",
+             "panel_from_template",
+             "panel_sources",
              "loop_card_create",
              "loop_card_check",
              "loop_card_list",
              "loop_card_get",
              "loop_card_delete",
+             # Loop Card plan, arms, improvement loop, prompt mirror -- src/agent_tools/loop_lab_tools.py.
+             "loop_card_plan", "loop_arms", "loop_improve", "prompt_mirror",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
              "inspect_image",
              # Autonomous bug hunter -- src/agent_tools/bug_hunt_tools.py.

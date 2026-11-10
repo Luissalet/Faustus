@@ -255,11 +255,25 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "panel_check",
     "panel_versions",
     "panel_restore",
+    "panel_db_query",
+    "panel_db_exec",
+    "panel_action_set",
+    "panel_action_list",
+    "panel_action_run",
+    "panel_from_template",
+    "panel_sources",
     "loop_card_create",
     "loop_card_check",
     "loop_card_list",
     "loop_card_get",
     "loop_card_delete",
+    # Loop Card plan, experiment arms, the improvement loop (runs commands, writes the workspace), the
+    # prompt mirror (reads the owner's chats) and goldfish reviews (write documents back).
+    "loop_card_plan",
+    "loop_arms",
+    "loop_improve",
+    "prompt_mirror",
+    "goldfish_review",
     # Autonomous bug hunter (src/agent_tools/bug_hunt_tools.py): generates
     # and runs pytest files under the workspace -- same privilege class as
     # bash/write_file above.

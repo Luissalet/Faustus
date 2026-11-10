@@ -9813,8 +9813,6 @@ An administrator can view the fleet for this device.	Un administrador puede cons
 Last confirmed failure: {when}	Último fallo confirmado: {when}
 No schedule declared	Sin horario declarado
 Updating fleet…	Actualizando la flota…
-
-
 Credential stored in plain text	Credencial guardada en texto plano
 Use a reference to a secret in the vault or environment. Keep credentials out of launch arguments and URLs.	Usa una referencia a un secreto del almacén o del entorno. Evita las credenciales en argumentos de arranque y URL.
 Remote connection without encryption	Conexión remota sin cifrar
@@ -9893,7 +9891,6 @@ since {date}	desde {date}
 until {date}	hasta {date}
 earlier	antes
 source	origen
-
 By Hoard	Por Hoard
 Filter by Hoard	Filtrar por Hoard
 All Hoards	Todos los Hoards
@@ -9913,13 +9910,11 @@ Coordination spaces	Espacios de coordinación
 Coordination modes	Modos de coordinación
 Tasks and decisions	Tareas y decisiones
 No rooms in this space yet.	Todavía no hay salas en este espacio.
-
 New room	Nueva sala
 Find a room	Buscar una sala
 Loading rooms…	Cargando salas…
 No rooms match this search.	Ninguna sala coincide con la búsqueda.
 Open in a separate window	Abrir en otra ventana
-
 Room name	Nombre de la sala
 Manage members	Gestionar participantes
 Save members	Guardar participantes
@@ -9932,7 +9927,6 @@ Use the configured working folder	Usar la carpeta de trabajo configurada
 Discussion completed	Conversación terminada
 The discussion finished.	La conversación ha terminado.
 The command is queued for the room’s active executor.	La orden está en cola para el ejecutor activo de la sala.
-
 New Agora	Nueva ágora
 Deliberation	Deliberación
 Loading room…	Cargando sala…
@@ -10673,7 +10667,6 @@ Not checked yet	Aún sin comprobar
 Add payment	Añadir cobro
 Check Ledger	Comprobar en Ledger
 read	leídos
-
 Promise	Promesa
 Proposal (tentative)	Propuesta (tentativa)
 Meetings	Reuniones
@@ -10852,6 +10845,214 @@ run time (s)	tiempo de ejecución (s)
 {n} problems found	{n} problemas encontrados
 Only in	Solo en
 Search only in	Buscar solo en
+only on demand	solo a mano
+every minute	cada minuto
+every {n} minutes	cada {n} minutos
+every hour	cada hora
+every {n} hours	cada {n} horas
+every day	cada día
+Reading the database	Leyendo la base de datos
+This panel has no tables yet.	Este panel aún no tiene tablas.
+{n} table	{n} tabla
+{n} tables	{n} tablas
+view	vista
+rows {from}–{to}	filas {from}–{to}
+The table is empty.	La tabla está vacía.
+Reading the actions	Leyendo las acciones
+This panel has no server actions. Ask for one in a chat, for example a sample every 5 minutes.	Este panel no tiene acciones de servidor. Pide una en un chat, por ejemplo una muestra cada 5 minutos.
+Last run {when}	Última ejecución {when}
+{n} value saved	{n} dato guardado
+{n} values saved	{n} datos guardados
+Never run	Nunca se ha ejecutado
+{n} failure	{n} fallo
+{n} failures	{n} fallos
+Remove the action "{name}"? The data it already saved stays.	¿Quitar la acción «{name}»? Los datos que ya guardó se quedan.
+Created, but the first run of {name} failed: {why}	Creado, pero la primera ejecución de {name} falló: {why}
+Ready-made panels with real data; each one is an ordinary panel afterwards that you can change in a chat.	Paneles listos con datos reales; después cada uno es un panel normal que puedes cambiar en un chat.
+Reading the templates	Leyendo las plantillas
+Data: {source}	Datos: {source}
+Saves on its own: {label}, {when}	Guarda solo: {label}, {when}
+From a template	Desde plantilla
+Start a chat with "New panel" and say what the page should show or do, or create one from a template.	Empieza un chat con «Nuevo panel» y di qué debe enseñar o hacer la página, o crea uno desde una plantilla.
+95 % interval	Intervalo del 95 %
+A base is a saved view of your notes: which notes (by tag, folder or property), which columns, how to sort and group. Obsidian opens the same .base files.	Una base es una vista guardada de tus notas: qué notas (por etiqueta, carpeta o propiedad), qué columnas y cómo ordenarlas y agruparlas. Obsidian abre los mismos ficheros .base.
+A fresh reviewer compares the document with the source files it describes and lists what the code contradicts or the document leaves out.	Un revisor sin contexto compara el documento con los ficheros de código que describe y enumera lo que el código contradice o el documento omite.
+A scorecard of how you direct Faustus, read from your own chats (scheduled and delegated traffic is left out): status asks, corrections you repeat, kickoffs without an end, chats stuck without a measurement. Nothing leaves this machine and nothing is changed.	Un resumen de cómo diriges a Faustus, leído de tus propios chats (sin el tráfico programado ni el delegado): preguntas de estado, correcciones que repites, encargos sin final definido y chats atascados sin una medida. No sale nada de esta máquina y no se cambia nada.
+A/A noise floor {n}	ruido A/A {n}
+ACTED	con hallazgos
+Add variant	Añadir variante
+All five	Las cinco
+Analyse my chats	Analizar mis chats
+Apply every proposed fix	Aplicar todas las correcciones propuestas
+Apply the elephant's fixes without asking	Aplicar las correcciones del elefante sin preguntar
+Apply the fix	Aplicar la corrección
+Apply the winner	Aplicar la ganadora
+Apply what I chose	Aplicar lo que he elegido
+Average	Media
+Background model	Modelo de segundo plano
+Base	Base
+Bases	Bases
+Blocker	Bloqueante
+Brainstorm	Lluvia de ideas
+Brief or notes to write from	Encargo o notas de las que partir
+CONTEST	REBATIR
+Cards	Tarjetas
+Chats stuck without a measurement	Chats atascados sin medida
+Checked	Marcadas
+Choose a run, or start a new review.	Elige una revisión o empieza una nueva.
+Clean	Limpia
+Codebase fit	Encaje con el código
+Columns (file.name, a property, file.mtime…)	Columnas (file.name, una propiedad, file.mtime…)
+Compare with the control	Comparar con el control
+Comprehension	Comprensión
+Concessions per 100 replies	Concesiones por cada 100 respuestas
+Context for the elephant only (decisions, constraints); the reviewers never see it	Contexto solo para el elefante (decisiones, restricciones); los revisores no lo ven nunca
+Continue without changes	Seguir sin cambios
+Control median {m}	Mediana del control {m}
+Critic review	Revisión crítica
+Critique a plan	Criticar un plan
+DECLINE	DESCARTAR
+Delete the base {name}? The notes are not touched.	¿Borrar la base {name}? Las notas no se tocan.
+Delete this run and its reports?	¿Borrar esta revisión y sus informes?
+Design critic	Crítico de diseño
+Difference	Diferencia
+Document (file path, or brain:Notes/x.md)	Documento (ruta de fichero, o brain:Notes/x.md)
+Document vs code	Documento frente a código
+Draft and review	Redactar y revisar
+Drop	Descartar
+ESCALATE	ESCALAR
+Each variant runs once per round next to the control (the card's own command), in a shuffled order. A variant is kept only if it wins every pair, reaches the keep bar and its interval excludes zero.	Cada variante se ejecuta una vez por ronda junto al control (la orden de la propia tarjeta), en orden aleatorio. Solo se queda si gana todos los pares, llega al listón y su intervalo no incluye el cero.
+Earliest	Más antigua
+Edit YAML	Editar YAML
+Empty	Vacías
+Extra condition (e.g. status != "done")	Condición extra (p. ej. status != "done")
+Faustus writes several hypotheses, a fresh worker turns each into a change of the files you name, every change is measured against an untouched copy, and only a change that clears the keep bar is merged into the folder and measured again. Rejected ideas stay in the ledger.	Faustus escribe varias hipótesis, un trabajador sin contexto convierte cada una en un cambio de los ficheros que indiques, cada cambio se mide contra una copia sin tocar y solo el que supera el listón se fusiona en la carpeta y se vuelve a medir. Las ideas descartadas quedan en el registro.
+Feature specification only	Solo especificación funcional
+Files it may change (relative to {cwd}, one per line)	Ficheros que puede cambiar (relativos a {cwd}, uno por línea)
+Filled	Con valor
+Five stages, each with fresh reviewers: zoom out, comprehension, critic, zoom out again, implementation readiness. One consolidated report.	Cinco etapas, cada una con revisores nuevos: vista de conjunto, comprensión, crítica, vista de conjunto otra vez y preparación para implementar. Un informe consolidado.
+Fixes applied	Correcciones aplicadas
+Folder (optional)	Carpeta (opcional)
+Follow the elephant	Lo que diga el elefante
+Fresh reviewers review, the elephant classifies each finding (fix, contest, escalate, decline) and fixes; new reviewers check again until two rounds in a row are clean.	Revisores sin contexto revisan, el elefante clasifica cada hallazgo (corregir, rebatir, escalar, descartar) y corrige; revisores nuevos vuelven a mirar hasta que dos rondas seguidas salen limpias.
+Goldfish reviews	Revisión con peces
+Group by	Agrupar por
+Guard command	Orden de guarda
+Guard command (must still pass after a change, e.g. the tests)	Orden de guarda (tiene que seguir pasando tras un cambio, p. ej. los tests)
+Hints for the proposals (optional)	Pistas para las propuestas (opcional)
+How you ask	Cómo pides
+Idea it tests	Idea que prueba
+Implementation plan only	Solo plan de implementación
+Implementation readiness	Preparación para implementar
+Improvement loop	Bucle de mejora
+Initial zoom out	Vista de conjunto inicial
+Intermediate zoom out	Vista de conjunto intermedia
+Inventive catalyst	Catalizador inventivo
+Iteration {i}	Iteración {i}
+Iterations	Iteraciones
+Keep	Quedarse
+Keep bar (% of the baseline)	Listón (% de la línea base)
+Keep bar (metric units)	Listón (unidades de la métrica)
+Kickoffs with a done-when	Encargos con criterio de terminado
+Ledger ({n})	Registro ({n})
+Look for defects	Buscar defectos
+Machine messages per typed	Mensajes automáticos por mensaje escrito
+Major	Grave
+Max	Máximo
+Maximum rounds	Rondas como máximo
+Measure the noise floor (A/A)	Medir el ruido (A/A)
+Measured again in the folder: {v} ({p} %)	Medido otra vez en la carpeta: {v} ({p} %)
+Measuring…	Midiendo…
+Median	Mediana
+Median improvement	Mejora mediana
+Min	Mínimo
+Minor	Menor
+Models (at least two)	Modelos (al menos dos)
+NOOP	sin hallazgos
+New base	Nueva base
+Next time	La próxima vez
+Nit	Detalle
+No bases yet	Aún no hay bases
+No findings.	Sin hallazgos.
+No notes in this view.	No hay notas en esta vista.
+Notes with any of these tags (comma-separated)	Notas con alguna de estas etiquetas (separadas por comas)
+Nothing recurs often enough to suggest a change.	Nada se repite lo bastante como para sugerir un cambio.
+Only in this folder	Solo en esta carpeta
+Open after the last round	Abierto tras la última ronda
+Overrule and fix	Imponer la corrección
+PROPOSE FIX	PROPONER CORRECCIÓN
+Paired rounds	Rondas emparejadas
+Paired runs before a verdict	Pares antes de un veredicto
+Panel of models	Panel de modelos
+Plan changed	Plan cambiado
+Plan saved.	Plan guardado.
+Plan, variants and improvement loop	Plan, variantes y bucle de mejora
+Reading list for the reviewers (files the document relies on, one per line)	Lecturas para los revisores (ficheros en los que se apoya el documento, uno por línea)
+Reading the run	Leyendo la revisión
+Reading the runs	Leyendo las revisiones
+Reason for the change (if results already exist)	Motivo del cambio (si ya hay resultados)
+Review loop	Bucle de revisión
+Reviewers	Revisores
+Save plan	Guardar plan
+Save the draft to (optional file path)	Guardar el borrador en (ruta opcional)
+Seven fresh lenses look at a raw idea; the elephant writes a concepts brief with goals, alternatives and the decisions left to you.	Siete miradas sin contexto examinan una idea en bruto; el elefante escribe un resumen de conceptos con objetivos, alternativas y las decisiones que te tocan a ti.
+Several different models review the same material blind. Only findings two models agree on, or that survive an attempt to disprove them, are reported.	Varios modelos distintos revisan el mismo material a ciegas. Solo se informa de los hallazgos en los que coinciden dos modelos o que resisten un intento de refutarlos.
+Some values could not be computed	Algunos valores no se pudieron calcular
+Sort by	Ordenar por
+Staged review	Revisión por etapas
+Stages	Etapas
+Start one with a document, a brief or an idea.	Empieza una con un documento, un encargo o una idea.
+Start the improvement loop	Empezar el bucle de mejora
+Status asks	Preguntas de estado
+Stddev	Desviación típica
+Stop rule	Regla de parada
+Sum	Suma
+The elephant has classified the findings of round {n}. Choose what to apply.	El elefante ha clasificado los hallazgos de la ronda {n}. Elige qué aplicar.
+The elephant writes the document section by section from your brief and context, checks it against the brief, and then runs the review loop on it.	El elefante escribe el documento sección a sección a partir de tu encargo y tu contexto, lo contrasta con el encargo y después le pasa el bucle de revisión.
+The idea	La idea
+The map view is shown as a table.	La vista de mapa se muestra como tabla.
+This card has no folder: the improvement loop needs one.	Esta tarjeta no tiene carpeta: el bucle de mejora la necesita.
+Timebox (minutes)	Tiempo máximo (minutos)
+Typed messages	Mensajes escritos
+Unchecked	Sin marcar
+Unique	Distintos
+Valid.	Válida.
+Variant	Variante
+Variants	Variantes
+Winner: {h}	Ganadora: {h}
+Write down what counts as a win before trying any change. Moving the bar later is recorded in the ledger with its reason.	Apunta qué cuenta como mejora antes de probar ningún cambio. Mover el listón después queda en el registro con su motivo.
+Write the fixes back to the file	Escribir las correcciones en el fichero
+Write with the side that holds the context, review with workers that have never seen the conversation. A fresh reviewer trips exactly where a future reader will: undefined names, decisions taken in chat and never written down, steps nobody could follow.	Escribe con quien tiene el contexto y revisa con trabajadores que nunca han visto la conversación. Un revisor sin contexto tropieza justo donde tropezará un lector futuro: nombres sin definir, decisiones tomadas en el chat que nunca se escribieron, pasos que nadie podría seguir.
+applied to the folder	aplicada a la carpeta
+applying	aplicando
+awaiting decision	esperando tu decisión
+awaiting_decision	esperando decisión
+cap	tope de rondas
+churn	vaivén
+converged	convergida
+drafting	redactando
+drift	deriva
+fixes written back	correcciones escritas en el fichero
+hypotheses	hipótesis
+isolating	aislando
+iteration {i} of {n}	iteración {i} de {n}
+keep bar {b}	listón {b}
+keep bar {p} % / {a}	listón {p} % / {a}
+lenses	miradas
+lines	líneas
+measuring	midiendo
+proof	refutación
+proposals	propuestas
+reconciling	contrastando
+reopened	reabierto
+resolving	clasificando
+settled	zanjado
+synthesis	síntesis
+{b} blockers, {m} major, {n} nits	{b} bloqueantes, {m} graves, {n} detalles
+{m} of {n} notes match; this view shows {s} of {total}.	{m} de {n} notas coinciden; esta vista enseña {s} de {total}.
+{n} in the ledger, {k} kept	{n} en el registro, {k} aceptadas
+…or paste the text	…o pega el texto
+stage {n}	etapa {n}
 #{id} moved to {column}	#{id} pasa a {column}
 A debate or question closed with its resolution in writing lands here: the decision log of this server.	Un debate o una pregunta que se cierra con su resolución por escrito acaba aquí: el registro de decisiones de este servidor.
 A debate, a question or a note with its own conversation. Closing it with a decision puts it in the decision log.	Un debate, una pregunta o una nota con su propia conversación. Al cerrarlo con una decisión pasa al registro de decisiones.

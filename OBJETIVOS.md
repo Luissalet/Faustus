@@ -1,5 +1,15 @@
 # Objetivos acordados
 
+## Paneles con datos, revisión con peces, bucle de mejora y Bases — 10-11-2026 (faustus#2389, faustus#2400)
+
+Integrado y probado (pruebas del área; en vivo paneles con muestra programada y una revisión con el modelo de las Sparks). Lo siguiente:
+
+- **Escritorio, turnos en la bandeja:** verlo con la ventana real (insignia, menú por chat, aviso al terminar, salto al chat, segundo perfil); solo pasan las pruebas de nodo.
+- **Bucle de mejora en vivo:** un `loop_improve` completo sobre un repo real con guarda de tests, y `loop_arms` con A/A, con el modelo de las Sparks.
+- **Revisión con peces:** probar en vivo `loop` con `auto_apply` apagado (decisiones por hallazgo en la pantalla), `panel` con dos modelos distintos y `drift` sobre FAUSTUS.md por secciones.
+- **Bases:** dibujar la vista `map`; editar una base desde la pestaña con formulario además de YAML.
+- **Paneles:** que una acción pueda encadenar otra; exportar e importar un panel con sus datos.
+
 ## Ágora como servidores y canales — 10-11-2026 (faustus#2413, hoardlink#2412)
 
 Hecho, revisado por un agente independiente y en marcha en la Spark: `/agora` con servidores, canales por categorías, hilos de tarea por columna de la pizarra, miembros, alta de servidor con carpetas, y el enlace que deja a Faustus en la Spark llegar al Hub del PC (FAUSTUS.md, sección del 10-11). Lo siguiente:

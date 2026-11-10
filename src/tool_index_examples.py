@@ -1314,6 +1314,40 @@ EXAMPLES: Dict[str, List[str]] = {
         "vuelve a la versión anterior del panel",
         "restore version 2 of the usage panel",
     ],
+    "panel_sources": [
+        "qué datos puede leer un panel",
+        "where do the Ágora tasks and spaces come from for a panel",
+        "qué herramientas de Darwin puedo usar en un panel",
+    ],
+    "panel_db_query": [
+        "qué ha guardado el panel de la GPU en su base de datos",
+        "show me the last 20 rows of the notes table in my panel",
+        "qué tablas tiene el panel del tablero",
+    ],
+    "panel_db_exec": [
+        "crea en el panel una tabla de tareas y mete tres de ejemplo",
+        "seed the panel database with some sample rows",
+        "borra del panel las muestras de más de un mes",
+    ],
+    "panel_action_set": [
+        "que el panel guarde una muestra de la GPU cada 5 minutos",
+        "make the panel record the Hoard counts every hour",
+        "pausa la acción programada del panel",
+    ],
+    "panel_action_list": [
+        "qué acciones programadas tiene el panel y cuándo se ejecutaron",
+        "did the panel's sampling action fail",
+    ],
+    "panel_action_run": [
+        "toma ahora una muestra en el panel de la GPU",
+        "run the panel action once to test it",
+    ],
+    "panel_from_template": [
+        "créame el panel de GPU con su histórico",
+        "quiero un panel con las tareas del Ágora por espacio",
+        "make me a kanban board panel",
+        "qué plantillas de panel hay",
+    ],
     "loop_card_create": [
         "antes de optimizar los tests, mide cuánto ruido tiene el tiempo",
         "create a loop card for the benchmark: run it 5 times and find the noise",
@@ -1335,6 +1369,32 @@ EXAMPLES: Dict[str, List[str]] = {
     "loop_card_delete": [
         "borra la tarjeta de bucle del benchmark",
         "delete that loop card",
+    ],
+    "loop_card_plan": [
+        "antes de probar cambios, fija que solo cuenta una mejora del 10 %",
+        "set the keep bar of this loop card to 5 percent and the tests as guard",
+    ],
+    "loop_arms": [
+        "compara estas tres variantes del comando contra la línea base, con rondas emparejadas",
+        "which of these build flags is really faster, measured against the control",
+    ],
+    "loop_improve": [
+        "haz más rápido este script y quédate solo con lo que mejore de verdad",
+        "run the improvement loop on the benchmark with three proposals",
+    ],
+    "prompt_mirror": [
+        "cómo te pido las cosas y qué te corrijo siempre",
+        "coach me: what do I keep repeating in my prompts",
+    ],
+    "goldfish_review": [
+        "revisa este documento con ojos frescos, sin el contexto de la conversación",
+        "redacta el diseño desde estas notas y que lo revisen peces",
+        "get a blind second opinion from two other models on this plan",
+    ],
+    "brain_base": [
+        "hazme una tabla de mis notas con etiqueta libro, con autor y estado",
+        "open my tasks base grouped by status",
+        "crea una base de Obsidian con las notas de la carpeta Proyectos",
     ],
     "decision_map": [
         "si cambia la unidad de medida, qué entregables hay que rehacer",

@@ -4,6 +4,7 @@ import {
   PackageCheck,
   PanelsTopLeft,
   Repeat,
+  Fish,
   Bot,
   Brain,
   CalendarDays,
@@ -129,6 +130,8 @@ export const TOOLS: Tool[] = [
   { path: '/delivery', label: 'Delivery', icon: PackageCheck },
   // Loop cards: the metric of a goal, its noise and what counts as an improvement.
   { path: '/loops', label: 'Loop cards', icon: Repeat },
+  // Goldfish reviews: fresh workers review what the context-holding side wrote.
+  { path: '/goldfish', label: 'Goldfish reviews', icon: Fish },
   // The user's own panels (their list lives in the sidebar group; this is the manager).
   { path: '/panels', label: 'Panels', icon: PanelsTopLeft },
 ];
@@ -177,6 +180,7 @@ export const SERVER_ROUTES = [
   '/recipes',
   '/delivery',
   '/loops',
+  '/goldfish',
   '/panels',
   '/panels/{panel_id}',
   '/creator',
