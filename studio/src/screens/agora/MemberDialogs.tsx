@@ -200,9 +200,10 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }:
       let worker = made.worker;
       // A provider that refuses (its program signed out, a model it no longer has) does so in its first seconds:
       // that is not a session started, and it is said here instead of leaving a member that never comes in.
-      // One whose session is known to have run out is given longer: its refusal is the likely answer, and it can take a while.
-      const looks = chosen?.live_state?.state === 'auth_expired' ? 14 : 4;
-      for (let look = 0; look < looks && worker.state === 'running' && !made.warning; look += 1) {
+      // The wait is by the clock, since asking the hub takes its own time. One whose session is known to have run out
+      // is given longer: its refusal is the likely answer, and it can take a while.
+      const until = Date.now() + (chosen?.live_state?.state === 'auth_expired' ? 20000 : 6000);
+      while (Date.now() < until && worker.state === 'running' && !made.warning) {
         await new Promise((resolve) => { window.setTimeout(resolve, 1500); });
         try { worker = (await getConsole(space)).workers?.find((w) => w.id === made.worker.id) ?? worker; } catch { break; }
         if (mine !== showing.current) return;
