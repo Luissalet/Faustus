@@ -11438,3 +11438,6 @@ As its own program takes it. Once a session starts with it, it stays in the list
 Full name of the model	Nombre completo del modelo
 The full name of a model starts with {prefix}	El nombre completo de un modelo empieza por {prefix}
 The role the sessions of this model start with on this server.	El rol con el que arrancan las sesiones de este modelo en este servidor.
+Faustus starts its sessions through its Agora watcher on the PC, which is off.	Faustus arranca sus sesiones a través de su vigilante del Ágora en el PC, que está apagado.
+Its program on the PC is too old for that model: update it there.	Su programa del PC es antiguo para ese modelo: actualízalo allí.
+Its provider does not know that model, or your account cannot use it.	Su proveedor no conoce ese modelo, o tu cuenta no puede usarlo.

@@ -49,7 +49,12 @@ export function unavailableWhy(leader: Pick<ConsoleLeader, 'auth_state'>): strin
 /** Why a session ended badly: the provider's own words, unless they say its program is signed out. */
 export function failureWhy(worker: Pick<ConsoleWorker, 'result' | 'detail'>): string {
   const said = [worker.result, worker.detail].filter(Boolean).join(' ');
-  return SIGNED_OUT.test(said) ? t('Its program on the PC is signed out: open it there once and sign in again.') : (worker.result || worker.detail || '').slice(0, 300);
+  if (SIGNED_OUT.test(said)) return t('Its program on the PC is signed out: open it there once and sign in again.');
+  // What the hub and the providers' programs say in their own words, said as what the person can do about it.
+  if (/does not support this model/i.test(said)) return t('Its program on the PC is too old for that model: update it there.');
+  if (/issue with the selected model/i.test(said)) return t('Its provider does not know that model, or your account cannot use it.');
+  if (/Faustus Agora controller|controller session|controller status/i.test(said)) return t('Faustus starts its sessions through its Agora watcher on the PC, which is off.');
+  return (worker.result || worker.detail || '').slice(0, 300);
 }
 
 function slug(text: string): string {
