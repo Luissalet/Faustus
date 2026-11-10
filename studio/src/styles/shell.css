@@ -777,6 +777,98 @@ button.fs-nav__item { border: 0; background: transparent; font: inherit; cursor:
   }
 }
 
+/* -- Putting the sidebar away: one button on it, the same one where it was -- */
+
+.fs-nav__toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-3);
+  cursor: pointer;
+  transition:
+    color var(--fs-duration-fast) var(--fs-ease),
+    background-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-nav__toggle:hover {
+  color: var(--fs-text-1);
+  background: var(--fs-surface-2);
+}
+
+.fs-nav__brand .fs-nav__toggle {
+  margin-inline-start: auto;
+}
+
+/* On a sidebar dragged narrow the mark, the name and the button do not all
+   fit. The name is the one that gives way, whole: it wraps under a strut as
+   tall as the row and the row clips it, so it is never cut mid-word. */
+.fs-nav__brand .fs-brand-mark {
+  flex: none;
+}
+
+.fs-nav__name {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: center;
+  min-inline-size: 0;
+  block-size: 1.5em;
+  block-size: 1lh;
+  overflow: hidden;
+}
+
+.fs-nav__name::before {
+  content: '';
+  inline-size: 0;
+  block-size: 100%;
+}
+
+.fs-nav__name > span {
+  flex: none;
+}
+
+/* On the rail there is no room beside the mark: the button goes under it. */
+.fs-shell[data-nav='rail'] .fs-nav__brand {
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-shell[data-nav='rail'] .fs-nav__brand .fs-nav__toggle {
+  margin-inline-start: 0;
+}
+
+/* Still mounted (its counters keep counting), just not drawn. */
+.fs-shell[data-nav='hidden'] > .fs-nav,
+.fs-shell[data-nav='hidden'] > .fs-nav__resize {
+  display: none;
+}
+
+/* The button stays at the height it had on the sidebar: centred on a row as
+   tall as the name's line. */
+.fs-nav-gutter {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  font-size: var(--fs-title-size);
+  padding-block-start: calc(var(--fs-space-5) + 4px);
+  padding-block-start: calc(var(--fs-space-5) + max(0px, (1lh - 28px) / 2));
+}
+
+@media (max-width: 767px) {
+  .fs-nav__toggle,
+  .fs-nav-gutter {
+    display: none;
+  }
+}
+
 /* ── Background effects (Appearance) ─────────────────────────────────
    The canvas sits between the paper and every surface; the two static
    patterns are pure CSS on the shell, as they were on the old body. */

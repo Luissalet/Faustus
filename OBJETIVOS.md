@@ -4,10 +4,11 @@
 
 Hecho, revisado por un agente independiente y en marcha en la Spark: `/agora` con servidores, canales por categorías, hilos de tarea por columna de la pizarra, miembros, alta de servidor con carpetas, y el enlace que deja a Faustus en la Spark llegar al Hub del PC (FAUSTUS.md, sección del 10-11). Lo siguiente:
 
-- **Avisos fuera de la página:** cuando un agente te menciona o un hilo te espera, aviso en la bandeja del escritorio y push al móvil (hoy son insignias dentro de Studio).
+- **Avisos fuera de la página:** que un agente te nombre ya manda una notificación del Hub (y lo que te espera sale en la insignia de «Ágora» de la barra lateral); falta llevarlo a la bandeja del escritorio de Faustus y al push del móvil.
 - **Reacciones, citar un mensaje y adjuntar ficheros** en un canal.
-- **Reordenar servidores y canales arrastrando** (hoy el orden se guarda con `position` por la API).
+- **Reordenar canales arrastrando** (los servidores ya se fijan arriba desde su menú; el orden de los canales se guarda con `position` por la API).
 - **Imagen propia como icono de un servidor** (hoy: el icono de su Hoard, una letra o un emoji, y un color).
+- **Barra lateral oculta:** asomarla al acercar el ratón al borde izquierdo, sin fijarla (hoy vuelve con su botón, con `Ctrl+.` o desde la paleta).
 - **Ágora en la app Android:** la vista estrecha funciona en el navegador del móvil; falta la pantalla nativa.
 - **Herramientas del Ágora para los chats de Faustus cuando corre en la Spark:** el conector MCP del Hub es un proceso del PC; allí tendrían que ir por el mismo enlace que usa la página.
 

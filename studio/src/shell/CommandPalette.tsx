@@ -8,6 +8,8 @@ import { DESTINATIONS, TOOLS } from './routes';
 import { CONTEXT_LABELS, TOOL_PLACEMENT, toolContext, toolHref, toolsIn } from './toolPlacement';
 import { useCreatorAvailable } from '../adapters/creator';
 import { useShell } from './store';
+import { useNavHidden } from './navSize';
+import { flipNav } from './navToggle';
 import { usePlatform } from './platform';
 import { SphereChip } from '../screens/studio/SphereChip';
 import { tourForPath } from '../lib/tours';
@@ -100,6 +102,7 @@ export function CommandPalette() {
   const platform = usePlatform();
   const open = useShell((state) => state.paletteOpen);
   const setOpen = useShell((state) => state.setPaletteOpen);
+  const navIsHidden = useNavHidden();
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const creatorAvailable = useCreatorAvailable();
@@ -284,6 +287,11 @@ export function CommandPalette() {
           <Command.Item value={`${t('Settings')} ${t('configuration')}`} onSelect={() => go('/settings')} className="fs-palette__item">
             {t('Settings')}
           </Command.Item>
+          {platform !== 'mobile' && (
+            <Command.Item value={`${t('Hide the sidebar')} ${t('Show the sidebar')}`} onSelect={() => { setOpen(false); flipNav(); }} className="fs-palette__item" data-testid="palette-nav-toggle">
+              {navIsHidden ? t('Show the sidebar') : t('Hide the sidebar')}
+            </Command.Item>
+          )}
         </Command.Group>
       </Command.List>
       {platform === 'mobile' && <div className="fs-palette__account"><span>{t('Sphere')}</span><SphereChip /></div>}

@@ -105,6 +105,8 @@ import { ModelPicker } from './ModelPicker';
 import { PresetPicker } from './PresetPicker';
 import { ChatToolsMenu, ChatToolWorkspace, chatWorkspace, type ChatWorkspace } from './studio/ChatTools';
 import { toolHref } from '../shell/toolPlacement';
+import { setNavHidden } from '../shell/navSize';
+import { flipNav } from '../shell/navToggle';
 import { delegationLabel, genFromArgs, helpMarkdown, parseCommand, parseDelegation, resolveCommand } from './studio/commands';
 import * as cmd from '../adapters/commands';
 import { pendingShellCommand, shellApproval, shellCommand, type ShellResult } from '../adapters/shell-command';
@@ -958,6 +960,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       case 'toggle': {
         const name = ev.toggleName ?? '';
         const on = ev.state;
+        // The app's own sidebar: put away or brought back, once (not again when the turn is replayed).
+        if (name === 'sidebar' && typeof on === 'boolean') {
+          if (!replay) setNavHidden(!on);
+          return;
+        }
         if (typeof on !== 'boolean' || !['web', 'bash', 'rag', 'research', 'incognito'].includes(name)) return;
         if (name === 'rag') setRagActive(on);
         if (name === 'incognito' && !on && sessionId && incognitoIds().includes(sessionId)) setPendingRoute('/studio');
@@ -3759,6 +3766,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       requestAnimationFrame(() => searchRef.current?.focus());
     },
     toggle_sidebar: toggleSidebar,
+    toggle_nav: flipNav,
     new_session: () => openSession(null),
     fav_session: () => {
       if (!sessionId || !current) return;

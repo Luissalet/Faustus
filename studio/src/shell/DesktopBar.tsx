@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Minus, Square, Copy, Maximize, Minimize, X } from 'lucide-react';
 import { t, useLang } from '../i18n';
+import { NavToggle } from './navToggle';
+import { usePlatform } from './platform';
 import './desktop-bar.css';
 
 type WindowState = { maximized: boolean; fullscreen: boolean };
@@ -17,6 +19,7 @@ declare global {
 export function DesktopBar() {
   useLang();
   const bridge = window.faustusWindow;
+  const platform = usePlatform();
   const [state, setState] = useState<WindowState>({ maximized: false, fullscreen: false });
   useEffect(() => {
     if (!bridge) return;
@@ -30,6 +33,7 @@ export function DesktopBar() {
   const Restore = state.maximized ? Copy : Square;
   const Fullscreen = state.fullscreen ? Minimize : Maximize;
   return <header className="fs-app fs-desktop-bar" aria-label={t('Window controls')}>
+    {platform !== 'mobile' && <NavToggle className="fs-desktop-bar__nav" />}
     <div className="fs-desktop-bar__drag"><span>Faustus</span></div>
     <button title={t('Minimize window')} aria-label={t('Minimize window')} onClick={() => action('minimize')}><Minus size={15} /></button>
     <button title={t(state.maximized ? 'Restore window' : 'Maximize window')} aria-label={t(state.maximized ? 'Restore window' : 'Maximize window')} onClick={() => action('maximize')}><Restore size={14} /></button>

@@ -739,7 +739,7 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
       Line 2+: action-specific params
 
     Actions:
-      toggle <name> <on|off>  — Toggle a setting (web, bash, rag, research, incognito, document_editor)
+      toggle <name> <on|off>  — Toggle a setting (web, bash, rag, research, incognito, document_editor, sidebar)
       set_mode <agent|chat>   — Switch between agent and chat mode
       switch_model <model>    — Change the model for the current session
       set_theme <preset>      — Apply a built-in theme preset (dark, light, midnight, paper, cyberpunk, retrowave, forest, ocean, ume, copper, terminal, organs, lavender, graphite, terracotta, cute)
@@ -773,11 +773,23 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
             "doc": "document_editor",
             "docs": "document_editor",
             "private": "incognito",
+            # The app's own sidebar (the navigation): off puts it away, on brings it back.
+            "nav": "sidebar",
+            "navigation": "sidebar",
+            "menu": "sidebar",
+            "side_bar": "sidebar",
         }
         toggle_name = _toggle_aliases.get(toggle_name, toggle_name)
-        valid_toggles = {"web", "bash", "rag", "research", "incognito", "document_editor"}
+        valid_toggles = {"web", "bash", "rag", "research", "incognito", "document_editor", "sidebar"}
         if toggle_name not in valid_toggles:
             return {"error": f"Unknown toggle '{toggle_name}'. Valid: {', '.join(sorted(valid_toggles))}"}
+        if toggle_name == "sidebar":
+            return {
+                "ui_event": "toggle",
+                "toggle_name": toggle_name,
+                "state": state,
+                "results": "Sidebar shown" if state else "Sidebar hidden; the button where it was, or its shortcut, brings it back",
+            }
         return {
             "ui_event": "toggle",
             "toggle_name": toggle_name,
@@ -1042,7 +1054,7 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
         return {
             "results": (
                 "Toggle states are managed client-side in localStorage. "
-                "Available toggles: web, bash, rag, research, incognito, document_editor. "
+                "Available toggles: web, bash, rag, research, incognito, document_editor, sidebar. "
                 "Use 'toggle <name> <on|off>' to change them."
             )
         }

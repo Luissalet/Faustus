@@ -18,3 +18,9 @@ html[data-desktop-window='on'] .fs-shell { inset-block-start: 40px; }
 .fs-desktop-bar button:hover { background: var(--fs-surface-3); }
 .fs-desktop-bar button:focus-visible { outline-offset: -3px; }
 .fs-desktop-bar .fs-desktop-bar__close:hover { background: var(--fs-danger-solid); color: var(--fs-on-danger-solid); }
+/* The sidebar's button sits on the window's bar here, so the sidebar leaves nothing behind when it is put away. */
+.fs-desktop-bar .fs-desktop-bar__nav { color: var(--fs-text-2); }
+.fs-desktop-bar .fs-desktop-bar__nav + .fs-desktop-bar__drag { padding-inline-start: 6px; }
+html[data-desktop-window='on'] .fs-shell .fs-nav__toggle,
+html[data-desktop-window='on'] .fs-shell .fs-nav-gutter { display: none; }
+html[data-desktop-window='on'] .fs-shell[data-nav='hidden'] { grid-template-columns: minmax(0, 1fr); }

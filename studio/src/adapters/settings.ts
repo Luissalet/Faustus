@@ -10,6 +10,7 @@ import { modelIds } from '../lib/provider-presets';
 export const DEFAULT_KEYBINDS: Record<string, string> = {
   search: 'ctrl+k',
   toggle_sidebar: 'ctrl+b',
+  toggle_nav: 'ctrl+.',
   new_session: 'ctrl+alt+n',
   fav_session: 'ctrl+alt+f',
   delete_session: 'ctrl+alt+d',
@@ -416,7 +417,8 @@ export function comboFromEvent(e: KeyboardEvent): string | null {
 
 export const KEYBIND_LABELS: Record<string, string> = {
   search: 'Search conversations',
-  toggle_sidebar: 'Show or hide the sidebar',
+  toggle_sidebar: 'Show or hide the conversations',
+  toggle_nav: 'Show or hide the sidebar',
   new_session: 'New conversation',
   fav_session: 'Mark as favourite',
   delete_session: 'Delete the conversation (twice)',

@@ -2,6 +2,8 @@ import { syncLangFromServer, t, useLang } from '../i18n';
 import { clearThemeAttribute, syncThemeFromServer } from './theme';
 import { applyTheme, getTheme, syncAppearanceFromServer, useAppearance } from './appearance';
 import { useNavSize } from './navSize';
+import { flipNav, NavToggle, useNavCombo } from './navToggle';
+import { matchesCombo } from '../adapters/settings';
 import { PanelsTopLeft, Plus, Search, Settings2 } from 'lucide-react';
 import { newPanelDraftHref, panelIcon, usePanels } from '../adapters/panels';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -151,7 +153,8 @@ function Rail() {
     <nav className="fs-nav" aria-label={t('Main navigation')} ref={navRef}>
       <div className="fs-nav__brand">
         <BrandMark />
-        <span>Faustus</span>
+        <span className="fs-nav__name"><span>Faustus</span></span>
+        {platform !== 'mobile' && <NavToggle />}
       </div>
 
       {rail && (
@@ -378,6 +381,9 @@ export function AppShell() {
   const nav = useNavSize();
   const { theme } = useAppearance();
   const platform = usePlatform();
+  // The phone's tab bar is the only way around there; it is never put away.
+  const navMode = platform === 'mobile' && nav.mode === 'hidden' ? 'rail' : nav.mode;
+  const navCombo = useNavCombo();
   useEffect(() => {
     void syncLangFromServer();
     void syncThemeFromServer();
@@ -410,9 +416,23 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setPaletteOpen]);
 
+  // The sidebar's shortcut works on every screen. Studio's own listener takes
+  // the key first while a conversation is open (it stops what it knows at the
+  // window), so the sidebar never moves twice for one press.
+  useEffect(() => {
+    if (platform === 'mobile' || !navCombo) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.defaultPrevented || !matchesCombo(event, navCombo)) return;
+      event.preventDefault();
+      flipNav();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navCombo, platform]);
+
   return (
     <BrowserRouter>
-      <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={nav.mode} data-theme-source={theme.name !== 'studio' && theme.colors ? 'faustus' : undefined} data-resizing={nav.resizing || undefined} style={nav.style}>
+      <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={navMode} data-theme-source={theme.name !== 'studio' && theme.colors ? 'faustus' : undefined} data-resizing={nav.resizing || undefined} style={nav.style}>
         <a className="fs-skip-link" href="#fs-main">
           {t('Skip to content')}
         </a>
@@ -434,6 +454,12 @@ export function AppShell() {
           tabIndex={0}
           {...nav.handle}
         />
+        {/* Where the sidebar was: just the way back to it. */}
+        {navMode === 'hidden' && (
+          <div className="fs-nav-gutter" data-testid="nav-gutter">
+            <NavToggle />
+          </div>
+        )}
         <RouteStage />
         {paletteLoaded && (
           <Suspense fallback={null}>
