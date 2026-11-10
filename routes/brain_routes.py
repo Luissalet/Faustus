@@ -63,6 +63,7 @@ from src.brain.temporal_graph import GraphQuery
 import asyncio
 import contextlib
 import logging
+import threading
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -164,6 +165,45 @@ def _wiki_stale_report(raw: Dict[str, Any]) -> Dict[str, Any]:
         "deferred": int(raw.get("deferred") or 0),
         "llm_skipped": str(raw.get("llm_skipped") or ""),
     }
+
+
+_mirror_lock = threading.Lock()
+_mirror_pending: Dict[str, set] = {}
+_mirror_running = False
+
+
+def _mirror_entities_later(owner: str, entity_ids) -> None:
+    """Write the vault pages of `entity_ids` in the background. Rendering one
+    page builds the whole export plan (seconds on a large vault), so a
+    request never waits for it and a burst of writes shares one pass."""
+    global _mirror_running
+    with _mirror_lock:
+        _mirror_pending.setdefault(owner, set()).update(str(i) for i in entity_ids if i)
+        if _mirror_running:
+            return
+        _mirror_running = True
+    threading.Thread(target=_mirror_worker, name="brain-entity-mirror", daemon=True).start()
+
+
+def _mirror_worker() -> None:
+    global _mirror_running
+    from src.brain import vault
+
+    while True:
+        with _mirror_lock:
+            owner = next((o for o, ids in _mirror_pending.items() if ids), None)
+            if owner is None:
+                _mirror_running = False
+                return
+            ids = sorted(_mirror_pending.pop(owner))
+        try:
+            run = vault._Run(owner, vault._new_report())
+            try:
+                vault._export_sources(run, [f"ent:{i}" for i in ids])
+            finally:
+                run.flush()
+        except Exception:  # noqa: BLE001 - the next sync writes the pages anyway
+            logger.debug("brain: entity pages not mirrored", exc_info=True)
 
 
 _SETTINGS_KEYS = (
@@ -523,6 +563,74 @@ def setup_brain_routes() -> APIRouter:
         found = await asyncio.to_thread(
             entities.list_entities, _owner(request), q=q, type=type, limit=200)
         return {"entities": found}
+
+    @router.post("/entities")
+    async def post_entity(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Create-or-find an entity by name or alias and, optionally, cite
+        sources for it and assert relations from it. Idempotent: the same
+        body twice leaves one entity, one mention per source and one edge per
+        relation. The vault pages are written in the background, so `path` is
+        null until then. Body: `name` (required), `type`, `aliases`, `summary`,
+        `mentions` (source refs such as `note:<path>`), `relations`
+        (`[{rel, to | to_id | value, to_type?, valid_from?, evidence?}]`)."""
+        from src.brain import entities
+
+        owner = _owner(request)
+        payload = await _json_body(request)
+        name = " ".join(str(payload.get("name") or "").split())
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        relations_in = payload.get("relations") or []
+        mentions_in = payload.get("mentions") or []
+        if not isinstance(relations_in, list) or not isinstance(mentions_in, list):
+            raise HTTPException(status_code=400, detail="relations and mentions must be lists")
+
+        def _apply() -> Dict[str, Any]:
+            known = entities.list_entities(owner, q=name, limit=200, include_hidden=True)
+            before = {e["id"] for e in known}
+            entity = entities.upsert_entity(
+                owner, name, type=str(payload.get("type") or "other"),
+                aliases=[str(a) for a in (payload.get("aliases") or []) if str(a).strip()])
+            created = entity["id"] not in before and entity.get("created_at") == entity.get("updated_at")
+            summary = str(payload.get("summary") or "").strip()
+            if summary and not entity.get("summary_locked") and summary != (entity.get("summary") or ""):
+                entity = entities.update_entity(entity["id"], summary=summary) or entity
+            for ref in mentions_in:
+                entities.add_mention(owner, entity["id"], str(ref or "").strip())
+            touched = [entity["id"]]
+            relations_out = []
+            for item in relations_in:
+                if not isinstance(item, dict):
+                    raise entities.BrainEntityError("each relation must be an object")
+                rel = entities.canonical_relation(item.get("rel")) or str(item.get("rel") or "")
+                dst_id = str(item.get("to_id") or "")
+                if dst_id:
+                    target = entities.get_entity(dst_id)
+                    if not target or (target.get("owner") or "") != owner:
+                        raise entities.BrainEntityError("relation target not found")
+                elif str(item.get("to") or "").strip():
+                    target = entities.upsert_entity(owner, item["to"], type=str(item.get("to_type") or "other"))
+                    dst_id = target["id"]
+                if dst_id and dst_id == entity["id"]:
+                    continue
+                evidence = [str(r) for r in (item.get("evidence") or mentions_in) if str(r or "").strip()]
+                relations_out.append(entities.add_relation(
+                    owner, entity["id"], rel, dst_id=dst_id or None, dst_value=str(item.get("value") or ""),
+                    valid_from=item.get("valid_from") or None, evidence=evidence,
+                    confidence=0.9, method="rule"))
+                if dst_id:
+                    for ref in evidence:
+                        entities.add_mention(owner, dst_id, ref)
+                    touched.append(dst_id)
+            _mirror_entities_later(owner, touched)
+            fresh = entities.get_entity(entity["id"]) or entity
+            return {"entity": _enriched_entity(fresh), "created": created, "relations": relations_out,
+                    "path": _note_path_for_source(owner, f"ent:{entity['id']}")}
+
+        try:
+            return await asyncio.to_thread(_apply)
+        except ValueError as exc:  # BrainEntityError included: a bad name, relation or date
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @router.get("/entities/{entity_id}")
     async def get_entity(entity_id: str, request: Request, as_of: str = "",

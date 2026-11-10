@@ -118,9 +118,20 @@ nota aparece como un nodo de tipo `"unresolved"` en vez de desaparecer.
 | Método | Ruta | Parámetros | Respuesta |
 | --- | --- | --- | --- |
 | `GET` | `/entities` | `q?`, `type?` | `{"entities": [EntitySummary, …]}` (tope 200) |
+| `POST` | `/entities` | body `{"name", "type"?, "aliases"?, "summary"?, "mentions"?: [source_ref], "relations"?: [{"rel", "to" \| "to_id" \| "value", "to_type"?, "valid_from"?, "evidence"?}]}` | `{"entity": EntitySummary, "created": bool, "relations": [...], "path"}` |
 | `GET` | `/entities/{entity_id}` | `as_of?` (ISO) | `profile(entity_id, as_of)` + `path` (ver abajo) |
 | `PATCH` | `/entities/{entity_id}` | body: cualquiera de `name`, `type`, `aliases`, `summary`, `hidden` | la entidad actualizada, enriquecida |
 | `POST` | `/entities/merge` | body `{"keep","merge"}` | la entidad resultante (`keep`), enriquecida |
+
+`POST /entities` crea la entidad o encuentra la que ya tiene ese nombre o alias
+(`entities.upsert_entity`), le añade las fuentes de `mentions` (por ejemplo
+`note:<ruta>`) y afirma cada relación de `relations` hacia otra entidad (`to` por
+nombre, creada si falta con `to_type`; `to_id`) o hacia un valor literal (`value`).
+Es idempotente: el mismo cuerpo dos veces deja una entidad, una mención por fuente
+y una arista por relación; `summary` se actualiza salvo que esté bloqueado a mano.
+Es la ruta por la que otra aplicación (las reglas del bus de la familia) escribe
+entidades. La página de la bóveda se escribe en segundo plano, así que `path`
+puede venir `null` en la primera respuesta.
 
 Cada fila de `/entities` y la entidad devuelta por `GET /entities/{id}`,
 `PATCH` y `merge` llevan `mentions` (lista de `source_ref`) y `relations`
