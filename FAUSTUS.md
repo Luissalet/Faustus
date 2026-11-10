@@ -17724,6 +17724,19 @@ Delivery podía crear pero no borrar. Ahora cada lista de `/delivery` tiene un b
 - Orígenes, commits fijados y licencias en `skills/library/THIRD_PARTY_NOTICES.md`.
 
 
+## 10-11-2026 · Traza del RAG de documentos para medirlo por piezas (pygmalion#2410)
+
+**Qué hay.** Dos rutas nuevas en `routes/rag_trace_routes.py`, registradas en `app.py` junto a Diagnóstico. No escriben nada.
+- `POST /api/rag/search` `{query, k=5 (1..50), source="documents"|"brain", threshold?}` → `{source, query, k, threshold, results}`. Cada resultado trae `id`, `rank`, `text`, `filename`, `source`, `locator`, `similarity` (la híbrida del chat), `vector_similarity`, `keyword_score` y `used`. Es la misma llamada que hace el chat (`rag_manager.search(mensaje, k, owner)`), con la profundidad que se pida; `used` marca lo que el chat metería en el prompt: dentro de sus cinco primeros resultados y por encima de `ChatProcessor.RAG_SIMILARITY_THRESHOLD` (0,35), o del `threshold` de la petición.
+- `POST /api/rag/answer` (mismo cuerpo, más `max_tokens`) → lo anterior más `answer`, `model` y `context_passages`: el modelo por defecto responde con el bloque «Relevant documents» que escribe el chat, hecho solo con los resultados `used`, dentro de `untrusted_context_message`.
+- `source: "brain"` busca en las notas del Cerebro (`notes.search`) y devuelve las notas enteras (hasta 4.000 caracteres) como pasajes; las cinco primeras son el contexto.
+
+**Para qué.** El banco de tuberías RAG de Pygmalion's Hoard (`rag_run_start` con `{kind: "faustus"}`) pide a estas rutas los pasajes y la respuesta de cada pregunta de un conjunto de casos y reparte los fallos entre el recuperador (el pasaje no volvió), el corte (volvió por debajo del umbral o fuera de los cinco) y el generador (lo tuvo y no respondió con él).
+
+**Límites.** La respuesta la escribe el modelo por defecto con una línea de sistema corta, no con el prompt entero del chat (sin memoria, herramientas ni persona): mide el modelo con el contexto recuperado y nada más. Sin ChromaDB, `source: "documents"` responde 503 (el chat tampoco tiene RAG en ese estado). La búsqueda del Cerebro exige que todas las palabras de la consulta estén en la nota, así que una pregunta completa en lenguaje natural suele no devolver nada. El propietario es el de la sesión o el del token (`effective_user`); con la autenticación apagada no se filtra por propietario.
+
+**Pruebas.** `tests/test_rag_trace_routes.py` (6): orden y marca `used`, umbral de la petición, contexto que recibe el modelo, sin pasajes usados no hay bloque de contexto, 503 sin almacén y 400 con fuente desconocida, notas enteras con `brain`.
+
 ### Buscar en todo: proyectos, ajustes, ámbitos con «/» y MCP; historial del compositor (10-11-2026, Darwin 1005, 1022 y 1040)
 
 Auditoría de la propuesta que se dio por cubierta con «la paleta ya busca en todo» (buscador «search everywhere» de un IDE en Rust) y de gentle-shell (espacio de trabajo de agentes en terminal). Lo que faltaba de verdad y se ha hecho:

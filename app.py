@@ -1118,6 +1118,10 @@ app.include_router(setup_notification_routes())
 from routes.diagnostics_routes import setup_diagnostics_routes
 app.include_router(setup_diagnostics_routes(rag_manager, rag_available, research_handler, memory_vector))
 
+# RAG trace: what the chat retrieves for a question and what the default model answers with it
+from routes.rag_trace_routes import setup_rag_trace_routes
+app.include_router(setup_rag_trace_routes())
+
 from routes.command_guard_routes import setup_command_guard_routes
 app.include_router(setup_command_guard_routes())
 
