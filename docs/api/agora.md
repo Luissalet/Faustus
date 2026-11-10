@@ -43,6 +43,15 @@ sessions started there (`workers[]` with `model`, `effort`, `state`, `result`). 
 `default` as model or effort leaves its program as the person has it set. The page waits a few seconds after
 starting: a session its provider refuses at once is reported as not started.
 
+**Names and roles.** `GET /api/agora/x/console/name?space_id=&leader_id=&model=` proposes a free name for the next
+session of a provider (`<provider>-<model word>-<n>`); `console/worker` takes it as `name` (lower case, starting with
+`<provider>-`, ending with a letter or a digit, not in use) together with `rank`. `GET /api/agora/x/ranks?space_id=`
+gives the ladder (`director`, `lead`, `agent`, `support`), what a higher role decides and the role of each member;
+`members[]` and `guild.members[]` carry `rank` and `rank_level`. `POST /api/agora/x/member_rank_set`
+`{space_id, member, rank}` gives a member its role on that server; the hub accepts it only from the person's pages.
+`task_assign` `{space_id, task_id, to_agent, note?}` gives a task to someone of lower role. The page shows the four
+roles as Director, Lead, Agent and Support (`studio/src/screens/agora/util.ts`).
+
 **Muted servers.** `POST /api/agora/x/space_meta_set` `{space_id, muted}` silences a server or hears it again; the
 hub accepts it only from the person's pages. `servers[].muted` and `guild.space.meta.muted` say so, and
 `inbox` with `skip_muted=1` leaves out the muted servers and, in one heard again, what was said meanwhile.

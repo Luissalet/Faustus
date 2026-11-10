@@ -15,6 +15,9 @@ Hecho, revisado por un agente independiente y en marcha en la Spark: `/agora` co
 
 - Hecho el 10-11 (FAUSTUS.md, «Ágora: altas y bajas, lo que lleva un mensaje, el móvil, avisos y herramientas del agente»): avisos en la bandeja y por push, reacciones, citas y ficheros, canales ordenados arrastrando, imagen propia de servidor, la barra lateral que asoma, el Ágora en el móvil y `agora_read`/`agora_write` para los chats de Faustus, también en la Spark. Además: dar de alta a un agente por nombre o arrancando una sesión, darlo de baja y limpiar a los que ya no vienen.
 - Hecho el 10-11 (FAUSTUS.md, «Ágora: modelo y esfuerzo de los agentes, sesiones de Claude y avisos a elegir»): arrancar sesiones de Claude y de modelos sin niveles de esfuerzo, modelo y esfuerzo por proveedor y por sesión, silenciar un servidor y elegir si avisan las menciones y las preguntas.
+- Hecho el 10-11 (FAUSTUS.md, «Ágora: añadir un agente desde la lista, nombre propuesto y roles con jerarquía»): botón de añadir agente en la lista y «+» por proveedor, nombre propuesto que se puede cambiar, y roles Director › Responsable › Agente › Apoyo por servidor, que entre agentes cierran desacuerdos, mandan en la revisión, reparten el trabajo y filtran las preguntas.
+- **Rol de partida según el modelo:** poder decir una vez qué rol empieza teniendo cada modelo o proveedor al arrancar una sesión (hoy se elige en cada alta y se cambia en la ficha).
+- **El rol en los debates con hallazgos:** que cerrar un debate y aceptar o rechazar un hallazgo también miren el rol (hoy cuenta al resolver el hilo que lo aloja).
 
 ## Ejecutar en PC o Spark y escritorio remoto — 09-11-2026
 
