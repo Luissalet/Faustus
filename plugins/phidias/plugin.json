@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "id": "phidias",
+  "name": "Phidias's Hoard",
+  "purpose": "Sculpting studio for 3D printing: opens low-poly game scenery (OBJ with MTL and textures, GLB/glTF, or zips of them) and carves into the mesh the relief its textures and normal maps only draw (cracks, joints between blocks, steps, column flutes, roof tiles), at print size and in millimetres. Refines the mesh only where the relief needs it, closes the ground into a solid block, can fuse everything into one watertight solid with Blender and exports STL. Assistants can browse the library, open projects, look at each material and at the result, change recipes and depths, sculpt and export.",
+  "capabilities": [
+    "game-model-import",
+    "texture-to-relief",
+    "normal-map-to-relief",
+    "adaptive-refinement",
+    "displacement-sculpt",
+    "material-recipes",
+    "ground-block",
+    "plinth",
+    "watertight-remesh",
+    "stl-export",
+    "model-look",
+    "material-look",
+    "model-library"
+  ],
+  "x-family": {
+    "copilot": true
+  },
+  "placeholders": [
+    "PHIDIAS_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5251",
+    "TOKEN_FILE": "{PHIDIAS_DIR}/data/mcp-token",
+    "PYTHON": "{PHIDIAS_DIR}/.venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5251",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "phidias-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "phidias-hoard"
+      ],
+      "title": [
+        "phidias's hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "phidias_hoard",
+        "--no-browser"
+      ],
+      "cwd": "{PHIDIAS_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "PHIDIAS_PORT": "5251"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 40
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{PHIDIAS_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "PHIDIAS_URL": "{APP_URL}",
+      "PHIDIAS_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "PHIDIAS_BRIDGE_AUTOSTART",
+      "PHIDIAS_DATA_DIR"
+    ]
+  },
+  "notes": "library_scan lists game models in the user's folders; project_create opens one and guesses a recipe per material; material_look returns a picture (texture | normal map | height map: white raised, black carved); material_set changes recipe (normal, relief, lines, flat, drop, auto), depth_mm, invert, smooth ('*' = every material); project_set changes size_mm (longest side), min_edge_mm (finest detail), max_faces, ground, base_mm, plinth; sculpt_start and close_start run in the background (job_status); model_look returns a picture of before, sculpt or closed from any yaw/pitch, zoomed on region [x, y, z, radius] in print millimetres, or with compare=true next to the original; result_export writes the STL (millimetres, base at z = 0) next to the source model in a Phidias folder or in the given folder. Z is up."
+}
