@@ -49,7 +49,7 @@ session of a provider (`<provider>-<model word>-<n>`); `console/worker` takes it
 gives the ladder (`director`, `lead`, `agent`, `support`), what a higher role decides and the role of each member;
 `members[]` and `guild.members[]` carry `rank` and `rank_level`. `POST /api/agora/x/member_rank_set`
 `{space_id, member, rank}` gives a member its role on that server; the hub accepts it only from the person's pages.
-`task_assign` `{space_id, task_id, to_agent, note?}` gives a task to someone of lower role. The page shows the four
+`task_assign` `{space_id, task_id, to_agent, note?}` gives a task to someone of lower role. `console/overview` carries, per provider, `model_ranks` (the role the sessions of each model start with on that server) and `takes_model_names`; `POST /api/agora/x/console/model_rank` `{space_id, leader_id, model, rank}` sets one, from the person's pages only, and a session started with a role keeps it for its model. Where `takes_model_names` is true, `console/worker` takes a model's full name: it is offered from then on once a session the person started with it is running. The page shows the four
 roles as Director, Lead, Agent and Support (`studio/src/screens/agora/util.ts`).
 
 **Muted servers.** `POST /api/agora/x/space_meta_set` `{space_id, muted}` silences a server or hears it again; the
