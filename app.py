@@ -2547,6 +2547,14 @@ async def _startup_event():
             _supervisor.spawn(run_retention_loop(), name="checkpoint-retention")
         except Exception as _e:
             logger.warning("Failed to start checkpoint retention: %s", _e)
+    # What waits for the person in the Agora (a mention, a question), told to
+    # the devices that asked for notifications (src/agora_watch.py).
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            from src.agora_watch import run_watch as _run_agora_watch
+            _supervisor.spawn(_run_agora_watch(), name="agora-watch")
+        except Exception as _e:
+            logger.warning("Failed to start the Agora watch: %s", _e)
     # Studio image jobs the previous process submitted and never collected:
     # poll each owned receipt once more and publish what finished. Nothing is
     # resubmitted (src/prospero_images.py).

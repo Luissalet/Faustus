@@ -1,5 +1,7 @@
 import { ApiError, asArray, getJson, responseReason } from '../adapters/api';
 import type { ActivityRun } from '../adapters/activity';
+import type { PersonInbox } from '../adapters/agora';
+import { t } from '../i18n';
 
 /**
  * ACT-02: notification preferences, dedupe and the in-app tray's feed
@@ -13,9 +15,14 @@ import type { ActivityRun } from '../adapters/activity';
  * it again for a run the tray already knows about — which a reconnect's
  * fresh poll does constantly — is a no-op rather than twenty duplicate
  * alerts for the same still-pending approval.
+ *
+ * The Agora is watched the same way: the tray reads what waits for the person
+ * in the hub (a message that names them, a question the agents put to them)
+ * and `emitForAgora` makes each one a notification, once. A phone with no
+ * page open is told by the server instead (src/agora_watch.py).
  */
 
-export type NotificationType = 'approval' | 'question' | 'task_done' | 'task_failed' | 'blocked';
+export type NotificationType = 'approval' | 'question' | 'task_done' | 'task_failed' | 'blocked' | 'agora';
 
 export interface NotificationChannelPrefs {
   enabled: boolean;
@@ -141,6 +148,67 @@ export function payloadForRun(run: ActivityRun): EmitPayload | null {
     return { type: 'task_done', dedupe_key: dedupeKeyForRun(run), title: run.title, detail: plainDetail(run.detail ?? ''), screen: 'activity', target };
   }
   return null;
+}
+
+/** Older than this, what waits in the Agora is history: it stays in the Agora's own inbox and nobody is told again. */
+const AGORA_FRESH_S = 86400;
+
+/** In one look, at most this many become notifications (the latest); the rest stay in the Agora's own inbox. */
+const AGORA_PER_LOOK = 5;
+
+const agoraPlace = (space: string, thread: number) => `/agora?space_id=${encodeURIComponent(space)}&c=${encodeURIComponent('t:' + thread)}`;
+
+/** A question asked again in other words is a new question: its key carries what was asked. */
+function questionKey(q: { space_id: string; id: number; question: string | null }): string {
+  let hash = 5381;
+  for (const ch of q.question ?? '') hash = ((hash * 33) ^ ch.charCodeAt(0)) >>> 0;
+  return `agora:q:${q.space_id}:${q.id}:${hash.toString(36)}`;
+}
+
+/** The key of everything that waits for the person in the Agora right now, fresh or not: a stored notification
+ *  whose key is no longer here was answered or read where it was said. */
+export function agoraWaitingKeys(inbox: PersonInbox): Set<string> {
+  return new Set([
+    ...inbox.escalated.map(questionKey),
+    ...inbox.pending.map((m) => `agora:m:${m.space_id}:${m.id}`),
+  ]);
+}
+
+/** What in the person's Agora inbox is worth a notification: a question put to them and a message that names them. */
+export function payloadsForInbox(inbox: PersonInbox, now = Date.now() / 1000): EmitPayload[] {
+  const out: EmitPayload[] = [];
+  for (const q of inbox.escalated) {
+    if (now - q.updated > AGORA_FRESH_S) continue;
+    out.push({
+      type: 'agora', dedupe_key: questionKey(q),
+      title: q.escalated_by ? t('{name} asks you: {title}', { name: q.escalated_by, title: q.title }) : q.title,
+      detail: plainDetail(q.question ?? '').slice(0, 400), screen: 'agora', target: agoraPlace(q.space_id, q.id),
+    });
+  }
+  // A question put to the person also names them: it is told once, as the question.
+  const asked = new Set(inbox.escalated.map((q) => q.space_id + ':' + q.id));
+  for (const m of inbox.pending) {
+    if (now - m.created > AGORA_FRESH_S || asked.has(m.space_id + ':' + m.thread_id)) continue;
+    out.push({
+      type: 'agora', dedupe_key: `agora:m:${m.space_id}:${m.id}`,
+      title: t('{name} mentions you in {where}', { name: m.author, where: (m.task_id ? '#' + m.task_id + ' ' : '') + m.thread_title }),
+      detail: plainDetail(m.body).slice(0, 400), screen: 'agora', target: agoraPlace(m.space_id, m.thread_id),
+    });
+  }
+  return out;
+}
+
+/** One notification per thing that waits in the Agora and this page has not already reported. After a long
+ *  absence only the latest few are told; the others are taken as seen and wait in the Agora's inbox. */
+export async function emitForAgora(inbox: PersonInbox, seen: Set<string>): Promise<void> {
+  const when = new Map<string, number>([
+    ...inbox.escalated.map((q) => [questionKey(q), q.updated] as [string, number]),
+    ...inbox.pending.map((m) => [`agora:m:${m.space_id}:${m.id}`, m.created] as [string, number]),
+  ]);
+  const fresh = payloadsForInbox(inbox).filter((payload) => !seen.has(payload.dedupe_key))
+    .sort((a, b) => (when.get(b.dedupe_key) ?? 0) - (when.get(a.dedupe_key) ?? 0));
+  for (const payload of fresh) seen.add(payload.dedupe_key);
+  for (const payload of fresh.slice(0, AGORA_PER_LOOK).reverse()) await emit(payload);
 }
 
 /** Emits one notification per run this poll tick has not already reported,

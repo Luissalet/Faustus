@@ -4,9 +4,12 @@ import { useNavigate } from 'react-router';
 import { IconButton, Popover } from '../components';
 import { t } from '../i18n';
 import { loadActivity } from '../adapters/activity';
+import { getInbox } from '../adapters/agora';
 import {
+  agoraWaitingKeys,
   dedupeKeyForRun,
   dismissNotification,
+  emitForAgora,
   emitForNewRuns,
   listNotifications,
   markAllNotificationsRead,
@@ -25,6 +28,10 @@ import './notifications-tray.css';
  * on first open, and only fired for a row whose `desktop_allowed` the server
  * already computed from this owner's per-type/channel prefs and quiet hours
  * — this component never re-derives that decision.
+ *
+ * The Agora comes here too: a message that names the person and a question
+ * the agents put to them become a row that opens that conversation, and the
+ * row counts as read once it no longer waits there.
  */
 
 const POLL_MS = 20000;
@@ -41,6 +48,9 @@ export function NotificationTray({ side = 'bottom', align = 'end' }: {
   const navigate = useNavigate();
   const notifiedDesktop = useRef(new Set<string>());
   const seenRuns = useRef<Set<string> | null>(null);
+  const seenAgora = useRef(new Set<string>());
+  /** What waits in the Agora as of the last look; null until the hub has answered once. */
+  const agoraWaiting = useRef<Set<string> | null>(null);
   const tick = useRef(0);
 
   const watchActivity = async () => {
@@ -60,13 +70,39 @@ export function NotificationTray({ side = 'bottom', align = 'end' }: {
     }
   };
 
+  const watchAgora = async () => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    try {
+      const inbox = await getInbox();
+      agoraWaiting.current = agoraWaitingKeys(inbox);
+      await emitForAgora(inbox, seenAgora.current);
+    } catch {
+      /* the hub is on the PC and may be off: the next tick asks again */
+    }
+  };
+
+  /** A row about something that no longer waits in the Agora (read or answered there) is read here too. */
+  const settleAgora = (list: StoredNotification[]): StoredNotification[] => {
+    const waiting = agoraWaiting.current;
+    if (!waiting) return list;
+    return list.map((row) => {
+      if (row.read || row.type !== 'agora' || waiting.has(row.dedupe_key)) return row;
+      void markNotificationRead(row.id).catch(() => undefined);
+      return { ...row, read: true };
+    });
+  };
+
   const reload = async () => {
-    if (tick.current++ % ACTIVITY_EVERY === 0) await watchActivity();
+    if (tick.current++ % ACTIVITY_EVERY === 0) {
+      await watchActivity();
+      await watchAgora();
+    }
     try {
       const data = await listNotifications();
-      setRows(data.notifications);
-      setUnread(data.unread);
-      fireDesktopNotifications(data.notifications, notifiedDesktop.current);
+      const settled = settleAgora(data.notifications);
+      setRows(settled);
+      setUnread(settled.filter((row) => !row.read).length);
+      fireDesktopNotifications(settled, notifiedDesktop.current);
     } catch {
       /* the poll retries on its own timer; a single failed tick stays silent */
     }
@@ -89,6 +125,8 @@ export function NotificationTray({ side = 'bottom', align = 'end' }: {
       }
     }
     if (row.target.screen === 'activity' && row.target.run) navigate(`/activity?run=${encodeURIComponent(row.target.run)}`);
+    // An Agora row carries the place itself: the server and the conversation.
+    if (row.target.screen === 'agora' && row.target.run.startsWith('/agora')) navigate(row.target.run);
   };
 
   const dismiss = async (row: StoredNotification, event: React.MouseEvent) => {

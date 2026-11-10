@@ -39,7 +39,9 @@ from src.constants import DATA_DIR
 logger = logging.getLogger(__name__)
 
 NOTIFICATIONS_FILE = os.path.join(DATA_DIR, "notifications.json")
-NOTIFICATION_TYPES = ("approval", "question", "task_done", "task_failed", "blocked")
+# "agora": someone names the person in the Agora or the agents put a question to them
+# (studio/src/shell/notifications.ts reads the hub's inbox and emits it; target.screen is "agora").
+NOTIFICATION_TYPES = ("approval", "question", "task_done", "task_failed", "blocked", "agora")
 _MAX_EVENTS_PER_OWNER = 300
 _lock = threading.RLock()
 

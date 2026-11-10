@@ -621,7 +621,16 @@ _URL_BY_KIND = {
     "approval_resolved": lambda e: f"/studio?s={e.get('session_id')}" if e.get("session_id") else "/studio",
     "task_finished": lambda e: "/",
     "reminder": lambda e: "/notes",
+    # A mention or a question in the Agora opens its conversation (src/agora_watch.py names the place).
+    "agora_mention": lambda e: _agora_url(e),
+    "agora_question": lambda e: _agora_url(e),
 }
+
+
+def _agora_url(event: Dict[str, Any]) -> str:
+    url = str((event.get("data") or {}).get("url") or "")
+    return url if url.startswith("/agora") else "/agora"
+
 
 _URGENT_KINDS = {"approval_pending"}
 
