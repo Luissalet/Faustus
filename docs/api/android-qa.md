@@ -1,5 +1,13 @@
 # Android emulator QA
 
+## Version 1.0.5: observed content bounds and keyboard state
+
+The procedure now distinguishes physical screen bounds from the unobscured content area below a fixed header and above navigation. It checks that a picker opened before typing, uses current translated labels, and distinguishes actual IME visibility from a stale input-view flag before dismissing the keyboard.
+
+These changes come from Root's real HoardDex 394/397/398 Android QA. A selector reported bounds partly under the fixed header; its tap had no effect. Root preserved the failed attempt, read the state, excluded the observed header from body targets, and then completed Crystal Present local/link calculations. A separate observer used the wrong English field label and was corrected from the actual tree. Keyboard readback had previously prevented an unnecessary Back from leaving the calculator. The final source399 APK cold launch, calculation and restored ES/system/Arceus/1/1025/226 state were verified on the visible emulator.
+
+This is a procedure and normal-controller prompt improvement, not a new Faustus inference result, a timing improvement, or proof that an installed skill was upgraded on another runtime. The rejected task2361 launch is not retried. Local evidence: Research/hoarddex-remaining2368 and Research/faustus-android2380.
+
 The published library procedure is [android-emulator-qa](../../skills/library/android-emulator-qa/SKILL.md). Install it through the Skills library API or the product's Skills tab before relying on retrieval. It uses the existing Android MCP preset (mobile-mcp 1.0.6), not a new desktop-control bridge. A skill does not grant capabilities.
 
 ## Observed pilot and corrections

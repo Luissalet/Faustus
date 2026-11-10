@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.4
+version: 1.0.5
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -24,7 +24,11 @@ Use for a short Android journey on an available emulator/device through native A
 
 5. Use advertised tools and fresh references; labelled View nodes can be actionable tabs. After navigation or any layout change, get a new element listing before choosing the next control. A reference is scoped to that observation. A click followed by an element listing can be a sequential batch when the batch schema supports it; choose the next target only after inspecting that readback. Do not queue multiple navigations using references from one old tree. Record the action and the visible result. For mobile_batch_commands, use listElementsAtEnd=false and an explicit mobile_list_elements_on_screen with format=text; automatic full JSON trees can exhaust the model context. Typing must be followed by reading the field or its filtered results. For search, use the submit option when supported, then confirm that the keyboard no longer covers the intended result. A successful tap sent to a covered row can type into the keyboard instead of opening that row.
 
+   A control can have plausible screen coordinates while hidden under a fixed app header or bottom navigation. Use the observed unobscured content area, not just the physical screen bounds. Scroll the whole target into that area and get fresh references before tapping. Header controls themselves remain actionable in their observed header. After a picker tap, confirm that its filter or options actually appeared before typing. Read translated labels from the current tree rather than guessing their wording.
+
 6. Keep a small action budget, normally twelve inputs for a smoke journey. If an action leaves the state unchanged, inspect focus, keyboard, a modal or scroll position before trying again. Two unsuccessful attempts at the same outcome end blind retries. Use an observed text field, a small scroll in its actual container or documented Back when appropriate. If the route remains blocked, report the last confirmed state and stop inputs. Do not reset storage or change unrelated preferences as a shortcut.
+
+   Focus is not proof that the keyboard is visible. On Android, mIsInputViewShown can remain true while the actual IME InsetsSource has visible=false. Confirm the keyboard's current visibility and target window before using Back to dismiss it; Back with an already hidden keyboard can leave the current tool. If navigation changes, reconcile the new screen before resuming.
 
 7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. For resized images, convert image coordinates to device pixels using the reported dimensions. Opening a screenshot does not imply the model has inspected its pixels; explicitly separate a textual readback, a saved image and a visual inspection. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
 
