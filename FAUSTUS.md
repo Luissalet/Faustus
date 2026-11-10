@@ -1,5 +1,11 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex 402 y procedimiento Android — 10-11-2026
+
+HoardDex incorpora reglas propias de Colosseum US para Psicoonda, Presente, Paliza y Escupir; XD conserva el aviso cuando falta contraste. La fuente está aprobada en CAS2. Main 402 pasa 849 TS + 23 CJS, tipos, 37 herramientas/1.754 consultas MCP y compilación web. Web y Android x86 visible comprueban las cuatro familias en español e inglés, errores, curación e inmunidades. Los paquetes finales conservan exactamente el runtime probado; el x86 está instalado por SHA y confirmado tras arrancar. ARM64 sólo se compila e inspecciona. Se conservan 168 JSON anteriores, 170 en total. Continúan las evoluciones por forma y los demás frentes; no se declara paridad global.
+
+El procedimiento android-emulator-qa 1.0.5, integrado en 46cc0b01, aclara los límites de las cabeceras fijas, la selección antes de escribir, las etiquetas traducidas y la visibilidad real del teclado. Pasaron 352 pruebas de biblioteca. Es una mejora de la fuente procedural, sin un nuevo ensayo del modelo de Faustus. El usuario mantiene el emulador visible y prefiere abrirlo con el lanzador oficial y manejarlo por ADB, sin controlar el escritorio de Windows. Las incidencias del lanzador de la conexión durante la QA se conservan aparte y no demuestran rendimiento del modelo.
+
 ## Correr en una Spark con el PC apagado (2026-11-08)
 
 El Hoard Hub puede llevar Faustus, Hermes y Prometheus a una DGX Spark y traerlos de vuelta (**Ejecutar en: PC | Spark3**, en la tarjeta de Faustus de Inicio). Allí Faustus corre como servicio de usuario de systemd (`server_runtime.py serve` en el 7000, límite de 6 GB), con los mismos datos (usuarios, chats, proyectos, cuentas de correo cifradas con `data/.app_key`), y se publica por HTTPS en el nombre Tailscale de la Spark. Mientras está fuera, `server_runtime.py start` en el PC se niega a arrancar (`placed_elsewhere()` lee `data/runtime/placement.json`, que pone y quita el Hub), así que nunca hay dos Faustus sobre la misma información. Quedan en pausa mientras tanto el control del navegador real y del escritorio de Windows, los modelos de Ollama del PC y los servidores MCP que sólo existen en Windows; los endpoints de las Sparks siguen disponibles. Detalle del traslado en el README del Hoard Hub.
