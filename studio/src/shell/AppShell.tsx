@@ -16,6 +16,7 @@ import { SphereChip } from '../screens/studio/SphereChip';
 import { DESTINATIONS, MOBILE_DESTINATIONS } from './routes';
 import { ContextualTools } from './contextualTools';
 import { toolsIn } from './toolPlacement';
+import { AgoraNavLink } from '../screens/agora/AgoraNavLink';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
 import { usePlatform } from './platform';
@@ -192,6 +193,7 @@ function Rail() {
         // they sit in the sidebar instead of only behind Studio's menu.
         <div className="fs-nav__tools" data-testid="nav-personal">
           <div className="fs-nav__tools-head">{t('Personal')}</div>
+          <AgoraNavLink />
           {toolsIn('personal').map((tool) => (
             <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" title={t(tool.label)}
               data-testid={`nav-tool-${tool.path.slice(1)}`}>

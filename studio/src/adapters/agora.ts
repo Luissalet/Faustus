@@ -204,4 +204,5 @@ export interface PersonInbox {
 export const getInbox = (signal?: AbortSignal) =>
   agoraGet<PersonInbox>('inbox', { agent: 'luis', all_spaces: 1, peek: 1, mine_only: 1, limit: 40 }, signal);
 
-export const iconUrl = (app: string) => '/api/agora/icon/' + encodeURIComponent(app);
+/** `s` names the size served, so a browser never shows an older, heavier copy it kept. */
+export const iconUrl = (app: string) => '/api/agora/icon/' + encodeURIComponent(app) + '?s=128';
