@@ -1481,7 +1481,9 @@ function SchemaControl({ field, value, onChange }: { field: SchemaField; value: 
 function AgentSection({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const [schema, setSchema] = useState<{ groups: SchemaGroup[]; defaults: Settings } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
+  // `/settings?s=agent&q=<key>` (a "Settings" hit of Ctrl+K) opens the list already filtered.
+  const [linkParams] = useSearchParams();
+  const [query, setQuery] = useState(() => linkParams.get('q') ?? '');
   const [draft, setDraft] = useState<Settings>({});
   const { saving, save } = useSaver(onSave, say);
 

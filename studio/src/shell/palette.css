@@ -480,3 +480,9 @@
 }
 .fs-palette__until { display: inline-flex; align-items: center; gap: 6px; }
 .fs-palette__until input { font: inherit; font-size: 12px; background: transparent; color: inherit; border: 0; padding: 0; min-width: 0; }
+/* The query's words inside a hit's title (Ctrl+K "Everywhere"). */
+.fs-palette__mark {
+  background: transparent;
+  color: var(--fs-accent, inherit);
+  font-weight: 600;
+}

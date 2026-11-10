@@ -1,8 +1,8 @@
 import { Command } from 'cmdk';
-import { Brain, FileText, Image, KanbanSquare, MessageSquare, NotebookPen, Sparkles } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Brain, FileText, FolderOpen, Image, KanbanSquare, MessageSquare, NotebookPen, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { SEARCH_SOURCES, searchAll, type SearchHit, type SearchSource, type SearchWhen } from '../adapters/unifiedSearch';
+import { SEARCH_SOURCES, matchRanges, parseScopeCommand, searchAll, type SearchHit, type SearchSource, type SearchWhen } from '../adapters/unifiedSearch';
 import { overlayRoot } from './overlayRoot';
 import { DESTINATIONS, TOOLS } from './routes';
 import { CONTEXT_LABELS, TOOL_PLACEMENT, toolContext, toolHref, toolsIn } from './toolPlacement';
@@ -32,6 +32,8 @@ const SOURCE_LABEL: Record<SearchSource, string> = {
   gallery: 'Gallery',
   skills: 'Skills',
   board: 'Board',
+  projects: 'Projects',
+  settings: 'Settings',
 };
 
 const SOURCE_ICON: Record<SearchSource, typeof Brain> = {
@@ -42,7 +44,24 @@ const SOURCE_ICON: Record<SearchSource, typeof Brain> = {
   gallery: Image,
   skills: Sparkles,
   board: KanbanSquare,
+  projects: FolderOpen,
+  settings: SlidersHorizontal,
 };
+
+/** The hit's title with the query's words marked. */
+function Highlighted({ text, query }: { text: string; query: string }) {
+  const ranges = matchRanges(text, query);
+  if (!ranges.length) return <>{text}</>;
+  const parts: ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([from, to], i) => {
+    if (from > at) parts.push(text.slice(at, from));
+    parts.push(<mark key={i} className="fs-palette__mark">{text.slice(from, to)}</mark>);
+    at = to;
+  });
+  if (at < text.length) parts.push(text.slice(at));
+  return <>{parts}</>;
+}
 
 /** Everything the owner has that matches, mixed (`GET /api/search/all`),
  *  once the query is two characters or more; 250 ms after the last key. */
@@ -93,7 +112,11 @@ export function CommandPalette() {
   const [sinceDays, setSinceDays] = useState(0);
   const [until, setUntil] = useState('');
   const after = sinceDays ? new Date(Date.now() - sinceDays * 86400000).toISOString().slice(0, 10) : '';
-  const { hits, loading } = useEverywhere(open, query, types, { after, before: until });
+  // `/chats contrato` = only chats; `/` or `/pro` = list the scopes to pick one.
+  const scopeCmd = parseScopeCommand(query);
+  const searchText = scopeCmd?.kind === 'run' ? scopeCmd.rest : scopeCmd?.kind === 'list' ? '' : query;
+  const searchTypes = scopeCmd?.kind === 'run' ? [scopeCmd.scope] : types;
+  const { hits, loading } = useEverywhere(open, searchText, searchTypes, { after, before: until });
   useEffect(() => {
     if (!open) setQuery('');
   }, [open]);
@@ -105,6 +128,17 @@ export function CommandPalette() {
     navigate(path);
   }
 
+  /** `/projects ` in the box, the caret after it, ready for the words. */
+  const inputRef = useRef<HTMLInputElement>(null);
+  function pickScope(scope: SearchSource) {
+    const text = `/${scope} `;
+    setQuery(text);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) { el.focus(); el.setSelectionRange(text.length, text.length); }
+    });
+  }
+
   return (
     <Command.Dialog
       open={open}
@@ -114,8 +148,8 @@ export function CommandPalette() {
       container={overlayRoot()}
       data-testid="command-palette"
     >
-      <Command.Input placeholder={t('Go to, search or run…')} className="fs-palette__input" value={query} onValueChange={setQuery} />
-      {query.trim().length >= 2 && (
+      <Command.Input ref={inputRef} placeholder={t('Go to, search or run…')} className="fs-palette__input" value={query} onValueChange={setQuery} />
+      {query.trim().length >= 2 && !scopeCmd && (
         <div className="fs-palette__filters" role="group" aria-label={t('Search in')} data-testid="palette-filters">
           <button type="button" className="fs-palette__chip" aria-pressed={types.length === 0} onClick={() => setTypes([])}>
             {t('Everything')}
@@ -134,7 +168,7 @@ export function CommandPalette() {
           ))}
         </div>
       )}
-      {query.trim().length >= 2 && (types.length === 0 || types.includes('chats')) && (
+      {query.trim().length >= 2 && (scopeCmd?.kind === 'run' ? scopeCmd.scope === 'chats' : !scopeCmd && (types.length === 0 || types.includes('chats'))) && (
         <div className="fs-palette__filters" role="group" aria-label={t('Chats from')} data-testid="palette-when">
           {[[0, 'Any time'], [7, 'Past week'], [30, 'Past month'], [365, 'Past year']].map(([days, label]) => (
             <button key={days} type="button" className="fs-palette__chip" aria-pressed={sinceDays === days}
@@ -151,12 +185,33 @@ export function CommandPalette() {
       <Command.List className="fs-palette__list">
         {/* cmdk does not count force-mounted items: with server hits on
             screen, "Nothing matches." would sit on top of them. */}
-        {hits.length === 0 && (
+        {hits.length === 0 && scopeCmd?.kind !== 'list' && (
           <Command.Empty className="fs-palette__empty">{loading ? t('Searching…') : t('Nothing matches.')}</Command.Empty>
         )}
 
+        {scopeCmd?.kind === 'list' && (
+          <Command.Group heading={t('Search only in')} className="fs-palette__group" forceMount data-testid="palette-scopes">
+            {scopeCmd.scopes.map((scope) => {
+              const Icon = SOURCE_ICON[scope] ?? FileText;
+              return (
+                <Command.Item
+                  key={`scope:${scope}`}
+                  value={`scope:${scope}`}
+                  forceMount
+                  onSelect={() => pickScope(scope)}
+                  className="fs-palette__item"
+                  data-testid={`palette-scope-${scope}`}
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  <span>/{scope}<small className="fs-palette__tool-context">{t(SOURCE_LABEL[scope])}</small></span>
+                </Command.Item>
+              );
+            })}
+          </Command.Group>
+        )}
+
         {hits.length > 0 && (
-          <Command.Group heading={t('Everywhere')} className="fs-palette__group" forceMount data-testid="palette-everywhere">
+          <Command.Group heading={scopeCmd?.kind === 'run' ? `${t('Only in')} ${t(SOURCE_LABEL[scopeCmd.scope])}` : t('Everywhere')} className="fs-palette__group" forceMount data-testid="palette-everywhere">
             {hits.map((hit) => {
               const Icon = SOURCE_ICON[hit.type] ?? FileText;
               return (
@@ -170,7 +225,7 @@ export function CommandPalette() {
                 >
                   <Icon size={15} aria-hidden="true" />
                   <span className="fs-palette__hit-text">
-                    <span className="fs-palette__hit-title">{hit.title}</span>
+                    <span className="fs-palette__hit-title"><Highlighted text={hit.title} query={searchText} /></span>
                     {hit.snippet && hit.snippet !== hit.title && <span className="fs-palette__hit-snippet">{hit.snippet}</span>}
                   </span>
                   <span className="fs-palette__hit-type">{t(SOURCE_LABEL[hit.type] ?? hit.type)}</span>

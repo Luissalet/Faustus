@@ -150,6 +150,10 @@ _BUILTIN_SERVERS = {
     # actions, mapped to original modules through published source maps. Read-only; only
     # screenshots are written (DATA_DIR/web_explain). Not owner-scoped.
     "web_explain": ("mcp_servers/web_explain_server.py", "Built-in: Web feature explainer"),
+    # Search everything at once (src/unified_search.py, the same as GET /api/search/all and Ctrl+K): chats, brain,
+    # notes, documents, gallery, skills, board, projects and settings in one ranked list. Read-only; owner-scoped
+    # through ODYSSEUS_MCP_SEARCH_OWNER or the call's `owner`.
+    "unified_search": ("mcp_servers/unified_search_server.py", "Built-in: Search everything"),
     # Streaming voice sessions over a chat (services/voice_stream.py through /api/voice): capabilities without
     # loading models, utterance replay or text into the ordinary turn, transcripts and spoken audio as events,
     # interrupt (speech only) and an explicit cancel of the turn. Not owner-scoped: the chat's owner runs the turn.

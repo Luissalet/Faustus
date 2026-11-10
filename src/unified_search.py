@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 SOURCES: Tuple[str, ...] = (
     "chats", "brain", "notes", "documents", "gallery", "skills", "board",
+    "projects", "settings",
 )
 
 _DEFAULT_TIME_BUDGET = 3.0
@@ -276,6 +277,62 @@ def _board(owner: Optional[str], q: str, limit: int) -> List[Dict[str, Any]]:
     return out[:limit]
 
 
+def _tokens_match(q: str, *fields: Any) -> bool:
+    """Every whitespace-separated token of ``q`` appears in one of ``fields``
+    (case-insensitive), the same rule the settings filter in Studio uses."""
+    hay = " ".join(str(f or "") for f in fields).casefold()
+    toks = [t for t in (q or "").casefold().split() if t]
+    return bool(toks) and all(t in hay for t in toks)
+
+
+def _projects(owner: Optional[str], q: str, limit: int) -> List[Dict[str, Any]]:
+    """The owner's projects (`services.projects.get_store().list`, as
+    `GET /api/projects`) whose name, folder, instructions or workspace path
+    match every token; archived projects last."""
+    from services.projects import get_store
+
+    rows = [p for p in get_store().list(owner=owner)
+            if _tokens_match(q, p.get("name"), p.get("folder"), p.get("instructions"), p.get("workspace"))]
+    rows.sort(key=lambda p: (bool(p.get("archived")), not bool(p.get("pinned")), -float(p.get("updated_at") or 0)))
+    out: List[Dict[str, Any]] = []
+    for project in rows[:limit]:
+        project_id = str(project.get("id") or "")
+        snippet = project.get("instructions") or project.get("workspace") or project.get("folder") or ""
+        updated = project.get("updated_at")
+        when = None
+        if isinstance(updated, (int, float)) and updated > 0:
+            when = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(float(updated)))
+        out.append(_result(
+            source="projects", id_=project_id, title=project.get("name") or project_id,
+            snippet=snippet, url=f"/projects/{urllib.parse.quote(project_id, safe='')}", when=when,
+        ))
+    return out
+
+
+def _settings(owner: Optional[str], q: str, limit: int) -> List[Dict[str, Any]]:
+    """Agent, browser and desktop options described by the server schema
+    (`src.agent_settings_schema`, `GET /api/agent/settings/schema`): key,
+    label, help and group title. Each hit opens Settings > Agent filtered to
+    that key."""
+    from src import agent_settings_schema as schema
+
+    out: List[Dict[str, Any]] = []
+    for group in schema.GROUPS:
+        title = str(group.get("title") or "")
+        for field in group.get("fields") or []:
+            key = str(field.get("key") or "")
+            if not _tokens_match(q, key, field.get("label"), field.get("help"), title):
+                continue
+            out.append(_result(
+                source="settings", id_=key, title=str(field.get("label") or key),
+                snippet=f"{title} · {key} — {field.get('help') or ''}",
+                url=f"/settings?s=agent&q={urllib.parse.quote(key, safe='')}", when=None,
+            ))
+            if len(out) >= limit:
+                return out
+    return out
+
+
 _SOURCE_FUNCS = {
     "chats": _chats,
     "brain": _brain,
@@ -284,6 +341,8 @@ _SOURCE_FUNCS = {
     "gallery": _gallery,
     "skills": _skills,
     "board": _board,
+    "projects": _projects,
+    "settings": _settings,
 }
 
 

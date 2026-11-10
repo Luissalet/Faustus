@@ -97,6 +97,7 @@ import { modeDescription, modeLabel, type BehaviorMode } from '../../adapters/be
 import { getSessionConnectors, getSessionToolSupport, setSessionConnectors, type ConnectorSelection, type ToolSupport } from '../../adapters/sessions';
 import { ConnectorPicker } from '../connectors/ConnectorPicker';
 import { QuickTools } from './QuickTools';
+import { browsing, loadHistory, remember, step } from './promptHistory';
 
 export type Mode = 'chat' | 'agent';
 
@@ -371,6 +372,8 @@ export function Composer({
    * back down through the effect below. */
   const [draft, setLocalDraft] = useState(draftProp);
   const draftRef = useRef(draftProp);
+  /** ↑/↓ prompt history (promptHistory.ts): the list and where the arrows are. */
+  const historyRef = useRef<{ list: string[]; index: number }>({ list: loadHistory(), index: -1 });
   const pushedRef = useRef(draftProp);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setDraftPropRef = useRef(setDraftProp);
@@ -490,6 +493,8 @@ export function Composer({
     // value -- empty, on the first message of a conversation, so the turn
     // silently never started and the composer just cleared itself.
     const current = draftRef.current;
+    remember(current);
+    historyRef.current = { list: loadHistory(), index: -1 };
     if (busy && onSteer && !current.trim().startsWith('!!')) {
       const text = current.trim();
       if (!text) return;
@@ -766,15 +771,24 @@ export function Composer({
       trySend();
       return;
     }
-    if (event.key === 'ArrowUp' && !draft && lastSent) {
-      // Empty composer: bring back the last message, caret at the end.
-      event.preventDefault();
-      setDraft(lastSent);
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (el) el.setSelectionRange(el.value.length, el.value.length);
-      });
-      return;
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      // Empty composer (or one still showing a recalled prompt): ↑/↓ walk the
+      // prompts sent from this browser, newest first, like a shell history.
+      const h = historyRef.current;
+      if (!h.list.length && lastSent) h.list = [lastSent];
+      if (h.index < 0 || h.index > h.list.length) h.index = h.list.length;
+      const dir = event.key === 'ArrowUp' ? -1 : 1;
+      if (h.list.length && browsing(draft, h.list, h.index) && !(dir === 1 && h.index === h.list.length)) {
+        event.preventDefault();
+        const next = step(h.list, h.index, dir);
+        h.index = next.index;
+        setDraft(next.text);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) el.setSelectionRange(el.value.length, el.value.length);
+        });
+        return;
+      }
     }
     // UX-04: the shortcut now names the least destructive action — stop the
     // generation, leave the turn resumable — same key as always; the harsher
