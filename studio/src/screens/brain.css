@@ -642,7 +642,7 @@
   flex-basis: 100%;
 }
 .fs-brain__canvas-msg[data-tone='error'] {
-  color: var(--fs-danger, #c0392b);
+  color: var(--fs-danger);
 }
 .fs-brain__local-toggle,
 .fs-brain__depth {

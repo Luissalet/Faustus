@@ -83,7 +83,7 @@
   display: inline-flex; align-items: center; justify-content: center; flex: none; inline-size: 36px; height: auto; padding: 0;
   background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 8px; color: var(--fs-text-2); cursor: pointer;
 }
-.fs-dlv__del:hover:not(:disabled) { color: var(--fs-danger, #e5484d); border-color: var(--fs-danger, #e5484d); }
+.fs-dlv__del:hover:not(:disabled) { color: var(--fs-danger); border-color: var(--fs-danger); }
 .fs-dlv__del:disabled { opacity: 0.45; cursor: default; }
 .fs-dlv__row > .fs-dlv__del { block-size: 32px; }
 
