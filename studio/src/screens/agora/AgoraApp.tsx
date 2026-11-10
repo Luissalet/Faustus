@@ -154,10 +154,16 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
     else if (action === 'new-room') open({ kind: 'room', id: 'new' });
     else if (action === 'mark-read') void markSpaceSeen(spaceId).then(() => { notify(t('Marked as read')); refresh(); }).catch((e: Error) => notify(e.message, 'warn'));
     else if (action === 'toggle-hidden') void setSpaceMeta(spaceId, { hidden: !server?.hidden }).then(refresh).catch((e: Error) => notify(e.message, 'warn'));
+    else if (action === 'toggle-pin') {
+      const pinned = (servers ?? []).map((s) => s.position).filter((p): p is number => p !== null);
+      const position = server?.position === null || server?.position === undefined ? (pinned.length ? Math.max(...pinned) + 1 : 0) : null;
+      void setSpaceMeta(spaceId, { position }).then(() => { notify(position === null ? t('Server unpinned') : t('Server pinned to the top')); refresh(); })
+        .catch((e: Error) => notify(e.message, 'warn'));
+    }
     else if (action === 'open-project' && ready?.space.project_id) navigate('/projects/' + encodeURIComponent(ready.space.project_id));
     else if (action === 'council') navigate('/agora?space_id=' + encodeURIComponent(spaceId) + '&mode=council');
     else if (action === 'classic') navigate('/agora?space_id=' + encodeURIComponent(spaceId) + '&mode=groups');
-  }, [navigate, notify, open, ready, refresh, server?.hidden, spaceId]);
+  }, [navigate, notify, open, ready, refresh, server?.hidden, server?.position, servers, spaceId]);
 
   const head = useMemo(() => {
     if (!ready) return { icon: Hash, title: '', hint: '' };

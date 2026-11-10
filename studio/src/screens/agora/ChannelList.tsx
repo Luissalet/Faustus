@@ -2,6 +2,7 @@ import {
   Activity, AlertTriangle, Ban, BookOpen, CheckCheck, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, Eye, EyeOff,
   FolderKanban, FolderOpen, GitPullRequest, Hash, Kanban, Landmark, Lock, MessageCircleQuestion, MessagesSquare, PackageCheck,
   Pencil, Plus, Scale, Settings2, SquarePen, Users, Volume2, type LucideIcon,
+  Pin, PinOff,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { BOARD_COLUMNS, type AgoraGuild, type AgoraTaskRow, type BoardColumn } from '../../adapters/agora';
@@ -11,7 +12,7 @@ import { IconButton, Menu } from '../../components';
 import { t, tn } from '../../i18n';
 import { agentColor, agentInitials, COLUMN_LABEL, recall, remember, THREAD_KIND_LABEL, viewKey, type View } from './util';
 
-export type ListAction = 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'open-project' | 'council' | 'classic';
+export type ListAction = 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'toggle-pin' | 'open-project' | 'council' | 'classic';
 
 const TASK_ICON: Record<string, LucideIcon> = {
   open: Circle, claimed: CircleDot, in_progress: CircleDot, blocked: AlertTriangle, changes: AlertTriangle,
@@ -124,7 +125,12 @@ export function ChannelList({ guild, view, onOpen, onAction, rooms, hidden, embe
     ...(space.project_id ? [{ label: t('Open its project'), icon: FolderKanban, onSelect: () => onAction('open-project') }] : []),
     { label: t('Deliberation rooms'), icon: Landmark, onSelect: () => onAction('council') },
     { label: t('Classic room view'), icon: Users, onSelect: () => onAction('classic') },
-    ...(embedded ? [] : [null, { label: hidden ? t('Keep this server on view') : t('Hide this server'), icon: hidden ? Eye : EyeOff, onSelect: () => onAction('toggle-hidden') }]),
+    ...(embedded ? [] : [null,
+      // Servers go by what moved last; a pinned one stays at the top of the list, in the order they were pinned.
+      space.meta.position === null
+        ? { label: t('Pin this server to the top'), icon: Pin, onSelect: () => onAction('toggle-pin') }
+        : { label: t('Unpin this server'), icon: PinOff, onSelect: () => onAction('toggle-pin') },
+      { label: hidden ? t('Keep this server on view') : t('Hide this server'), icon: hidden ? Eye : EyeOff, onSelect: () => onAction('toggle-hidden') }]),
   ];
 
   return (

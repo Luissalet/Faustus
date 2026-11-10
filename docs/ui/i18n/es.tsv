@@ -11099,3 +11099,7 @@ Move to {column}	Mover a {column}
 {n} thing waits for you	{n} cosa te espera
 {n} things wait for you	{n} cosas te esperan
 {n} unread	{n} sin leer
+Pin this server to the top	Fijar este servidor arriba
+Server pinned to the top	Servidor fijado arriba
+Server unpinned	Servidor sin fijar
+Unpin this server	Dejar de fijar este servidor
