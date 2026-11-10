@@ -1,5 +1,13 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex 408: daño de Pikachu/Eevee — 10-11-2026
+
+Prevalece sobre los estados anteriores de HoardDex. Las ediciones Pikachu/Eevee admiten daño condicionado individual con seis características ya resueltas para el nivel de batalla, antes de etapas, estados y pantallas. Conserva PS exactos y clonación sin reaplicar caramelos, naturaleza o amistad. Conjunto positivo de 188 identidades y 227 movimientos; los ataques de compañeros piden amistad adicional para potencia. Los ID de movimientos Z y estadísticas incompletas, incluidos huecos de la API programática, se rechazan. Arceus/Z-A/Megadimensión y las demás limitaciones siguen abiertas, sin resolver por votación la discrepancia de la fórmula de características.
+
+Fuente CAS3 fe92df45 y cierre documental b905734e, Main408: 860 TS + 23 CJS, tipos, MCP37/1787 y web pasan. QA web y Android x86 real ES/EN, incluidas doce etiquetas inglesas y PS250/310; los dos APK408 y JSON están publicados con runtime exacto al probado y 17.140 medios intactos. El x86 final está instalado por SHA y arranca con la colección restaurada; ARM64 sólo se compila e inspecciona. Los 172 JSON previos siguen exactos y hay 174 en total. No push ni paridad global afirmada.
+
+Android permanece visible y se maneja exclusivamente mediante SDK/ADB. Se comprobó que TAB61 avanza por campos numéricos consecutivos; cada lote se verifica en una captura, sin inferir foco o éxito. Si el teclado oculta el campo, cerrar con BACK4 y comprobar sus cifras antes de seguir; el ajuste del flujo táctil se trabaja en la tarea2447. El emulador queda en español/sistema/Arceus1–1025/226/consulta vacía. Se retiraron sólo cuatro APK obsoletos nuevos y el WT408; los tres objetivos de borrado rechazados anteriormente, residuos2368 y lanzamiento2361 se conservan sin reintento. Faustus es local y no tiene cuota de proveedor; no se ejecutó un nuevo modelo.
+
 ## HoardDex 404: evoluciones regionales — 10-11-2026
 
 HoardDex explica 130 contextos de evolución regional antes desconocidos por edición y forma, sin confundir evolución local y obtención de una forma ya evolucionada. Dos casos de Shedinja en Sol/Luna ya funcionaban y ganan procedencia y enlace a la Poké Ball; cuatro referencias de Sinistcha en Z-A siguen desconocidas. Z-A distingue el límite de traslado sin retorno. Fuente aprobada CAS1 y probada en web y Android visible ES/EN; Main pasa 853 TS + 23 CJS, tipos, MCP37/1767 y web. Los dos APK404 y sus JSON están publicados, con runtime idéntico al probado y 17.140 medios conservados;172 JSON en total. El x86 final está instalado por SHA y arranca con la colección restaurada. ARM64 sólo se compila e inspecciona; la paridad global sigue abierta.
