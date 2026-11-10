@@ -33,6 +33,8 @@ Repaso del 04-11 (Ágora, espacio faustus): se comprobaron las 87 entradas del 2
 
 ## B. Código: vigilar
 
+- 10-11-2026: el Hub mantiene un túnel hacia la Spark mientras Faustus corre allí (para el Ágora, las salas y la deliberación). Su estado sale en `GET /api/placement` → `hub_link` (`up`, `error`). Si las salas o el Ágora dejan de verse en la Spark con el PC encendido, mirar ahí primero; se reabre solo cada minuto.
+
 - 09-11-2026: cinco ficheros de `data/push` (claves VAPID, suscripciones y temporales de `retry.json`) tenían una DACL vacía: ni tu usuario podía leerlos, así que el push web del PC no podía usar sus claves. Reparados con `restrict_to_owner` (hoy produce la DACL correcta, comprobado con un fichero de prueba); el origen fue una versión anterior del endurecimiento. Si vuelve a aparecer un fichero ilegible en `data/`, `Get-Acl <fichero>` que acabe en `D:AI` sin entradas es la firma.
 
 - 12-10-2026: al final de una respuesta en Studio apareció repetido el último párrafo en crudo (markdown sin renderizar, empezando a mitad de palabra). No está en los datos guardados, así que es de pintado; no se ha vuelto a ver desde entonces. Si reaparece, guardar el id de la sesión y una captura para reproducirlo.

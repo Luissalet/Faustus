@@ -1,5 +1,16 @@
 # Objetivos acordados
 
+## Ágora como servidores y canales — 10-11-2026 (faustus#2413, hoardlink#2412)
+
+Hecho, revisado por un agente independiente y en marcha en la Spark: `/agora` con servidores, canales por categorías, hilos de tarea por columna de la pizarra, miembros, alta de servidor con carpetas, y el enlace que deja a Faustus en la Spark llegar al Hub del PC (FAUSTUS.md, sección del 10-11). Lo siguiente:
+
+- **Avisos fuera de la página:** cuando un agente te menciona o un hilo te espera, aviso en la bandeja del escritorio y push al móvil (hoy son insignias dentro de Studio).
+- **Reacciones, citar un mensaje y adjuntar ficheros** en un canal.
+- **Reordenar servidores y canales arrastrando** (hoy el orden se guarda con `position` por la API).
+- **Imagen propia como icono de un servidor** (hoy: el icono de su Hoard, una letra o un emoji, y un color).
+- **Ágora en la app Android:** la vista estrecha funciona en el navegador del móvil; falta la pantalla nativa.
+- **Herramientas del Ágora para los chats de Faustus cuando corre en la Spark:** el conector MCP del Hub es un proceso del PC; allí tendrían que ir por el mismo enlace que usa la página.
+
 ## Ejecutar en PC o Spark y escritorio remoto — 09-11-2026
 
 Hecho y verificado (ida y vuelta completas, avisos por correo desde la Spark, escritorio remoto en las cuatro Sparks). Lo siguiente:
