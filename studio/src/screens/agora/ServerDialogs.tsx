@@ -6,7 +6,8 @@ import {
 } from '../../adapters/agora';
 import { pickNative } from '../../adapters/composer';
 import { addContextRoot, createProject, listProjects, recentFolders, type Project, type RecentFolder } from '../../adapters/projects';
-import { Button, Dialog, IconButton } from '../../components';
+import { Button, Dialog, IconButton, Skeleton } from '../../components';
+import { getNotificationPrefs, putNotificationPrefs } from '../../shell/notifications';
 import WorkspaceDialog from '../studio/WorkspaceDialog';
 import { t } from '../../i18n';
 import { isOnline, ROLE_COLORS } from './util';
@@ -469,6 +470,67 @@ export function NewTaskDialog({ open, guild, onClose, onCreated, notify }: {
             <select className="fs-field" value={owner} onChange={(e) => setOwner(e.target.value)}>
               <option value="">{t('Whoever claims it')}</option>{around.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}</select></label>
         </div>
+        {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * What the Agora tells the person outside itself (the bell, the desktop, the
+ * phone): a message that names them, a question the agents put to them, and
+ * which servers are silenced. Inside the Agora nothing changes: its inbox
+ * still holds all that waits.
+ */
+export function AgoraNotifyDialog({ open, servers, onClose, onChanged, notify }: {
+  open: boolean; servers: AgoraServer[]; onClose: () => void; onChanged: () => void; notify: Notify;
+}) {
+  const [wants, setWants] = useState<{ mentions: boolean; questions: boolean } | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    setWants(null); setError('');
+    const controller = new AbortController();
+    getNotificationPrefs(controller.signal).then((prefs) => setWants({ mentions: prefs.agora?.mentions !== false, questions: prefs.agora?.questions !== false }))
+      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
+    return () => controller.abort();
+  }, [open]);
+  // Each switch is saved as it is moved, and only that switch is sent: moving both quickly never undoes one of them.
+  const toggle = (kind: 'mentions' | 'questions', value: boolean) => {
+    setWants((old) => (old ? { ...old, [kind]: value } : old));
+    void putNotificationPrefs({ agora: { [kind]: value } }).then(() => setError(''))
+      .catch((e: Error) => { setWants((old) => (old ? { ...old, [kind]: !value } : old)); setError(e.message); });
+  };
+  const unmute = (server: AgoraServer) => {
+    void setSpaceMeta(server.id, { muted: false }).then(() => { notify(t('Server unmuted')); onChanged(); }).catch((e: Error) => setError(e.message));
+  };
+  const muted = servers.filter((s) => s.muted);
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }} title={t('Agora notifications')} testId="agora-notify-dialog" className="fs-agx-dialog"
+      description={t('What the Agora tells you outside itself: in the bell, on the desktop and on your phone. Its inbox keeps everything that waits for you either way.')}
+      footer={<Button variant="primary" label={t('Done')} onClick={onClose} />}>
+      <div className="fs-agx-form">
+        {!wants && !error && <Skeleton label={t('Loading')} count={2} height="28px" />}
+        {wants && (
+          <>
+            <label className="fs-switch"><input type="checkbox" checked={wants.mentions} onChange={(e) => toggle('mentions', e.target.checked)} data-testid="agora-notify-mentions" /> {t('When someone mentions you')}</label>
+            <label className="fs-switch"><input type="checkbox" checked={wants.questions} onChange={(e) => toggle('questions', e.target.checked)} data-testid="agora-notify-questions" /> {t('When the agents ask you something')}</label>
+          </>
+        )}
+        <section className="fs-agx-workers" aria-label={t('Muted servers')}>
+          <h4>{t('Muted servers')}</h4>
+          {muted.length === 0 && <p className="fs-muted">{t('None. A server is muted from its own menu.')}</p>}
+          {muted.length > 0 && (
+            <ul data-testid="agora-notify-muted">
+              {muted.map((server) => (
+                <li key={server.id}>
+                  <span className="fs-agx-workers__text"><strong>{server.title}</strong></span>
+                  <Button size="sm" variant="ghost" label={t('Unmute')} onClick={() => unmute(server)} testId={'agora-notify-unmute-' + server.id} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
         {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
       </div>
     </Dialog>

@@ -19,7 +19,9 @@ import { t } from '../i18n';
  * The Agora is watched the same way: the tray reads what waits for the person
  * in the hub (a message that names them, a question the agents put to them)
  * and `emitForAgora` makes each one a notification, once. A phone with no
- * page open is told by the server instead (src/agora_watch.py).
+ * page open is told by the server instead (src/agora_watch.py). A server the
+ * person silenced is left out by the hub, and a kind they switched off
+ * (mentions, questions) is refused by `POST /emit` itself.
  */
 
 export type NotificationType = 'approval' | 'question' | 'task_done' | 'task_failed' | 'blocked' | 'agora';
@@ -33,6 +35,8 @@ export interface NotificationPrefs {
   channels: { in_app: boolean; desktop: boolean };
   types: Record<NotificationType, NotificationChannelPrefs>;
   quiet_hours: { enabled: boolean; start: string; end: string };
+  /** Which Agora news are told: a message that names the person, a question the agents put to them. */
+  agora: { mentions: boolean; questions: boolean };
 }
 
 export interface StoredNotification {
@@ -63,7 +67,8 @@ export async function getNotificationPrefs(signal?: AbortSignal): Promise<Notifi
   return getJson<NotificationPrefs>('/api/notifications/prefs', signal);
 }
 
-export async function putNotificationPrefs(patch: Partial<NotificationPrefs>): Promise<NotificationPrefs> {
+/** Only what is sent changes; of `agora`, only the switches sent. */
+export async function putNotificationPrefs(patch: Partial<Omit<NotificationPrefs, 'agora'>> & { agora?: Partial<NotificationPrefs['agora']> }): Promise<NotificationPrefs> {
   return send<NotificationPrefs>('/api/notifications/prefs', 'PUT', patch);
 }
 

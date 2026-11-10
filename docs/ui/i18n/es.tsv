@@ -11362,7 +11362,6 @@ Take {n} off the server	Dar de baja a {n}
 That file is not a picture the browser can read.	Ese fichero no es una imagen que el navegador sepa leer.
 That message is further back: load earlier messages to reach it.	Ese mensaje queda más atrás: carga mensajes anteriores para llegar a él.
 The hub finds nothing it can start right now.	El Hub no encuentra nada que pueda arrancar ahora mismo.
-The hub starts it on the PC with the provider's own program. It comes in under a name of its own, reads the board and works on what you write here.	El Hub la arranca en el PC con el programa del propio proveedor. Entra con un nombre suyo, lee el tablero y trabaja en lo que escribas aquí.
 The message it answered is no longer there.	El mensaje al que respondía ya no está.
 The name needs at least two letters or digits.	El nombre necesita al menos dos letras o cifras.
 The session could not start.	La sesión no ha podido arrancar.
@@ -11391,3 +11390,35 @@ is reviewing	está revisando
 {n} task is free again	{n} tarea vuelve a estar libre
 {n} tasks are free again	{n} tareas vuelven a estar libres
 {n} tasks go to {name}	{n} tareas pasan a {name}
+Agora notifications	Avisos del Ágora
+Agora notifications…	Avisos del Ágora…
+Its program on the PC has no account signed in.	Su programa en el PC no tiene ninguna cuenta iniciada.
+Its program on the PC is signed out: open it there once and sign in again.	Su programa en el PC tiene la sesión caducada: ábrelo allí una vez e inicia sesión de nuevo.
+Its session failed: {why}	Su sesión falló: {why}
+Its session finished	Su sesión terminó
+Looking at what each provider offers	Mirando lo que ofrece cada proveedor
+Model and effort of the agents	Modelo y esfuerzo de los agentes
+Model and effort of the agents…	Modelo y esfuerzo de los agentes…
+Mute this server	Silenciar este servidor
+Muted	Silenciado
+Muted servers	Servidores silenciados
+None. A server is muted from its own menu.	Ninguno. Un servidor se silencia desde su propio menú.
+On {server}. The sessions you start here begin with it, and each provider answers with it from the hub. A chat you already have open in its own app keeps the model chosen there.	En {server}. Las sesiones que arranques aquí empiezan con él y cada proveedor contesta con él desde el Hub. Un chat que ya tengas abierto en su propia aplicación sigue con el modelo que elegiste allí.
+Saved. Faustus takes it as soon as its session is free.	Guardado. Faustus lo coge en cuanto su sesión quede libre.
+Server muted: it will not notify you	Servidor silenciado: ya no te avisa
+Server unmuted	El servidor vuelve a avisarte
+Started from here	Arrancada desde aquí
+Started from here on {model}	Arrancada desde aquí con {model}
+Stop its session	Parar su sesión
+The hub cannot start it right now.	El Hub no puede arrancarlo ahora mismo.
+The hub sees its program signed out on the PC: it will not start until you sign in there again.	El Hub ve su programa con la sesión caducada en el PC: no arrancará hasta que inicies sesión allí de nuevo.
+The hub starts it on the PC with the provider's own program, on the model and effort you choose. It comes in under a name of its own, reads the board and works on what you write here.	El Hub la arranca en el PC con el programa del propio proveedor, con el modelo y el esfuerzo que elijas. Entra con un nombre suyo, lee el tablero y trabaja en lo que escribas aquí.
+Ultra#effort	Ultra
+Unmute	Quitar el silencio
+Unmute this server	Quitar el silencio a este servidor
+Very high#effort	Muy alto
+What the Agora tells you outside itself: in the bell, on the desktop and on your phone. Its inbox keeps everything that waits for you either way.	Lo que el Ágora te avisa fuera de ella: en la campana, en el escritorio y en el teléfono. Su bandeja guarda igualmente todo lo que te espera.
+Whatever it is set to	El que tenga puesto
+When someone mentions you	Cuando alguien te menciona
+When the agents ask you something	Cuando los agentes te preguntan algo
+muted	silenciado

@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router';
 import { getServers } from '../../adapters/agora';
 import { t, tn } from '../../i18n';
+import { AGORA_WAITING_CHANGED } from './util';
 
 /**
  * The Agora in the sidebar, next to the other things used every day, with
  * how many things wait for the person across all servers: mentions and the
- * threads that ask for a decision. Looked at once a minute while the window
- * is in view; a hub that is not answering simply shows no count.
+ * threads that ask for a decision; a server the person silenced does not
+ * count. Looked at once a minute while the window is in view; a hub that is
+ * not answering simply shows no count.
  *
  * On a phone it is one of the tabs at the bottom (`tab`), with the count on
  * the icon's corner.
@@ -21,13 +23,17 @@ export function AgoraNavLink({ tab = false }: { tab?: boolean }) {
     const load = () => {
       if (document.hidden) return;
       getServers(controller.signal)
-        .then((listing) => { if (alive) setWaiting(listing.servers.filter((s) => !s.hidden).reduce((n, s) => n + s.mentions + (s.counts.waiting || 0), 0)); })
+        .then((listing) => { if (alive) setWaiting(listing.servers.filter((s) => !s.hidden && !s.muted).reduce((n, s) => n + s.mentions + (s.counts.waiting || 0), 0)); })
         .catch(() => { if (alive) setWaiting(0); });
     };
     load();
     const timer = window.setInterval(load, 60000);
     window.addEventListener('focus', load);
-    return () => { alive = false; controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', load); };
+    window.addEventListener(AGORA_WAITING_CHANGED, load);
+    return () => {
+      alive = false; controller.abort(); window.clearInterval(timer);
+      window.removeEventListener('focus', load); window.removeEventListener(AGORA_WAITING_CHANGED, load);
+    };
   }, []);
   const label = t('Agora');
   const title = waiting > 0 ? label + ' · ' + tn(waiting, '{n} thing waits for you', '{n} things wait for you') : label;

@@ -127,3 +127,7 @@ export function remember(key: string, value: string): void {
 export function recall(key: string): string {
   try { return window.localStorage.getItem(key) || ''; } catch { return ''; }
 }
+
+/** Sent on `window` when what waits for the person changed by their own hand (a server muted or heard again), so the
+ *  count on the sidebar does not wait for its next look. */
+export const AGORA_WAITING_CHANGED = 'faustus:agora-waiting';

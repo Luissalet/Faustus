@@ -14,6 +14,7 @@ function serverHint(server: AgoraServer): string {
   if (c.active) bits.push(tn(c.active, '{n} task in progress', '{n} tasks in progress'));
   if (c.review) bits.push(tn(c.review, '{n} in review', '{n} in review'));
   if (server.online) bits.push(tn(server.online, '{n} agent around', '{n} agents around'));
+  if (server.muted) bits.push(t('muted'));
   return bits.join(' · ');
 }
 
@@ -43,7 +44,7 @@ export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden
   servers: AgoraServer[]; current: string; home: string; onSelect: (id: string) => void; onAdd: () => void;
   showHidden: boolean; onToggleHidden: () => void; onInbox: () => void; inboxOpen: boolean;
 }) {
-  const waiting = servers.reduce((sum, s) => sum + (s.counts.waiting || 0) + s.mentions, 0);
+  const waiting = servers.reduce((sum, s) => sum + (s.muted ? 0 : (s.counts.waiting || 0) + s.mentions), 0);
   const visible = servers.filter((s) => s.id !== home && (showHidden || !s.hidden || s.id === current));
   const hiddenCount = servers.filter((s) => s.hidden).length;
   const homeServer = servers.find((s) => s.id === home);
@@ -51,14 +52,14 @@ export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden
     const attention = server.mentions + (server.counts.waiting || 0);
     return (
       <li key={server.id} className="fs-agx-rail__item" data-current={server.id === current || undefined}
-        data-unread={server.unread > 0 || undefined} data-hidden={server.hidden || undefined}>
+        data-unread={server.unread > 0 || undefined} data-hidden={server.hidden || undefined} data-muted={server.muted || undefined}>
         <span className="fs-agx-rail__pill" aria-hidden="true" />
         <button type="button" className="fs-agx-rail__btn" title={serverHint(server)} aria-label={serverHint(server)}
           aria-current={server.id === current ? 'page' : undefined} onClick={() => onSelect(server.id)} data-testid={'agora-server-' + server.id}>
           {glyph === 'home'
             ? <span className="fs-agx-sicon" data-kind="home" aria-hidden="true"><Home size={22} /></span>
             : <ServerIcon server={server} />}
-          {attention > 0 && <span className="fs-agx-badge" data-tone="alert" aria-hidden="true">{attention > 99 ? '99+' : attention}</span>}
+          {attention > 0 && <span className="fs-agx-badge" data-tone={server.muted ? 'quiet' : 'alert'} aria-hidden="true">{attention > 99 ? '99+' : attention}</span>}
           {attention === 0 && server.online > 0 && <span className="fs-agx-rail__live" aria-hidden="true" />}
         </button>
       </li>

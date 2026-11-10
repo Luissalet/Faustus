@@ -50,6 +50,8 @@ export const en: Record<string, string> = {
   'Medium#effort': 'Medium',
   'High#effort': 'High',
   'Maximum#effort': 'Maximum',
+  'Very high#effort': 'Very high',
+  'Ultra#effort': 'Ultra',
   'Level#effort': 'Level',
   'Follow the mode#effort': 'Follow the mode',
   // Sparks initial-wait setting (distinct from latency stats wording).

@@ -16,10 +16,10 @@ import { ChannelList, type ChannelDrop, type ListAction } from './ChannelList';
 import { ChatPane } from './ChatPane';
 import { MembersPane } from './MembersPane';
 import { RoomsPane } from './RoomsPane';
-import { AddServerDialog, EditServerDialog, NewChannelDialog, NewTaskDialog, NewThreadDialog } from './ServerDialogs';
+import { AddServerDialog, AgoraNotifyDialog, EditServerDialog, NewChannelDialog, NewTaskDialog, NewThreadDialog } from './ServerDialogs';
 import { ServerRail } from './ServerRail';
 import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, LocksView, SearchView, WelcomeView } from './Views';
-import { findTaskByThread, parseView, recall, remember, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
+import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
 import './agora-app.css';
 
 const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon }> = {
@@ -35,7 +35,7 @@ const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon 
 };
 
 type DialogState = null | { kind: 'add-server' } | { kind: 'edit-server'; focus?: 'folders' } | { kind: 'new-channel'; category: string }
-  | { kind: 'new-thread' } | { kind: 'new-task' };
+  | { kind: 'new-thread' } | { kind: 'new-task' } | { kind: 'notify' };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
@@ -163,6 +163,12 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
     else if (action === 'new-room') open({ kind: 'room', id: 'new' });
     else if (action === 'mark-read') void markSpaceSeen(spaceId).then(() => { notify(t('Marked as read')); refresh(); }).catch((e: Error) => notify(e.message, 'warn'));
     else if (action === 'toggle-hidden') void setSpaceMeta(spaceId, { hidden: !server?.hidden }).then(refresh).catch((e: Error) => notify(e.message, 'warn'));
+    else if (action === 'toggle-muted') {
+      const muted = !ready?.space.meta.muted;
+      void setSpaceMeta(spaceId, { muted }).then(() => { notify(muted ? t('Server muted: it will not notify you') : t('Server unmuted')); refresh(); window.dispatchEvent(new Event(AGORA_WAITING_CHANGED)); })
+        .catch((e: Error) => notify(e.message, 'warn'));
+    }
+    else if (action === 'notify') setDialog({ kind: 'notify' });
     else if (action === 'toggle-pin') {
       const pinned = (servers ?? []).map((s) => s.position).filter((p): p is number => p !== null);
       const position = server?.position === null || server?.position === undefined ? (pinned.length ? Math.max(...pinned) + 1 : 0) : null;
@@ -302,6 +308,8 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
 
       <AddServerDialog open={dialog?.kind === 'add-server'} servers={servers ?? []} onClose={() => setDialog(null)} notify={notify}
         onCreated={(id) => { refresh(); selectServer(id); }} />
+      <AgoraNotifyDialog open={dialog?.kind === 'notify'} servers={servers ?? []} onClose={() => setDialog(null)} notify={notify}
+        onChanged={() => { refresh(); window.dispatchEvent(new Event(AGORA_WAITING_CHANGED)); }} />
       {ready && (
         <>
           <EditServerDialog open={dialog?.kind === 'edit-server'} guild={ready} focus={dialog?.kind === 'edit-server' ? dialog.focus : undefined}

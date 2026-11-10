@@ -30,6 +30,7 @@
 .fs-agx-rail ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--fs-space-2); }
 .fs-agx-rail__item { position: relative; inline-size: 100%; display: flex; justify-content: center; }
 .fs-agx-rail__item[data-hidden] { opacity: 0.55; }
+.fs-agx-rail__item[data-muted]:not([data-current]) .fs-agx-sicon { opacity: 0.6; }
 .fs-agx-rail__sep { inline-size: 32px; block-size: 2px; border-radius: 1px; background: var(--fs-border); }
 .fs-agx-rail__pill { position: absolute; inset-inline-start: 0; inset-block-start: 50%; inline-size: 4px; block-size: 0; translate: 0 -50%;
   border-radius: 0 4px 4px 0; background: var(--fs-text-1); transition: block-size var(--fs-duration-normal) var(--fs-ease); }
@@ -55,6 +56,7 @@
 .fs-agx-badge { display: inline-grid; place-items: center; min-inline-size: 18px; block-size: 18px; padding-inline: 5px; border-radius: var(--fs-radius-pill);
   background: var(--fs-surface-3); color: var(--fs-text-1); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 .fs-agx-badge[data-tone='alert'] { background: var(--fs-danger-solid); color: var(--fs-on-danger-solid); }
+.fs-agx-badge[data-tone='quiet'] { background: var(--fs-surface-3); color: var(--fs-text-3); }
 
 /* ── Channel list ── */
 
@@ -440,3 +442,17 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 @media (prefers-reduced-motion: reduce) {
   .fs-agx-rail__pill, .fs-agx-sicon, .fs-agx-row, .fs-agx-card, .fs-agx-main__search input { transition: none; }
 }
+
+/* ── Model and effort of the agents; a muted server ── */
+.fs-agx-role__model { display: flex; align-items: center; gap: 5px; max-inline-size: 100%; margin: -2px 0 4px; padding: 2px 8px; border: 0; border-radius: var(--fs-radius-sm);
+  background: none; color: var(--fs-text-3); font: inherit; font-size: 10.5px; text-align: start; cursor: pointer; }
+.fs-agx-role__model:hover, .fs-agx-role__model:focus-visible { background: var(--fs-surface-2); color: var(--fs-text-1); }
+.fs-agx-role__model span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-agx-role__model svg { flex-shrink: 0; }
+.fs-agx-tune { align-items: center; padding-block: var(--fs-space-2); border-block-start: 1px solid var(--fs-border); }
+.fs-agx-tune:first-child { border-block-start: 0; padding-block-start: 0; }
+.fs-agx-tune__name { flex: 0 0 76px; font-size: var(--fs-label-size); }
+.fs-agx-tune__off { flex: 1; }
+.fs-agx-channels__muted { flex-shrink: 0; margin-inline-start: auto; color: var(--fs-text-3); }
+.fs-agx-dialog .fs-switch { justify-content: flex-start; }
+.fs-agx-profile__failed { margin: 0; color: var(--fs-danger); font-size: var(--fs-label-size); overflow-wrap: anywhere; }

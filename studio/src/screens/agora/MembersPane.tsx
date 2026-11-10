@@ -1,9 +1,12 @@
-import { AtSign, ChevronDown, ChevronRight, Lock, MoreHorizontal, UserMinus, UserPlus } from 'lucide-react';
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { getMembers, type AgoraGuild, type AgoraMember, type QuotaProvider } from '../../adapters/agora';
+import { AtSign, ChevronDown, ChevronRight, Lock, MoreHorizontal, SlidersHorizontal, Square, UserMinus, UserPlus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  getConsole, getMembers, stopWorker,
+  type AgoraGuild, type AgoraMember, type ConsoleLeader, type ConsoleWorker, type QuotaProvider,
+} from '../../adapters/agora';
 import { Button, IconButton, Menu, Popover } from '../../components';
 import { t, tn } from '../../i18n';
-import { AddAgentDialog, PruneAgentsDialog, RemoveAgentDialog } from './MemberDialogs';
+import { AddAgentDialog, AgentModelsDialog, failureWhy, modelLine, PruneAgentsDialog, RemoveAgentDialog } from './MemberDialogs';
 import {
   ago, agentColor, agentInitials, composerBus, findTask, isOnline, PRESENCE_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER, STATUS_LABEL, type View,
 } from './util';
@@ -20,7 +23,14 @@ function quotaOf(providers: QuotaProvider[], role: string): { free: number | nul
 
 const OBSERVED_LABEL: Record<string, string> = { working: 'At work', tool: 'Using a tool', waiting: 'Waiting', idle: 'Idle', stale: 'Gone quiet' };
 
-function MemberCard({ member, guild, onOpen, onRemove }: { member: AgoraMember; guild: AgoraGuild; onOpen: (view: View) => void; onRemove: (member: AgoraMember) => void }) {
+/** A session the hub started from here, with the model it runs on as the person reads it. */
+interface Started { worker: ConsoleWorker; line: string }
+interface CardProps {
+  member: AgoraMember; guild: AgoraGuild; onOpen: (view: View) => void; onRemove: (member: AgoraMember) => void;
+  started?: Started; onStop: (worker: ConsoleWorker) => void;
+}
+
+function MemberCard({ member, guild, onOpen, onRemove, started, onStop }: CardProps) {
   const openTask = (id: number) => {
     const thread = findTask(guild, id)?.thread_id;
     onOpen(thread ? { kind: 'thread', id: String(thread) } : { kind: 'view', id: 'board' });
@@ -36,6 +46,11 @@ function MemberCard({ member, guild, onOpen, onRemove }: { member: AgoraMember; 
       {member.doing && <p className="fs-agx-profile__doing">{member.doing}</p>}
       {!member.doing && member.note && <p className="fs-agx-profile__doing">{member.note}</p>}
       {seen?.state && <p className="fs-muted">{t('Its session: {state}', { state: t(OBSERVED_LABEL[seen.state] ?? seen.state) })}{seenTool ? ' · ' + seenTool : ''}{seen.title ? ' · ' + seen.title : ''}</p>}
+      {started && <p className="fs-muted" data-testid="agora-profile-model">{started.line ? t('Started from here on {model}', { model: started.line }) : t('Started from here')}</p>}
+      {started && (started.worker.state === 'failed' || started.worker.state === 'unavailable') && (
+        <p className="fs-agx-profile__failed" data-testid="agora-profile-failed">{t('Its session failed: {why}', { why: failureWhy(started.worker) || t('no reason given') })}</p>
+      )}
+      {started?.worker.state === 'completed' && <p className="fs-muted">{t('Its session finished')}</p>}
       {member.quota.note && <p className="fs-agx-profile__quota" data-state={member.quota.state}>{member.quota.note}</p>}
       {member.quota.state === 'ok' && member.quota.remaining_percent !== null && <p className="fs-muted">{t('Quota: {n}% free', { n: Math.round(member.quota.remaining_percent) })}</p>}
       {member.tasks.length > 0 && (
@@ -53,6 +68,7 @@ function MemberCard({ member, guild, onOpen, onRemove }: { member: AgoraMember; 
       {member.role !== 'person' && (
         <div className="fs-agx-profile__actions">
           <Button size="sm" variant="secondary" icon={AtSign} label={t('Mention')} onClick={() => composerBus.insert('@' + member.id + ' ')} testId="agora-mention" />
+          {started?.worker.state === 'running' && <Button size="sm" variant="ghost" icon={Square} label={t('Stop its session')} onClick={() => onStop(started.worker)} testId="agora-stop-session" />}
           <Button size="sm" variant="ghost" icon={UserMinus} label={t('Take off the server…')} onClick={() => onRemove(member)} testId="agora-remove-agent" />
         </div>
       )}
@@ -60,7 +76,7 @@ function MemberCard({ member, guild, onOpen, onRemove }: { member: AgoraMember; 
   );
 }
 
-function MemberRow({ member, guild, onOpen, onRemove }: { member: AgoraMember; guild: AgoraGuild; onOpen: (view: View) => void; onRemove: (member: AgoraMember) => void }) {
+function MemberRow({ member, guild, onOpen, onRemove, started, onStop }: CardProps) {
   const line = member.doing || member.tasks[0]?.title || (member.presence === 'offline' ? t('seen {when}', { when: ago(member.last_seen) }) : t(PRESENCE_LABEL[member.presence]));
   return (
     <li>
@@ -71,7 +87,7 @@ function MemberRow({ member, guild, onOpen, onRemove }: { member: AgoraMember; g
           <span className="fs-agx-member__text"><strong>{member.id}</strong><span>{line}</span></span>
           {member.tasks.length > 0 && <span className="fs-agx-row__count">{member.tasks.length}</span>}
         </button>}>
-        <MemberCard member={member} guild={guild} onOpen={onOpen} onRemove={onRemove} />
+        <MemberCard member={member} guild={guild} onOpen={onOpen} onRemove={onRemove} started={started} onStop={onStop} />
       </Popover>
     </li>
   );
@@ -84,13 +100,53 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
   const [adding, setAdding] = useState(false);
   const [pruning, setPruning] = useState(false);
   const [leaving, setLeaving] = useState<AgoraMember | null>(null);
+  const [tuning, setTuning] = useState(false);
+  // What the hub's console knows: the model and effort chosen for each provider on this server and the sessions
+  // started from here. Asked apart from the server view (it looks at the programs installed on the PC) and never in its way.
+  const [consoleData, setConsoleData] = useState<{ leaders: ConsoleLeader[]; workers: ConsoleWorker[] } | null>(null);
+  const shown = useRef(guild.space.id);
+  shown.current = guild.space.id;
+  const loadConsole = useCallback((signal?: AbortSignal) => {
+    const space = guild.space.id;
+    getConsole(space, signal).then((data) => {
+      if (shown.current === space) setConsoleData({ leaders: data.leaders ?? [], workers: data.workers ?? [] });   // not an answer about the server left behind
+    }).catch(() => { /* a hub without a console: the list simply shows no models */ });
+  }, [guild.space.id]);
+  useEffect(() => {
+    setConsoleData(null);
+    const controller = new AbortController();
+    loadConsole(controller.signal);
+    return () => controller.abort();
+  }, [loadConsole]);
+  // While a session started here runs it is looked at again every few seconds: when it ends, its card says how and
+  // stops offering to stop it.
+  const running = (consoleData?.workers ?? []).some((w) => w.state === 'running' || w.state === 'stopping');
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(() => { if (!document.hidden) loadConsole(); }, 8000);
+    return () => window.clearInterval(timer);
+  }, [running, loadConsole]);
+  const startedBy = useMemo(() => {
+    const map = new Map<string, Started>();
+    for (const worker of consoleData?.workers ?? []) {
+      if (map.has(worker.agent_id)) continue;      // newest first: the first row of an agent is its latest session
+      map.set(worker.agent_id, { worker, line: modelLine(consoleData?.leaders.find((l) => l.id === worker.parent_id)?.catalog, worker.model, worker.effort) });
+    }
+    return map;
+  }, [consoleData]);
+  const stopSession = (worker: ConsoleWorker) => {
+    void stopWorker(guild.space.id, worker.id).then(() => {
+      notify(t('Stopping {name}', { name: worker.agent_id }));
+      setConsoleData((old) => (old ? { ...old, workers: old.workers.map((w) => (w.id === worker.id ? { ...w, state: 'stopping' } : w)) } : old));
+    }).catch((e: Error) => { notify(e.message, 'warn'); loadConsole(); });
+  };
   // Everyone, also those the server view leaves out for being long gone: asked for, not carried on every refresh.
   const [everyone, setEveryone] = useState<AgoraMember[] | null>(null);
   useEffect(() => { setEveryone(null); }, [guild.space.id]);
   const loadEveryone = () => {
     void getMembers(guild.space.id).then((out) => setEveryone(out.members.filter((m) => !isOnline(m)))).catch((e: Error) => notify(e.message, 'warn'));
   };
-  const changed = () => { setEveryone(null); onChanged(); };
+  const changed = () => { setEveryone(null); loadConsole(); onChanged(); };
   const groups = useMemo(() => {
     const online = guild.members.filter(isOnline);
     return ROLE_ORDER.map((role) => ({ role, members: online.filter((m) => m.role === role || (role === 'other' && !ROLE_ORDER.includes(m.role))) }))
@@ -105,11 +161,14 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
         <IconButton size="sm" icon={UserPlus} label={t('Add an agent')} onClick={() => setAdding(true)} testId="agora-add-agent" />
         <Menu align="end" testId="agora-members-menu" trigger={<IconButton size="sm" icon={MoreHorizontal} label={t('More about members')} />} items={[
           { label: t('Add an agent…'), icon: UserPlus, onSelect: () => setAdding(true) },
+          { label: t('Model and effort of the agents…'), icon: SlidersHorizontal, onSelect: () => setTuning(true) },
           { label: t('Take off those who no longer come…'), icon: UserMinus, onSelect: () => setPruning(true) },
         ]} />
       </header>
       {groups.map(({ role, members }) => {
         const quota = role === 'person' ? null : quotaOf(guild.providers, role);
+        const leader = consoleData?.leaders.find((l) => l.id === role && (l.catalog ?? []).length > 0);
+        const chosen = leader ? modelLine(leader.catalog, leader.model, leader.effort) : '';
         return (
           <section key={role} className="fs-agx-role" style={{ '--agx-c': ROLE_COLORS[role] } as CSSProperties}>
             <h3><span>{t(ROLE_LABEL[role] ?? role)}</span><span className="fs-agx-cat__count">{members.length}</span></h3>
@@ -119,7 +178,12 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
                 <span>{quota.free === null ? t('quota unknown') : t('{n}% free', { n: quota.free })}</span>
               </div>
             )}
-            <ul>{members.map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} />)}</ul>
+            {chosen && (
+              <button type="button" className="fs-agx-role__model" title={t('Model and effort of the agents')} onClick={() => setTuning(true)} data-testid={'agora-role-model-' + role}>
+                <SlidersHorizontal size={11} aria-hidden="true" /><span>{chosen}</span>
+              </button>
+            )}
+            <ul>{members.map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} started={startedBy.get(member.id)} onStop={stopSession} />)}</ul>
           </section>
         );
       })}
@@ -131,7 +195,7 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
               <span>{t('Not around')}</span><span className="fs-agx-cat__count">{offline.length + older}</span>
             </button>
           </h3>
-          {showOffline && <ul>{offline.slice(0, 400).map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} />)}</ul>}
+          {showOffline && <ul>{offline.slice(0, 400).map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} started={startedBy.get(member.id)} onStop={stopSession} />)}</ul>}
           {showOffline && older > 0 && (
             <p className="fs-muted fs-agx-role__more">
               {tn(older, 'and {n} more from long ago', 'and {n} more from long ago')}
@@ -143,6 +207,7 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
       <AddAgentDialog open={adding} guild={guild} onClose={() => setAdding(false)} onDone={changed} notify={notify} />
       <RemoveAgentDialog member={leaving} guild={guild} onClose={() => setLeaving(null)} onDone={changed} notify={notify} />
       <PruneAgentsDialog open={pruning} guild={guild} onClose={() => setPruning(false)} onDone={changed} notify={notify} />
+      <AgentModelsDialog open={tuning} guild={guild} onClose={() => setTuning(false)} onSaved={() => loadConsole()} notify={notify} />
     </aside>
   );
 }

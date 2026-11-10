@@ -73,7 +73,8 @@ export function NotificationTray({ side = 'bottom', align = 'end' }: {
   const watchAgora = async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     try {
-      const inbox = await getInbox();
+      // Without the servers the person silenced; which kinds are told (mentions, questions) the server decides on emit.
+      const inbox = await getInbox(undefined, true);
       agoraWaiting.current = agoraWaitingKeys(inbox);
       await emitForAgora(inbox, seenAgora.current);
     } catch {

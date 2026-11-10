@@ -16,6 +16,8 @@ export interface AgoraServer {
   id: string; title: string; description: string; project_id: string; workspace: string; revision: number;
   members: number; online: number; counts: ServerCounts; last_activity: number | null; unread: number; mentions: number;
   icon: string; color: string; folders: string[]; position: number | null; hidden: boolean; icon_app?: string | null;
+  /** The person silenced it: nothing that happens in it is announced outside the Agora. */
+  muted?: boolean;
 }
 export interface AgoraChannel {
   slug: string; title: string; topic: string; category: string; position: number; thread_id: number | null;
@@ -44,7 +46,7 @@ export interface QuotaPool { pool_id: string; pool_label?: string; reported_at?:
 export interface QuotaProvider { provider_id: string; pools?: QuotaPool[] }
 export interface AgoraSpaceInfo {
   id: string; title: string; description: string; project_id: string; workspace: string; revision: number; members: number;
-  created_by: string; meta: { icon: string; color: string; folders: string[]; position: number | null; hidden: boolean };
+  created_by: string; meta: { icon: string; color: string; folders: string[]; position: number | null; hidden: boolean; muted?: boolean };
 }
 export interface AgoraGuild {
   ok: boolean; version: string; viewer: string | null; space: AgoraSpaceInfo; channels: AgoraChannel[];
@@ -182,6 +184,8 @@ export interface ConsoleModel { id: string; name?: string; label?: string; effor
 export interface ConsoleLeader {
   id: string; name: string; agent_id: string; catalog: ConsoleModel[]; model?: string | null; effort?: string | null;
   detail?: string | null; state?: string | null; auth_state?: string | null;
+  /** What the provider's own program on the PC was last seen doing; `auth_expired` when its last call was refused for its sign-in. */
+  live_state?: { state?: string | null; detail?: string | null } | null;
 }
 export interface ConsoleWorker {
   id: string; parent_id: string; agent_id: string; model: string; effort: string; task: string; state: string;
@@ -193,6 +197,10 @@ export const launchWorker = (space: string, input: { leader_id: string; model: s
   agoraPost<{ worker: ConsoleWorker; warning?: string }>('console/worker', { space_id: space, action: 'create', ...input });
 export const stopWorker = (space: string, workerId: string) =>
   agoraPost<{ worker_id: string; state: string }>('console/worker', { space_id: space, action: 'stop', worker_id: workerId });
+/** The model and effort a provider's agents use on this server: its sessions started from here and its console turns. */
+export const setConsolePreferences = (space: string, input: { leader_id: string; model: string; effort: string }) =>
+  agoraPost<{ ok: boolean; leader_id: string; model: string; effort: string; verified: boolean; applies_to: string; warning?: string | null }>(
+    'console/preferences', { space_id: space, ...input });
 
 /* ── How a server looks ── */
 /** A picture as the server's icon: a data URL already made small. */
@@ -271,8 +279,9 @@ export interface PersonInbox {
   reviews: { id: number; title: string; owner: string | null; thread_id: number | null; space_id: string; submitted_at: number | null }[];
 }
 /** What waits for the person in every server: questions, mentions and submissions without a reviewer. */
-export const getInbox = (signal?: AbortSignal) =>
-  agoraGet<PersonInbox>('inbox', { agent: 'luis', all_spaces: 1, peek: 1, mine_only: 1, limit: 40 }, signal);
+/** `heard` leaves out the servers the person silenced: what is worth a notification, not all that waits. */
+export const getInbox = (signal?: AbortSignal, heard = false) =>
+  agoraGet<PersonInbox>('inbox', { agent: 'luis', all_spaces: 1, peek: 1, mine_only: 1, limit: 40, ...(heard ? { skip_muted: 1 } : {}) }, signal);
 
 /** `s` names the size served, so a browser never shows an older, heavier copy it kept. */
 export const iconUrl = (app: string) => '/api/agora/icon/' + encodeURIComponent(app) + '?s=128';

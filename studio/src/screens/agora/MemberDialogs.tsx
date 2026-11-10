@@ -1,12 +1,12 @@
 import { Square } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addMember, getConsole, launchWorker, pruneMembers, removeMember, stopWorker,
-  type AgoraGuild, type AgoraMember, type ConsoleLeader, type ConsoleWorker,
+  addMember, getConsole, launchWorker, pruneMembers, removeMember, setConsolePreferences, stopWorker,
+  type AgoraGuild, type AgoraMember, type ConsoleLeader, type ConsoleModel, type ConsoleWorker,
 } from '../../adapters/agora';
 import { Button, Dialog, IconButton, Skeleton } from '../../components';
 import { t, tn } from '../../i18n';
-import { isOnline, ROLE_LABEL } from './util';
+import { isOnline, recall, remember, ROLE_LABEL } from './util';
 
 type Notify = (text: string, tone?: 'ok' | 'warn') => void;
 
@@ -16,37 +16,78 @@ const WORKER_STATE: Record<string, string> = {
   running: 'It is working', completed: 'It finished', failed: 'It failed', unavailable: 'It could not start', stopping: 'It is stopping', stopped: 'It was stopped',
 };
 
+/** `default` is the provider's own program left as the person has it set: no model or effort is forced on it. */
+export const modelLabel = (m: Pick<ConsoleModel, 'id' | 'name' | 'label'>) => (m.id === 'default' ? t('Whatever it is set to') : m.name || m.label || m.id);
+/** Each level a provider lists gets a name of its own: one of them offers `xhigh`, `max` and `ultra` side by side. */
+const EFFORT_LABEL: Record<string, string> = {
+  default: 'Whatever it is set to', none: 'Off#effort', minimal: 'Minimal#effort', low: 'Low#effort', medium: 'Medium#effort',
+  high: 'High#effort', xhigh: 'Very high#effort', max: 'Maximum#effort', ultra: 'Ultra#effort',
+};
+export const effortLabel = (level: string) => (EFFORT_LABEL[level] ? t(EFFORT_LABEL[level]) : level);
+/** A model and its effort on one line, as a session or a provider shows them. */
+export function modelLine(catalog: ConsoleModel[] | undefined, model: string | null | undefined, effort: string | null | undefined): string {
+  if (!model) return '';
+  const row = catalog?.find((m) => m.id === model);
+  const name = row ? modelLabel(row) : model === 'default' ? t('Whatever it is set to') : model.split('::').pop() || model;
+  return effort && effort !== 'default' ? name + ' · ' + effortLabel(effort) : name;
+}
+/** The effort a model starts with: the one asked for when the model offers it, else its own default; none when it offers none.
+ *  A model with a single level leaves nothing to choose, so no selector is shown for it and that level goes as it is. */
+export function effortFor(model: ConsoleModel | undefined, wanted: string | null | undefined): string {
+  const offered = model?.efforts ?? [];
+  if (!offered.length) return '';
+  return wanted && offered.includes(wanted) ? wanted : model?.default_effort && offered.includes(model.default_effort) ? model.default_effort : offered[0];
+}
+const LAST_PROVIDER = 'agora:last-launch-provider';
+const SIGNED_OUT = /failed to authenticate|authentication_error|token has expired|re-authenticate/i;
+/** Why the hub cannot start a provider, in the person's words where the hub says what it is. */
+export function unavailableWhy(leader: Pick<ConsoleLeader, 'auth_state'>): string {
+  if (leader.auth_state === 'expired') return t('Its program on the PC is signed out: open it there once and sign in again.');
+  if (leader.auth_state === 'logged_out') return t('Its program on the PC has no account signed in.');
+  return t('The hub cannot start it right now.');
+}
+/** Why a session ended badly: the provider's own words, unless they say its program is signed out. */
+export function failureWhy(worker: Pick<ConsoleWorker, 'result' | 'detail'>): string {
+  const said = [worker.result, worker.detail].filter(Boolean).join(' ');
+  return SIGNED_OUT.test(said) ? t('Its program on the PC is signed out: open it there once and sign in again.') : (worker.result || worker.detail || '').slice(0, 300);
+}
+
 function slug(text: string): string {
   return text.toLowerCase().normalize('NFKD').replace(/[^a-z0-9_.]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
 }
 
 /**
- * Put an agent on a server. By name: it can be mentioned and given work
- * before it has said anything, and shows as invited until it does. Or as a
- * session the hub starts on the PC with the provider's own program, which
- * comes in by itself with the brief written here.
+ * Put an agent on a server. As a session the hub starts on the PC with the
+ * provider's own program, on the model and effort chosen here, which comes in
+ * by itself with the brief written here. Or by name: it can be mentioned and
+ * given work before it has said anything, and shows as invited until it does.
  */
 export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
   open: boolean; guild: AgoraGuild; onClose: () => void; onDone: () => void; notify: Notify;
 }) {
   const space = guild.space.id;
-  const [mode, setMode] = useState<'name' | 'session'>('name');
+  const [mode, setMode] = useState<'name' | 'session'>('session');
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]>('codex');
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [leaders, setLeaders] = useState<ConsoleLeader[] | null>(null);
+  /** The providers the hub cannot start right now, to say which and why instead of leaving them out in silence. */
+  const [unable, setUnable] = useState<ConsoleLeader[]>([]);
   const [workers, setWorkers] = useState<ConsoleWorker[]>([]);
   const [leader, setLeader] = useState('');
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
   const [task, setTask] = useState('');
   const [consoleError, setConsoleError] = useState('');
+  /** Which showing of the dialog this is: what was still under way when it closed or changed server is left alone. */
+  const showing = useRef(0);
+  useEffect(() => { showing.current += 1; }, [open, space]);
 
   useEffect(() => {
     if (!open) return;
-    setMode('name'); setProvider('codex'); setName(''); setNote(''); setError(''); setTask(''); setLeaders(null); setWorkers([]); setConsoleError('');
+    setMode('session'); setProvider('codex'); setName(''); setNote(''); setError(''); setTask(''); setLeaders(null); setUnable([]); setWorkers([]); setConsoleError(''); setBusy(false);
   }, [open, space]);
 
   // What the hub can start is asked once the person looks at it: it probes the programs installed on the PC.
@@ -54,12 +95,11 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
     if (!open || mode !== 'session' || leaders) return;
     const controller = new AbortController();
     getConsole(space, controller.signal).then((data) => {
-      // The hub starts a session only with a model and one of its effort levels: a model that offers none cannot start.
-      const able = (data.leaders ?? []).map((l) => ({ ...l, catalog: (l.catalog ?? []).filter((m) => (m.efforts?.length ?? 0) > 0) }))
-        .filter((l) => l.catalog.length > 0);
-      setLeaders(able); setWorkers(data.workers ?? []);
-      const first = able[0];
-      if (first) { setLeader(first.id); const m = first.catalog.find((c) => c.id === first.model) ?? first.catalog[0]; setModel(m.id); setEffort(first.effort || m.default_effort || m.efforts?.[0] || ''); }
+      // A provider with nothing in its catalog cannot be started right now (its program is missing or signed out).
+      const able = (data.leaders ?? []).filter((l) => (l.catalog ?? []).length > 0);
+      setLeaders(able); setUnable((data.leaders ?? []).filter((l) => !(l.catalog ?? []).length)); setWorkers(data.workers ?? []);
+      const first = able.find((l) => l.id === recall(LAST_PROVIDER)) ?? able[0];
+      if (first) { setLeader(first.id); const m = first.catalog.find((c) => c.id === first.model) ?? first.catalog[0]; setModel(m.id); setEffort(effortFor(m, first.effort)); }
     }).catch((e: Error) => { if (!controller.signal.aborted) { setLeaders([]); setConsoleError(e.message); } });
     return () => controller.abort();
   }, [open, mode, leaders, space]);
@@ -78,12 +118,12 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
     setLeader(next);
     const l = leaders?.find((x) => x.id === next);
     const m = l?.catalog.find((c) => c.id === l.model) ?? l?.catalog[0];
-    setModel(m?.id ?? ''); setEffort(l?.effort || m?.default_effort || m?.efforts?.[0] || '');
+    setModel(m?.id ?? ''); setEffort(effortFor(m, l?.effort));
   };
   const pickModel = (next: string) => {
     setModel(next);
     const m = chosen?.catalog.find((c) => c.id === next);
-    setEffort((old) => (m?.efforts?.includes(old) ? old : m?.default_effort || m?.efforts?.[0] || ''));
+    setEffort((old) => effortFor(m, old));
   };
 
   const register = async () => {
@@ -96,23 +136,52 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
+  // After a refusal the hub knows what a provider cannot do: the lists are asked again, and what the person had
+  // chosen stays chosen while it can still be started.
+  const reloadProviders = async (mine: number) => {
+    try {
+      const data = await getConsole(space);
+      if (mine !== showing.current) return;
+      const able = (data.leaders ?? []).filter((l) => (l.catalog ?? []).length > 0);
+      setLeaders(able); setUnable((data.leaders ?? []).filter((l) => !(l.catalog ?? []).length)); setWorkers(data.workers ?? []);
+      if (!able.some((l) => l.id === leader)) {
+        const first = able[0];
+        const m = first?.catalog.find((c) => c.id === first.model) ?? first?.catalog[0];
+        setLeader(first?.id ?? ''); setModel(m?.id ?? ''); setEffort(effortFor(m, first?.effort));
+      }
+    } catch { /* the lists stay as they were */ }
+  };
   const launch = async () => {
     if (!leader || !model || !task.trim()) return;
+    const mine = showing.current;
     setBusy(true); setError('');
     try {
-      const made = await launchWorker(space, { leader_id: leader, model, effort, task: task.trim() });
-      setWorkers((old) => [made.worker, ...old.filter((w) => w.id !== made.worker.id)]);
-      if (made.warning || made.worker.state === 'unavailable' || made.worker.state === 'failed') {
-        const why = made.worker.detail || made.warning || '';
+      const made = await launchWorker(space, { leader_id: leader, model, effort: efforts.length ? effort : '', task: task.trim() });
+      if (mine !== showing.current) return;
+      let worker = made.worker;
+      // A provider that refuses (its program signed out, a model it no longer has) does so in its first seconds:
+      // that is not a session started, and it is said here instead of leaving a member that never comes in.
+      for (let look = 0; look < 4 && worker.state === 'running' && !made.warning; look += 1) {
+        await new Promise((resolve) => { window.setTimeout(resolve, 1500); });
+        try { worker = (await getConsole(space)).workers?.find((w) => w.id === made.worker.id) ?? worker; } catch { break; }
+        if (mine !== showing.current) return;
+      }
+      const started = worker;
+      setWorkers((old) => [started, ...old.filter((w) => w.id !== started.id)]);
+      if (made.warning || started.state === 'unavailable' || started.state === 'failed') {
+        const why = failureWhy(started) || made.warning || '';
         setError(t('The session could not start.') + (why ? ' ' + why : ''));
+        if (started.state === 'failed') await reloadProviders(mine);
       } else {
+        remember(LAST_PROVIDER, leader);
         // Shown at once, as invited, until its first sign of life.
-        try { await addMember(space, made.worker.agent_id, task.trim().slice(0, 200)); } catch { /* it joins by itself anyway */ }
-        notify(t('Session started as {name}', { name: made.worker.agent_id }));
+        try { await addMember(space, started.agent_id, task.trim().slice(0, 200)); } catch { /* it joins by itself anyway */ }
+        if (mine !== showing.current) return;
+        notify(t('Session started as {name}', { name: started.agent_id }));
         onDone(); onClose();
       }
-    } catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
+    } catch (e) { if (mine === showing.current) setError((e as Error).message); }
+    finally { if (mine === showing.current) setBusy(false); }
   };
   const stop = (worker: ConsoleWorker) => {
     void stopWorker(space, worker.id).then(() => { setWorkers((old) => old.map((w) => (w.id === worker.id ? { ...w, state: 'stopping' } : w))); notify(t('Stopping {name}', { name: worker.agent_id })); })
@@ -130,8 +199,8 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
       </>}>
       <div className="fs-agx-form">
         <div className="fs-seg" role="radiogroup" aria-label={t('How it joins')}>
-          <button type="button" role="radio" aria-checked={mode === 'name'} onClick={() => { setMode('name'); setError(''); }} data-testid="agora-add-agent-by-name">{t('By name')}</button>
           <button type="button" role="radio" aria-checked={mode === 'session'} onClick={() => { setMode('session'); setError(''); }} data-testid="agora-add-agent-session">{t('Start a session')}</button>
+          <button type="button" role="radio" aria-checked={mode === 'name'} onClick={() => { setMode('name'); setError(''); }} data-testid="agora-add-agent-by-name">{t('By name')}</button>
         </div>
         {mode === 'name' ? (
           <>
@@ -142,7 +211,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
                   {PROVIDERS.map((p) => <option key={p} value={p}>{t(ROLE_LABEL[p] ?? p)}</option>)}
                 </select></label>
               <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('Name')}</span>
-                <input className="fs-field" autoFocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder={t('docs, tests, review…')} data-testid="agora-add-agent-name" /></label>
+                <input className="fs-field" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder={t('docs, tests, review…')} data-testid="agora-add-agent-name" /></label>
             </div>
             {id && <p className="fs-muted" data-testid="agora-add-agent-id">{already ? t('{name} is already on this server.', { name: id }) : VALID_ID.test(id) ? t('It will be {name}.', { name: '@' + id }) : t('The name needs at least two letters or digits.')}</p>}
             <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('What it is for (optional)')}</span>
@@ -150,7 +219,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
           </>
         ) : (
           <>
-            <p className="fs-muted">{t('The hub starts it on the PC with the provider\'s own program. It comes in under a name of its own, reads the board and works on what you write here.')}</p>
+            <p className="fs-muted">{t('The hub starts it on the PC with the provider\'s own program, on the model and effort you choose. It comes in under a name of its own, reads the board and works on what you write here.')}</p>
             {leaders === null && <Skeleton label={t('Looking at what can be started')} count={3} height="36px" />}
             {leaders !== null && !leaders.length && <p className="fs-notice" data-tone="warning" role="status">{consoleError || t('The hub finds nothing it can start right now.')}</p>}
             {leaders !== null && leaders.length > 0 && (
@@ -158,24 +227,32 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
                 <div className="fs-agx-form__row">
                   <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Provider')}</span>
                     <select className="fs-field" value={leader} onChange={(e) => pickLeader(e.target.value)} data-testid="agora-launch-provider">
-                      {leaders.map((l) => <option key={l.id} value={l.id}>{l.name || l.id}</option>)}
+                      {leaders.map((l) => <option key={l.id} value={l.id}>{t(ROLE_LABEL[l.id] ?? (l.name || l.id))}</option>)}
                     </select></label>
                   <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('Model')}</span>
                     <select className="fs-field" value={model} onChange={(e) => pickModel(e.target.value)} data-testid="agora-launch-model">
-                      {(chosen?.catalog ?? []).map((m) => <option key={m.id} value={m.id}>{m.name || m.label || m.id}</option>)}
+                      {(chosen?.catalog ?? []).map((m) => <option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
                     </select></label>
-                  {efforts.length > 0 && (
+                  {efforts.length > 1 && (
                     <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Effort')}</span>
-                      <select className="fs-field" value={effort} onChange={(e) => setEffort(e.target.value)}>
-                        {efforts.map((level) => <option key={level} value={level}>{level}</option>)}
+                      <select className="fs-field" value={effort} onChange={(e) => setEffort(e.target.value)} data-testid="agora-launch-effort">
+                        {efforts.map((level) => <option key={level} value={level}>{effortLabel(level)}</option>)}
                       </select></label>
                   )}
                 </div>
+                {chosen?.live_state?.state === 'auth_expired' && (
+                  <p className="fs-notice" data-tone="warning" role="status" data-testid="agora-launch-signed-out">{t('The hub sees its program signed out on the PC: it will not start until you sign in there again.')}</p>
+                )}
                 <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('What it should do here')}</span>
                   <textarea className="fs-field fs-agx-form__area" value={task} maxLength={12000} onChange={(e) => setTask(e.target.value)}
                     placeholder={t('Take the task about…, or review what is waiting, or…')} data-testid="agora-launch-task" /></label>
               </>
             )}
+            {unable.map((l) => (
+              <p key={l.id} className="fs-muted" title={l.detail || undefined} data-testid={'agora-launch-unable-' + l.id}>
+                <strong>{t(ROLE_LABEL[l.id] ?? (l.name || l.id))}</strong>{': '}{unavailableWhy(l)}
+              </p>
+            ))}
             {workers.length > 0 && (
               <section className="fs-agx-workers" aria-label={t('Sessions started here')}>
                 <h4>{t('Sessions started here')}</h4>
@@ -183,7 +260,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
                   {workers.slice(0, 6).map((w) => (
                     <li key={w.id} data-state={w.state}>
                       <span className="fs-agx-status" data-status={w.state === 'running' ? 'in_progress' : w.state === 'completed' ? 'done' : w.state === 'failed' || w.state === 'unavailable' ? 'blocked' : 'open'}>{t(WORKER_STATE[w.state] ?? w.state)}</span>
-                      <span className="fs-agx-workers__text"><strong>{w.agent_id}</strong><span>{w.task.slice(0, 160)}</span></span>
+                      <span className="fs-agx-workers__text"><strong>{w.agent_id}</strong><span>{[modelLine(leaders?.find((l) => l.id === w.parent_id)?.catalog, w.model, w.effort), w.task.slice(0, 160)].filter(Boolean).join(' · ')}</span></span>
                       {w.state === 'running' && <IconButton size="sm" icon={Square} label={t('Stop {name}', { name: w.agent_id })} onClick={() => stop(w)} />}
                     </li>
                   ))}
@@ -289,6 +366,99 @@ export function PruneAgentsDialog({ open, guild, onClose, onDone, notify }: {
             {plan.kept.length > 0 && <p className="fs-muted">{t('They stay')}: {plan.kept.slice(0, 20).map((k) => k.id + ' (' + t(WHY[k.why] ?? k.why) + ')').join(', ')}</p>}
           </div>
         )}
+        {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
+      </div>
+    </Dialog>
+  );
+}
+
+
+/**
+ * The model and effort each provider's agents use on a server: what a session
+ * started from here begins with, and what the provider answers with from the
+ * hub's console. A chat already open in the provider's own app keeps the
+ * model chosen there; nothing here reaches into it.
+ */
+export function AgentModelsDialog({ open, guild, onClose, onSaved, notify }: {
+  open: boolean; guild: AgoraGuild; onClose: () => void; onSaved: () => void; notify: Notify;
+}) {
+  const space = guild.space.id;
+  const [leaders, setLeaders] = useState<ConsoleLeader[] | null>(null);
+  const [choice, setChoice] = useState<Record<string, { model: string; effort: string }>>({});
+  /** What each provider had when the dialog opened: only what the person moves is saved. */
+  const [initial, setInitial] = useState<Record<string, { model: string; effort: string }>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    setLeaders(null); setChoice({}); setInitial({}); setError('');
+    const controller = new AbortController();
+    getConsole(space, controller.signal).then((data) => {
+      const rows = data.leaders ?? [];
+      setLeaders(rows);
+      const found = Object.fromEntries(rows.filter((l) => (l.catalog ?? []).length > 0).map((l) => {
+        const m = l.catalog.find((c) => c.id === l.model) ?? l.catalog[0];
+        return [l.id, { model: m.id, effort: effortFor(m, l.effort) }];
+      }));
+      setChoice(found); setInitial(found);
+    }).catch((e: Error) => { if (!controller.signal.aborted) { setLeaders([]); setError(e.message); } });
+    return () => controller.abort();
+  }, [open, space]);
+
+  const changed = (leaders ?? []).filter((l) => {
+    const now = choice[l.id]; const was = initial[l.id];
+    return now && was && (now.model !== was.model || now.effort !== was.effort);
+  });
+  const pick = (leader: ConsoleLeader, model: string, effort?: string) => {
+    const m = leader.catalog.find((c) => c.id === model);
+    setChoice((old) => ({ ...old, [leader.id]: { model, effort: effortFor(m, effort ?? old[leader.id]?.effort) } }));
+  };
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      let waits = false;
+      for (const leader of changed) {
+        const saved = choice[leader.id];
+        const out = await setConsolePreferences(space, { leader_id: leader.id, ...saved });
+        setInitial((old) => ({ ...old, [leader.id]: saved }));       // saved: if a later one fails, this one is not sent again
+        if (out.applies_to === 'queued_until_native_session_idle') waits = true;
+      }
+      notify(waits ? t('Saved. Faustus takes it as soon as its session is free.') : t('Saved'));
+      onSaved(); onClose();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }} title={t('Model and effort of the agents')} testId="agora-models-dialog" className="fs-agx-dialog"
+      description={t('On {server}. The sessions you start here begin with it, and each provider answers with it from the hub. A chat you already have open in its own app keeps the model chosen there.', { server: guild.space.title })}
+      footer={<><Button label={t('Cancel')} onClick={onClose} />
+        <Button variant="primary" label={t('Save')} loading={busy} disabled={!changed.length} onClick={() => void save()} testId="agora-models-save" /></>}>
+      <div className="fs-agx-form">
+        {leaders === null && <Skeleton label={t('Looking at what each provider offers')} count={4} height="36px" />}
+        {(leaders ?? []).map((leader) => {
+          const now = choice[leader.id];
+          const efforts = leader.catalog?.find((c) => c.id === now?.model)?.efforts ?? [];
+          return (
+            <div key={leader.id} className="fs-agx-form__row fs-agx-tune" data-testid={'agora-models-' + leader.id}>
+              <strong className="fs-agx-tune__name">{t(ROLE_LABEL[leader.id] ?? (leader.name || leader.id))}</strong>
+              {now ? (
+                <>
+                  <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('Model')}</span>
+                    <select className="fs-field" value={now.model} onChange={(e) => pick(leader, e.target.value)} data-testid={'agora-models-model-' + leader.id}>
+                      {leader.catalog.map((m) => <option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
+                    </select></label>
+                  {efforts.length > 1 && (
+                    <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Effort')}</span>
+                      <select className="fs-field" value={now.effort} onChange={(e) => pick(leader, now.model, e.target.value)} data-testid={'agora-models-effort-' + leader.id}>
+                        {efforts.map((level) => <option key={level} value={level}>{effortLabel(level)}</option>)}
+                      </select></label>
+                  )}
+                </>
+              ) : <span className="fs-muted fs-agx-tune__off" title={leader.detail || undefined}>{unavailableWhy(leader)}</span>}
+            </div>
+          );
+        })}
         {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
       </div>
     </Dialog>

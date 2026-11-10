@@ -1,5 +1,5 @@
 import {
-  Activity, AlertTriangle, Ban, BookOpen, CheckCheck, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, Eye, EyeOff,
+  Activity, AlertTriangle, Ban, Bell, BellOff, BellRing, BookOpen, CheckCheck, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, Eye, EyeOff,
   FolderKanban, FolderOpen, GitPullRequest, Hash, Kanban, Landmark, Lock, MessageCircleQuestion, MessagesSquare, PackageCheck,
   Pencil, Plus, Scale, Settings2, SquarePen, Users, Volume2, type LucideIcon,
   Pin, PinOff,
@@ -12,7 +12,7 @@ import { IconButton, Menu } from '../../components';
 import { t, tn } from '../../i18n';
 import { agentColor, agentInitials, COLUMN_LABEL, recall, remember, THREAD_KIND_LABEL, viewKey, type View } from './util';
 
-export type ListAction = 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'toggle-pin' | 'open-project' | 'council' | 'classic';
+export type ListAction = 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'toggle-pin' | 'toggle-muted' | 'notify' | 'open-project' | 'council' | 'classic';
 
 const TASK_ICON: Record<string, LucideIcon> = {
   open: Circle, claimed: CircleDot, in_progress: CircleDot, blocked: AlertTriangle, changes: AlertTriangle,
@@ -119,6 +119,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
   onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean;
 }) {
   const space = guild.space;
+  const muted = Boolean(space.meta.muted);
   const storeKey = 'agora:folded:' + space.id;
   const [folded, setFolded] = useState<Set<string>>(() => {
     const saved = recall(storeKey);
@@ -165,6 +166,11 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
     { label: t('New room of models…'), icon: Volume2, onSelect: () => onAction('new-room') },
     null,
     { label: t('Mark everything as read'), icon: CheckCheck, onSelect: () => onAction('mark-read') },
+    // A muted server tells nothing outside the Agora (bell, desktop, phone); inside, everything stays where it was.
+    muted
+      ? { label: t('Unmute this server'), icon: Bell, onSelect: () => onAction('toggle-muted') }
+      : { label: t('Mute this server'), icon: BellOff, onSelect: () => onAction('toggle-muted') },
+    { label: t('Agora notifications…'), icon: BellRing, onSelect: () => onAction('notify') },
     ...(space.project_id ? [{ label: t('Open its project'), icon: FolderKanban, onSelect: () => onAction('open-project') }] : []),
     { label: t('Deliberation rooms'), icon: Landmark, onSelect: () => onAction('council') },
     { label: t('Classic room view'), icon: Users, onSelect: () => onAction('classic') },
@@ -181,6 +187,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
       <Menu align="start" testId="agora-server-menu" items={menu} trigger={
         <button type="button" className="fs-agx-channels__head" data-testid="agora-server-head">
           <span className="fs-agx-channels__title">{space.title}</span>
+          {muted && <BellOff size={13} aria-label={t('Muted')} className="fs-agx-channels__muted" data-testid="agora-server-muted" />}
           <Settings2 size={15} aria-hidden="true" />
         </button>} />
       <div className="fs-agx-channels__scroll">
