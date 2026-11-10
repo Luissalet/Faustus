@@ -862,6 +862,11 @@ button.fs-nav__item { border: 0; background: transparent; font: inherit; cursor:
   padding-block-start: calc(var(--fs-space-5) + max(0px, (1lh - 28px) / 2));
 }
 
+/* Alone on the page it is the only way back for the mouse: a tone brighter than on the sidebar. */
+.fs-nav-gutter .fs-nav__toggle {
+  color: var(--fs-text-2);
+}
+
 @media (max-width: 767px) {
   .fs-nav__toggle,
   .fs-nav-gutter {
