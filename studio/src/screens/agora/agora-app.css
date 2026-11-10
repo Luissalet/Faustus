@@ -456,3 +456,18 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 .fs-agx-channels__muted { flex-shrink: 0; margin-inline-start: auto; color: var(--fs-text-3); }
 .fs-agx-dialog .fs-switch { justify-content: flex-start; }
 .fs-agx-profile__failed { margin: 0; color: var(--fs-danger); font-size: var(--fs-label-size); overflow-wrap: anywhere; }
+
+/* ── Adding an agent from the list; the rank of a member ── */
+.fs-agx-members__add { padding: 0 8px var(--fs-space-3); }
+.fs-agx-members__add .fs-btn { inline-size: 100%; justify-content: center; }
+.fs-agx-role h3 .fs-icon-btn { margin-block: -4px; margin-inline-start: -2px; opacity: 0.7; }
+.fs-agx-role h3 .fs-icon-btn:hover, .fs-agx-role h3 .fs-icon-btn:focus-visible { opacity: 1; }
+.fs-agx-role h3 > span:first-child { flex: 1; min-inline-size: 0; }
+.fs-agx-rank { flex-shrink: 0; padding: 1px 6px; border-radius: var(--fs-radius-pill); border: 1px solid var(--fs-border);
+  color: var(--fs-text-2); font-size: 10px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+.fs-agx-rank[data-rank='director'] { border-color: color-mix(in srgb, var(--fs-brand) 55%, var(--fs-border)); color: var(--fs-brand); }
+.fs-agx-rank[data-rank='lead'] { border-color: color-mix(in srgb, var(--fs-brand) 30%, var(--fs-border)); color: var(--fs-text-1); }
+.fs-agx-rank[data-rank='support'] { color: var(--fs-text-3); }
+.fs-agx-profile__rank { display: flex; align-items: center; gap: var(--fs-space-2); margin-block: var(--fs-space-2); color: var(--fs-text-2); font-size: var(--fs-label-size); }
+.fs-agx-profile__rank .fs-field { flex: 1; min-inline-size: 0; }
+.fs-agx-form__row > .fs-icon-btn { align-self: flex-end; margin-block-end: 2px; }

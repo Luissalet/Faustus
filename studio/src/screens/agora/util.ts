@@ -131,3 +131,10 @@ export function recall(key: string): string {
 /** Sent on `window` when what waits for the person changed by their own hand (a server muted or heard again), so the
  *  count on the sidebar does not wait for its next look. */
 export const AGORA_WAITING_CHANGED = 'faustus:agora-waiting';
+
+/** The ranks an agent may hold on a server, highest first. The person gives them; a higher one decides. */
+export const RANKS = ['director', 'lead', 'agent', 'support'] as const;
+export const RANK_LABEL: Record<string, string> = {
+  director: 'Director#rank', lead: 'Lead#rank', agent: 'Agent#rank', support: 'Support#rank',
+};
+export const DEFAULT_RANK = 'agent';

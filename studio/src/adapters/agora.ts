@@ -38,6 +38,8 @@ export interface AgoraWaiting { id: number; title: string; kind: string; task_id
 export interface MemberQuota { state: string; remaining_percent: number | null; reset_at: string | null; note: string | null; pool_label: string | null }
 export interface AgoraMember {
   id: string; name: string; kind: string; role: string; presence: Presence; state: string; doing: string; note: string;
+  /** Its rank on this server (`role` is its provider): director, lead, agent or support; `person` for the person. */
+  rank?: string; rank_level?: number;
   last_seen: number | null; locks: number; tasks: { id: number; title: string; status: string }[]; quota: MemberQuota;
   observed?: { state?: string; tool?: { name?: string; input?: string; since?: number } | null; title?: string; engine?: string; last_activity?: number; questions?: unknown[] } | null;
 }
@@ -193,8 +195,14 @@ export interface ConsoleWorker {
 }
 export const getConsole = (space: string, signal?: AbortSignal) =>
   agoraGet<{ leaders: ConsoleLeader[]; workers: ConsoleWorker[] }>('console/overview', { space_id: space }, signal);
-export const launchWorker = (space: string, input: { leader_id: string; model: string; effort: string; task: string }) =>
+export const launchWorker = (space: string, input: { leader_id: string; model: string; effort: string; task: string; name?: string; rank?: string }) =>
   agoraPost<{ worker: ConsoleWorker; warning?: string }>('console/worker', { space_id: space, action: 'create', ...input });
+/** A free name for the next session of a provider on a model: the provider, what tells the model apart and a number. */
+export const suggestWorkerName = (space: string, leader: string, model: string, signal?: AbortSignal) =>
+  agoraGet<{ name: string }>('console/name', { space_id: space, leader_id: leader, model }, signal);
+/** The rank of an agent on a server. The hub takes it from the person's pages only. */
+export const setMemberRank = (space: string, member: string, rank: string) =>
+  agoraPost<{ member: string; rank: string; rank_level: number; changed: boolean }>('member_rank_set', { space_id: space, member, rank });
 export const stopWorker = (space: string, workerId: string) =>
   agoraPost<{ worker_id: string; state: string }>('console/worker', { space_id: space, action: 'stop', worker_id: workerId });
 /** The model and effort a provider's agents use on this server: its sessions started from here and its console turns. */

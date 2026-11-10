@@ -11422,3 +11422,14 @@ Whatever it is set to	El que tenga puesto
 When someone mentions you	Cuando alguien te menciona
 When the agents ask you something	Cuando los agentes te preguntan algo
 muted	silenciado
+A higher role decides: its word closes disagreements, its review stands, it hands out the work and the questions of those below reach it before you.	Un rol más alto decide: su palabra cierra los desacuerdos, su revisión manda, reparte el trabajo y las preguntas de los de abajo le llegan antes que a ti.
+Add a {provider} agent	Añadir un agente de {provider}
+Agent#rank	Agente
+Director#rank	Director
+Its role could not be saved: {why}	No se pudo guardar su rol: {why}
+Lead#rank	Responsable
+Propose a name	Proponer un nombre
+Support#rank	Apoyo
+The name must end with a letter or a digit.	El nombre tiene que acabar en letra o número.
+The name must start with {prefix}	El nombre tiene que empezar por {prefix}
+{name} is now {role}	{name} es ahora {role}

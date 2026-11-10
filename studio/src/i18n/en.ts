@@ -52,6 +52,11 @@ export const en: Record<string, string> = {
   'Maximum#effort': 'Maximum',
   'Very high#effort': 'Very high',
   'Ultra#effort': 'Ultra',
+  // Ranks of the Agora's agents: Spanish needs its own rows; English drops the tag.
+  'Director#rank': 'Director',
+  'Lead#rank': 'Lead',
+  'Agent#rank': 'Agent',
+  'Support#rank': 'Support',
   'Level#effort': 'Level',
   'Follow the mode#effort': 'Follow the mode',
   // Sparks initial-wait setting (distinct from latency stats wording).

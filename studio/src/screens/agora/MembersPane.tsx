@@ -1,14 +1,15 @@
-import { AtSign, ChevronDown, ChevronRight, Lock, MoreHorizontal, SlidersHorizontal, Square, UserMinus, UserPlus } from 'lucide-react';
+import { AtSign, ChevronDown, ChevronRight, Lock, MoreHorizontal, Plus, SlidersHorizontal, Square, UserMinus, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
-  getConsole, getMembers, stopWorker,
+  getConsole, getMembers, setMemberRank, stopWorker,
   type AgoraGuild, type AgoraMember, type ConsoleLeader, type ConsoleWorker, type QuotaProvider,
 } from '../../adapters/agora';
 import { Button, IconButton, Menu, Popover } from '../../components';
 import { t, tn } from '../../i18n';
-import { AddAgentDialog, AgentModelsDialog, failureWhy, modelLine, PruneAgentsDialog, RemoveAgentDialog } from './MemberDialogs';
+import { AddAgentDialog, AgentModelsDialog, failureWhy, modelLine, PruneAgentsDialog, RankOptions, RemoveAgentDialog } from './MemberDialogs';
 import {
-  ago, agentColor, agentInitials, composerBus, findTask, isOnline, PRESENCE_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER, STATUS_LABEL, type View,
+  ago, agentColor, agentInitials, composerBus, DEFAULT_RANK, findTask, isOnline, PRESENCE_LABEL, RANK_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER,
+  STATUS_LABEL, type View,
 } from './util';
 
 function quotaOf(providers: QuotaProvider[], role: string): { free: number | null; reset: string } | null {
@@ -27,10 +28,17 @@ const OBSERVED_LABEL: Record<string, string> = { working: 'At work', tool: 'Usin
 interface Started { worker: ConsoleWorker; line: string }
 interface CardProps {
   member: AgoraMember; guild: AgoraGuild; onOpen: (view: View) => void; onRemove: (member: AgoraMember) => void;
-  started?: Started; onStop: (worker: ConsoleWorker) => void;
+  started?: Started; onStop: (worker: ConsoleWorker) => void; onRank: (member: AgoraMember, rank: string) => void;
 }
 
-function MemberCard({ member, guild, onOpen, onRemove, started, onStop }: CardProps) {
+/** The rank of a member next to its name, when it is not the one everybody has. */
+function RankMark({ member }: { member: AgoraMember }) {
+  const rank = member.rank ?? DEFAULT_RANK;
+  if (member.role === 'person' || rank === DEFAULT_RANK || !RANK_LABEL[rank]) return null;
+  return <span className="fs-agx-rank" data-rank={rank}>{t(RANK_LABEL[rank])}</span>;
+}
+
+function MemberCard({ member, guild, onOpen, onRemove, started, onStop, onRank }: CardProps) {
   const openTask = (id: number) => {
     const thread = findTask(guild, id)?.thread_id;
     onOpen(thread ? { kind: 'thread', id: String(thread) } : { kind: 'view', id: 'board' });
@@ -43,6 +51,12 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop }: CardPr
         <span className="fs-agx-avatar" data-size="lg" data-presence={member.presence} aria-hidden="true">{agentInitials(member.id)}</span>
         <div><strong>{member.id}</strong><span>{t(PRESENCE_LABEL[member.presence])}{member.presence === 'invited' ? '' : ' · ' + t('seen {when}', { when: ago(member.last_seen) })}</span></div>
       </header>
+      {member.role !== 'person' && (
+        <label className="fs-agx-profile__rank" title={t('A higher role decides: its word closes disagreements, its review stands, it hands out the work and the questions of those below reach it before you.')}>
+          <span>{t('Role')}</span>
+          <select className="fs-field" value={member.rank ?? DEFAULT_RANK} onChange={(e) => onRank(member, e.target.value)} data-testid="agora-member-rank"><RankOptions /></select>
+        </label>
+      )}
       {member.doing && <p className="fs-agx-profile__doing">{member.doing}</p>}
       {!member.doing && member.note && <p className="fs-agx-profile__doing">{member.note}</p>}
       {seen?.state && <p className="fs-muted">{t('Its session: {state}', { state: t(OBSERVED_LABEL[seen.state] ?? seen.state) })}{seenTool ? ' · ' + seenTool : ''}{seen.title ? ' · ' + seen.title : ''}</p>}
@@ -76,7 +90,7 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop }: CardPr
   );
 }
 
-function MemberRow({ member, guild, onOpen, onRemove, started, onStop }: CardProps) {
+function MemberRow({ member, guild, onOpen, onRemove, started, onStop, onRank }: CardProps) {
   const line = member.doing || member.tasks[0]?.title || (member.presence === 'offline' ? t('seen {when}', { when: ago(member.last_seen) }) : t(PRESENCE_LABEL[member.presence]));
   return (
     <li>
@@ -85,9 +99,10 @@ function MemberRow({ member, guild, onOpen, onRemove, started, onStop }: CardPro
           title={member.id + ' · ' + t(PRESENCE_LABEL[member.presence])} data-testid={'agora-member-' + member.id}>
           <span className="fs-agx-avatar" data-presence={member.presence} aria-hidden="true">{agentInitials(member.id)}</span>
           <span className="fs-agx-member__text"><strong>{member.id}</strong><span>{line}</span></span>
+          <RankMark member={member} />
           {member.tasks.length > 0 && <span className="fs-agx-row__count">{member.tasks.length}</span>}
         </button>}>
-        <MemberCard member={member} guild={guild} onOpen={onOpen} onRemove={onRemove} started={started} onStop={onStop} />
+        <MemberCard member={member} guild={guild} onOpen={onOpen} onRemove={onRemove} started={started} onStop={onStop} onRank={onRank} />
       </Popover>
     </li>
   );
@@ -97,7 +112,8 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
   guild: AgoraGuild; onOpen: (view: View) => void; notify: (text: string, tone?: 'ok' | 'warn') => void; onChanged: () => void;
 }) {
   const [showOffline, setShowOffline] = useState(false);
-  const [adding, setAdding] = useState(false);
+  /** The dialog to add an agent: closed, open, or open on the provider whose + was pressed. */
+  const [adding, setAdding] = useState<false | true | string>(false);
   const [pruning, setPruning] = useState(false);
   const [leaving, setLeaving] = useState<AgoraMember | null>(null);
   const [tuning, setTuning] = useState(false);
@@ -148,30 +164,44 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
   };
   const changed = () => { setEveryone(null); loadConsole(); onChanged(); };
   const groups = useMemo(() => {
-    const online = guild.members.filter(isOnline);
+    // Within a provider, whoever holds the higher rank goes first; among equals, the order they came in.
+    const online = guild.members.filter(isOnline).map((m, at) => ({ m, at }))
+      .sort((a, b) => (b.m.rank_level ?? 2) - (a.m.rank_level ?? 2) || a.at - b.at).map((x) => x.m);
     return ROLE_ORDER.map((role) => ({ role, members: online.filter((m) => m.role === role || (role === 'other' && !ROLE_ORDER.includes(m.role))) }))
       .filter((group) => group.members.length);
   }, [guild.members]);
+  const giveRank = (member: AgoraMember, rank: string) => {
+    void setMemberRank(guild.space.id, member.id, rank)
+      .then(() => { notify(t('{name} is now {role}', { name: member.id, role: t(RANK_LABEL[rank] ?? rank) })); onChanged(); })
+      .catch((e: Error) => notify(e.message, 'warn'));
+  };
   const offline = useMemo(() => everyone ?? guild.members.filter((m) => !isOnline(m)), [everyone, guild.members]);
   const older = everyone ? 0 : guild.members_older ?? 0;
   return (
     <aside className="fs-agx-members" aria-label={t('Members')} data-testid="agora-members">
       <header className="fs-agx-members__head">
         <span>{t('Members')}</span>
-        <IconButton size="sm" icon={UserPlus} label={t('Add an agent')} onClick={() => setAdding(true)} testId="agora-add-agent" />
         <Menu align="end" testId="agora-members-menu" trigger={<IconButton size="sm" icon={MoreHorizontal} label={t('More about members')} />} items={[
           { label: t('Add an agent…'), icon: UserPlus, onSelect: () => setAdding(true) },
           { label: t('Model and effort of the agents…'), icon: SlidersHorizontal, onSelect: () => setTuning(true) },
           { label: t('Take off those who no longer come…'), icon: UserMinus, onSelect: () => setPruning(true) },
         ]} />
       </header>
+      <div className="fs-agx-members__add">
+        <Button size="sm" variant="secondary" icon={UserPlus} label={t('Add an agent')} onClick={() => setAdding(true)} testId="agora-add-agent" />
+      </div>
       {groups.map(({ role, members }) => {
         const quota = role === 'person' ? null : quotaOf(guild.providers, role);
         const leader = consoleData?.leaders.find((l) => l.id === role && (l.catalog ?? []).length > 0);
         const chosen = leader ? modelLine(leader.catalog, leader.model, leader.effort) : '';
         return (
           <section key={role} className="fs-agx-role" style={{ '--agx-c': ROLE_COLORS[role] } as CSSProperties}>
-            <h3><span>{t(ROLE_LABEL[role] ?? role)}</span><span className="fs-agx-cat__count">{members.length}</span></h3>
+            <h3>
+              <span>{t(ROLE_LABEL[role] ?? role)}</span><span className="fs-agx-cat__count">{members.length}</span>
+              {role !== 'person' && role !== 'other' && (
+                <IconButton size="sm" icon={Plus} label={t('Add a {provider} agent', { provider: t(ROLE_LABEL[role] ?? role) })} onClick={() => setAdding(role)} testId={'agora-add-agent-' + role} />
+              )}
+            </h3>
             {quota && (
               <div className="fs-agx-quota" title={quota.reset ? t('Resets {when}', { when: quota.reset }) : undefined} data-low={quota.free !== null && quota.free <= 10 || undefined}>
                 <span className="fs-agx-quota__bar"><span style={{ inlineSize: (quota.free ?? 0) + '%' }} /></span>
@@ -183,7 +213,7 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
                 <SlidersHorizontal size={11} aria-hidden="true" /><span>{chosen}</span>
               </button>
             )}
-            <ul>{members.map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} started={startedBy.get(member.id)} onStop={stopSession} />)}</ul>
+            <ul>{members.map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} started={startedBy.get(member.id)} onStop={stopSession} onRank={giveRank} />)}</ul>
           </section>
         );
       })}
@@ -195,7 +225,7 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
               <span>{t('Not around')}</span><span className="fs-agx-cat__count">{offline.length + older}</span>
             </button>
           </h3>
-          {showOffline && <ul>{offline.slice(0, 400).map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} started={startedBy.get(member.id)} onStop={stopSession} />)}</ul>}
+          {showOffline && <ul>{offline.slice(0, 400).map((member) => <MemberRow key={member.id} member={member} guild={guild} onOpen={onOpen} onRemove={setLeaving} started={startedBy.get(member.id)} onStop={stopSession} onRank={giveRank} />)}</ul>}
           {showOffline && older > 0 && (
             <p className="fs-muted fs-agx-role__more">
               {tn(older, 'and {n} more from long ago', 'and {n} more from long ago')}
@@ -204,7 +234,7 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
           )}
         </section>
       )}
-      <AddAgentDialog open={adding} guild={guild} onClose={() => setAdding(false)} onDone={changed} notify={notify} />
+      <AddAgentDialog open={adding !== false} guild={guild} preset={typeof adding === 'string' ? adding : undefined} onClose={() => setAdding(false)} onDone={changed} notify={notify} />
       <RemoveAgentDialog member={leaving} guild={guild} onClose={() => setLeaving(null)} onDone={changed} notify={notify} />
       <PruneAgentsDialog open={pruning} guild={guild} onClose={() => setPruning(false)} onDone={changed} notify={notify} />
       <AgentModelsDialog open={tuning} guild={guild} onClose={() => setTuning(false)} onSaved={() => loadConsole()} notify={notify} />

@@ -1,12 +1,12 @@
-import { Square } from 'lucide-react';
+import { RefreshCw, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addMember, getConsole, launchWorker, pruneMembers, removeMember, setConsolePreferences, stopWorker,
+  addMember, getConsole, launchWorker, pruneMembers, removeMember, setConsolePreferences, setMemberRank, stopWorker, suggestWorkerName,
   type AgoraGuild, type AgoraMember, type ConsoleLeader, type ConsoleModel, type ConsoleWorker,
 } from '../../adapters/agora';
 import { Button, Dialog, IconButton, Skeleton } from '../../components';
 import { t, tn } from '../../i18n';
-import { isOnline, recall, remember, ROLE_LABEL } from './util';
+import { DEFAULT_RANK, isOnline, RANK_LABEL, RANKS, recall, remember, ROLE_LABEL } from './util';
 
 type Notify = (text: string, tone?: 'ok' | 'warn') => void;
 
@@ -62,8 +62,15 @@ function slug(text: string): string {
  * by itself with the brief written here. Or by name: it can be mentioned and
  * given work before it has said anything, and shows as invited until it does.
  */
-export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
+/** The ranks to choose from, highest first, in the person's words. */
+export function RankOptions() {
+  return <>{RANKS.map((r) => <option key={r} value={r}>{t(RANK_LABEL[r])}</option>)}</>;
+}
+
+export function AddAgentDialog({ open, guild, onClose, onDone, notify, preset }: {
   open: boolean; guild: AgoraGuild; onClose: () => void; onDone: () => void; notify: Notify;
+  /** The provider the dialog opens on (the + of its group in the list); the last one used when not given. */
+  preset?: string;
 }) {
   const space = guild.space.id;
   const [mode, setMode] = useState<'name' | 'session'>('session');
@@ -81,14 +88,21 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
   const [effort, setEffort] = useState('');
   const [task, setTask] = useState('');
   const [consoleError, setConsoleError] = useState('');
+  /** The name the session comes in under: the hub proposes a free one, and the person may write another. */
+  const [sessionName, setSessionName] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
+  const [nameAsked, setNameAsked] = useState(0);
+  const [rank, setRank] = useState<string>(DEFAULT_RANK);
   /** Which showing of the dialog this is: what was still under way when it closed or changed server is left alone. */
   const showing = useRef(0);
   useEffect(() => { showing.current += 1; }, [open, space]);
 
   useEffect(() => {
     if (!open) return;
-    setMode('session'); setProvider('codex'); setName(''); setNote(''); setError(''); setTask(''); setLeaders(null); setUnable([]); setWorkers([]); setConsoleError(''); setBusy(false);
-  }, [open, space]);
+    setMode('session'); setProvider((PROVIDERS as readonly string[]).includes(preset ?? '') ? (preset as (typeof PROVIDERS)[number]) : 'codex');
+    setName(''); setNote(''); setError(''); setTask(''); setLeaders(null); setUnable([]); setWorkers([]); setConsoleError(''); setBusy(false);
+    setSessionName(''); setNameTouched(false); setRank(DEFAULT_RANK);
+  }, [open, space, preset]);
 
   // What the hub can start is asked once the person looks at it: it probes the programs installed on the PC.
   useEffect(() => {
@@ -98,11 +112,27 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
       // A provider with nothing in its catalog cannot be started right now (its program is missing or signed out).
       const able = (data.leaders ?? []).filter((l) => (l.catalog ?? []).length > 0);
       setLeaders(able); setUnable((data.leaders ?? []).filter((l) => !(l.catalog ?? []).length)); setWorkers(data.workers ?? []);
-      const first = able.find((l) => l.id === recall(LAST_PROVIDER)) ?? able[0];
+      // The provider asked for when the hub can start it; when it cannot, that provider is added by name instead.
+      if (preset && !able.some((l) => l.id === preset)) setMode('name');
+      const first = able.find((l) => l.id === preset) ?? able.find((l) => l.id === recall(LAST_PROVIDER)) ?? able[0];
       if (first) { setLeader(first.id); const m = first.catalog.find((c) => c.id === first.model) ?? first.catalog[0]; setModel(m.id); setEffort(effortFor(m, first.effort)); }
     }).catch((e: Error) => { if (!controller.signal.aborted) { setLeaders([]); setConsoleError(e.message); } });
     return () => controller.abort();
-  }, [open, mode, leaders, space]);
+  }, [open, mode, leaders, space, preset]);
+
+  // A name is proposed for the provider and model chosen, until the person writes their own.
+  useEffect(() => {
+    if (!open || !leader || nameTouched) return;
+    const controller = new AbortController();
+    suggestWorkerName(space, leader, model, controller.signal).then((out) => setSessionName(out.name ?? ''))
+      .catch(() => { /* an older hub proposes none: the session still gets a name of its own */ });
+    return () => controller.abort();
+  }, [open, space, leader, model, nameTouched, nameAsked]);
+  const sessionId = sessionName.trim().toLowerCase();
+  const nameProblem = !sessionId ? '' : !VALID_ID.test(sessionId) ? t('The name needs at least two letters or digits.')
+    : /[-_.]$/.test(sessionId) ? t('The name must end with a letter or a digit.')
+    : !sessionId.startsWith(leader + '-') ? t('The name must start with {prefix}', { prefix: leader + '-' })
+      : guild.members.some((m) => m.id === sessionId) ? t('{name} is already on this server.', { name: sessionId }) : '';
 
   const id = useMemo(() => {
     const tail = slug(name);
@@ -115,6 +145,8 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
   const efforts = chosenModel?.efforts ?? [];
 
   const pickLeader = (next: string) => {
+    // A name the person wrote goes with them to the other provider: what they wrote stays, its beginning changes.
+    if (nameTouched && leader && sessionId.startsWith(leader + '-')) setSessionName(next + sessionId.slice(leader.length));
     setLeader(next);
     const l = leaders?.find((x) => x.id === next);
     const m = l?.catalog.find((c) => c.id === l.model) ?? l?.catalog[0];
@@ -131,7 +163,11 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
     setBusy(true); setError('');
     try {
       const made = await addMember(space, id, note.trim());
+      // The agent is on the server by now: a role that could not be saved is said, and the list still shows it.
+      let roleError = '';
+      if (rank !== DEFAULT_RANK) { try { await setMemberRank(space, id, rank); } catch (e) { roleError = (e as Error).message; } }
       notify(made.added ? t('{name} is on the server', { name: id }) : t('{name} was already on the server', { name: id }));
+      if (roleError) notify(t('Its role could not be saved: {why}', { why: roleError }), 'warn');
       onDone(); onClose();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
@@ -152,16 +188,21 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
     } catch { /* the lists stay as they were */ }
   };
   const launch = async () => {
-    if (!leader || !model || !task.trim()) return;
+    if (!leader || !model || !task.trim() || nameProblem) return;
     const mine = showing.current;
     setBusy(true); setError('');
     try {
-      const made = await launchWorker(space, { leader_id: leader, model, effort: efforts.length ? effort : '', task: task.trim() });
+      const made = await launchWorker(space, {
+        leader_id: leader, model, effort: efforts.length ? effort : '', task: task.trim(),
+        ...(sessionId ? { name: sessionId } : {}), ...(rank !== DEFAULT_RANK ? { rank } : {}),
+      });
       if (mine !== showing.current) return;
       let worker = made.worker;
       // A provider that refuses (its program signed out, a model it no longer has) does so in its first seconds:
       // that is not a session started, and it is said here instead of leaving a member that never comes in.
-      for (let look = 0; look < 4 && worker.state === 'running' && !made.warning; look += 1) {
+      // One whose session is known to have run out is given longer: its refusal is the likely answer, and it can take a while.
+      const looks = chosen?.live_state?.state === 'auth_expired' ? 14 : 4;
+      for (let look = 0; look < looks && worker.state === 'running' && !made.warning; look += 1) {
         await new Promise((resolve) => { window.setTimeout(resolve, 1500); });
         try { worker = (await getConsole(space)).workers?.find((w) => w.id === made.worker.id) ?? worker; } catch { break; }
         if (mine !== showing.current) return;
@@ -195,7 +236,7 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
         <Button label={t('Cancel')} onClick={onClose} />
         {mode === 'name'
           ? <Button variant="primary" label={t('Add to the server')} loading={busy} disabled={!VALID_ID.test(id) || already} onClick={() => void register()} testId="agora-add-agent-confirm" />
-          : <Button variant="primary" label={t('Start the session')} loading={busy} disabled={!leader || !model || !task.trim()} onClick={() => void launch()} testId="agora-launch-agent-confirm" />}
+          : <Button variant="primary" label={t('Start the session')} loading={busy} disabled={!leader || !model || !task.trim() || Boolean(nameProblem)} onClick={() => void launch()} testId="agora-launch-agent-confirm" />}
       </>}>
       <div className="fs-agx-form">
         <div className="fs-seg" role="radiogroup" aria-label={t('How it joins')}>
@@ -214,8 +255,12 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
                 <input className="fs-field" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder={t('docs, tests, review…')} data-testid="agora-add-agent-name" /></label>
             </div>
             {id && <p className="fs-muted" data-testid="agora-add-agent-id">{already ? t('{name} is already on this server.', { name: id }) : VALID_ID.test(id) ? t('It will be {name}.', { name: '@' + id }) : t('The name needs at least two letters or digits.')}</p>}
-            <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('What it is for (optional)')}</span>
-              <input className="fs-field" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} /></label>
+            <div className="fs-agx-form__row">
+              <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('What it is for (optional)')}</span>
+                <input className="fs-field" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} /></label>
+              <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Role')}</span>
+                <select className="fs-field" value={rank} onChange={(e) => setRank(e.target.value)} data-testid="agora-add-agent-rank"><RankOptions /></select></label>
+            </div>
           </>
         ) : (
           <>
@@ -240,6 +285,15 @@ export function AddAgentDialog({ open, guild, onClose, onDone, notify }: {
                       </select></label>
                   )}
                 </div>
+                <div className="fs-agx-form__row">
+                  <label className="fs-agx-form__field fs-agx-form__field--grow"><span className="fs-agx-form__label">{t('Name')}</span>
+                    <input className="fs-field" value={sessionName} maxLength={41} spellCheck={false}
+                      onChange={(e) => { setSessionName(e.target.value); setNameTouched(true); }} data-testid="agora-launch-name" /></label>
+                  <IconButton size="sm" icon={RefreshCw} label={t('Propose a name')} onClick={() => { setNameTouched(false); setNameAsked((n) => n + 1); }} testId="agora-launch-name-again" />
+                  <label className="fs-agx-form__field"><span className="fs-agx-form__label">{t('Role')}</span>
+                    <select className="fs-field" value={rank} onChange={(e) => setRank(e.target.value)} data-testid="agora-launch-rank"><RankOptions /></select></label>
+                </div>
+                {nameProblem && <p className="fs-muted" data-testid="agora-launch-name-problem">{nameProblem}</p>}
                 {chosen?.live_state?.state === 'auth_expired' && (
                   <p className="fs-notice" data-tone="warning" role="status" data-testid="agora-launch-signed-out">{t('The hub sees its program signed out on the PC: it will not start until you sign in there again.')}</p>
                 )}
