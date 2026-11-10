@@ -25,6 +25,8 @@ def watch(monkeypatch, tmp_path):
     monkeypatch.setattr(agora_watch, "STATE_FILE", str(tmp_path / "agora_watch.json"))
     monkeypatch.setattr(agora_watch, "_ask", lambda: state["inbox"])
     monkeypatch.setattr(agora_watch, "_owners", lambda: ["admin"])
+    everything = {"agora_mention": True, "agora_question": True}
+    monkeypatch.setattr(agora_watch, "_wants", lambda owner: {**everything, **state.get("wants", {}).get(owner, {})})
     from src import notifications
     monkeypatch.setattr(notifications, "emit", lambda kind, **kw: state["told"].append({"kind": kind, **kw}))
     return state
@@ -130,5 +132,35 @@ def test_the_question_asked_of_the_hub_is_the_persons_inbox_as_a_peek(monkeypatc
     monkeypatch.setattr(agora_routes, "hub_request", fake)
     assert agora_watch._ask() == {"ok": True, "pending": [], "escalated": []}
     assert asked["path"] == "/api/agora/inbox" and asked["query"]["agent"] == "luis" and asked["query"]["peek"] == "1"
+    assert asked["query"]["skip_muted"] == "1"                 # a server the person silenced is left out by the hub
     monkeypatch.setattr(agora_routes, "hub_request", lambda *a, **k: (None, None, ""))
     assert agora_watch._ask() is None
+
+
+def test_each_owner_is_told_only_the_kinds_they_asked_for(watch, monkeypatch):
+    agora_watch.look(NOW)
+    monkeypatch.setattr(agora_watch, "_owners", lambda: ["admin", "ana"])
+    watch["wants"] = {"admin": {"agora_mention": False}, "ana": {"agora_question": False}}
+    watch["inbox"] = inbox(pending=[mention(5)],
+                           escalated=[{"id": 9, "space_id": "vulcan", "title": "¿Publicamos?", "question": "¿sí o no?",
+                                       "escalated_by": "codex", "updated": NOW - 30}])
+    assert agora_watch.look(NOW) == (1, 2)
+    assert [(t["owner"], t["kind"]) for t in watch["told"]] == [("admin", "agora_question"), ("ana", "agora_mention")]
+    # what was not told is taken as seen: turning the switch back on does not ring for it
+    watch["wants"] = {}
+    assert agora_watch.look(NOW + 60) == (0, 2) and len(watch["told"]) == 2
+    # the line that sums up a burst counts only what that owner is told
+    watch["wants"] = {"admin": {"agora_mention": False}}
+    watch["inbox"] = inbox(pending=[mention(200 + n, age=300 - n) for n in range(6)])
+    agora_watch.look(NOW + 120)
+    late = watch["told"][2:]
+    assert {t["owner"] for t in late} == {"ana"} and late[-1]["title"] == "Ágora · +3"
+
+
+def test_what_is_wanted_comes_from_the_notification_preferences(monkeypatch):
+    from routes import notifications_routes
+    monkeypatch.setattr(notifications_routes, "agora_wants", lambda owner: {"mentions": owner != "admin", "questions": True})
+    assert agora_watch._wants("admin") == {"agora_mention": False, "agora_question": True}
+    assert agora_watch._wants("ana") == {"agora_mention": True, "agora_question": True}
+    monkeypatch.setattr(notifications_routes, "agora_wants", lambda owner: (_ for _ in ()).throw(RuntimeError("no file")))
+    assert agora_watch._wants("admin") == {"agora_mention": True, "agora_question": True}

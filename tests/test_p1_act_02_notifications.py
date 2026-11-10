@@ -87,3 +87,34 @@ def test_two_different_owners_do_not_share_notifications(client):
     client.post("/api/notifications/emit", json=APPROVAL_EMIT, headers={"X-Test-User": "alice"})
     bob_rows = client.get("/api/notifications", headers={"X-Test-User": "bob"}).json()["notifications"]
     assert bob_rows == []
+
+
+def test_agora_mentions_and_questions_each_have_their_own_switch(client):
+    from routes.notifications_routes import agora_wants
+    mention = {"type": "agora", "dedupe_key": "agora:m:atlas:5", "title": "codex mentions you in general",
+               "detail": "look at this", "screen": "agora", "target": "/agora?space_id=atlas&c=t%3A7"}
+    question = dict(mention, dedupe_key="agora:q:atlas:9:abc", title="codex asks you: publish?")
+    prefs = client.get("/api/notifications/prefs").json()
+    assert prefs["agora"] == {"mentions": True, "questions": True}
+    assert agora_wants("alice") == {"mentions": True, "questions": True}
+
+    saved = client.put("/api/notifications/prefs", json={"agora": {"mentions": False, "unknown": True}}).json()
+    assert saved["agora"] == {"mentions": False, "questions": True}
+    assert client.put("/api/notifications/prefs", json={"agora": {"questions": "false"}}).status_code == 400
+    assert client.get("/api/notifications/prefs").json()["agora"] == {"mentions": False, "questions": True}
+    assert client.post("/api/notifications/emit", json=mention).json() == {"stored": False, "reason": "kind_disabled"}
+    assert client.post("/api/notifications/emit", json=question).json()["stored"] is True
+    assert agora_wants("alice") == {"mentions": False, "questions": True}
+    assert agora_wants("bob") == {"mentions": True, "questions": True}          # each owner chooses for themselves
+
+    # another change keeps this one, and the whole type off silences both
+    client.put("/api/notifications/prefs", json={"quiet_hours": {"enabled": False}})
+    assert client.get("/api/notifications/prefs").json()["agora"] == {"mentions": False, "questions": True}
+    client.put("/api/notifications/prefs", json={"types": {"agora": {"enabled": False}}, "agora": {"mentions": True}})
+    assert agora_wants("alice") == {"mentions": False, "questions": False}
+
+
+def test_without_a_login_the_agora_choice_is_the_one_kept_under_no_name(client, monkeypatch):
+    from routes import notifications_routes
+    monkeypatch.setattr(notifications_routes, "_load", lambda: {"prefs": {"": {"agora": {"questions": False}}}, "events": {}})
+    assert notifications_routes.agora_wants("local") == {"mentions": True, "questions": False}

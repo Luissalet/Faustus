@@ -10,6 +10,11 @@ is there, so starting this for the first time does not ring for a week of old me
 than a day. After a long silence (Faustus was off, the PC was off) only the latest few are told one by one and the
 rest in a single line. A question asked again in other words is a new question. A hub that is not answering is simply
 asked again later.
+
+The person chooses what is told. A server they silenced is left out by the hub itself (``skip_muted``), and so is, once
+it is heard again, what was said in it meanwhile. Mentions and questions each have their own switch in the notification
+preferences (``routes/notifications_routes.py``); what a switch kept quiet is still taken as seen, so turning it back
+on does not ring for what happened meanwhile either.
 """
 from __future__ import annotations
 
@@ -113,8 +118,18 @@ def _owners() -> List[str]:
 def _ask() -> Optional[Dict[str, Any]]:
     from routes.agora_routes import hub_request
     status, payload, _ = hub_request("GET", "/api/agora/inbox", timeout=20.0, query={
-        "agent": PERSON, "all_spaces": "1", "peek": "1", "mine_only": "1", "limit": "60"})
+        "agent": PERSON, "all_spaces": "1", "peek": "1", "mine_only": "1", "skip_muted": "1", "limit": "60"})
     return payload if status == 200 and isinstance(payload, dict) and payload.get("ok") is not False else None
+
+
+def _wants(owner: str) -> Dict[str, bool]:
+    """Which kinds this owner asked to be told; everything when the preferences cannot be read."""
+    try:
+        from routes.notifications_routes import agora_wants
+        chosen = agora_wants(owner)
+    except Exception:  # noqa: BLE001
+        return {"agora_mention": True, "agora_question": True}
+    return {"agora_mention": bool(chosen.get("mentions", True)), "agora_question": bool(chosen.get("questions", True))}
 
 
 def look(now: Optional[float] = None) -> Tuple[int, int]:
@@ -137,23 +152,25 @@ def look(now: Optional[float] = None) -> Tuple[int, int]:
         changed = True
         if not first and item["fresh"]:
             news.append(item)
+    told = 0
     if news:
         from src import notifications
         news.sort(key=lambda item: item["when"], reverse=True)
-        one_by_one, rest = news[:MAX_PER_LOOK], news[MAX_PER_LOOK:]
-        owners = _owners()
-        for item in reversed(one_by_one):                  # oldest first, as they happened
-            for owner in owners:
+        for owner in _owners():
+            wants = _wants(owner)
+            mine = [item for item in news if wants.get(item["kind"], True)]
+            told = max(told, len(mine))
+            one_by_one, rest = mine[:MAX_PER_LOOK], mine[MAX_PER_LOOK:]
+            for item in reversed(one_by_one):              # oldest first, as they happened
                 notifications.emit(item["kind"], owner=owner or None, title=item["title"], body=item["body"],
                                    data={**item["data"], "url": item["url"]})
-        if rest:
-            names = list(dict.fromkeys(item["who"] for item in rest if item["who"]))
-            for owner in owners:
+            if rest:
+                names = list(dict.fromkeys(item["who"] for item in rest if item["who"]))
                 notifications.emit("agora_mention", owner=owner or None, title=f"Ágora · +{len(rest)}",
                                    body=_line(", ".join(names)), data={"url": "/agora?c=v%3Ainbox", "more": len(rest)})
     if changed:
         _save(seen)
-    return len(news), len(items)
+    return told, len(items)
 
 
 async def run_watch(poll_s: float = POLL_S) -> None:

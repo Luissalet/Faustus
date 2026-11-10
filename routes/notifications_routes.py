@@ -61,6 +61,8 @@ def _default_prefs() -> Dict[str, Any]:
         "channels": {"in_app": True, "desktop": True},
         "types": {t: {"enabled": True, "channels": ["in_app", "desktop"]} for t in NOTIFICATION_TYPES},
         "quiet_hours": {"enabled": False, "start": "22:00", "end": "07:00"},
+        # Which Agora news are told: a message that names the person, a question the agents put to them.
+        "agora": {"mentions": True, "questions": True},
     }
 
 
@@ -149,7 +151,30 @@ def _prefs_for(data: Dict[str, Any], owner: str) -> Dict[str, Any]:
             merged["quiet_hours"]["start"] = qh["start"]
         if _TIME_RE.match(str(qh.get("end", ""))):
             merged["quiet_hours"]["end"] = qh["end"]
+    agora = stored.get("agora")
+    if isinstance(agora, dict):
+        for key in merged["agora"]:
+            if key in agora:
+                merged["agora"][key] = bool(agora[key])
     return merged
+
+
+def agora_wants(owner: str) -> Dict[str, bool]:
+    """Which Agora news this person wants to be told: ``{"mentions": bool, "questions": bool}``. Both are off when
+    the whole Agora type is. Without a login the choice is kept under no name, whoever the devices belong to."""
+    with _lock:
+        data = _load()
+        key = owner or ""
+        if key not in data["prefs"] and "" in data["prefs"]:
+            key = ""
+        prefs = _prefs_for(data, key)
+    on = bool(prefs["types"].get("agora", {}).get("enabled", True))
+    return {kind: on and bool(prefs["agora"].get(kind, True)) for kind in ("mentions", "questions")}
+
+
+def _agora_kind(dedupe_key: str) -> str:
+    """``agora:m:…`` is a mention and ``agora:q:…`` a question (studio/src/shell/notifications.ts writes them)."""
+    return {"agora:m:": "mentions", "agora:q:": "questions"}.get(str(dedupe_key)[:8], "")
 
 
 def _in_quiet_hours(quiet: Dict[str, Any], now_local: time.struct_time) -> bool:
@@ -171,6 +196,7 @@ class PrefsIn(BaseModel):
     channels: Dict[str, bool] = Field(default_factory=dict)
     types: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     quiet_hours: Dict[str, Any] = Field(default_factory=dict)
+    agora: Dict[str, Any] = Field(default_factory=dict)
 
 
 class EmitIn(BaseModel):
@@ -221,6 +247,11 @@ def setup_notification_routes() -> APIRouter:
                         current["quiet_hours"][key] = qh[key]
                     elif key in qh:
                         raise HTTPException(400, f"quiet_hours.{key} must be HH:MM")
+            for key in current["agora"]:
+                if key in payload.agora:
+                    if not isinstance(payload.agora[key], bool):      # "false" as a word would otherwise read as yes
+                        raise HTTPException(400, f"agora.{key} must be true or false")
+                    current["agora"][key] = payload.agora[key]
             data["prefs"][owner] = current
             _save(data)
         return current
@@ -247,6 +278,8 @@ def setup_notification_routes() -> APIRouter:
             type_cfg = prefs["types"].get(payload.type, {"enabled": True, "channels": ["in_app", "desktop"]})
             if not type_cfg.get("enabled", True):
                 return {"stored": False, "reason": "type_disabled"}
+            if payload.type == "agora" and not prefs["agora"].get(_agora_kind(payload.dedupe_key), True):
+                return {"stored": False, "reason": "kind_disabled"}
             events = data["events"].setdefault(owner, [])
             existing = next((e for e in events if e.get("dedupe_key") == payload.dedupe_key), None)
             if existing:
