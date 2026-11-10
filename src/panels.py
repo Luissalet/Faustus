@@ -350,15 +350,27 @@ def check(panel_id: str, *, base_url: Optional[str] = None, wait_ms: int = 1500,
     title = ""
     text_len = 0
     shot_path = None
-    headers = {}
-    if token:
-        from core.middleware import INTERNAL_TOOL_HEADER
-        headers[INTERNAL_TOOL_HEADER] = token
+    from urllib.parse import urlsplit
+    origin = urlsplit(base).netloc.lower()
+    own = urlsplit(constants.internal_api_base()).netloc.lower()
+    host = origin.rsplit(":", 1)[0].strip("[]")
+    # The internal token only ever goes to Faustus itself: never to the CDNs, fonts or APIs a panel loads,
+    # and not at all when the check points at another host.
+    send_token = bool(token) and (origin == own or host in ("127.0.0.1", "localhost", "::1"))
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         try:
-            ctx = browser.new_context(viewport={"width": width, "height": height}, service_workers="block",
-                                      extra_http_headers=headers or None)
+            ctx = browser.new_context(viewport={"width": width, "height": height}, service_workers="block")
+            if send_token:
+                from core.middleware import INTERNAL_TOOL_HEADER
+
+                def _same_origin_token(route):
+                    req = route.request
+                    if urlsplit(req.url).netloc.lower() == origin:
+                        route.continue_(headers={**req.headers, INTERNAL_TOOL_HEADER.lower(): token})
+                    else:
+                        route.continue_()
+                ctx.route("**/*", _same_origin_token)
             page = ctx.new_page()
             page.set_default_timeout(15000)
             page.on("console", lambda m: console.append({"type": m.type, "text": m.text[:400]}) if len(console) < 100 else None)

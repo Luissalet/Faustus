@@ -258,3 +258,42 @@ def test_the_helper_exposes_faustus_api_as_documented():
     # Panels call faustus.api(path); window.faustus is the api function itself, so it must also carry .api.
     assert "api.api = api;" in panels.PANEL_HELPER_JS
     assert "window.faustus = api;" in panels.PANEL_HELPER_JS
+
+
+def test_check_sends_the_internal_token_only_to_the_panel_origin():
+    pytest.importorskip("playwright")
+    from core.middleware import INTERNAL_TOOL_HEADER
+    seen = {"own": [], "other": []}
+
+    def handler_for(kind, pages):
+        class H(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                seen[kind].append(self.headers.get(INTERNAL_TOOL_HEADER))
+                body = pages.get(self.path, "")
+                self.send_response(200 if body or kind == "other" else 404)
+                self.send_header("Content-Type", "image/gif" if kind == "other" else "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(body.encode("utf-8") if body else b"GIF89a")
+
+            def log_message(self, *a):  # noqa: D401
+                pass
+        return H
+
+    other = HTTPServer(("127.0.0.1", 0), handler_for("other", {}))
+    threading.Thread(target=other.serve_forever, daemon=True).start()
+    html = f"<html><body><img src='http://127.0.0.1:{other.server_port}/pixel.gif'><p>hola</p></body></html>"
+    panels.create("Fuera", html, panel_id="fuera")
+    own = HTTPServer(("127.0.0.1", 0), handler_for("own", {"/api/panels/fuera/page": panels.page_html("fuera")}))
+    threading.Thread(target=own.serve_forever, daemon=True).start()
+    try:
+        try:
+            panels.check("fuera", base_url=f"http://127.0.0.1:{own.server_port}", wait_ms=300, screenshot=False, token="secret-token")
+        except panels.PanelError as exc:
+            if exc.error_class in ("panel.no_browser", "panel.load_failed"):
+                pytest.skip(f"no headless browser here: {exc.detail}")
+            raise
+        assert seen["own"] and all(v == "secret-token" for v in seen["own"])
+        assert seen["other"] and all(v is None for v in seen["other"])
+    finally:
+        own.shutdown()
+        other.shutdown()
