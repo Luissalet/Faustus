@@ -12,6 +12,14 @@ only counts as better when the metric moves past that threshold in the right dir
 noise. Nothing here changes the project: the only side effect is running the measuring
 command, which the caller chose.
 
+A card can also carry what the rest of the loop needs, written down before the first
+change is tried: a pre-registered keep bar (an absolute or relative improvement a change
+must reach, besides clearing the noise), the minimum number of paired runs before any
+verdict, a guard command that must still pass after a change (the tests), a stop rule
+and a budget. Every verdict -- from `check`, from experiment arms or from the
+improvement loop (`src.loop_arms`) -- is appended to the card's ledger, rejected ideas
+included, so nobody tries them again without a new reason.
+
 Cards live under DATA_DIR/loop_cards/<owner>/<project>/<id>.json.
 """
 from __future__ import annotations
@@ -33,6 +41,7 @@ MAX_REPEATS = 50
 MAX_TIMEOUT_S = 3600
 DEFAULT_TIMEOUT_S = 300
 MAX_HISTORY = 30
+MAX_LEDGER = 300
 _OUT_CAP = 200_000
 ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{6}$")
 
@@ -177,6 +186,46 @@ def normalise_extract(args: Mapping[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def describe_extract(extract: Mapping[str, Any]) -> str:
+    kind = extract.get("kind")
+    if kind == "time":
+        return "the command's run time in seconds"
+    if kind == "json":
+        return f"the JSON value at `{extract.get('path')}` in the output"
+    return f"the number captured by `{extract.get('pattern')}` in the output"
+
+
+def _float_or_none(value: Any, label: str) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        return abs(float(str(value).replace(",", ".").rstrip("% ")))
+    except ValueError:
+        raise LoopError(f"`{label}` must be a number")
+
+
+def normalise_plan(args: Mapping[str, Any]) -> Dict[str, Any]:
+    """The pre-registered part of the card: keep bar, minimum pairs, guard, stop rule, budget."""
+    out: Dict[str, Any] = {}
+    pct = _float_or_none(args.get("keep_bar_pct"), "keep_bar_pct")
+    absolute = _float_or_none(args.get("keep_bar_abs"), "keep_bar_abs")
+    if pct or absolute:
+        out["keep_bar"] = {"pct": pct or 0.0, "abs": absolute or 0.0}
+    if args.get("min_pairs") not in (None, ""):
+        out["min_pairs"] = _int(args.get("min_pairs"), 6, 2, MAX_REPEATS, "min_pairs")
+    for key, limit in (("guard_command", 1000), ("stop_rule", 600), ("outcome", 400)):
+        if str(args.get(key) or "").strip():
+            out[key] = str(args[key]).strip()[:limit]
+    if args.get("timebox_min") not in (None, ""):
+        out["timebox_min"] = _int(args.get("timebox_min"), 60, 1, 10080, "timebox_min")
+    return out
+
+
+def keep_bar_value(card: Mapping[str, Any], base_mean: float) -> float:
+    kb = card.get("keep_bar") or {}
+    return max(float(kb.get("abs") or 0), abs(base_mean) * float(kb.get("pct") or 0) / 100)
+
+
 def normalise_direction(value: Any) -> str:
     text = str(value or "").strip().lower()
     if text in ("up", "higher", "increase", "max", "subir", "sube", "mas", "más", "mayor", "maximizar"):
@@ -266,7 +315,11 @@ def _row(card: Mapping[str, Any]) -> Dict[str, Any]:
             "noisy": bool(base.get("cv") is not None and base["cv"] > 0.10),
             "last_check": ({"at": last["at"], "verdict": last["verdict"], "delta": last["delta"], "delta_pct": last.get("delta_pct"),
                             "mean": last["summary"]["mean"], "noise_multiple": last.get("noise_multiple")} if last else None),
-            "checks": len(card.get("checks") or [])}
+            "checks": len(card.get("checks") or []),
+            "keep_bar": card.get("keep_bar"), "min_pairs": card.get("min_pairs"), "guard_command": card.get("guard_command"),
+            "stop_rule": card.get("stop_rule"), "timebox_min": card.get("timebox_min"), "outcome": card.get("outcome"),
+            "ledger": len(card.get("ledger") or []),
+            "kept": sum(1 for r in card.get("ledger") or [] if r.get("verdict") in ("KEEP", "win"))}
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +374,7 @@ def create(owner: str, args: Mapping[str, Any], runner: Optional[Runner] = None)
     timeout_s = float(_int(args.get("timeout_s"), DEFAULT_TIMEOUT_S, 1, MAX_TIMEOUT_S, "timeout_s"))
     cwd = _cwd(args.get("cwd"))
     project = str(args.get("project") or args.get("project_id") or "").strip() or "default"
+    plan = normalise_plan(args)
     values, runs = _measure(command, cwd, extract, repeats, timeout_s, runner)
     base = summarize(values)
     base["values"] = values
@@ -328,7 +382,10 @@ def create(owner: str, args: Mapping[str, Any], runner: Optional[Runner] = None)
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     card = {"id": f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}", "project": project, "goal": goal[:400],
             "command": command, "cwd": cwd, "extract": extract, "direction": direction, "repeats": repeats,
-            "timeout_s": timeout_s, "created": now, "updated": now, "baseline": base, "baseline_at": now, "checks": []}
+            "timeout_s": timeout_s, "created": now, "updated": now, "baseline": base, "baseline_at": now, "checks": [],
+            **plan, "ledger": [{"at": now, "source": "baseline", "arm": "baseline", "change": "baseline on the current code",
+                                "control_median": base["median"], "arm_median": base["median"], "noise_floor": base["stdev"],
+                                "pairs": base["n"], "verdict": "baseline", "why": f"{base['n']} runs"}]}
     _save(owner, card)
     return {**card, "warnings": warnings_for(base)}
 
@@ -346,7 +403,7 @@ def warnings_for(base: Mapping[str, Any]) -> List[str]:
 
 
 def check(owner: str, card_id: str, command: Optional[str] = None, repeats: Any = None, rebase: bool = False,
-          project: Optional[str] = None, runner: Optional[Runner] = None) -> Dict[str, Any]:
+          project: Optional[str] = None, runner: Optional[Runner] = None, change: str = "") -> Dict[str, Any]:
     runner = runner or default_runner
     card = _find(owner, card_id, project)
     cmd = (command or "").strip() or card["command"]
@@ -357,8 +414,20 @@ def check(owner: str, card_id: str, command: Optional[str] = None, repeats: Any 
     notes = []
     if new["stdev"] > 2 * max(card["baseline"]["stdev"], 1e-12) and new["n"] >= 3:
         notes.append("this measurement was noisier than the baseline; repeat it before believing the verdict")
+    bar = keep_bar_value(card, card["baseline"]["mean"])
+    if card.get("keep_bar"):
+        result["keep_bar"] = bar
+        result["keep_bar_met"] = bool(result["verdict"] == "win" and result["better_by"] >= bar)
+        if result["verdict"] == "win" and not result["keep_bar_met"]:
+            notes.append(f"better than the noise but short of the pre-registered keep bar ({bar:.4g})")
     entry = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "command": cmd, "summary": {**new, "values": values}, "runs": runs,
              **result, "notes": notes}
+    card.setdefault("ledger", []).append({
+        "at": entry["at"], "source": "check", "arm": "check", "change": str(change or (cmd if cmd != card["command"] else "re-measure")),
+        "control_median": card["baseline"]["median"], "arm_median": new["median"], "delta": result["delta"],
+        "delta_pct": result["delta_pct"], "pairs": new["n"], "noise_floor": card["baseline"]["stdev"],
+        "verdict": result["verdict"], "why": "; ".join(notes)})
+    card["ledger"] = card["ledger"][-MAX_LEDGER:]
     card.setdefault("checks", []).append(entry)
     card["checks"] = card["checks"][-MAX_HISTORY:]
     if rebase:
@@ -390,6 +459,28 @@ def get(owner: str, card_id: str, project: Optional[str] = None) -> Dict[str, An
     return _find(owner, card_id, project)
 
 
+def update_plan(owner: str, card_id: str, args: Mapping[str, Any], project: Optional[str] = None) -> Dict[str, Any]:
+    """Change the pre-registered plan. A keep bar changed after results exist is recorded in the ledger
+    with its reason, because moving the bar after looking is how noise becomes a 'win'."""
+    card = _find(owner, card_id, project)
+    plan = normalise_plan(args)
+    if not plan and not any(k in args for k in ("keep_bar_pct", "keep_bar_abs", "guard_command", "stop_rule")):
+        raise LoopError("nothing to change: give keep_bar_pct/keep_bar_abs, min_pairs, guard_command, stop_rule, timebox_min or outcome")
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    if "keep_bar" in plan and plan["keep_bar"] != card.get("keep_bar") and len(card.get("ledger") or []) > 1:
+        card.setdefault("ledger", []).append({"at": now, "source": "plan", "arm": "plan", "change": f"keep bar {card.get('keep_bar')} -> {plan['keep_bar']}",
+                                              "verdict": "plan", "why": str(args.get("reason") or "no reason given")[:300]})
+    for key in ("guard_command", "stop_rule", "outcome"):
+        if key in args and not str(args.get(key) or "").strip():
+            card.pop(key, None)
+    if ("keep_bar_pct" in args or "keep_bar_abs" in args) and "keep_bar" not in plan:
+        card.pop("keep_bar", None)
+    card.update(plan)
+    card["updated"] = now
+    _save(owner, card)
+    return card
+
+
 def delete(owner: str, card_id: str, project: Optional[str] = None) -> Dict[str, Any]:
     card = _find(owner, card_id, project)
     _path(owner, card["project"], card_id).unlink(missing_ok=True)
@@ -406,7 +497,9 @@ def run(owner: str, args: Mapping[str, Any], runner: Optional[Runner] = None) ->
             return create(owner, args, runner)
         if action == "check":
             return check(owner, str(args.get("id") or args.get("card_id") or ""), args.get("command"), args.get("repeats"),
-                         bool(args.get("rebase")), args.get("project") or None, runner)
+                         bool(args.get("rebase")), args.get("project") or None, runner, str(args.get("change") or ""))
+        if action == "plan":
+            return update_plan(owner, str(args.get("id") or args.get("card_id") or ""), args, args.get("project") or None)
         if action == "list":
             return {"cards": list_cards(owner, args.get("project") or None)}
         if action == "get":
@@ -415,7 +508,7 @@ def run(owner: str, args: Mapping[str, Any], runner: Optional[Runner] = None) ->
             return delete(owner, str(args.get("id") or args.get("card_id") or ""), args.get("project") or None)
     except LoopError as exc:
         return {"error": exc.detail, "error_class": exc.error_class}
-    return {"error": "action must be create, check, list, get or delete", "error_class": "loop.bad_args"}
+    return {"error": "action must be create, check, plan, list, get or delete", "error_class": "loop.bad_args"}
 
 
 def _fmt(x: Any, digits: int = 4) -> str:
@@ -432,6 +525,8 @@ def render(data: Mapping[str, Any]) -> str:
         pct = f" ({data['delta_pct']:+.1f} %)" if data.get("delta_pct") is not None else ""
         mult = f", {data['threshold_multiple']:.2f} x the threshold" if data.get("threshold_multiple") is not None else ""
         words = {"win": "BETTER than the baseline", "loss": "WORSE than the baseline", "noise": "within the noise"}[data["verdict"]]
+        if data.get("keep_bar") is not None:
+            words += " and it " + ("meets" if data.get("keep_bar_met") else "does NOT meet") + f" the keep bar ({_fmt(data['keep_bar'])})"
         return (f"loop card {data['id']}: {words}. mean {_fmt(data['summary']['mean'])} vs baseline {_fmt(data['baseline']['mean'])}, difference {data['delta']:+.4g}{pct}"
                 f"{mult}; threshold {_fmt(data['threshold'])}." + ("".join(f"\nnote: {n}" for n in data["notes"])))
     if "baseline" in data and "checks" in data:
@@ -439,6 +534,13 @@ def render(data: Mapping[str, Any]) -> str:
         text = (f"loop card {data['id']} for: {data['goal']}\ncommand: {data['command']}\nbetter = {'higher' if data['direction'] == 'up' else 'lower'}; "
                 f"{b['n']} runs: mean {_fmt(b['mean'])}, median {_fmt(b['median'])}, sd {_fmt(b['stdev'])}, min {_fmt(b['min'])}, max {_fmt(b['max'])}, "
                 f"variation {_fmt((b['cv'] or 0) * 100, 3)} %\nimprovement threshold: {_fmt(b['threshold'])} (max of 2 x sd and 1 % of the mean)")
+        if data.get("keep_bar"):
+            text += f"\nkeep bar (pre-registered): {_fmt(keep_bar_value(data, b['mean']))}"
+        if data.get("guard_command"):
+            text += f"\nguard: {data['guard_command']}"
+        if data.get("ledger"):
+            text += "".join(f"\nledger: {r.get('verdict')} -- {r.get('change')} {('(' + r['why'] + ')') if r.get('why') else ''}"
+                            for r in data["ledger"][-8:])
         return text + "".join(f"\nwarning: {w}" for w in data.get("warnings", []))
     if "deleted" in data:
         return f"deleted loop card {data['deleted']}"

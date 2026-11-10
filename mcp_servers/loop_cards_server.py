@@ -2,8 +2,11 @@
 loop_cards_server.py
 
 MCP server for Loop Cards (`src/loop_card.py`): `loop_card_create`, `loop_card_check`,
-`loop_card_list`, `loop_card_get`, `loop_card_delete` -- the same tools the chat has, so the
-chat, the HTTP routes (`/api/loop-cards*`) and this server share one implementation.
+`loop_card_list`, `loop_card_get`, `loop_card_delete`, `loop_card_plan`, plus experiment arms
+(`loop_arms`), the improvement loop (`loop_improve`, `src/loop_arms.py`) and the prompt mirror
+(`prompt_mirror`, `src/prompt_mirror.py`) -- the same tools the chat has, so the chat, the HTTP
+routes (`/api/loop-cards*`, `/api/loop-improve*`, `/api/prompt-mirror`) and this server share one
+implementation. An improvement run started here runs in this server's event loop.
 
 * **stdout is the JSON-RPC stream.** `src/stdio_guard.py` is raised before anything else is imported.
 * **owner-scoped.** Cards live under DATA_DIR/loop_cards/<owner>. `ODYSSEUS_MCP_LOOP_CARDS_OWNER`
@@ -31,7 +34,8 @@ except Exception:  # pragma: no cover - the server must start regardless
 server = Server("loop_cards")
 
 _OWNER_ENV_KEYS = ("ODYSSEUS_MCP_LOOP_CARDS_OWNER", "ODYSSEUS_LOOP_CARDS_OWNER")
-_NAMES = ("loop_card_create", "loop_card_check", "loop_card_list", "loop_card_get", "loop_card_delete")
+_NAMES = ("loop_card_create", "loop_card_check", "loop_card_list", "loop_card_get", "loop_card_delete",
+          "loop_card_plan", "loop_arms", "loop_improve", "prompt_mirror")
 _OWNER_ERROR = ("Error: the loop_cards MCP server has no owner configured, so it cannot tell whose cards these "
                 "are. Set ODYSSEUS_MCP_LOOP_CARDS_OWNER for this server.")
 
@@ -71,8 +75,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return _text(_OWNER_ERROR)
     args = dict(arguments) if isinstance(arguments, dict) else {}
     try:
-        from src import loop_card
-        data = await asyncio.to_thread(loop_card.run, owner, {**args, "action": name[len("loop_card_"):]})
+        from src import loop_arms, loop_card, prompt_mirror
+        if name == "loop_arms":
+            data = await asyncio.to_thread(loop_arms.run_arms_action, owner, args)
+            data = {k: v for k, v in data.items() if k != "samples"}
+        elif name == "loop_improve":
+            data = await loop_arms.run_improve_action(owner, args)
+        elif name == "prompt_mirror":
+            data = await asyncio.to_thread(prompt_mirror.history if args.get("action") == "history" else prompt_mirror.run,
+                                           owner, *([] if args.get("action") == "history" else [args]))
+        else:
+            data = await asyncio.to_thread(loop_card.run, owner, {**args, "action": name[len("loop_card_"):]})
     except Exception as exc:  # noqa: BLE001
         return _text(f"Error in {name}: {type(exc).__name__}: {exc}")
     if data.get("error"):

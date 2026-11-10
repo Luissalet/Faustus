@@ -196,7 +196,8 @@ def test_mcp_server_and_builtin_registration(monkeypatch):
     pytest.importorskip("mcp")
     import mcp_servers.loop_cards_server as srv
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["loop_card_create", "loop_card_check", "loop_card_list", "loop_card_get", "loop_card_delete"]
+    assert [t.name for t in tools] == ["loop_card_create", "loop_card_check", "loop_card_list", "loop_card_get", "loop_card_delete",
+                                       "loop_card_plan", "loop_arms", "loop_improve", "prompt_mirror"]
     monkeypatch.delenv("ODYSSEUS_MCP_LOOP_CARDS_OWNER", raising=False)
     monkeypatch.delenv("ODYSSEUS_LOOP_CARDS_OWNER", raising=False)
     assert "no owner configured" in asyncio.run(srv.call_tool("loop_card_list", {}))[0].text

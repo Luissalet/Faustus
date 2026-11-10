@@ -1,9 +1,10 @@
-import { Plus, Repeat, Ruler, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Repeat, Ruler, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, EmptyState, Skeleton } from '../components';
 import * as api from '../adapters/loopCards';
 import { t, tn } from '../i18n';
+import { CardLab, MirrorSection } from './loop/LoopLab';
 import './loop-cards.css';
 
 /**
@@ -87,6 +88,7 @@ function Card({ card, onChanged }: { card: api.LoopCardRow; onChanged: () => voi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fresh, setFresh] = useState<api.CheckResult | null>(null);
+  const [open, setOpen] = useState(false);
   const b = card.baseline;
   const last = fresh ? { verdict: fresh.verdict, delta: fresh.delta, delta_pct: fresh.delta_pct, noise_multiple: fresh.noise_multiple, at: fresh.at } : card.last_check;
   const measure = async () => {
@@ -119,7 +121,13 @@ function Card({ card, onChanged }: { card: api.LoopCardRow; onChanged: () => voi
       {card.noisy && <p className="fs-loop__why" data-tone="warn">{t('This metric is noisy: only large changes will count. Make the measurement steadier before trusting small wins.')}</p>}
       {fresh?.notes.map((n, i) => <p key={i} className="fs-loop__why" data-tone="warn">{n}</p>)}
       {error && <p className="fs-loop__why" data-tone="bad" role="alert">{error}</p>}
-      <div><Button variant="secondary" size="sm" icon={Repeat} label={t('Measure again')} loading={busy} onClick={() => { void measure(); }} testId={`loop-check-${card.id}`} /></div>
+      <div className="fs-loop__row">
+        <Button variant="secondary" size="sm" icon={Repeat} label={t('Measure again')} loading={busy} onClick={() => { void measure(); }} testId={`loop-check-${card.id}`} />
+        <Button variant="ghost" size="sm" icon={open ? ChevronUp : ChevronDown} label={t('Plan, variants and improvement loop')} onClick={() => setOpen((v) => !v)} testId={`loop-lab-${card.id}`} />
+        {card.keep_bar ? <span className="fs-loop__muted">{t('keep bar {p} % / {a}', { p: api.fmt(card.keep_bar.pct, 3), a: api.fmt(card.keep_bar.abs) })}</span> : null}
+        {card.ledger ? <span className="fs-loop__muted">{t('{n} in the ledger, {k} kept', { n: card.ledger, k: card.kept ?? 0 })}</span> : null}
+      </div>
+      {open && <CardLab id={card.id} onChanged={onChanged} />}
     </li>
   );
 }
@@ -148,6 +156,7 @@ export function LoopCardsScreen() {
       {rows === null && <Skeleton label={t('Reading the loop cards')} count={3} height="96px" />}
       {rows && rows.length === 0 && !creating && <EmptyState icon={Repeat} title={t('No loop cards yet')} body={t('Create one with the command that measures what you want to improve.')} />}
       {rows && rows.length > 0 && <ul className="fs-loop__list" aria-label={t('Loop cards')}>{rows.map((c) => <Card key={c.id} card={c} onChanged={() => { void reload(); }} />)}</ul>}
+      <MirrorSection />
     </div>
   );
 }
