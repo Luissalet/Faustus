@@ -11593,3 +11593,16 @@ Unfreeze panes	Movilizar paneles
 Untitled spreadsheet	Hoja de cálculo sin título
 Wrap text	Ajustar texto
 {n} cells	{n} celdas
+Agent flows by app	Flujos de agente por app
+Choose skills in the Hub	Elegir skills en el Hub
+Expected outputs and checks	Salidas esperadas y comprobacion
+Find app or flow	Buscar app o flujo
+Incomplete procedure	Procedimiento incompleto
+No matching flows.	Ningun flujo coincide con la busqueda.
+No written flows on this shelf.	Esta estanteria no tiene flujos escritos.
+Not declared in the skill.	No declarado en la skill.
+Read full skill	Leer skill completa
+The flow catalogue is unavailable.	El catalogo de flujos no esta disponible.
+The skill could not be read.	No se pudo leer la skill.
+Written procedure	Procedimiento escrito
+Written procedures from each app?s current skill shelf. Expected outputs come from Outputs or Verification in the skill. Reading a flow does not run it.	Procedimientos escritos de la estanteria actual de cada app. Las salidas proceden de Outputs o Verification en la skill. Leer un flujo no lo ejecuta.

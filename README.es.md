@@ -1,6 +1,11 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
+Skills → Flujos de agente por app consulta los procedimientos escritos de las
+estanterías del Hub: disparador, pasos, salidas esperadas y skill completa.
+Se puede buscar por app o flujo y abrir la estantería para elegir skills.
+Consulta el [catálogo de flujos](docs/AGENT-FLOWS.md); leerlo no ejecuta tareas.
+
 Los resultados guardados permiten filtrar filas JSON y consultar una aparición
 con su contexto. El lector de GitHub acepta archivos y carpetas a una ref
 explícita y conserva el texto completo recibido antes de resumirlo; indica los

@@ -26,6 +26,7 @@ import { NewSkillPane, SkillDetail, confidenceTone, type Tab } from './skills/De
 import { HarnessProposalsPanel } from './skills/harness_proposals';
 import { InstinctsPanel } from './skills/Instincts';
 import { SkillLibraryPanel } from './skills/Library';
+import { AgentFlowsPanel } from './skills/AgentFlows';
 import './projects.css';
 import './skills.css';
 import { t, tn } from '../i18n';
@@ -42,7 +43,7 @@ import { InstructionPortability } from './InstructionPortability';
  * attention" is a filter, not a hidden rule inside a delete button.
  */
 
-type View = 'learned' | 'library' | 'instincts' | 'harness' | 'portability';
+type View = 'learned' | 'library' | 'flows' | 'instincts' | 'harness' | 'portability';
 type Filter = 'all' | 'drafts' | 'published' | 'attention';
 const SORTS: { value: SkillSort; label: string }[] = [
   { value: 'confidence', label: 'Confidence' },
@@ -405,6 +406,7 @@ export function SkillsScreen() {
           [
             ['learned', t('Learned')],
             ['library', t('Library')],
+            ['flows', t('Agent flows by app')],
             ['instincts', t('Instincts')],
             ['harness', t('Harness proposals')],
             ['portability', t('Export')],
@@ -417,6 +419,7 @@ export function SkillsScreen() {
       </div>
 
       {view === 'library' && <SkillLibraryPanel say={say} />}
+      {view === 'flows' && <AgentFlowsPanel />}
       {view === 'instincts' && <InstinctsPanel say={say} />}
       {view === 'harness' && <HarnessProposalsPanel say={say} />}
       {view === 'portability' && <InstructionPortability />}
