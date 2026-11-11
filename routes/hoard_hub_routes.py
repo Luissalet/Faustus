@@ -206,9 +206,9 @@ def setup_hoard_hub_routes() -> APIRouter:
         return darwin_panel_result(raw)
 
     @router.get('/api/hoard/agora/open')
-    def open_coordination_board(space_id: str = 'ecosystem', embedded: bool = False):
+    def open_coordination_board(space_id: str = 'ecosystem', embedded: bool = False, live: bool = False):
         where = hoard_hub.hub_location()
-        args = {'space_id': space_id, **({'embedded': '1'} if embedded else {})}
+        args = {'space_id': space_id, **({'embedded': '1'} if embedded else {}), **({'view': 'live'} if live else {})}
         return RedirectResponse(where['url'].rstrip('/') + '/agora/?' + urlencode(args))
 
     @router.get("/api/hoard/spheres")

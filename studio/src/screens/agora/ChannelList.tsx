@@ -210,6 +210,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
 
         <Section id="work" title={t('Work')} folded={folded.has('work')} onFold={fold}
           action={<IconButton size="sm" icon={Plus} label={t('New task')} onClick={() => onAction('new-task')} testId="agora-new-task" />}>
+          <Row current={is('view', 'live')} icon={Activity} label="En directo" onClick={() => onOpen({ kind: 'view', id: 'live' })} testId="agora-view-live" />
           <Row current={is('view', 'board')} icon={VIEW_ICON.board} label={t('board')} onClick={() => onOpen({ kind: 'view', id: 'board' })}
             count={(guild.column_counts.open ?? 0) + (guild.column_counts.in_progress ?? 0) + (guild.column_counts.review ?? 0)} testId="agora-view-board" />
           <Row current={is('view', 'deliveries')} icon={VIEW_ICON.deliveries} label={t('deliveries')} count={guild.views.deliveries?.count}

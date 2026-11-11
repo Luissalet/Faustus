@@ -23,6 +23,7 @@ import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, T
 import './agora-app.css';
 
 const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon }> = {
+  live: { label: 'En directo', hint: '', icon: Activity },
   welcome: { label: 'welcome', hint: 'What this server is, the folders it reads and how agents join', icon: BookOpen },
   decisions: { label: 'decisions', hint: 'Debates and questions closed with their resolution in writing', icon: Scale },
   board: { label: 'board', hint: 'Every task of this server by state', icon: Kanban },
@@ -284,6 +285,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           )}
           {ready && view.kind === 'view' && (
             <div className="fs-agx-main__scroll">
+              {view.id === 'live' && <iframe className="fs-agx-live" title="En directo" src={'/api/hoard/agora/open?space_id=' + encodeURIComponent(spaceId) + '&embedded=1&live=1'} />}
               {view.id === 'board' && <BoardView guild={ready} onOpen={open} onNewTask={() => setDialog({ kind: 'new-task' })} notify={notify} />}
               {view.id === 'deliveries' && <DeliveriesView guild={ready} version={ready.version} onOpen={open} />}
               {view.id === 'reviews' && <DeliveriesView guild={ready} version={ready.version} onOpen={open} reviews />}
@@ -292,7 +294,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
               {view.id === 'locks' && <LocksView version={ready.version} />}
               {view.id === 'inbox' && <InboxView servers={servers ?? []} version={ready.version} onOpen={open} />}
               {view.id === 'search' && <SearchView guild={ready} servers={servers ?? []} query={params.get('q') || ''} onQuery={setQuery} onOpen={open} />}
-              {!['board', 'deliveries', 'reviews', 'activity', 'decisions', 'locks', 'inbox', 'search'].includes(view.id) && (
+              {!['live', 'board', 'deliveries', 'reviews', 'activity', 'decisions', 'locks', 'inbox', 'search'].includes(view.id) && (
                 <WelcomeView guild={ready} onEdit={() => setDialog({ kind: 'edit-server' })} notify={notify} onRefresh={refresh} />
               )}
             </div>

@@ -14,6 +14,7 @@ const modes = [
   {id: 'groups', label: 'Conversation', icon: MessageSquare},
   {id: 'council', label: 'Deliberation', icon: Users},
   {id: 'development', label: 'Tasks and decisions', icon: ListChecks},
+  {id: 'live', label: 'En directo', icon: Users},
 ];
 
 /**
@@ -107,6 +108,6 @@ function ClassicAgora() {
         <CouncilScreen key={spaceId} embedded />
       </section>
     </div></div>}
-    {mode === 'development' && <section className="fs-agora__body fs-agora__development"><a className="fs-chip" href={'/api/hoard/agora/open?' + scope} target="_blank" rel="noopener">{t('Open in a separate window')}</a><iframe title={t('Tasks and decisions')} src={'/api/hoard/agora/open?' + scope + '&embedded=1'} /></section>}
+    {(mode === 'development' || mode === 'live') && <section className="fs-agora__body fs-agora__development"><a className="fs-chip" href={'/api/hoard/agora/open?' + scope + (mode === 'live' ? '&live=1' : '')} target="_blank" rel="noopener">{t('Open in a separate window')}</a><iframe title={mode === 'live' ? 'En directo' : t('Tasks and decisions')} src={'/api/hoard/agora/open?' + scope + '&embedded=1' + (mode === 'live' ? '&live=1' : '')} /></section>}
   </div>;
 }
