@@ -1,5 +1,11 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Android image-sharing procedure1.0.7 — 11-11-2026
+
+Faustus2610 source f564449b1451df377f79cd85c961f70d78acf1e4, CAS1 approved, full report read. android-emulator-qa1.0.7 has1487words, preserves old modeled fields except version and adds image-sharing guidance retained by parser/render. Distinguishes preview, generated PNG, share sheet and recipient delivery; a thumbnail does not certify original file bytes/dimensions. Named fixtures/cancel/busy-state recovery/restoration are explicit.408author and400reviewer tests pass. Source-only procedure update: no new runtime installation, actor-binding changes, local inference or autonomous efficiency claim. Faustus local has no provider quota.
+
+Root tested HoardDex459 templates/answers with10legendary groups/30options andArticuno144 marked only in answers. Web prepared links/code/previews; actual downloaded-file check remains unverified because event timedout and data-protocol retrieval was browser-policy blocked. No workaround. Android SDKADB/visible emulator generated both attached-image previews complete in the share sheet; cancelledtwice withoutrecipient. Own nominal QA boards removed, both baselines restored. Evidence Research/hoarddex-share2608/{WEB459,NATIVE459}.json. Task2608 retains the unverified web-artifact layer; no fullsuccessclaim. HoardDex459 runtime/releases unchanged.
+
 ## HoardDex entrega459 — 11-11-2026
 
 Main d5ab5ce8951fa47679e7d1e582da89379be14d36, versionCode459. Tarea2598, fuente458 54fd8999dbc66e81058b9edc1728402ebd07b2ba, CAS1–CAS3 leídas; CAS3 aprobado. Primer rival del laboratorio de Pueblo Paleta en Rojo Fuego/Verde Hoja, tres variantes según el inicial del jugador. Bulbasaur→Charmander Arañazo/Gruñido, Charmander→Squirtle Placaje/Agitacola, Squirtle→Bulbasaur Placaje/Gruñido; un miembro nivel5/sinobjeto. Fuente primaria pret/pokefirered037335f4 en RAM; cinco archivos nuevos fijados, default moves generados por nivel, condiciones de entrada del guion. FRLG25equipos/50contextos/24fuentes; 22equipos y19fuentes anteriores exactos. Global533equipos/938contextos/1055fuentes/20ediciones. No ROM ni consecuencia de derrota certificadas.
