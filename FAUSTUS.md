@@ -18131,3 +18131,20 @@ Una pizarra se abre en una pestaña del panel lateral, junto al chat, y es el mi
 - **Comprobado en vivo** (puerto 7013, Playwright y capturas en claro y oscuro): crear por `/pizarra`, notas por doble clic con edición en el sitio, conector arrastrado entre dos notas, mover y redimensionar, agrupar en marco, duplicar, borrar y deshacer, imagen, exportar PNG/SVG/`.canvas`, entrada desde la Biblioteca y desde `?pizarra=`, cursor del agente y encuadre, 605 elementos, y un turno real de modelo («mapa mental del plan de lanzamiento»: 13 notas y 12 conectores en una llamada, y un segundo turno que reconoce la nota seleccionada).
 - **Pruebas:** `tests/test_pizarra.py` (formato, operaciones, disposiciones, rutas, hub y herramientas), `tests/test_surfaces_studio_js.py` con `studio/checks/surfaces.check.mjs` (modelo del cliente), más el presupuesto de descripciones y los registros de herramientas.
 - **Límites conocidos:** en un navegador sin GPU el fotograma ronda 100-150 ms con 5 o con 600 elementos (lo limita el entorno, no el número); el agente no ve trazos a mano alzada más que como nodos `stroke`; no hay cursores de varias personas a la vez.
+# Ágora en directo
+
+Cada servidor del Ágora dispone de En directo, también dentro de su proyecto.
+Comparte la vista del Hub con pizarra por estado, ficheros bloqueados y extractos
+observados de herramientas, y un canal seleccionable. Cada agente activo tiene
+un cursor con su nombre y color, con el aspecto del puente App Dock.
+
+Los movimientos corresponden a señales con su hora de origen. El cursor se
+atenúa tras sesenta segundos sin señal y sale al terminar el turno observado.
+Seleccionarlo abre el detalle de su sesión y sus tareas. Seguir a acompaña sus
+destinos nuevos. Se respetan las preferencias de movimiento reducido y se
+conserva la última lectura durante una interrupción de conexión.
+
+Requiere el Hub con GET /api/agora/live, la herramienta MCP hub_agora_live y una
+compilación actual de apps/agora. Studio abre la vista mediante su ruta existente
+/api/hoard/agora/open con live=1. Los datos proceden de tareas, bloqueos, mensajes
+y transcripciones del observador, incluidos los checkpoints con su propia hora.
