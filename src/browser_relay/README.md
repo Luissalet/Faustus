@@ -156,3 +156,98 @@ File transfers and dispatched-request cancellation were independently reviewed a
 The managed backend was restarted normally and its live browser_session catalog now lists upload and download alongside the original eight actions. The existing disabled direct Writer and legacy QA MCP registrations remain disabled. No model service was stopped or started.
 
 Real Brave file-chooser/Blob acceptance and new Faustus-model acceptance remain pending: the installed extension still needs a normal reload, and its loaded folder/code version is not established by its ID or handshake. Browser automation rejected the internal extension page; no desktop/CDP workaround was used. The earlier prepared/under-review wording above is historical, not the current review state. Writer parity remains open.
+
+## Human turns, saved sessions and capture (1.3.0)
+
+`browser_session` retains the previous actions and adds the following operations.
+The extension keeps the same ID, endpoint and manifest permissions.
+
+| Action | Arguments | Result |
+|---|---|---|
+| `sessions` | none | Saved names, last observed URLs, titles and tab IDs |
+| `session_save` | `tab_id`, `name` | Persist a name in extension IndexedDB |
+| `session_open` | `name` | Reuse the saved tab or restore the last URL in a background tab |
+| `session_forget` | `name` | Forget the name; leave the tab and profile intact |
+| `handoff` | `tab_id`, optional `reason`, `name` | Show the person a **Te toca** card |
+| `adopt_tab` | `tab_id`, optional `reason`, `name` | Ask the person to cede a tab from the extension panel |
+| `handoff_status` | `tab_id` | Observe waiting/continued and the current card ID |
+| `har_start` | `tab_id`, optional `include_bodies` | Begin explicit CDP network capture |
+| `har_stop` | `tab_id`, new absolute `output_path` | Write HAR 1.2 and return bytes/SHA-256 |
+| `recording_start` | `tab_id`, new absolute `output_path`, optional `cursor` | Begin silent tab recording and last-minute buffering |
+| `recording_stop` | `tab_id`, optional new absolute `output_path` | Encode WebM to the chosen start/stop path |
+| `last_minute` | `tab_id`, new absolute `output_path` | Export the latest minute, or the minute frozen by an action error |
+
+For a login, 2FA or payment step, call `handoff` with a concrete reason, let the
+person finish it in the tab, and observe `handoff_status`. The extension panel's
+**Continuar** / **Ceder pestaña** handlers require a trusted click with active user
+activation; `.click()` from page JavaScript does nothing. No tool argument or
+runtime message from a website can complete a card. Browser tools cannot attach
+to the extension's own controls. During an explicit human turn, observations
+remain available and tool input/closing that tab waits. Continue invalidates
+references: take a fresh snapshot before acting. A stale card cannot complete a
+newer request. The panel also lets the person cede their active web tab directly,
+optionally naming it; `tabs` reports human-turn/adoption state.
+
+Names, URLs and titles survive worker and browser restarts, follow observed
+navigation, and are the only journey metadata stored locally. Closing a tab does
+not erase its name. Sessions share the existing browser profile and its normal
+login persistence; they do not clone cookies or isolate accounts. If the original
+tab no longer exists, explicit `session_open` restores its last saved URL and
+returns `restored:true`. Read it after loading. Capture does not restart itself.
+
+HAR includes observed requests, redirects, responses, query fields, timings and
+network failures. Response bodies are opt-in; unavailable bodies carry a comment.
+Only traffic observed after `har_start` is captured. Browser/CDP timing and body
+availability remain authoritative; this does not claim packet-level capture.
+
+Video uses timestamped JPEG compositor frames (up to five per second), with
+targeted screenshot fallback for inactive tabs. It never activates the tab.
+`cursor:true` installs a fixed visible mouse marker for this recording and removes
+it and its new-document hook on stop/release/disconnect. There is no caller-script
+execution API. WebM encoding uses the family's local ffmpeg discovery. The full
+recording stays in extension memory until stop; keep long sessions in manageable
+recordings. The relay separately retains a rolling minute so an extension/browser
+disconnect does not lose the recent evidence. Action errors save
+`<recording-stem>.failure-<unique-id>.webm` beside the chosen output and return a
+`failure_recording` receipt while preserving the original error and phase. Encoder
+errors are separate `artifact_error` fields. `last_minute` can export the relay
+buffer while the extension is unavailable. Release/closing a tab stops capture;
+export the full recording before release. No audio or capture before recording
+starts is available. A restarted relay has no in-memory frames from its predecessor.
+
+All exports use exclusive creation, preserve existing paths and return disk byte
+counts/SHA-256. HAR bytes and JPEG/video payloads never appear inline in MCP.
+No capture is enabled by connecting, listing tabs or saving a session.
+
+### Acceptance and limits
+
+`tests/browser_relay/live_journeys.py` is an opt-in test using the real extension,
+ordinary stdio MCP and an owned loopback fixture in an empty temporary browser
+profile. It maps only that browser's fixed relay URL to an ephemeral test port;
+production source, installed extensions and running apps are untouched. The
+2026-11-11 run completes 27 real MCP calls covering trusted vs synthetic Continue,
+adoption, HAR redirects/bodies, WebM, error freezing, export after disconnect and
+names retained after a full browser-process restart. Dark/light and enlarged-text
+panel captures were inspected. The area suite passes 130 Python and 56 Node tests;
+39 additional browser-manager integration tests pass with the project's Python environment.
+The system Python reports two warnings for an unavailable pytest-timeout plugin;
+the project environment completes the area suite without them.
+These are MCP-client/browser results, not a new autonomous model evaluation.
+
+A separate attempt to exercise `reload_extension` in the headless test browser
+unloaded its extension and subsequent extension-page navigation was blocked.
+That attempt is retained as a failure; it does not establish automatic recovery
+after an extension-code reload. No browser permission or installed user extension
+was changed to work around it. Full browser restart with normal loading passes.
+Portable-worker packaging and audio capture are outside this verification.
+
+Example (absolute output paths must point to an existing local directory):
+
+```json
+{"action":"recording_start","tab_id":42,"output_path":"C:/work/session.webm","cursor":true}
+{"action":"har_start","tab_id":42,"include_bodies":true}
+{"action":"handoff","tab_id":42,"reason":"Completa el acceso y pulsa Continuar en Faustus Browser."}
+{"action":"handoff_status","tab_id":42}
+{"action":"har_stop","tab_id":42,"output_path":"C:/work/network.har"}
+{"action":"recording_stop","tab_id":42}
+```

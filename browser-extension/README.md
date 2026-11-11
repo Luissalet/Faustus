@@ -1,6 +1,6 @@
 # Faustus Browser Session
 
-Own Manifest V3 extension for the browser session in which it is installed. It connects only to `ws://127.0.0.1:7016`, identifies as `cneonpjikbdhbaddfpmmdjemfdphlppa` through the fixed public manifest key, and uses `chrome.debugger` on an explicit tab. It starts no server, tab, browser or profile. No external scripts or dependencies.
+Own Manifest V3 extension for the browser session in which it is installed. It connects only to `ws://127.0.0.1:7016`, identifies as `cneonpjikbdhbaddfpmmdjemfdphlppa` through the fixed public manifest key, and uses `chrome.debugger` on an explicit tab. Connecting starts no server, tab, browser or profile. No external scripts or dependencies.
 
 `tabs` lists metadata without activating anything. `snapshot` reads main-frame Accessibility roles, names, values and properties with references scoped to this connection, tab, document and snapshot generation. Cross-frame targeting is not implemented. New snapshots, navigation, detach and reconnection invalidate references. DOM references are resolved with backend DOM ids; the original eight actions do not evaluate page JavaScript or framework callbacks. The added `download` uses only fixed product readers for an observed link/Blob; it never accepts caller code or invokes Writer internals.
 
@@ -8,9 +8,9 @@ Own Manifest V3 extension for the browser session in which it is installed. It c
 
 Successful mutations return `phase: readback_complete`; a browser ACK followed by readback failure is an error with `phase: action_confirmed`. Failure after dispatch without full ACK is `outcome_unknown`. This classification does not assert that the website completed the requested application operation. There is no automatic retry or replay, including after reconnect. Observe the page before deciding whether an ambiguous action should be attempted again.
 
-`screenshot` uses `Page.captureScreenshot` on the requested tab, not the visible tab of a window. `release` detaches only a debugger attachment made by this extension; it closes nothing. Failure to attach while another debugger owns a target does not evict it. No operation calls tabs.update, windows.update, bringToFront or desktop input.
+`screenshot` uses `Page.captureScreenshot` on the requested tab, not the visible tab of a window. `release` detaches only a debugger attachment made by this extension; it closes nothing. Failure to attach while another debugger owns a target does not evict it. Agent operations never activate a tab or window or send desktop input. The person's explicit **Ver pestaña** button in the extension panel activates the chosen tab.
 
-The badge reports relay availability. Clicking it reconnects the transport; it does not replay a command. A20second ping keeps an active WebSocket/service worker alive on Chromium116+, with a one-minute reconnect alarm. Disconnect invalidates refs and releases owned debugger attachments, including an attach completing after disconnect. No cookies or command history are stored and there is no profile isolation claim.
+The badge reports relay availability. Clicking it opens the session panel, with **Reconectar**, human-turn cards and tab adoption. Reconnection does not replay a command. A20second ping keeps an active WebSocket/service worker alive on Chromium116+, with a one-minute reconnect alarm. Disconnect invalidates refs and releases owned debugger attachments, including an attach completing after disconnect. No cookies or command history are stored and there is no profile isolation claim.
 
 Node tests use a simulated Chrome/CDP/WebSocket environment. Separately, the user installed this extension in Brave and Root exercised all eight actions over real MCP, including background input, a tab-specific screenshot, Library and return Home. The active tab and five visible QA projects were preserved. This is evidence from an MCP client; autonomous use by Faustus's model and portable runtime support remain pending. The Python backend provides compact readbacks by default and preserves the original full representation with `detail: full`; the extension's wire graph is unchanged.
 
@@ -50,3 +50,22 @@ The extension now covers what a person (or Claude driving a tab) does to read a 
 Reconnection: after the relay goes away the extension retries after 1, 2, 5 and then every 10 seconds (the one-minute alarm stays as the fallback), and the relay lets a call wait up to 8 seconds (`--peer-wait`) for the extension to come back instead of failing at once. In the same Faustus turn, a relay restarted with a new contract is announced live from the next step, so its calls are no longer refused until the next turn.
 
 Verified live in Brave through a Faustus agent turn on a real shop list: `reload` with text view (2 calls, 33 s instead of 31 calls), link URLs, `wait`, `scroll` down and up with `visible` (80 lines on screen and 326 off screen at y=720; 57 and 362 back at the top), background `open_tab`, region screenshot and `close_tab`. A check page in a background tab was reported and left alone. 49 extension tests and 102 Python relay tests pass.
+
+## Human turns and local capture (1.3.0)
+
+The extension panel provides **Te toca**, **Continuar**, direct tab adoption and
+saved session names. The existing `browser_session` MCP tool exposes
+`sessions`, `session_save/open/forget`, `handoff`, `handoff_status`, `adopt_tab`,
+`har_start/stop`, `recording_start/stop` and `last_minute`.
+The [full contract and verified limits](../src/browser_relay/README.md#human-turns-saved-sessions-and-capture-130)
+include restart behavior, real-click semantics, opt-in HAR bodies, ffmpeg WebM
+encoding, optional recording cursor, background capture and failure-minute
+receipts. The fixed recording cursor is additional product-owned page code;
+callers still cannot supply JavaScript. No manifest permissions were added.
+
+The 2026-11-11 isolated real-browser/stdio-MCP test completes 27 calls, saves
+HAR and playable WebM, distinguishes synthetic and browser-generated clicks,
+and retains names after a full browser restart. 130 Python and 56 Node tests pass.
+An extension-code reload in that headless browser unloaded the extension; automatic
+recovery for that case is not established. This does not claim a new model-agent
+acceptance run or changes to the installed user extension.

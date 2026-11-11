@@ -44,6 +44,16 @@ restart, a call waits briefly for it, and a server restarted mid-turn is
 announced with its live schema from the next step. Verified in a real agent
 turn on a live shop list ([details](browser-extension/README.md)).
 
+Extension 1.3.0 adds a **Te toca** card for handing a tab to the person and
+continuing after their real click, tab adoption, and named sessions that retain
+their last URL across browser restarts. The same `browser_session` MCP tool can
+export network traffic to HAR, record a tab to WebM with an optional cursor,
+and save its recent minute when an action fails, including a browser disconnect.
+Capture starts explicitly; exports are new local files with byte counts and
+SHA-256 receipts. Recording needs local ffmpeg and captures no audio.
+The extension keeps its existing permissions. See the
+[journey and capture API](src/browser_relay/README.md#human-turns-saved-sessions-and-capture-130).
+
 Turn completion can reconcile completed progress from recent operations and
 replace intermediate drafts with the final revision. Status notes do not
 borrow older work to close new steps; references resolve operational tool
