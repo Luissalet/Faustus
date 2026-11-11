@@ -285,6 +285,7 @@ export default function AppDock({ sessionId, hidden, maximized, onToggleMaximize
               src={sel.url}
               title={sel.name}
               allow="clipboard-read; clipboard-write; fullscreen"
+              referrerPolicy="origin"
               onLoad={onLoad}
               data-testid="app-dock-frame"
             />
