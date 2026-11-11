@@ -146,3 +146,14 @@ disk for that user.
 
 See `src/skill_library.py` for the module that lists and installs these, and
 `routes/skill_library_routes.py` for the API.
+
+## Skills carried by the family's apps
+
+An app of the family can carry skills from this folder for the agents that
+connect to it. Its manifest names the ones its work needs (`skills`: slugs,
+tags, categories, limit); the app keeps its own copy, names them in what an
+agent reads on connecting, serves them with `skills_list` and `skill_read`,
+and offers them as prompts. A skill improved here reaches those copies on
+their next refresh. `game-scenery-remodel` is the procedure for the
+remodelling studio: taking a game model apart, choosing what each piece is
+rebuilt as, comparing against the original and correcting.
