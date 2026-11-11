@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.9
+version: 1.0.10
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -29,6 +29,8 @@ Use for a short Android journey on an available emulator/device through native A
    A control can have plausible screen coordinates while hidden under a fixed app header or bottom navigation. Use the observed unobscured content area, not just the physical screen bounds. Scroll the whole target into that area and get fresh references before tapping. Distinguish the app header from system bars, cutouts and the actual IME. Dismiss a covering IME through observed permitted controls, then refresh. A header control persistently behind a system bar or cutout is an app defect: record it rather than replay taps or scroll the body; use observed exterior close or Back if permitted. After a picker tap, confirm that its filter or options actually appeared before typing. Read translated labels from the current tree rather than guessing their wording.
 
 6. Keep a small action budget, normally twelve inputs for a smoke journey. If an action leaves the state unchanged, inspect focus, keyboard, a modal or scroll position before trying again. Two unsuccessful attempts at the same outcome end blind retries. Use an observed text field, a small scroll in its actual container or documented Back when appropriate. If the route remains blocked, report the last confirmed state and stop inputs. Do not reset storage or change unrelated preferences as a shortcut.
+
+   If the guest shell times out or UI Automator exits while the emulator console still responds, try the SDK console's display capture. Check `adb -s <serial> emu help screenrecord screenshot`, then use `adb -s <serial> emu screenrecord screenshot <existing-host-directory>` in a dedicated evidence folder. Identify and inspect the new PNG. It can have physical display dimensions and a device frame even when `adb shell wm size` reports a logical override. Use the actual dimensions and coordinate space of the input method. An `OK` reply or a frame that still shows the prior screen is not proof that a tap landed. This fallback applies to tool or guest failures within the authorized QA session.
 
    Focus is not proof that the keyboard is visible. On Android, mIsInputViewShown can remain true while the actual IME InsetsSource has visible=false. Confirm the keyboard's current visibility and target window before using Back to dismiss it; Back with an already hidden keyboard can leave the current tool. If navigation changes, reconcile the new screen before resuming.
 
