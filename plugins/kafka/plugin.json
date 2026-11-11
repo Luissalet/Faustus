@@ -109,5 +109,6 @@
   "x-family": {
     "agenda": true,
     "copilot": true
-  }
+  },
+  "skills": {"slugs": ["paperwork-intake-and-deadlines", "hoard-daily-digest"], "limit": 2}
 }

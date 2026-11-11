@@ -30,5 +30,6 @@
     "env": { "BORGES_URL": "{APP_URL}", "BORGES_TOKEN_FILE": "{TOKEN_FILE}" },
     "optional_env": []
   },
-  "notes": "Keep the app running (python -m borges) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database. The first start downloads a ~240 MB multilingual embedding model into data/models; until it is ready, search is keyword-only."
+  "notes": "Keep the app running (python -m borges) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database. The first start downloads a ~240 MB multilingual embedding model into data/models; until it is ready, search is keyword-only.",
+  "skills": {"slugs": ["read-later-digest", "deep-research", "web-to-clean-markdown", "notes-from-templates"], "limit": 4}
 }

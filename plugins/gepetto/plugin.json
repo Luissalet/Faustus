@@ -66,5 +66,6 @@
     "events": true,
     "stack": "python",
     "note": "REST API (OpenAPI) reached from Faustus through its generic REST bridge; no /api/agent/call. It writes data/mcp-token at start and emits gepetto.export.done {path, ref, title} when an evaluation finishes with figure-ready.stl. start.py picks the venv when present."
-  }
+  },
+  "skills": {"slugs": ["print-ready-3d-model", "web-3d-asset-pipeline"], "limit": 2}
 }

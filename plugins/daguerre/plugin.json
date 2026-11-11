@@ -27,5 +27,6 @@
     "optional_env": []
   },
   "provides": {"skills": ["skills/find-photos/SKILL.md"]},
-  "notes": "Indexes local photo folders with CLIP embeddings and hands the model compact search results plus contact-sheet images. Never modifies, moves or deletes originals."
+  "notes": "Indexes local photo folders with CLIP embeddings and hands the model compact search results plus contact-sheet images. Never modifies, moves or deletes originals.",
+  "skills": {"slugs": ["photo-library-curation", "image-composition", "revision-aware-media"], "limit": 3}
 }

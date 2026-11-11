@@ -98,5 +98,6 @@
     },
     "optional_env": []
   },
-  "notes": "Own Hoard again (decision of 2026-10-28; it had been folded into Writer's Hoard). Keep the app running (npm start, or start it from Hoard Hub) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. save_link waits briefly for the background fetch to report a real title and excerpt. Writer calls this app as an external module to keep references. The audio_* tools need Sentidos prepared once (audio_status with action setup, or the Sentidos page): its own Python environment and about 1.1 GB of models, downloaded on first use."
+  "notes": "Own Hoard again (decision of 2026-10-28; it had been folded into Writer's Hoard). Keep the app running (npm start, or start it from Hoard Hub) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. save_link waits briefly for the background fetch to report a real title and excerpt. Writer calls this app as an external module to keep references. The audio_* tools need Sentidos prepared once (audio_status with action setup, or the Sentidos page): its own Python environment and about 1.1 GB of models, downloaded on first use.",
+  "skills": {"slugs": ["read-later-digest", "web-to-clean-markdown"], "limit": 2}
 }

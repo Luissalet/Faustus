@@ -60,5 +60,6 @@
     "events": true,
     "stack": "python",
     "note": "REST API reached from Faustus through its generic REST bridge; no /api/agent/call. With python app.py it writes data/mcp-token and emits plato.export.done {path, ref, title} for every STL of a finished export bundle (files unpacked under data/exports/). The hub lists, starts and backs it up."
-  }
+  },
+  "skills": {"slugs": ["print-ready-3d-model", "image-composition"], "limit": 2}
 }

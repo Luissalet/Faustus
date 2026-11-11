@@ -72,5 +72,6 @@
       "HERON_DATA_DIR"
     ]
   },
-  "notes": "Local CPU CAD; no GPU or model downloads. Every recipe revision uses a new request_id; reuse IDs after uncertainty to avoid duplicates. Files served only after hash/geometry checks. Manufacturing strength and printer settings are not certified. Install sibling HoardLink editable alongside requirements."
+  "notes": "Local CPU CAD; no GPU or model downloads. Every recipe revision uses a new request_id; reuse IDs after uncertainty to avoid duplicates. Files served only after hash/geometry checks. Manufacturing strength and printer settings are not certified. Install sibling HoardLink editable alongside requirements.",
+  "skills": {"slugs": ["print-ready-3d-model", "spec-driven-development", "verification-loop"], "limit": 3}
 }

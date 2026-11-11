@@ -140,11 +140,20 @@ def test_a_minimal_manifest_is_enough():
     (_minimal(app={"health": {"path": "/x", "expct": {}}}), "unknown key"),
     (_minimal(provides={"skils": []}), "unknown key"),
     (_minimal(wat=1), "unknown key"),
+    (_minimal(skills={"slug": ["a"]}), "unknown key"),
+    (_minimal(skills={"slugs": "a"}), "'skills.slugs' must be a list"),
+    (_minimal(skills={"limit": -1}), "'skills.limit'"),
 ])
 def test_a_manifest_is_refused_with_a_reason_a_person_can_act_on(data, fragment):
     with pytest.raises(plugins.ManifestError) as exc:
         plugins.parse_manifest(data)
     assert fragment in str(exc.value), str(exc.value)
+
+
+def test_a_manifest_says_which_library_skills_the_app_needs():
+    plugin = plugins.parse_manifest(_minimal(skills={"slugs": ["verification-loop"], "tags": ["3d"], "limit": 4}))
+    assert plugin.skills == {"slugs": ["verification-loop"], "tags": ["3d"], "limit": 4}
+    assert plugins.parse_manifest(_minimal()).skills == {}
 
 
 def test_extension_keys_are_skipped_not_refused():

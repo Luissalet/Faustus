@@ -77,6 +77,7 @@ APP_MANIFEST_NAME = "faustus-plugin.json"
 TOP_LEVEL_KEYS = {
     "schema", "id", "name", "purpose", "capabilities",
     "app", "mcp", "placeholders", "defaults", "provides", "notes", "data_language",
+    "skills",
 }
 #: Languages the plugin's data (names, titles, descriptions) is written in,
 #: most representative first. An empty search whose query is in another one
@@ -86,6 +87,9 @@ APP_KEYS = {"url_default", "ui_url", "health", "identify", "launch_hint"}
 MCP_KEYS = {"transport", "command", "args", "env", "optional_env"}
 HEALTH_KEYS = {"path", "expect"}
 PROVIDES_KEYS = {"skills", "recipes", "knowledge"}
+#: The procedures from the skill library the app's work needs: the ones named
+#: (``slugs``) plus, up to ``limit``, the ones that share ``tags`` or a category.
+SKILLS_KEYS = {"slugs", "tags", "categories", "limit"}
 
 
 class ManifestError(ValueError):
@@ -123,6 +127,9 @@ class Plugin:
     provides: Dict[str, Any] = field(default_factory=dict)
     notes: str = ""
     data_language: List[str] = field(default_factory=lambda: list(DEFAULT_DATA_LANGUAGE))
+    #: What the app asks of the skill library: ``{"slugs": [...], "tags": [...],
+    #: "categories": [...], "limit": n}``. Empty when it asks for nothing.
+    skills: Dict[str, Any] = field(default_factory=dict)
     # -- provenance ---------------------------------------------------------
     source: str = "builtin"          # "builtin" | "user"
     path: str = ""                   # the manifest file this came from
@@ -353,6 +360,18 @@ def parse_manifest(data: Any, *, source: str = "builtin", path: str = "") -> Plu
     if not isinstance(notes, str):
         raise ManifestError("'notes' must be a string")
 
+    wanted = data.get("skills") or {}
+    _unknown(wanted, SKILLS_KEYS, "'skills'")
+    skills: Dict[str, Any] = {
+        key: _as_str_list(wanted.get(key), f"'skills.{key}'")
+        for key in ("slugs", "tags", "categories") if wanted.get(key) is not None
+    }
+    if wanted.get("limit") is not None:
+        limit = wanted["limit"]
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
+            raise ManifestError("'skills.limit' must be a whole number, zero or more")
+        skills["limit"] = limit
+
     return Plugin(
         id=plugin_id,
         name=name.strip(),
@@ -374,6 +393,7 @@ def parse_manifest(data: Any, *, source: str = "builtin", path: str = "") -> Plu
         provides=dict(provides),
         notes=notes,
         data_language=_as_data_language(data.get("data_language")),
+        skills=skills,
         source=source,
         path=path,
     )

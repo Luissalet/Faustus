@@ -13,5 +13,6 @@
     "launch_hint": {"kind": "process", "executable": "{PYTHON}", "argv": ["-m", "atlas_hoard", "--no-browser"], "cwd": "{ATLAS_DIR}", "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20}}
   },
   "mcp": {"transport": "stdio", "command": "{PYTHON}", "args": ["{ATLAS_DIR}/mcp_server.py"], "env": {"ATLAS_URL": "{APP_URL}", "ATLAS_TOKEN_FILE": "{TOKEN_FILE}"}, "optional_env": []},
-  "notes": "Local-only. Native tools save/open the same shared file paths. Atlas never automatically moves existing projects. API membership is cooperative and does not impose OS filesystem ACLs. A reusable result needs exact source hashes and a recipe including model revision when applicable."
+  "notes": "Local-only. Native tools save/open the same shared file paths. Atlas never automatically moves existing projects. API membership is cooperative and does not impose OS filesystem ACLs. A reusable result needs exact source hashes and a recipe including model revision when applicable.",
+  "skills": {"slugs": ["shared-project-files", "revision-aware-media", "verification-loop"], "limit": 3}
 }

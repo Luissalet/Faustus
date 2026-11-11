@@ -27,5 +27,6 @@
     "optional_env": []
   },
   "provides": {"skills": ["skills/narrator-loop/SKILL.md"]},
-  "notes": "A world-state and continuity keeper for interactive fiction and tabletop play. Can narrate on its own with the shared local model, or hand its tools to Faustus so Faustus narrates while this app remembers everything."
+  "notes": "A world-state and continuity keeper for interactive fiction and tabletop play. Can narrate on its own with the shared local model, or hand its tools to Faustus so Faustus narrates while this app remembers everything.",
+  "skills": {"slugs": ["manuscript-continuity-edit", "game-design-document"], "limit": 2}
 }

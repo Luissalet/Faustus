@@ -30,5 +30,6 @@
     "env": { "JOBHUNT_URL": "{APP_URL}", "JOBHUNT_TOKEN_FILE": "{TOKEN_FILE}" },
     "optional_env": []
   },
-  "x-family": { "stack": "node" }
+  "x-family": { "stack": "node" },
+  "skills": {"slugs": ["job-application-tracking", "pretask-interview"], "limit": 2}
 }

@@ -27,5 +27,6 @@
     "optional_env": []
   },
   "provides": { "skills": ["skills/version-exact-apis/SKILL.md"] },
-  "notes": "Local, read-mostly documentation index over the interpreters and node_modules folders you register. Runs on 127.0.0.1 only; the docset catalogue/install features are the only ones that touch the network."
+  "notes": "Local, read-mostly documentation index over the interpreters and node_modules folders you register. Runs on 127.0.0.1 only; the docset catalogue/install features are the only ones that touch the network.",
+  "skills": {"slugs": ["documentation-lookup", "code-impact-analysis", "learn-this-repo"], "limit": 3}
 }

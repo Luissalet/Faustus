@@ -73,5 +73,6 @@
     "stack": "node",
     "note": "A desktop app: the port answers only while the AI bridge is switched on in Settings. The token lives under the user's profile, not in the repository folder. DATA_DIR is the app's own archive folder (the ZIP snapshots it rotates itself): a consistent copy of every project, small, never the live IndexedDB store or the media cache."
   },
-  "notes": "The AI bridge is off by default; turn it on in Writers Hoard → Settings → AI bridge. /api/health answers without a token; every other route needs the bridge token as a Bearer."
+  "notes": "The AI bridge is off by default; turn it on in Writers Hoard → Settings → AI bridge. /api/health answers without a token; every other route needs the bridge token as a Bearer.",
+  "skills": {"slugs": ["manuscript-continuity-edit", "writing-plans", "notes-from-templates"], "limit": 3}
 }

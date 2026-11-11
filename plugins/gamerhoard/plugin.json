@@ -12,5 +12,6 @@
     "env": {},
     "optional_env": ["RAWG_API_KEY", "GAMERHOARD_DATA_FILE"]
   },
-  "notes": "No web app or background service. The MCP server reads and writes one local JSON file in ~/.gamerhoard/library.json by default. RAWG_API_KEY only enables online catalog search; Steam import and achievement sync accept a key per call and never save it."
+  "notes": "No web app or background service. The MCP server reads and writes one local JSON file in ~/.gamerhoard/library.json by default. RAWG_API_KEY only enables online catalog search; Steam import and achievement sync accept a key per call and never save it.",
+  "skills": {"slugs": ["game-library-tracking"], "limit": 1}
 }

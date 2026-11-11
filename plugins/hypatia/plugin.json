@@ -31,5 +31,6 @@
     "env": { "HYPATIA_URL": "{APP_URL}", "HYPATIA_TOKEN_FILE": "{TOKEN_FILE}" },
     "optional_env": []
   },
-  "notes": "HYPATIA_DIR is the Exam Coach repository folder. Keep the app running (python -m hypatia) while the assistant uses it: the MCP bridge proxies every call to the local server (starting it if needed) and never opens the database. Build the PWA once with `npm run build:hoard` to use it at {APP_URL}."
+  "notes": "HYPATIA_DIR is the Exam Coach repository folder. Keep the app running (python -m hypatia) while the assistant uses it: the MCP bridge proxies every call to the local server (starting it if needed) and never opens the database. Build the PWA once with `npm run build:hoard` to use it at {APP_URL}.",
+  "skills": {"slugs": ["exam-study-plan", "hoard-study-cards", "notes-from-templates"], "limit": 3}
 }

@@ -68,5 +68,6 @@
     "stack": "python",
     "note": "Its MCP server authenticates with per-client credential files, not a bearer token, so the hub proxy does not call it; the hub lists, starts and backs it up (data/ holds the credential store: keep backups local)."
   },
-  "notes": "Knowledge about the user rather than tools over a domain: this is the plugin that widens what Faustus knows about who it works for."
+  "notes": "Knowledge about the user rather than tools over a domain: this is the plugin that widens what Faustus knows about who it works for.",
+  "skills": {"slugs": ["personal-context-consult", "pretask-interview"], "limit": 2}
 }
