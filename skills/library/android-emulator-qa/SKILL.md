@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.8
+version: 1.0.9
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -19,6 +19,10 @@ Use for a short Android journey on an available emulator/device through native A
 2. Check the actual capabilities before planning inputs. Reuse an existing connected Android MCP server; repeated registration can create duplicate servers. Discover the matching Android category once, then load only device listing, foreground app, element listing, click, typing and Back as needed. Do not choose desktop mouse tools for an Android task. An installed global skill can already be injected into the turn even when project-local skills_list is empty. Use the included procedure; do not traverse the entire skills catalogue to prove its use. Keep the emulator visible where requested, including an emulator embedded in Android Studio. Do not launch another instance or restart the current one to make discovery easier.
 
 3. Resolve identity from the tool's device list. An MCP device identifier can be an AVD name while its ADB serial is emulator-5554; these are different interfaces, not interchangeable strings. Confirm the mapping and foreground package before acting. With ADB, use the verified absolute SDK executable and an explicit serial on every command. If the executable is absent from PATH, locate the SDK once instead of repeating a failing bare command. Verify boot completion and package version without installing or restarting.
+
+   When the task includes an authorized APK update, distinguish transfer, package installation, activity launch and usable app content. Keep one installation in progress and allow a measured deadline for the APK size and device. An absent or unchanged package version while ADB is transferring is insufficient to declare failure. On a stalled attempt, check the original ADB process, the exact device and any install session for this package before retrying. Record elapsed time and the last confirmed phase. Avoid a second install or emulator restart while the first attempt is pending.
+
+   Confirm the installed package version after ADB reports success. When the task requires exact build identity, resolve the installed APK with `pm path` and compare its SHA-256 with the candidate using the same serial. After an authorized cold start, `am start -W` confirms activity launch. Wait within a separate readiness deadline for a fresh observation of the app content required by the task. A blank or splash screen and a package or process readback alone are insufficient. If the deadline expires, capture the visible state and scoped app logs before making a new input.
 
 4. Record a baseline from the screen actually observed. Include foreground package, active tab, game, save, language, search/filter state and visible collection counters. An expected baseline in a brief is an expectation, not an observation. Different tabs can display different result counts. State which return destination the brief requires and which values must remain unchanged; do not claim a previous tab's filter was restored if it was never read. Save compact evidence rather than repeating the entire device tree in the final answer.
 
