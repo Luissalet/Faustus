@@ -5239,14 +5239,14 @@ aside.fs-panel { position: relative; }
 .fs-studio__hoard-filter { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; color: var(--fs-text-2); font-size: 12px; }
 .fs-studio__hoard-filter select { min-width: 0; flex: 1; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 6px; padding: 6px; }
 
-/* App Dock: the App tab starts wide, and can take the whole work area with the chat as a composer strip. */
+/* App Dock (and the whiteboard and spreadsheet tabs): the tab starts wide, and can take the whole work area with the chat as a composer strip. */
 @media (min-width: 1280px) {
-  .fs-studio[data-panel][data-panel-tab='app'] {
+  .fs-studio[data-panel]:is([data-panel-tab='app'],[data-panel-tab='pizarra'],[data-panel-tab='hoja']) {
     --fs-stage-col: minmax(300px, 1fr);
     --fs-side-col: minmax(320px, min(var(--fs-panel-width, 520px), 80vw));
   }
   /* Nobody has dragged the App tab yet: it takes about 60% of the work area. */
-  .fs-studio[data-panel][data-panel-tab='app'][data-width-auto] { --fs-side-col: minmax(320px, 60%); }
+  .fs-studio[data-panel]:is([data-panel-tab='app'],[data-panel-tab='pizarra'],[data-panel-tab='hoja'])[data-width-auto] { --fs-side-col: minmax(320px, 60%); }
   .fs-studio[data-panel][data-maximized='true'],
   .fs-studio[data-panel][data-pane=hidden][data-maximized='true'] {
     grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
@@ -5267,16 +5267,16 @@ aside.fs-panel { position: relative; }
 }
 /* In a mid-size window the conversation list steps aside while the App tab is at its automatic width. */
 @media (min-width: 1280px) and (max-width: 1699px) {
-  .fs-studio[data-panel][data-panel-tab='app'][data-width-auto]:not([data-pane-keep]):not([data-maximized='true']) {
+  .fs-studio[data-panel]:is([data-panel-tab='app'],[data-panel-tab='pizarra'],[data-panel-tab='hoja'])[data-width-auto]:not([data-pane-keep]):not([data-maximized='true']) {
     grid-template-columns: var(--fs-stage-col) var(--fs-side-col);
   }
-  .fs-studio[data-panel][data-panel-tab='app'][data-width-auto]:not([data-pane-keep]) .fs-studio__sessions { display: none; }
+  .fs-studio[data-panel]:is([data-panel-tab='app'],[data-panel-tab='pizarra'],[data-panel-tab='hoja'])[data-width-auto]:not([data-pane-keep]) .fs-studio__sessions { display: none; }
 }
 /* Below 1280px the panel is an overlay on the right. A later rule makes the panel `position: relative`, which
    left it in a second grid row under the chat; the App tab (a whole app) needs the overlay to be one. */
 @media (max-width: 1279px) {
-  .fs-studio[data-panel][data-panel-tab='app'] { position: relative; }
-  .fs-studio[data-panel][data-panel-tab='app'] aside.fs-panel {
+  .fs-studio[data-panel]:is([data-panel-tab='app'],[data-panel-tab='pizarra'],[data-panel-tab='hoja']) { position: relative; }
+  .fs-studio[data-panel]:is([data-panel-tab='app'],[data-panel-tab='pizarra'],[data-panel-tab='hoja']) aside.fs-panel {
     position: absolute;
     inset: 0 0 0 auto;
     z-index: 3;
@@ -5284,5 +5284,5 @@ aside.fs-panel { position: relative; }
     box-shadow: var(--fs-shadow-overlay);
     background: var(--fs-surface-1);
   }
-  .fs-studio[data-panel][data-panel-tab='app'] .fs-panel__grip { display: none; }
+  .fs-studio[data-panel]:is([data-panel-tab='app'],[data-panel-tab='pizarra'],[data-panel-tab='hoja']) .fs-panel__grip { display: none; }
 }

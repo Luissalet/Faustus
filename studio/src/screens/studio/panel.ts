@@ -11,7 +11,10 @@ import { t } from '../../i18n';
  * State and reducer only; SidePanel.tsx paints it.
  */
 
-export type PanelTab = 'outputs' | 'files' | 'sources' | 'progress' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board' | 'app';
+export type PanelTab = 'outputs' | 'files' | 'sources' | 'progress' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board' | 'app' | 'pizarra' | 'hoja';
+export interface SurfaceRef { id: string; title: string }
+/** Tabs that open wide and can take the whole work area: the App tab, the whiteboard and the spreadsheet. */
+export const isWideTab = (tab: PanelTab): boolean => tab === 'app' || tab === 'pizarra' || tab === 'hoja';
 export interface PanelDraft {text:string; base:string; revision?:string}
 
 export interface DocState {
@@ -50,6 +53,9 @@ export interface PanelState {
    *  and by an issue-id chip elsewhere in the chat (Transcript.tsx) via the
    *  `board-issue` action below, so both land on the same tab+state. */
   boardIssue: string | null;
+  /** The whiteboard and the spreadsheet open in their tabs. */
+  pizarra: SurfaceRef | null;
+  hoja: SurfaceRef | null;
   /** The agent's current todowrite list. Session-level, replaced on every
    *  `progress_update` so the Progress tab stays current instead of freezing
    *  the first snapshot at the top of the transcript. Not persisted — the
@@ -94,6 +100,8 @@ export const initialPanel: PanelState = {
   file: null,
   documents: [], files: [], drafts: {}, width: 520, widths: {}, maximized: false, widthAuto: false, streamDoc: null,
   boardIssue: null,
+  pizarra: null,
+  hoja: null,
   todos: [],
   todosLive: false,
   progressRevealed: false,
@@ -104,6 +112,9 @@ export type PanelAction =
   | {type:'draft-saved';key:string;submitted:PanelDraft;base:string;revision?:string}
   | {type:'width';width:number}
   | {type:'maximize';on?:boolean}
+  | {type:'surface';kind:'pizarra'|'hoja';id:string;title:string;focus?:boolean}
+  | {type:'surface-title';kind:'pizarra'|'hoja';id:string;title:string}
+  | {type:'surface-close';kind:'pizarra'|'hoja'}
   | {type:'forget';key:string}
   | {type:'doc-saved';doc:DocState}
   | {type:'doc-renamed';id:string;title:string}
@@ -296,7 +307,7 @@ const WIDTH_KEY = 'faustus.panel.width.';
 /** The widest the panel may be: the App tab may take most of the window, the others stay at 900. */
 export function maxPanelWidth(tab: PanelTab): number {
   const w = typeof window === 'undefined' ? 1280 : window.innerWidth;
-  return tab === 'app' ? Math.max(900, Math.floor(w * 0.8)) : 900;
+  return isWideTab(tab) ? Math.max(900, Math.floor(w * 0.8)) : 900;
 }
 export const clampPanelWidth = (tab: PanelTab, width: number): number => Math.max(320, Math.min(maxPanelWidth(tab), Math.round(width)));
 function storedWidth(tab: PanelTab): number | null {
@@ -307,7 +318,7 @@ function storedWidth(tab: PanelTab): number | null {
 }
 /** The App tab opens at about 60% of the window; every other tab at 520. A width the person dragged wins. */
 export function defaultPanelWidth(tab: PanelTab): number {
-  if (tab !== 'app') return 520;
+  if (!isWideTab(tab)) return 520;
   const w = typeof window === 'undefined' ? 1280 : window.innerWidth;
   return Math.round(w * 0.6);
 }
@@ -346,7 +357,20 @@ export function panelReducer(state:PanelState,action:PanelAction):PanelState {
     try{localStorage.setItem(WIDTH_KEY+state.tab,String(width));}catch{/* private mode */}
     return {...state,width,widthAuto:false,widths:{...state.widths,[state.tab]:width}};
   }
-  if(action.type==='maximize') return state.tab==='app'?{...state,maximized:action.on??!state.maximized}:state;
+  if(action.type==='maximize') return isWideTab(state.tab)?{...state,maximized:action.on??!state.maximized}:state;
+  if(action.type==='surface') {
+    const ref={id:action.id,title:action.title};
+    const same=state[action.kind]?.id===action.id;
+    const base={...state,[action.kind]:ref} as PanelState;
+    // A board the agent opens does not steal the tab the person is working in; one the person opens does.
+    if(action.focus===false&&state.open&&state.tab!==action.kind) return same&&state[action.kind]?.title===action.title?state:base;
+    return panelReducer({...base,open:true,tab:state.tab},{type:'tab',tab:action.kind});
+  }
+  if(action.type==='surface-title') {
+    const cur=state[action.kind];
+    return cur&&cur.id===action.id&&cur.title!==action.title?{...state,[action.kind]:{id:cur.id,title:action.title}}:state;
+  }
+  if(action.type==='surface-close') return {...state,[action.kind]:null,tab:state.tab===action.kind?'outputs':state.tab,maximized:state.tab===action.kind?false:state.maximized};
   if(action.type==='session-switch') return {...initialPanel,widths:state.widths};
   if(action.type==='close'&&state.maximized) return {...state,open:false,maximized:false};
   if(action.type==='forget') {
@@ -371,8 +395,8 @@ export function panelReducer(state:PanelState,action:PanelAction):PanelState {
   if(next.tab!==state.tab) {
     // Each tab keeps the width the person gave it; the App tab starts wide.
     next.width=clampPanelWidth(next.tab,next.widths[next.tab]??storedWidth(next.tab)??defaultPanelWidth(next.tab));
-    if(next.tab!=='app') next.maximized=false;
-    next.widthAuto=next.tab==='app'&&next.widths.app===undefined&&storedWidth('app')===null;
+    if(!isWideTab(next.tab)) next.maximized=false;
+    next.widthAuto=isWideTab(next.tab)&&next.widths[next.tab]===undefined&&storedWidth(next.tab)===null;
   }
   return next;
 }

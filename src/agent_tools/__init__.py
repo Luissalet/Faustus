@@ -131,6 +131,7 @@ from .prior_art_tools import PriorArtTool
 from .uncertainty_tool import UncertaintyNextObservationTool
 from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOfficeTool, ReviewDeskTool
 from .app_dock_tools import AppOpenTool, AppViewTool, AppActTool
+from .pizarra_tools import PizarraCreateTool, PizarraReadTool, PizarraEditTool, PizarraArrangeTool
 from .panel_tools import (
     PanelCreateTool, PanelUpdateTool, PanelGetTool, PanelListTool, PanelDeleteTool,
     PanelCheckTool, PanelVersionsTool, PanelRestoreTool,
@@ -425,6 +426,11 @@ TOOL_HANDLERS = {
     "app_open": AppOpenTool().execute,
     "app_view": AppViewTool().execute,
     "app_act": AppActTool().execute,
+    # Pizarra / Hoja: work surfaces (src/pizarra.py, src/hoja.py).
+    "pizarra_create": PizarraCreateTool().execute,
+    "pizarra_read": PizarraReadTool().execute,
+    "pizarra_edit": PizarraEditTool().execute,
+    "pizarra_arrange": PizarraArrangeTool().execute,
     # User panels (src/panels.py) and Loop Cards (src/loop_card.py).
     "panel_create": PanelCreateTool().execute,
     "panel_update": PanelUpdateTool().execute,
@@ -691,6 +697,10 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "app_open",
              "app_view",
              "app_act",
+             "pizarra_create",
+             "pizarra_read",
+             "pizarra_edit",
+             "pizarra_arrange",
              # User panels -- src/agent_tools/panel_tools.py; Loop Cards -- src/agent_tools/loop_card_tools.py.
              "panel_create",
              "panel_update",

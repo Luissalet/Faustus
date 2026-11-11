@@ -1,4 +1,4 @@
-import { AppWindow, Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
+import { PenTool, AppWindow, Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Menu, Popover, Skeleton } from '../../components';
@@ -19,6 +19,9 @@ import {
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
 import AppDock from './AppDock';
+import Pizarra from './Pizarra';
+import SurfaceHome from './SurfaceHome';
+import { createBoard } from '../../adapters/surfaces';
 import { useDockSel } from '../../adapters/appDock';
 import { ProgressList } from './ProgressList';
 import { SourceControlPanel } from '../source-control/SourceControlPanel';
@@ -74,6 +77,8 @@ const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   { id: 'board', label: 'Board', icon: Kanban },
   // App Dock: one of the family's Hoards beside the chat, the agent acting in it (src/app_dock.py).
   { id: 'app', label: 'App', icon: AppWindow },
+  // Native work surfaces the person and the agent edit together (src/pizarra.py).
+  { id: 'pizarra', label: 'Whiteboard', icon: PenTool },
 ];
 
 /* ── Browser ── */
@@ -773,7 +778,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
     (tab.id!=='board'||Boolean(project)),
   );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
-  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'app' && Boolean(dockSel)) || (tab.id === 'agents' && workers.length > 0));
+  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'app' && Boolean(dockSel)) || (tab.id === 'pizarra' && Boolean(state.pizarra)) || (tab.id === 'agents' && workers.length > 0));
   const otherTabs = availableTabs.filter(tab => !tabs.includes(tab));
   // #247: what the current turn has read / written, for the Files tab.
   const fileMarks=useMemo(()=>turnFileMarks(turns,workspace),[turns,workspace]);
@@ -786,6 +791,8 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
   // The docked app keeps its page (and what the person was doing in it) while another tab is shown.
   const [appSeen,setAppSeen]=useState(false);
   useEffect(()=>{if(state.tab==='app')setAppSeen(true);},[state.tab]);
+  // The whiteboard stays mounted while another tab is shown, so a stroke in progress and its undo history survive.
+  const pizarraKey=state.pizarra?.id??null;
   // Esc brings the chat back from a maximised app (Esc inside the framed page stays the page's own).
   useEffect(()=>{
     if(!state.maximized)return;
@@ -876,8 +883,23 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       </div>}
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
-      {filesSeen&&workspace&&<div className="fs-workbench-files" hidden={state.tab!=='files'}><FileTree workspace={workspace} marks={fileMarks} refresh={settledSteps+(busy?'b':'i')} active={state.file?state.file.path:null} onOpen={path=>dispatch({type:'file',workspace,path})}/></div>}
+      {filesSeen&&workspace&&<div className="fs-workbench-files" hidden={state.tab!=='files'}><FileTree workspace={workspace} marks={fileMarks} refresh={settledSteps+(busy?'b':'i')} active={state.file?state.file.path:null} onOpen={path=>{
+        // A .canvas file in the workspace opens as a whiteboard (a copy; the file itself stays as it is).
+        if(/\.canvas$/i.test(path)&&sessionId){
+          void readWorkspaceFile(workspace,path).then(async f=>{
+            let doc:unknown;
+            try{doc=JSON.parse(f.text);}catch{onNotice(t('That file is not a valid whiteboard.'),'warning');return;}
+            const name=path.split(/[\\/]/).pop()?.replace(/\.canvas$/i,'')||t('Untitled whiteboard');
+            const board=await createBoard(sessionId,name,project?.id??'',doc);
+            dispatch({type:'surface',kind:'pizarra',id:board.id,title:board.title});
+          }).catch((error:Error)=>onNotice(`${t('Could not open the whiteboard.')} ${error.message}`,'danger'));
+          return;
+        }
+        dispatch({type:'file',workspace,path});
+      }}/></div>}
       {appSeen&&<AppDock sessionId={sessionId} hidden={state.tab!=='app'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onMessage={(text,send)=>onDockMessage?.(text,send)}/>}
+      {state.pizarra&&<Pizarra key={pizarraKey??''} boardId={state.pizarra.id} title={state.pizarra.title} sessionId={sessionId} hidden={state.tab!=='pizarra'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onNotice={onNotice} onTitle={title=>state.pizarra&&dispatch({type:'surface-title',kind:'pizarra',id:state.pizarra.id,title})}/>}
+      {state.tab==='pizarra'&&!state.pizarra&&<SurfaceHome kind="pizarra" sessionId={sessionId} onOpen={(id,title)=>dispatch({type:'surface',kind:'pizarra',id,title})}/>}
       {state.tab==='progress'&&<ProgressTab state={state} turns={turns}/>}
       {state.tab === 'agents' && (
         <div className="fs-panel__body">

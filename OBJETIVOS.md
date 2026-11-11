@@ -1,5 +1,13 @@
 # Objetivos acordados
 
+## Pizarra: lo que queda — 12-11-2026 (Ágora #2792)
+
+Hecho y comprobado en vivo: formato `.canvas`, interfaz completa, herramientas `pizarra_*`, cursor del agente, contexto por turno, SSE, Biblioteca, `/pizarra` y apertura de `.canvas` (FAUSTUS.md, sección del 12-11). Lo siguiente:
+
+- **Cursores de varias personas** en la misma pizarra (hoy hay el de la persona y el del agente de ese chat).
+- **Ver una pizarra desde otro chat** del mismo proyecto sin duplicarla.
+- **Rendimiento con GPU:** medir con cientos de elementos en un navegador con aceleración; en pruebas sin GPU el fotograma es de 100-150 ms con cualquier número de elementos.
+
 ## App Dock: lo que queda — 11-11-2026 (Ágora #2779)
 
 Hecho y comprobado en vivo con las apps reales: anfitrión, servidor, herramientas `app_open`/`app_view`/`app_act`, contexto por turno, pestaña «App» con sitio (60 %, maximizar, ancho recordado), presencia (`cursor`), `changed` con una llamada MCP real y entrada desde Conectores (FAUSTUS.md, secciones del 11-11). Lo siguiente:

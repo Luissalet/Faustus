@@ -1295,6 +1295,26 @@ EXAMPLES: Dict[str, List[str]] = {
         "señálame dónde se cambia el idioma en esa app",
         "fill the search box of the docked app with 'whisper' and press enter",
     ],
+    "pizarra_create": [
+        "monta el plan del lanzamiento en una pizarra",
+        "hazme un mapa mental de las ideas para el TFM",
+        "draw the system architecture on a whiteboard",
+    ],
+    "pizarra_read": [
+        "mira lo que hay en la pizarra",
+        "qué notas he seleccionado en el tablero",
+        "summarise the board",
+    ],
+    "pizarra_edit": [
+        "añade una nota amarilla con 'revisar precios' y conéctala con la de presupuesto",
+        "pon en rojo todo lo urgente de la pizarra",
+        "add a diamond for the go/no-go decision after QA",
+    ],
+    "pizarra_arrange": [
+        "ordena las notas de la pizarra en una línea de tiempo",
+        "organiza lo seleccionado como un árbol",
+        "lay the board out as a flow",
+    ],
     "panel_create": [
         "hazme un panel con mis conversaciones por día y los tokens por modelo",
         "build me a sidebar panel that shows my usage and cost",

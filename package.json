@@ -19,6 +19,7 @@
     "@types/react-dom": "^19.2.7",
     "@types/three": "^0.170.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "@xyflow/react": "^12.12.1",
     "cmdk": "^1.1.1",
     "lucide-react": "^0.511.0",
     "react": "^19.1.0",

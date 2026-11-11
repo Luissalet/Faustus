@@ -250,6 +250,10 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "app_open",
     "app_view",
     "app_act",
+    "pizarra_create",
+    "pizarra_read",
+    "pizarra_edit",
+    "pizarra_arrange",
     # User panels and Loop Cards: private per-user records; the loop tools run a command.
     "panel_create",
     "panel_update",

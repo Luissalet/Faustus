@@ -1,0 +1,6 @@
+/* The whiteboards listed above the documents in the Library. */
+.fs-lib__shelf { margin-block-end: var(--fs-space-3); }
+.fs-lib__shelf-title { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--fs-space-2); font-size: 12px; font-weight: 600; color: var(--fs-text-2); text-transform: none; }
+.fs-lib__shelf-item { display: flex; align-items: baseline; gap: 4px; inline-size: 100%; padding: 8px 12px; text-align: start; font: inherit; font-size: 13px; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 8px; cursor: pointer; }
+.fs-lib__shelf-item:hover { background: var(--fs-surface-2); }
+.fs-lib__shelf-item small { color: var(--fs-text-3); }

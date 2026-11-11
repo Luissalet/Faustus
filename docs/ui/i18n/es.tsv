@@ -11462,3 +11462,61 @@ Open beside the chat	Abrir al lado del chat
 Send a first message and {name} will open beside it.	Envía un primer mensaje y {name} se abrirá a su lado.
 This app has no interface to open	Esta app no tiene interfaz que abrir
 Send a first message and the app picker will open beside it.	Envía un primer mensaje y el selector de apps se abrirá a su lado.
+{n} items	{n} elementos
+Add an image	Añadir una imagen
+Align bottom	Alinear abajo
+Align centres	Alinear centros
+Align left	Alinear a la izquierda
+Align middles	Alinear al medio
+Align right	Alinear a la derecha
+Align top	Alinear arriba
+Bring to front (])	Traer al frente (])
+Connector label	Etiqueta del conector
+Could not add the image.	No se pudo añadir la imagen.
+Could not export the image.	No se pudo exportar la imagen.
+Could not open the whiteboard.	No se pudo abrir la pizarra.
+Could not rename.	No se pudo cambiar el nombre.
+Could not upload the image.	No se pudo subir la imagen.
+Diamond	Rombo
+Distribute horizontally	Distribuir horizontalmente
+Distribute vertically	Distribuir verticalmente
+Double-click to add a note, pick a tool below, drop an image, or ask Faustus to build something here.	Haz doble clic para añadir una nota, elige una herramienta abajo, suelta una imagen o pide a Faustus que construya algo aquí.
+Ellipse	Elipse
+Fit everything in view (0)	Ajustar todo a la vista (0)
+Frame	Marco
+Group in a frame	Agrupar en un marco
+Image on the board	Imagen en la pizarra
+Import a .canvas file	Importar un archivo .canvas
+Imported {n} items.	Se importaron {n} elementos.
+JSON Canvas file (.canvas)	Archivo JSON Canvas (.canvas)
+Loading the whiteboard	Cargando la pizarra
+Make the whiteboard fill the window	Ampliar la pizarra a toda la ventana
+Minimap	Minimapa
+Move the view	Mover la vista
+New whiteboard	Nueva pizarra
+No whiteboards in this conversation yet.	Todavía no hay pizarras en esta conversación.
+Not saved yet	Sin guardar todavía
+PNG image	Imagen PNG
+Rectangle	Rectángulo
+Remove the frame (keeps its content)	Quitar el marco (conserva su contenido)
+Send to back ([)	Enviar al fondo ([)
+Start a conversation first; the whiteboard belongs to it.	Empieza antes una conversación; la pizarra pertenece a ella.
+Sticky note	Nota adhesiva
+SVG image	Imagen SVG
+Text of the item	Texto del elemento
+The board is empty.	La pizarra está vacía.
+Untitled whiteboard	Pizarra sin título
+Whiteboard	Pizarra
+Whiteboard title	Título de la pizarra
+Whiteboard tools	Herramientas de la pizarra
+Whiteboards	Pizarras
+Yellow	Amarillo
+Orange	Naranja
+Red	Rojo
+Purple	Morado
+Blue	Azul
+Green	Verde
+Gray	Gris
+Open a whiteboard beside the chat	Abrir una pizarra junto al chat
+That file is not a valid whiteboard.	Ese archivo no es una pizarra válida.
+Open a whiteboard beside the chat (a new one, or this chat's latest).	Abre una pizarra junto al chat (una nueva, o la última de esta conversación).

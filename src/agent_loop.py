@@ -5845,6 +5845,16 @@ def _build_system_prompt(
     except Exception as e:
         logger.warning("Failed to build app dock context message", exc_info=e)
 
+    # Whiteboard / sheet open beside the chat (src/surfaces.py): one short block, same slot as the dock's.
+    _surface_message = None
+    try:
+        from src.surfaces import context_block as _surface_block
+        _surface_text = _surface_block(session_id)
+        if _surface_text:
+            _surface_message = {"role": "user", "content": _surface_text}
+    except Exception as e:
+        logger.warning("Failed to build work surface context message", exc_info=e)
+
     # Document context is kept as a SEPARATE message (not merged into the tool
     # prompt) so the context trimmer doesn't destroy it when truncating the
     # massive tool-description system prompt.
@@ -6593,6 +6603,7 @@ def _build_system_prompt(
         _memory_message,
         _datetime_message,
         _dock_message,
+        _surface_message,
         _language_message,
     ):
         if injected:
@@ -6626,6 +6637,9 @@ def _build_system_prompt(
         last_user_idx += 1
     if _dock_message:
         merged.insert(last_user_idx, _dock_message)
+        last_user_idx += 1
+    if _surface_message:
+        merged.insert(last_user_idx, _surface_message)
         last_user_idx += 1
     # Last of the injected blocks, so the language directive is the final
     # thing the model reads before the user's own words.

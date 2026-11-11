@@ -4959,6 +4959,10 @@ FUNCTION_TOOL_SCHEMAS = [
     }
 ]
 
+# Pizarra / Hoja (src/surface_schemas.py).
+from src.surface_schemas import SURFACE_TOOL_SCHEMAS as _SURFACE_TOOL_SCHEMAS
+FUNCTION_TOOL_SCHEMAS.extend(_SURFACE_TOOL_SCHEMAS)
+
 # PDF navigation schemas are generated from the same contract its handlers parse.
 from src.pdf_tool_contracts import function_schemas as _pdf_function_schemas
 FUNCTION_TOOL_SCHEMAS.extend(_pdf_function_schemas())

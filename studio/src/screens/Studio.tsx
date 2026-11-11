@@ -122,8 +122,10 @@ import { Composer, type Knobs } from './studio/Composer';
 import { CoordinationStatus } from './studio/CoordinationStatus';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, restoreTerminalStatus, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
+import { isWideTab } from './studio/panel';
+import { createBoard, listBoards, useSurfaceEvents } from '../adapters/surfaces';
 import { openApp as openDockApp, setSel as setDockSel, useAppDockEvents } from '../adapters/appDock';
-import { AppWindow } from 'lucide-react';
+import { AppWindow, PenTool } from 'lucide-react';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
 import { AskCard, Transcript, type Decision } from './studio/Transcript';
@@ -695,9 +697,11 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   // App Dock: the agent's app_open opens the App tab; its calls and `changed` reach the framed page.
   useAppDockEvents(sessionId, () => panelDispatch({ type: 'open', tab: 'app' }));
+  // Whiteboard and spreadsheet: a surface the agent opens or creates shows up in its tab.
+  useSurfaceEvents(sessionId, (kind, id, title, focus) => panelDispatch({ type: 'surface', kind, id, title, focus }));
   // `?dock=<app>`: the Hoards screen (or a link) asks for an app beside this chat.
   const [paneKeep, setPaneKeep] = useState(false);
-  useEffect(() => { if (!(panel.open && panel.tab === 'app')) setPaneKeep(false); }, [panel.open, panel.tab]);
+  useEffect(() => { if (!(panel.open && isWideTab(panel.tab))) setPaneKeep(false); }, [panel.open, panel.tab]);
   const dockWanted = params.get('dock');
   useEffect(() => {
     if (!dockWanted) return;
@@ -1560,6 +1564,17 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     setParams(next, { replace: true });
   }, [params, setParams]);
 
+  /* The Library opens a whiteboard in the side panel: ?pizarra=<id>. */
+  useEffect(() => {
+    const boardParam = params.get('pizarra');
+    if (!boardParam) return;
+    if (!sessionId) return;
+    panelDispatch({ type: 'surface', kind: 'pizarra', id: boardParam, title: '', focus: true });
+    const next = new URLSearchParams(params);
+    next.delete('pizarra');
+    setParams(next, { replace: true });
+  }, [params, setParams, sessionId]);
+
   /* The project floorplan opens a file in the side panel:
      ?workspace=<folder>&file=<path relative to it>. */
   useEffect(() => {
@@ -2294,6 +2309,18 @@ export function StudioScreen({ groupContext }: { groupContext?: {
         case 'context':
           openChatWorkspace(path, project?.id);
           return true;
+        case 'pizarra': {
+          const sid = await ensureSession(args || t('Whiteboard'));
+          if (!sid) return true;
+          try {
+            const existing = args ? [] : (await listBoards(sid)).boards;
+            const board = existing[0] ?? await createBoard(sid, args || t('Untitled whiteboard'), project?.id ?? '');
+            panelDispatch({ type: 'surface', kind: 'pizarra', id: board.id, title: board.title, focus: true });
+          } catch (error) {
+            say(t('Could not open the whiteboard.') + ' ' + (error as Error).message, 'danger');
+          }
+          return true;
+        }
         case 'git':
           if (project) panelDispatch({ type: 'open', tab: 'git' });
           else navigate('/source-control');
@@ -3801,7 +3828,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     }
     // While the App tab is at its automatic width the list steps aside to give the app room (narrow windows
     // only); asking for the list brings it back for as long as the App tab stays.
-    if (panel.open && panel.tab === 'app' && panel.widthAuto && !paneKeep && window.matchMedia('(min-width: 1280px) and (max-width: 1699px)').matches) {
+    if (panel.open && isWideTab(panel.tab) && panel.widthAuto && !paneKeep && window.matchMedia('(min-width: 1280px) and (max-width: 1699px)').matches) {
       setPaneKeep(true);
       return;
     }
@@ -3930,7 +3957,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   }) ?? null;
 
   return (
-    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden || chatTool ? 'hidden' : undefined} data-panel={panel.open || chatTool || undefined} data-chat-tool={chatTool || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout} data-panel-tab={panel.open ? panel.tab : undefined} data-width-auto={panel.open && panel.tab === 'app' && panel.widthAuto ? 'true' : undefined} data-pane-keep={paneKeep || undefined} data-maximized={panel.open && panel.maximized && panel.tab === 'app' ? 'true' : undefined}>
+    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden || chatTool ? 'hidden' : undefined} data-panel={panel.open || chatTool || undefined} data-chat-tool={chatTool || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout} data-panel-tab={panel.open ? panel.tab : undefined} data-width-auto={panel.open && isWideTab(panel.tab) && panel.widthAuto ? 'true' : undefined} data-pane-keep={paneKeep || undefined} data-maximized={panel.open && panel.maximized && isWideTab(panel.tab) ? 'true' : undefined}>
       <SessionsPane
         sessions={groupMode ? groupSessions : sessions}
         currentId={sessionId}
@@ -4028,6 +4055,13 @@ export function StudioScreen({ groupContext }: { groupContext?: {
               size="sm"
               onClick={() => panelDispatch({ type: 'open', tab: 'app' })}
               testId="studio-open-app-dock"
+            />
+            <IconButton
+              icon={PenTool}
+              label={t('Open a whiteboard beside the chat')}
+              size="sm"
+              onClick={() => void runCommand('pizarra', '')}
+              testId="studio-open-pizarra"
             />
             <IconButton
               icon={PanelRight}
