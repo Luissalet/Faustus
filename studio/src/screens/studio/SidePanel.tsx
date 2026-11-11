@@ -1,4 +1,4 @@
-import { Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
+import { AppWindow, Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Menu, Popover, Skeleton } from '../../components';
@@ -18,6 +18,8 @@ import {
 } from '../../lib/docSession';
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
+import AppDock from './AppDock';
+import { useDockSel } from '../../adapters/appDock';
 import { ProgressList } from './ProgressList';
 import { SourceControlPanel } from '../source-control/SourceControlPanel';
 import { BoardCompact } from '../board/BoardCompact';
@@ -49,6 +51,10 @@ export interface SidePanelProps {
   turns:Turn[]; workspace:string; project:Project|null; busy:boolean;
   onRerun:(task:DelegationTask)=>void;
   onVisualSelection?:(selection:VisualSelection)=>Promise<void>;
+  /** The chat this panel belongs to (the App tab docks an app in it). */
+  sessionId?: string | null;
+  /** `dock/message` from the framed app: text for the composer, sent right away when asked. */
+  onDockMessage?: (text: string, send: boolean) => void;
 }
 
 const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
@@ -66,6 +72,8 @@ const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   // Lote 93 (CONTRATO_BOARD.md): the project's own board — needs a project
   // (the board is scoped by project id, not by a bare workspace folder).
   { id: 'board', label: 'Board', icon: Kanban },
+  // App Dock: one of the family's Hoards beside the chat, the agent acting in it (src/app_dock.py).
+  { id: 'app', label: 'App', icon: AppWindow },
 ];
 
 /* ── Browser ── */
@@ -753,7 +761,8 @@ function OpenDocChip({ doc, active, dispatch }: { doc: DocState; active: boolean
   );
 }
 
-export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun,onVisualSelection }: SidePanelProps) {
+export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun,onVisualSelection,sessionId=null,onDockMessage }: SidePanelProps) {
+  const dockSel=useDockSel(sessionId);
   const tabStrip=useRef<HTMLDivElement>(null);
   useEffect(()=>{tabStrip.current?.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest',inline:'nearest'});},[state.tab]);
   const availableTabs=TABS.filter(tab=>
@@ -764,7 +773,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
     (tab.id!=='board'||Boolean(project)),
   );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
-  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'agents' && workers.length > 0));
+  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'app' && Boolean(dockSel)) || (tab.id === 'agents' && workers.length > 0));
   const otherTabs = availableTabs.filter(tab => !tabs.includes(tab));
   // #247: what the current turn has read / written, for the Files tab.
   const fileMarks=useMemo(()=>turnFileMarks(turns,workspace),[turns,workspace]);
@@ -774,6 +783,9 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
   // The tree stays mounted once opened, so its folders stay open while a file is read in the other tab.
   const [filesSeen,setFilesSeen]=useState(false);
   useEffect(()=>{if(state.tab==='files')setFilesSeen(true);},[state.tab]);
+  // The docked app keeps its page (and what the person was doing in it) while another tab is shown.
+  const [appSeen,setAppSeen]=useState(false);
+  useEffect(()=>{if(state.tab==='app')setAppSeen(true);},[state.tab]);
   return (
     <aside className="fs-panel" data-testid="studio-panel" aria-label={t('Side panel')}>
       <div
@@ -794,11 +806,13 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
           const startW = state.width;
           const target = e.currentTarget;
           target.setPointerCapture(e.pointerId);
+          document.body.setAttribute('data-fs-panel-resizing', ''); // a framed app must not swallow the drag
           const move = (ev: PointerEvent) => {
             const next = Math.min(900, Math.max(320, Math.round(startW + (startX - ev.clientX))));
             dispatch({ type: 'width', width: next });
           };
           const up = () => {
+            document.body.removeAttribute('data-fs-panel-resizing');
             target.releasePointerCapture(e.pointerId);
             target.removeEventListener('pointermove', move);
             target.removeEventListener('pointerup', up);
@@ -830,7 +844,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
               onClick={() => dispatch({ type: 'tab', tab: tab.id })}
               onKeyDown={event=>{const delta=event.key==='ArrowRight'?1:event.key==='ArrowLeft'?-1:0;
                 if(delta||event.key==='Home'||event.key==='End'){event.preventDefault();const index=event.key==='Home'?0:event.key==='End'?tabs.length-1:(tabs.findIndex(v=>v.id===tab.id)+delta+tabs.length)%tabs.length;dispatch({type:'tab',tab:tabs[index].id});document.getElementById('workbench-tab-'+tabs[index].id)?.focus();}}}
-              data-has={tab.id === 'browser' ? state.frames.length > 0 || undefined : tab.id === 'doc' ? Boolean(state.doc) || undefined : tab.id==='file'?Boolean(state.file)||undefined:tab.id==='progress'?state.todos.length>0||undefined:undefined}
+              data-has={tab.id === 'browser' ? state.frames.length > 0 || undefined : tab.id === 'doc' ? Boolean(state.doc) || undefined : tab.id==='file'?Boolean(state.file)||undefined:tab.id==='progress'?state.todos.length>0||undefined:tab.id==='app'?Boolean(dockSel)||undefined:undefined}
             >
               <tab.icon size={13} aria-hidden="true" />
               <span>{t(tab.label)}</span>
@@ -851,6 +865,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
       {filesSeen&&workspace&&<div className="fs-workbench-files" hidden={state.tab!=='files'}><FileTree workspace={workspace} marks={fileMarks} refresh={settledSteps+(busy?'b':'i')} active={state.file?state.file.path:null} onOpen={path=>dispatch({type:'file',workspace,path})}/></div>}
+      {appSeen&&<AppDock sessionId={sessionId} hidden={state.tab!=='app'} onMessage={(text,send)=>onDockMessage?.(text,send)}/>}
       {state.tab==='progress'&&<ProgressTab state={state} turns={turns}/>}
       {state.tab === 'agents' && (
         <div className="fs-panel__body">

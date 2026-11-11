@@ -1280,6 +1280,21 @@ EXAMPLES: Dict[str, List[str]] = {
         "añade el acuerdo firmado como nueva versión del alcance y enlaza la entrega al hito",
         "pasa la reunión de ayer al expediente: qué se decidió, qué prometimos y qué preguntas quedan",
     ],
+    "app_open": [
+        "ábreme Links Hoard al lado del chat",
+        "open Darwin beside this conversation",
+        "abre la app de envíos para que la vea mientras hablamos",
+    ],
+    "app_view": [
+        "qué tengo en pantalla en la app abierta",
+        "look at the docked app and tell me what the selected item is",
+        "lee lo que se ve en la app de al lado",
+    ],
+    "app_act": [
+        "pulsa el botón de importar en la app de al lado",
+        "señálame dónde se cambia el idioma en esa app",
+        "fill the search box of the docked app with 'whisper' and press enter",
+    ],
     "panel_create": [
         "hazme un panel con mis conversaciones por día y los tokens por modelo",
         "build me a sidebar panel that shows my usage and cost",

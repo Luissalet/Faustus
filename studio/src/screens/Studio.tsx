@@ -122,6 +122,8 @@ import { Composer, type Knobs } from './studio/Composer';
 import { CoordinationStatus } from './studio/CoordinationStatus';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, restoreTerminalStatus, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
+import { useAppDockEvents } from '../adapters/appDock';
+import { AppWindow } from 'lucide-react';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
 import { AskCard, Transcript, type Decision } from './studio/Transcript';
@@ -691,6 +693,8 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   const thinkingOn = thinkingOnPick ?? executionDefaults.thinking_enabled ?? null;
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
+  // App Dock: the agent's app_open opens the App tab; its calls and `changed` reach the framed page.
+  useAppDockEvents(sessionId, () => panelDispatch({ type: 'open', tab: 'app' }));
   const chatTool = chatWorkspace(params.get('tool'));
   const openChatWorkspace = useCallback((tool: ChatWorkspace | null, projectId?: string) => {
     const next = new URLSearchParams(params);
@@ -3970,6 +3974,13 @@ export function StudioScreen({ groupContext }: { groupContext?: {
               </Popover>
             )}
             <IconButton
+              icon={AppWindow}
+              label={t('Open an app beside the chat')}
+              size="sm"
+              onClick={() => panelDispatch({ type: 'open', tab: 'app' })}
+              testId="studio-open-app-dock"
+            />
+            <IconButton
               icon={PanelRight}
               label={panel.open ? t('Close the side panel') : t('Side panel: browser, document, file')}
               size="sm"
@@ -4233,7 +4244,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       {chatTool && <ChatToolWorkspace tool={chatTool} onClose={() => { openChatWorkspace(null); requestAnimationFrame(() => textareaRef.current?.focus()); }} onUse={text => { setDraft(current => [current.trimEnd(), text].filter(Boolean).join('\n\n')); openChatWorkspace(null); requestAnimationFrame(() => textareaRef.current?.focus()); }} />}
       {panel.open && !chatTool && (
         <Suspense fallback={<aside className="fs-panel" aria-busy="true" />}>
-          <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} turns={turns||[]} workspace={workspace} project={project} busy={busy} onRerun={rerunWorker} onVisualSelection={async selection=>{
+          <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} turns={turns||[]} workspace={workspace} project={project} busy={busy} onRerun={rerunWorker} sessionId={sessionId} onDockMessage={(text, sendNow) => { if (sendNow) void send(text); else setDraft(current => [current.trimEnd(), text].filter(Boolean).join('\n\n')); }} onVisualSelection={async selection=>{
             const sid=sessionId;
             const file=await selectionImage(selection);
             if(visibleSession.current!==sid)return;

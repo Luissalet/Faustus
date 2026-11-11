@@ -246,6 +246,7 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/global-model/v1/chat/completions",  # global LLM prefill/nonstream may take minutes
     "/api/shell/stream",    # SSE
     "/api/research",        # multi-minute jobs
+    "/api/app-dock/events",  # SSE: the host listens for the whole time the chat is open
     "/api/panels",  # panel_check opens a headless browser; loop cards run measuring commands N times
     "/api/loop-cards",
     "/api/loop-improve",  # improvement runs and the prompt mirror read and write job files
@@ -1348,6 +1349,9 @@ app.include_router(setup_derivation_routes())
 # Reproducible delivery packages (Hangar E33, src/delivery_package.py).
 from routes.delivery_routes import setup_delivery_routes
 app.include_router(setup_delivery_routes())
+# App Dock (src/app_dock.py): a Hoard open beside the chat, the agent acting in it.
+from routes.app_dock_routes import setup_app_dock_routes
+app.include_router(setup_app_dock_routes())
 # User panels (src/panels.py) and Loop Cards (src/loop_card.py).
 from routes.panel_routes import setup_panel_routes
 app.include_router(setup_panel_routes())

@@ -245,7 +245,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
         else:
             response.headers["X-Frame-Options"] = "DENY"
-            frame_sources = "'self'"
+            # App Dock: Studio frames the family's Hoards, which listen on loopback ports (the Hub says which;
+            # a Hub on another host adds that host). Nothing else is framed.
+            frame_sources = "'self' http://127.0.0.1:* http://localhost:*"
+            try:
+                from urllib.parse import urlsplit as _urlsplit
+                from src.hoard_hub import hub_location as _hub_location
+                _hub = _urlsplit(_hub_location()['url'])
+                if _hub.scheme in ('http', 'https') and _hub.hostname and _hub.hostname not in ('127.0.0.1', 'localhost', '::1'):
+                    _hh = f'[{_hub.hostname}]' if ':' in _hub.hostname else _hub.hostname
+                    frame_sources += f' {_hub.scheme}://{_hh}:*'
+            except Exception:
+                pass
             if route_path.rstrip('/') == '/agora':
                 from urllib.parse import urlsplit
                 from src.hoard_hub import hub_location

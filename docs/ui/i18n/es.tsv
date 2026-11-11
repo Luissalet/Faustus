@@ -11441,3 +11441,18 @@ The role the sessions of this model start with on this server.	El rol con el que
 Its program on the PC is too old for that model: update it there.	Su programa del PC es antiguo para ese modelo: actualízalo allí.
 Its provider does not know that model, or your account cannot use it.	Su proveedor no conoce ese modelo, o tu cuenta no puede usarlo.
 Faustus could not confirm its own Agora session on the PC, which its new sessions hang from.	Faustus no ha podido confirmar su propia sesión del Ágora en el PC, de la que cuelgan las sesiones nuevas.
+App	App
+Open an app beside the chat	Abrir una app al lado del chat
+Back to the app	Volver a la app
+The Hoard Hub did not answer. Start it to open apps beside the chat.	El Hoard Hub no responde. Arráncalo para abrir apps al lado del chat.
+Could not open {name}: {reason}	No he podido abrir {name}: {reason}
+Send a first message to open an app beside this conversation.	Envía un primer mensaje para abrir una app al lado de esta conversación.
+Loading the apps	Cargando las apps
+Filter apps	Filtrar apps
+No apps found.	No hay apps.
+Agent connected	Agente conectado
+Switch app	Cambiar de app
+Reload the app	Recargar la app
+Open in its own window	Abrir en su propia ventana
+Close the app	Cerrar la app
+The agent cannot act in this app yet. You can still use it here.	El agente aún no puede actuar en esta app. Tú sí puedes usarla aquí.

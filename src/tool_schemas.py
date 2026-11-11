@@ -3345,6 +3345,50 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "app_open",
+            "description": "Open one of the family's Hoard apps in a tab of the side panel next to this chat (starts it through the Hoard Hub when it is down). The person can use it by hand while you see and act on the same live page with app_view and app_act. Use for 'ábreme Links al lado', 'abre Darwin y mira qué hay', 'open the shipment tracker beside the chat'. Give the app's id or name. Abrir una app al lado del chat.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app": {"type": "string", "description": "App id or name, e.g. links, darwin, \"Darwin's Hoard\""}
+                },
+                "required": ["app"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "app_view",
+            "description": "See the app docked beside the chat: what the person has selected or is looking at, an outline of the visible page (headings, text and every control with a ref) and the app's own tools. Call it before app_act, and again after the person or an action changed the screen. scope=page outlines the whole page instead of the visible part. Answers no_host when the person has no window showing this chat (call app_open or tell them). Ver la app abierta al lado.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "enum": ["screen", "page"], "description": "screen (default): what is visible; page: the whole page"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "app_act",
+            "description": "Act in the app docked beside the chat with a visible, named cursor. action: click, fill, select, navigate, scroll, highlight (points something out to the person, changes nothing), wait, or the name of one of the app's own tools (then args). target: a ref from app_view or visible text/label; value: text to type, option to choose, note to show, 'down'/'up'/'top'/'bottom' to scroll, or a hash/path to navigate to; args: {submit:true} for fill, or the app tool's arguments. Prefer the app's own MCP tools for data work. Actuar en la app abierta al lado.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "click, fill, select, navigate, scroll, highlight, wait, or an app tool name"},
+                    "target": {"type": "string", "description": "ref from app_view, or the visible text / label / placeholder of the element"},
+                    "value": {"type": "string", "description": "Text to type, option to choose, note to show, scroll direction or location to go to"},
+                    "args": {"type": "object", "description": "Extra arguments (fill: submit) or the arguments of an app tool"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "panel_create",
             "description": "Create a user panel: a self-contained HTML page (inline CSS and JS, no build step) that Faustus mounts in the Studio sidebar under Panels. Use when the user asks for their own mini-app inside Faustus. Call panel_sources first to see what data exists; never guess paths. In the page include <script src=\"/api/panels/faustus-panel.js\"></script> for faustus.api(path) (Faustus' /api routes), faustus.hub(path) (the Hoard Hub, e.g. faustus.hub('/api/agora/tasks?space_id=faustus&status=active')), faustus.tool(name, args, app?) (agent or Hoard tool), faustus.db (own SQLite), faustus.storage and the --fs-* theme variables. Run panel_check afterwards and fix what it reports. Crear un panel propio en la barra lateral.",
             "parameters": {

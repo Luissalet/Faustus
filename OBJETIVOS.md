@@ -1,5 +1,14 @@
 # Objetivos acordados
 
+## App Dock: lo que queda — 11-11-2026 (Ágora #2779)
+
+Hecho y comprobado en vivo: anfitrión, servidor, herramientas `app_open`/`app_view`/`app_act`, bloque de contexto por turno y pestaña «App» (FAUSTUS.md, sección del 11-11). Lo siguiente:
+
+- **Puente en los Hoards:** Darwin, Links y el resto no hablan `hoardDock:1` hasta que llegue el puente del Hub; mientras tanto se ven y se usan a mano y el agente recibe `not_ready`. Cuando llegue, repasar cada app con `app_view`.
+- **Herramientas propias por app:** cada Hoard debe anunciar en `dock/ready` las suyas (crear, buscar, exportar) para que el agente no dependa solo de pulsar y rellenar.
+- **Cursores en vivo en el Ágora:** que el servidor emita los eventos `cursor` (quién señala qué) y que varios agentes y la persona se vean a la vez; el anfitrión ya los reenvía a la página.
+- **`changed` en vivo:** ver el aviso llegar a una página real tras una llamada MCP del conector de la app (hoy solo con prueba unitaria).
+
 ## Paneles con datos, revisión con peces, bucle de mejora y Bases — 10-11-2026 (faustus#2389, faustus#2400)
 
 Integrado y probado en vivo con el modelo de las Sparks: paneles con muestra programada; los seis flujos de la revisión con peces (`review`, `loop` con decisiones por hallazgo y escritura al fichero, `draft`, `brainstorm`, `drift` y `panel`); `loop_improve` de punta a punta sobre una carpeta real con guarda (aplicó la mejora y volvió a medir, -96,6 %); `loop_arms` con A/A (KEEP y DROP); Bases y `prompt_mirror` sobre datos reales; la bandeja del escritorio siguiendo un turno desde la ventana real. Lo siguiente:

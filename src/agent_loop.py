@@ -5834,6 +5834,17 @@ def _build_system_prompt(
     except Exception as e:
         logger.warning("Failed to build reply-language context message", exc_info=e)
 
+    # App docked beside the chat (src/app_dock.py): one short block, user-role and at the tail like the
+    # date, so the stable prefix keeps its cache. Empty (and absent) when nothing is docked.
+    _dock_message = None
+    try:
+        from src.app_dock import context_block as _app_dock_block
+        _dock_text = _app_dock_block(session_id)
+        if _dock_text:
+            _dock_message = {"role": "user", "content": _dock_text}
+    except Exception as e:
+        logger.warning("Failed to build app dock context message", exc_info=e)
+
     # Document context is kept as a SEPARATE message (not merged into the tool
     # prompt) so the context trimmer doesn't destroy it when truncating the
     # massive tool-description system prompt.
@@ -6581,6 +6592,7 @@ def _build_system_prompt(
         _skills_message,
         _memory_message,
         _datetime_message,
+        _dock_message,
         _language_message,
     ):
         if injected:
@@ -6611,6 +6623,9 @@ def _build_system_prompt(
         last_user_idx += 1
     if _datetime_message:
         merged.insert(last_user_idx, _datetime_message)
+        last_user_idx += 1
+    if _dock_message:
+        merged.insert(last_user_idx, _dock_message)
         last_user_idx += 1
     # Last of the injected blocks, so the language directive is the final
     # thing the model reads before the user's own words.

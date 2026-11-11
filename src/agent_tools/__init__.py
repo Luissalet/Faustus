@@ -130,6 +130,7 @@ from .contract_tools import CriteriaCheckTool
 from .prior_art_tools import PriorArtTool
 from .uncertainty_tool import UncertaintyNextObservationTool
 from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOfficeTool, ReviewDeskTool
+from .app_dock_tools import AppOpenTool, AppViewTool, AppActTool
 from .panel_tools import (
     PanelCreateTool, PanelUpdateTool, PanelGetTool, PanelListTool, PanelDeleteTool,
     PanelCheckTool, PanelVersionsTool, PanelRestoreTool,
@@ -420,6 +421,10 @@ TOOL_HANDLERS = {
     "uncertainty_next_observation": UncertaintyNextObservationTool().execute,
     # Reproducible delivery package: editables/exports reopened from source and zip (src/delivery_package.py).
     "delivery_package": DeliveryPackageTool().execute,
+    # App Dock: a Hoard open beside the chat (src/app_dock.py).
+    "app_open": AppOpenTool().execute,
+    "app_view": AppViewTool().execute,
+    "app_act": AppActTool().execute,
     # User panels (src/panels.py) and Loop Cards (src/loop_card.py).
     "panel_create": PanelCreateTool().execute,
     "panel_update": PanelUpdateTool().execute,
@@ -682,6 +687,10 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "uncertainty_next_observation",
              # Delivery package -- src/agent_tools/delivery_tool.py.
              "delivery_package", "scope_compare", "commission_office", "review_desk",
+             # App Dock -- src/agent_tools/app_dock_tools.py.
+             "app_open",
+             "app_view",
+             "app_act",
              # User panels -- src/agent_tools/panel_tools.py; Loop Cards -- src/agent_tools/loop_card_tools.py.
              "panel_create",
              "panel_update",

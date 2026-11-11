@@ -688,6 +688,11 @@ _register({"commission_office"}, ToolEffect.WRITE_PRIVATE)
 # Review desk (src/review_desk.py): reads the named version files (confined like
 # read_file in chat) and keeps snapshots and comments under DATA_DIR/review_desks.
 _register({"review_desk"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE)
+# App Dock (src/app_dock.py): app_open starts a Hoard through the Hub and docks it; app_view/app_act hand a
+# call to the Studio window showing the chat and act in the person's own page, as the person could.
+_register({"app_open"}, ToolEffect.BROKERED_NETWORK_READ, ToolEffect.WRITE_PRIVATE)
+_register({"app_view"}, ToolEffect.READ_PRIVATE)
+_register({"app_act"}, ToolEffect.WRITE_PRIVATE)
 # User panels (src/panels.py): pages stored under DATA_DIR/panels. panel_check opens the page headless
 # on the loopback server and writes a screenshot next to it; nothing runs on the server itself.
 _register({"panel_list", "panel_get", "panel_versions"}, ToolEffect.READ_PRIVATE)

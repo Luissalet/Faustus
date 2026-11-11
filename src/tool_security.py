@@ -246,6 +246,10 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "alt_start",
     "alt_compare",
     "alt_apply",
+    # App Dock: acts in the person's own app window (src/app_dock.py).
+    "app_open",
+    "app_view",
+    "app_act",
     # User panels and Loop Cards: private per-user records; the loop tools run a command.
     "panel_create",
     "panel_update",

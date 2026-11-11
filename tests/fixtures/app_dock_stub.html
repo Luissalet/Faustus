@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stub Hoard</title>
+<!--
+  Test fixture for the App Dock host (tests/test_app_dock.py, QA by hand): a page that speaks the APP_DOCK.md
+  protocol the way the real bridge does -- dock/hello -> dock/ready, dock/call -> dock/result, dock/context,
+  dock/changed, dock/theme, dock/message -- with a handful of controls and one tool of its own.
+-->
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #1d1d1f; --line: #d6d6db; --acc: #3e63dd; }
+  :root[data-theme="dark"] { --bg: #17171a; --fg: #ececf0; --line: #3a3a42; --acc: #8da4ef; }
+  body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; margin-block-end: 12px; flex-wrap: wrap; }
+  input, button, select { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  button { cursor: pointer; }
+  button.primary { background: var(--acc); color: #fff; border-color: var(--acc); }
+  ul { padding-inline-start: 18px; }
+  #cursors { position: fixed; inset: 0; pointer-events: none; z-index: 9; }
+  .cur { position: absolute; inline-size: 0; block-size: 0; transition: transform 0.35s ease; }
+  .cur b { position: absolute; inset-inline-start: 12px; inset-block-start: 14px; padding: 1px 6px; border-radius: 4px; font-size: 11px; color: #fff; white-space: nowrap; }
+  .cur i { position: absolute; inline-size: 12px; block-size: 12px; border-radius: 50%; margin: -6px 0 0 -6px; }
+  .ring { outline: 3px solid var(--acc); outline-offset: 2px; }
+  #log { min-block-size: 20px; color: var(--acc); }
+</style>
+</head>
+<body>
+<h1>Stub Hoard</h1>
+<div class="row">
+  <input id="q" placeholder="Buscar" aria-label="Buscar">
+  <button id="save" class="primary">Guardar</button>
+  <select id="kind" aria-label="Tipo"><option>Nota</option><option>Enlace</option></select>
+  <button id="ask" data-send="0">Preguntar al chat</button>
+</div>
+<p id="log" aria-live="polite"></p>
+<ul id="items"><li>Primer elemento</li><li>Segundo elemento</li></ul>
+<script>
+(() => {
+  let host = null, origin = null, refs = [];
+  const $ = id => document.getElementById(id);
+  const send = (m) => { if (host) host.postMessage({ hoardDock: 1, ...m }, origin); };
+  const log = (t) => { $('log').textContent = t; };
+  const ownTools = [{ name: 'stub_add_item', description: 'Add an item to the list', inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } }];
+  const ctx = () => ({ title: document.title, url: location.pathname + location.hash, view: 'list', summary: $('items').children.length + ' elementos',
+    selection: String(getSelection() || '').slice(0, 500) || undefined, focus: { kind: 'list', id: 'items', label: 'Lista' } });
+  let ctxTimer = 0; const pushCtx = () => { clearTimeout(ctxTimer); ctxTimer = setTimeout(() => send({ type: 'dock/context', context: ctx() }), 400); };
+  new MutationObserver(pushCtx).observe($('items'), { childList: true });
+  document.addEventListener('selectionchange', pushCtx);
+
+  const controls = () => [...document.querySelectorAll('input,button,select')];
+  const label = el => (el.getAttribute('aria-label') || el.textContent || el.placeholder || el.id || '').trim();
+  const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const find = a => {
+    if (a.ref) { const i = refs.indexOf(a.ref); }
+    const all = controls(); refs = all.map((_, i) => 'e' + (i + 1));
+    if (a.ref && refs.includes(a.ref)) return all[refs.indexOf(a.ref)];
+    const want = norm(a.text || a.label || a.ref);
+    const exact = all.filter(el => norm(label(el)) === want); if (exact.length === 1) return exact[0];
+    const part = all.filter(el => norm(label(el)).includes(want)); if (part.length === 1) return part[0];
+    const err = new Error(part.length > 1 ? 'ambiguous' : 'not_found'); err.code = err.message; err.nearest = all.map(label); throw err;
+  };
+  const cursors = {};
+  const cursor = (actor, el) => {
+    if (!$('cursors')) { const d = document.createElement('div'); d.id = 'cursors'; document.body.appendChild(d); }
+    let c = cursors[actor.id];
+    if (!c) { c = cursors[actor.id] = document.createElement('div'); c.className = 'cur'; c.innerHTML = '<i></i><b></b>'; $('cursors').appendChild(c); }
+    c.querySelector('i').style.background = actor.color; c.querySelector('b').style.background = actor.color; c.querySelector('b').textContent = actor.name;
+    if (el) { const r = el.getBoundingClientRect(); c.style.transform = `translate(${r.left + r.width / 2}px, ${r.top + r.height / 2}px)`; }
+    return new Promise(r => setTimeout(r, 380));
+  };
+  const tools = {
+    async app_read() {
+      refs = controls().map((_, i) => 'e' + (i + 1));
+      const lines = ['# ' + document.title, ...[...$('items').children].map(li => '- ' + li.textContent)];
+      controls().forEach((el, i) => lines.push(`[e${i + 1}] ${el.tagName.toLowerCase()} "${label(el)}"` + (el.value ? ` (value: ${el.value})` : '')));
+      return lines.join('\n');
+    },
+    async app_click(a, c) { const el = find(a); await cursor(c.actor, el); el.click(); return { clicked: label(el) }; },
+    async app_fill(a, c) { const el = find({ ref: a.ref, label: a.label }); await cursor(c.actor, el); el.value = a.value; el.dispatchEvent(new Event('input', { bubbles: true })); if (a.submit) $('save').click(); return { filled: label(el), value: el.value }; },
+    async app_select(a, c) { const el = find({ ref: a.ref, label: a.label }); await cursor(c.actor, el); el.value = a.option; el.dispatchEvent(new Event('change', { bubbles: true })); return { selected: el.value }; },
+    async app_navigate(a) { location.hash = a.to; return { url_after: location.pathname + location.hash }; },
+    async app_scroll(a) { scrollBy(0, a.by === 'up' ? -300 : 300); return { scrolled: a.by || 'to target' }; },
+    async app_highlight(a, c) { const el = find(a); await cursor(c.actor, el); el.classList.add('ring'); log(a.note || ''); setTimeout(() => el.classList.remove('ring'), 4000); return { highlighted: label(el) }; },
+    async app_wait(a) { await new Promise(r => setTimeout(r, Math.min(5000, a.ms || 100))); return { waited: a.ms || 0 }; },
+    async stub_add_item(a) { const li = document.createElement('li'); li.textContent = a.text; $('items').appendChild(li); return { added: a.text }; },
+  };
+  $('save').addEventListener('click', () => { const v = $('q').value.trim(); if (v) { const li = document.createElement('li'); li.textContent = v; $('items').appendChild(li); } log('Guardado: ' + (v || '(vacío)')); });
+  $('ask').addEventListener('click', () => send({ type: 'dock/message', text: 'Explícame este elemento: ' + $('items').lastElementChild.textContent, send: $('ask').dataset.send === '1' }));
+
+  window.addEventListener('message', async (ev) => {
+    const m = ev.data; if (!m || m.hoardDock !== 1 || ev.source !== window.parent) return;
+    if (m.type === 'dock/hello') {
+      host = ev.source; origin = ev.origin; document.documentElement.dataset.theme = m.theme;
+      send({ type: 'dock/ready', app: { id: 'stub', name: 'Stub Hoard' }, tools: [...ownTools, ...Object.keys(tools).filter(n => n.startsWith('app_')).map(n => ({ name: n, description: n }))], context: ctx() });
+    } else if (m.type === 'dock/theme') { document.documentElement.dataset.theme = m.theme; }
+    else if (m.type === 'dock/changed') { log('changed: ' + m.server + '.' + m.tool); }
+    else if (m.type === 'dock/call') {
+      try { const fn = tools[m.tool]; if (!fn) { const e = new Error('unknown tool ' + m.tool); e.code = 'bad_args'; throw e; }
+        const result = await fn(m.args || {}, { actor: m.actor }); send({ type: 'dock/result', id: m.id, ok: true, result }); }
+      catch (e) { send({ type: 'dock/result', id: m.id, ok: false, error: { code: e.code || 'error', message: e.message, nearest: e.nearest } }); }
+    }
+  });
+})();
+</script>
+</body>
+</html>

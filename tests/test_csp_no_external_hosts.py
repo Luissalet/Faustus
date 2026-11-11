@@ -53,6 +53,9 @@ def test_default_csp_has_no_external_hosts():
     for name in ("default-src", "script-src", "style-src", "font-src", "connect-src",
                  "frame-src", "media-src", "object-src"):
         for src in d.get(name, []):
+            # The App Dock frames the family's Hoards, which listen on loopback ports: not external.
+            if name == "frame-src" and re.match(r"^http://(127\.0\.0\.1|localhost):\*$", src):
+                continue
             assert not re.match(r"^(https?:|//|\*|[\w.-]+\.[a-z]{2,}$)", src), (name, src)
     assert "https://cdn.jsdelivr.net" not in _default_csp()
 

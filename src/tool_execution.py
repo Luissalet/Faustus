@@ -2787,6 +2787,12 @@ async def _execute_tool_block_impl(
                     result = await _run_browser_action_with_precondition(mcp, effective_tool, args)
                 else:
                     result = await mcp.call_tool(tool, args)
+                    # The docked app's data may have changed under the person's eyes: tell its window (src/app_dock.py).
+                    try:
+                        from src.app_dock import note_mcp_call as _app_dock_changed
+                        _app_dock_changed(session_id, tool)
+                    except Exception:  # noqa: BLE001 - a refresh hint must never fail the call
+                        pass
         else:
             desc = f"mcp: {tool}"
             result = {"error": "MCP manager not available", "exit_code": 1}

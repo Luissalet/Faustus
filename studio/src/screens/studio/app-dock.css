@@ -1,0 +1,52 @@
+/* App Dock: a Hoard's page in the side panel. Status is a word first; the tint repeats it. */
+
+.fs-appdock { display: flex; flex-direction: column; flex: 1 1 auto; min-block-size: 0; min-inline-size: 0; }
+.fs-appdock [hidden] { display: none !important; }
+.fs-appdock[hidden] { display: none !important; }
+
+.fs-appdock__bar { display: flex; align-items: center; gap: var(--fs-space-2); padding: 6px var(--fs-space-3); border-block-end: 1px solid var(--fs-border); min-inline-size: 0; }
+.fs-appdock__bartitle { font-size: 13px; font-weight: 600; color: var(--fs-text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+.fs-appdock__grow { flex: 1 1 auto; }
+
+.fs-appdock__img, .fs-appdock__glyph { flex: none; inline-size: 22px; block-size: 22px; border-radius: 5px; object-fit: contain; }
+.fs-appdock__glyph { display: inline-grid; place-items: center; background: var(--fs-surface-2); color: var(--fs-text-2); font-size: 12px; font-weight: 600; border: 1px solid var(--fs-border); }
+.fs-appdock__picker .fs-appdock__img, .fs-appdock__picker .fs-appdock__glyph { inline-size: 28px; block-size: 28px; border-radius: 6px; }
+
+.fs-appdock__chip { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 10px; background: var(--fs-surface-2); color: var(--fs-text-2); border: 1px solid var(--fs-border); white-space: nowrap; }
+.fs-appdock__chip[data-state='running'], .fs-appdock__chip[data-state='agent'] { color: var(--fs-success); }
+.fs-appdock__chip[data-state='stopped'] { opacity: 0.8; }
+
+.fs-appdock__note { margin: 0; padding: 5px var(--fs-space-3); font-size: 11.5px; color: var(--fs-text-3); background: var(--fs-surface-1); border-block-end: 1px solid var(--fs-border); }
+
+.fs-appdock__stage { position: relative; flex: 1 1 auto; min-block-size: 0; display: flex; margin: var(--fs-space-2) var(--fs-space-3) var(--fs-space-3); border: 1px solid var(--fs-border); border-radius: 8px; overflow: hidden; }
+.fs-appdock__frame { flex: 1 1 auto; inline-size: 100%; block-size: 100%; border: 0; background: var(--fs-bg, transparent); }
+.fs-appdock__loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--fs-space-3); background: var(--fs-bg, var(--fs-surface-1)); color: var(--fs-text-2); font-size: 13px; pointer-events: none; }
+
+.fs-appdock__spin { inline-size: 14px; block-size: 14px; border-radius: 50%; border: 2px solid var(--fs-border-strong, var(--fs-border)); border-block-start-color: var(--fs-accent, var(--fs-brand)); animation: fs-appdock-spin 0.8s linear infinite; display: inline-block; }
+@keyframes fs-appdock-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .fs-appdock__spin { animation-duration: 2.4s; } }
+
+/* While the panel's edge is dragged the frame must not swallow the pointer. */
+body[data-fs-panel-resizing] .fs-appdock__frame { pointer-events: none; }
+
+.fs-appdock__picker { display: grid; align-content: start; gap: var(--fs-space-3); padding: var(--fs-space-3); overflow: auto; min-block-size: 0; flex: 1 1 auto; }
+.fs-appdock__pickhead { display: flex; align-items: center; justify-content: space-between; gap: var(--fs-space-2); }
+.fs-appdock__pickhead h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.fs-appdock__filter { flex: none; inline-size: 100%; box-sizing: border-box; block-size: 36px; min-block-size: 36px; padding: 0 10px; font: inherit; font-size: 13px; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 6px; }
+.fs-appdock__filter:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 1px; }
+.fs-appdock__list { display: grid; gap: var(--fs-space-2); margin: 0; padding: 0; list-style: none; }
+.fs-appdock__row { display: flex; align-items: center; gap: var(--fs-space-3); inline-size: 100%; box-sizing: border-box; padding: 8px 10px; text-align: start; font: inherit; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 8px; cursor: pointer; min-inline-size: 0; }
+.fs-appdock__row:hover:not(:disabled) { background: var(--fs-surface-2); }
+.fs-appdock__row:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 1px; }
+.fs-appdock__row:disabled { cursor: progress; opacity: 0.75; }
+.fs-appdock__row[aria-busy='true'] { opacity: 1; border-color: var(--fs-brand); }
+.fs-appdock__row[data-current] { border-color: var(--fs-brand); }
+.fs-appdock__row--skeleton { block-size: 46px; background: var(--fs-surface-2); border-color: transparent; animation: fs-appdock-pulse 1.4s ease-in-out infinite; }
+@keyframes fs-appdock-pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .fs-appdock__row--skeleton { animation: none; } }
+.fs-appdock__titles { display: grid; gap: 1px; flex: 1 1 auto; min-inline-size: 0; }
+.fs-appdock__name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-appdock__purpose { font-size: 11.5px; color: var(--fs-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-appdock__starting { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12px; color: var(--fs-text-2); }
+.fs-appdock__empty { margin: 0; display: grid; justify-items: start; gap: var(--fs-space-3); font-size: 13px; color: var(--fs-text-2); }
+.fs-appdock__fail { margin: 0; font-size: 12px; color: var(--fs-danger); overflow-wrap: anywhere; }
