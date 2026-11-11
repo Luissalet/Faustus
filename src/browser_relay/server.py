@@ -9,6 +9,7 @@ import json
 import hashlib
 from pathlib import Path
 import sys
+import uuid
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -17,6 +18,7 @@ from mcp.types import CallToolResult, ImageContent, TextContent, Tool, ToolAnnot
 from src.browser_relay.protocol import SCHEMA, failure, validate_arguments
 from src.browser_relay.presentation import present_payload
 from src.browser_relay.transport import BrowserRelay
+from src.browser_relay.video import encoder, save_video
 from src.stdio_guard import guard
 
 
@@ -119,12 +121,13 @@ def save_download(payload: dict, filename: str) -> dict:
 
 def create_server(relay: BrowserRelay) -> Server:
     server = Server("browser_session")
+    recording_paths = {}
 
     @server.list_tools()
     async def list_tools():
         return [Tool(name="browser_session", description=(
             "Use the existing browser session through its installed extension. tabs lists real tabs; "
-            "all other actions require an explicit tab_id. Use refs from the latest snapshot for click/type; "
+            "tab actions require an explicit tab_id. Use refs from the latest snapshot for click/type; "
             "press optionally focuses ref. type inserts Unicode text. Mutations return automatic readback. "
             "release detaches this tool without closing the tab. Main-frame snapshots only. "
             "upload clicks a current ref with an intercepted file chooser and selects absolute local files; "
@@ -154,6 +157,20 @@ def create_server(relay: BrowserRelay) -> Server:
             "Mutations and navigations accept view too, so a reload can come back already as text. "
             "view.visible keeps only what is on screen now (combine with text after a scroll) and returns viewport "
             "{x, y, width, height, page_width, page_height}: y/page_height says how far down the page you are. "
+            "sessions lists durable names; session_save {tab_id,name} saves the current URL in this browser profile; "
+            "session_open {name} reuses that saved tab or restores it in the background, including after restart; "
+            "session_forget removes only the name. adopt_tab {tab_id,name?,reason?} asks the person to cede a tab "
+            "from the extension toolbar. handoff {tab_id,reason?} gives them a Te toca card for login/2FA/payment; "
+            "handoff_status observes it. Only a real Continue click in the extension finishes a human turn; "
+            "while waiting, observe but do not send input, and take a fresh snapshot after Continue. "
+            "har_start {tab_id,include_bodies?} begins explicit network capture; har_stop {tab_id,output_path} "
+            "writes a new local HAR with redirects, timings, failures and optionally available bodies. "
+            "recording_start {tab_id,output_path,cursor?} records this tab and buffers the last minute; "
+            "recording_stop exports WebM to that path (or a new output_path); last_minute {tab_id,output_path} "
+            "exports the recent/frozen minute without stopping. Recording needs local ffmpeg, captures no audio, "
+            "and starts only on request. A failing action automatically writes the buffered minute beside the "
+            "chosen recording path, including frames received before disconnect. File receipts contain bytes/SHA; "
+            "video frames and HAR bytes are never inline in MCP. Names survive restarts; recordings do not resume themselves. "
             "An outcome_unknown must be observed before deciding any explicit retry; never replay it automatically."),
             inputSchema=SCHEMA, annotations=ToolAnnotations(readOnlyHint=False, idempotentHint=False))]
 
@@ -171,13 +188,36 @@ def create_server(relay: BrowserRelay) -> Server:
             args["view"] = {"visible": True}         # the extension measures the viewport only when asked
         try:
             inputs = upload_inputs(args["files"]) if args["action"] == "upload" else None
-            if args["action"] == "download":
+            if "output_path" in args:
                 download_target(args["output_path"])
+            if args["action"] == "recording_start":
+                await asyncio.to_thread(encoder)
         except (OSError, ValueError) as exc:
             return mcp_result(failure("invalid_file_path", str(exc)))
         payload = await relay.call(args)
-        if args["action"] == "download":
+        if args["action"] == "last_minute" and not payload.get("ok") and payload.get("error", {}).get("code") in {"extension_unavailable", "extension_disconnected", "capture_not_started"}:
+            recent = relay.recent_video(args["tab_id"])
+            if recent:
+                payload = {"ok": True, "phase": "action_confirmed", "result": {"tab_id": args["tab_id"], "video": recent, "source": "relay_buffer"}}
+        if args["action"] == "recording_start" and payload.get("ok"):
+            recording_paths[args["tab_id"]] = args["output_path"]
+        if args["action"] in {"download", "har_stop"}:
             payload = save_download(payload, args["output_path"])
+        elif args["action"] in {"recording_stop", "last_minute"} and payload.get("ok"):
+            result = dict(payload["result"])
+            video = result.pop("video", None)
+            target = args.get("output_path") or recording_paths.get(args["tab_id"])
+            try:
+                if not target:
+                    raise ValueError("Choose an output_path for this video")
+                receipt = await save_video(video or {}, target)
+            except (OSError, ValueError) as exc:
+                payload = failure("video_write_failed", str(exc), "action_confirmed")
+            else:
+                payload = {**payload, "result": {**result, "file": receipt}}
+                if args["action"] == "recording_stop":
+                    recording_paths.pop(args["tab_id"], None)
+                    relay.forget_video(args["tab_id"])
         elif payload.get("ok") and inputs is not None:
             try:
                 if upload_inputs(args["files"]) != inputs:
@@ -186,6 +226,23 @@ def create_server(relay: BrowserRelay) -> Server:
                 payload = failure("upload_input_changed", str(exc), "action_confirmed")
             else:
                 payload = {**payload, "result": {**payload["result"], "selected_files": inputs}}
+        # Strip private evidence even when encoding fails. Preserve the original
+        # action error and its phase, with a separate artifact receipt/error.
+        video = payload.pop("failure_video", None)
+        if not payload.get("ok") and payload.get("error", {}).get("code") != "human_turn":
+            tab_id = args.get("tab_id")
+            target = recording_paths.get(tab_id)
+            video = video or (relay.recent_video(tab_id) if target else None)
+            if video and target:
+                path = Path(target)
+                failure_path = path.with_name(path.stem + ".failure-" + uuid.uuid4().hex[:12] + ".webm")
+                try:
+                    payload["failure_recording"] = await save_video(video, str(failure_path))
+                except (OSError, ValueError) as exc:
+                    payload["artifact_error"] = str(exc)
+        if payload.get("ok") and args["action"] in {"release", "close_tab"}:
+            recording_paths.pop(args["tab_id"], None)
+            relay.forget_video(args["tab_id"])
         return mcp_result(payload, detail, view)
 
     return server

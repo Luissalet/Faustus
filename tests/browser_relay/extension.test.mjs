@@ -15,7 +15,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const event = () => { const listeners = []; return {addListener(fn) { listeners.push(fn); }, emit(...args) { for (const fn of listeners) fn(...args); }}; };
 
 /** Simulated Chrome target, not a browser/DOM implementation or Brave acceptance. */
-function fixture() {
+function fixture(journeyStore) {
   const pages = new Map([1, 2].map(id => [id, {id, url: 'https://writer.test/' + id, title: 'Target ' + id, active: id === 1, windowId: 7, serial: 1, value: 'Saved', selection: [5, 5], focused: null, clicks: 0, mouseTargets: []}]));
   const attached = new Set(), external = new Set(), calls = [], gates = new Map(), errors = new Map();
   const onDetach = event(), onEvent = event(), onUpdated = event(), onRemoved = event();
@@ -75,7 +75,7 @@ function fixture() {
       },
     },
   };
-  const controller = new BrowserController(chrome);
+  const controller = new BrowserController(chrome, {journeyStore});
   onDetach.addListener(source => controller.onDetach(source)); onEvent.addListener((source, method, params) => controller.onEvent(source, method, params)); onUpdated.addListener((tabId, change) => controller.onTabUpdated(tabId, change)); onRemoved.addListener(tabId => controller.onTabRemoved(tabId));
   const snapshot = async tabId => { const reply = await controller.run({action: 'snapshot', tab_id: tabId}); assert.equal(reply.ok, true, JSON.stringify(reply)); return reply.result; };
   const effects = () => calls.filter(call => call.method?.startsWith('Input.') || call.method === 'Page.navigate');
@@ -612,4 +612,32 @@ test('wait gives the page time and reads it again without input', async () => {
   const reply = await f.controller.run({action: 'wait', tab_id: 1, seconds: 0.3});
   assert.equal(reply.ok, true, JSON.stringify(reply)); assert.ok(Date.now() - started >= 280);
   assert.ok(reply.result.snapshot.nodes.length > 0); assert.equal(f.effects().length, 0);
+});
+
+test('explicit human turn blocks input and close until Continue, and requires fresh references afterward', async () => {
+  let saved = {sessions: {}, turns: {}};
+  const store = {async read() { return structuredClone(saved); }, async write(value) { saved = structuredClone(value); }};
+  const f = start(fixture(store)), before = await f.snapshot(2);
+  f.controller.created.add(2);
+  const handoff = await f.controller.run({action: 'handoff', tab_id: 2, reason: 'Complete the step'});
+  assert(handoff.ok);
+  const blocked = await f.controller.run({action: 'click', tab_id: 2, ref: ref(before, 'button')});
+  assert.equal(blocked.error.code, 'human_turn'); assert.equal(f.effects().length, 0);
+  assert.equal((await f.controller.run({action: 'close_tab', tab_id: 2})).error.code, 'human_turn');
+  await f.snapshot(2); // observation remains possible during the human turn
+  await f.controller.journeys.person({tab_id: 2, turn_id: handoff.result.turn.id});
+  assert.equal((await f.controller.run({action: 'click', tab_id: 2, ref: ref(before, 'button')})).error.code, 'stale_ref');
+  const after = await f.snapshot(2);
+  assert.equal((await f.controller.run({action: 'click', tab_id: 2, ref: ref(after, 'button')})).ok, true);
+  await f.controller.disconnect();
+});
+
+test('browser tools cannot attach to the extension control surface to simulate Continue', async () => {
+  const f = start(fixture());
+  f.chrome.runtime.getURL = path => 'chrome-extension://' + ID + '/' + path;
+  f.pages.get(2).url = f.chrome.runtime.getURL('panel.html');
+  const reply = await f.controller.run({action: 'snapshot', tab_id: 2});
+  assert.equal(reply.error.code, 'human_control_surface');
+  assert.equal(f.calls.filter(call => call.api === 'attach').length, 0);
+  assert.equal(f.effects().length, 0);
 });

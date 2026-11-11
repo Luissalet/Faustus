@@ -1,4 +1,6 @@
-/** Targeted CDP commands. Only download runs fixed resource/Blob readers; no caller code. */
+/** Targeted CDP commands; fixed product readers and an optional recording cursor, no caller code. */
+import {BrowserJourneys, JOURNEY_ACTIONS} from './journeys.js';
+import {BrowserCapture, CAPTURE_ACTIONS} from './capture.js';
 export class BrowserCommandError extends Error {
   constructor(code, message) { super(message); this.name = 'BrowserCommandError'; this.code = code; }
 }
@@ -34,7 +36,7 @@ const SELECT_OPTION = `function(wanted) {
 }`;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 export const ACTIONS = ['tabs', 'snapshot', 'screenshot', 'click', 'type', 'press', 'navigate', 'release', 'upload', 'download',
-  'scroll', 'hover', 'select', 'reload', 'back', 'forward', 'open_tab', 'close_tab', 'reload_extension', 'wait'];
+  'scroll', 'hover', 'select', 'reload', 'back', 'forward', 'open_tab', 'close_tab', 'reload_extension', 'wait', ...JOURNEY_ACTIONS, ...CAPTURE_ACTIONS];
 const READ_BLOB_PART = `async function(offset, length) {
   const bytes = new Uint8Array(await this.slice(offset, offset + length).arrayBuffer());
   let binary = '';
@@ -94,7 +96,11 @@ function keyboard(key) {
 }
 
 export class BrowserController {
-  constructor(chrome) { this.chrome = chrome; this.tabs = new Map(); this.owned = new Set(); this.created = new Set(); this.session = null; }
+  constructor(chrome, {journeyStore} = {}) {
+    this.chrome = chrome; this.tabs = new Map(); this.owned = new Set(); this.created = new Set(); this.session = null;
+    this.journeys = new BrowserJourneys(this, journeyStore); this.hasJourneyStore = !!journeyStore || typeof indexedDB !== 'undefined';
+    this.capture = new BrowserCapture(this);
+  }
 
   state(tabId) {
     if (!this.tabs.has(tabId)) this.tabs.set(tabId, {generation: 0, lifetime: 0, refs: new Map(), document: null, queue: Promise.resolve(), fileChooser: null, attaching: null, detaching: null, detached: new AbortController()});
@@ -116,10 +122,12 @@ export class BrowserController {
   }
   onDetach(source) {
     if (!Number.isInteger(source.tabId)) return;
+    this.capture.detached(source.tabId);
     const state = this.state(source.tabId); this.owned.delete(source.tabId); state.lifetime++; state.detached.abort(); state.detached = new AbortController(); this.invalidate(source.tabId);
   }
   onEvent(source, method, params = {}) {
     if (source.sessionId || !Number.isInteger(source.tabId)) return;
+    this.capture.onEvent(source.tabId, method, params);
     if (method === 'Page.fileChooserOpened') {
       const chooser = this.state(source.tabId).fileChooser;
       if (chooser) chooser.resolve(params);
@@ -127,8 +135,11 @@ export class BrowserController {
     }
     if (method === 'DOM.documentUpdated' || method === 'Page.frameNavigated' && !params.frame?.parentId || method === 'Page.navigatedWithinDocument' && params.frameId === this.state(source.tabId).document?.frame_id) this.invalidate(source.tabId);
   }
-  onTabUpdated(tabId, change) { if (change.url !== undefined || change.status === 'loading') this.invalidate(tabId); }
-  onTabRemoved(tabId) { this.onDetach({tabId}); }
+  onTabUpdated(tabId, change) {
+    if (change.url !== undefined || change.status === 'loading') this.invalidate(tabId);
+    if (this.hasJourneyStore) void this.journeys.updated(tabId, change).catch(() => {});
+  }
+  onTabRemoved(tabId) { this.onDetach({tabId}); if (this.hasJourneyStore) void this.journeys.removed(tabId).catch(() => {}); }
 
   context(session, tabId, lifetime) {
     const state = this.state(tabId), detached = state.detached.signal;
@@ -147,6 +158,10 @@ export class BrowserController {
   }
   async attach(context) {
     context.current(); const {tabId, state} = context;
+    const target = await context.wait(this.chrome.tabs.get(tabId));
+    if (this.chrome.runtime.getURL && (target.url ?? target.pendingUrl ?? '').startsWith(this.chrome.runtime.getURL(''))) {
+      fail('human_control_surface', 'The extension controls are for the person. Browser tools cannot inspect or click Continue there.');
+    }
     if (this.owned.has(tabId)) return;
     if (state.detaching) await context.wait(state.detaching);
     if (!state.attaching) {
@@ -169,6 +184,7 @@ export class BrowserController {
     if (!this.owned.has(tabId)) return false;
     state.detaching = (async () => {
       try {
+        await this.capture.cleanup(tabId);
         // Cancel an intercepted chooser before releasing the owned CDP session.
         if (state.fileChooser) try { await this.chrome.debugger.sendCommand({tabId}, 'Page.setInterceptFileChooserDialog', {enabled: false}); } catch { /* Detach still releases this session. */ }
         await this.chrome.debugger.detach({tabId}); this.owned.delete(tabId); return true; }
@@ -432,6 +448,7 @@ export class BrowserController {
       const released = await context.wait(this.detachOwned(context.tabId), true); context.phase = 'action_confirmed'; return {tab, released};
     }
     await this.attach(context);
+    if (CAPTURE_ACTIONS.includes(action)) return this.capture.execute(context, args);
     const visible = args.view?.visible === true;
     if (action === 'snapshot') return this.snapshot(context, {visible});
     if (action === 'screenshot') return this.screenshot(context, args);
@@ -493,8 +510,17 @@ export class BrowserController {
     const session = this.session;
     if (!session) return {ok: false, error: {code: 'connection_lost', message: 'No ready relay connection.'}, phase: 'not_dispatched'};
     if (!args || typeof args !== 'object' || !ACTIONS.includes(args.action)) return {ok: false, error: {code: 'invalid_arguments', message: 'Unknown browser action.'}, phase: 'not_dispatched'};
+    if (JOURNEY_ACTIONS.includes(args.action)) {
+      try { const result = await this.journeys.execute(args); return {ok: true, result, phase: 'action_confirmed'}; }
+      catch (error) { return {ok: false, error: {code: error.code ?? 'browser_command_failed', message: String(error.message ?? error)}, phase: 'not_dispatched'}; }
+    }
     if (args.action === 'tabs') {
-      try { const tabs = await this.chrome.tabs.query({}); if (this.session !== session) fail('connection_lost', 'Connection changed during tabs query.'); return {ok: true, result: {tabs: tabs.map(tab => ({...tabInfo(tab), opened_by_faustus: this.created.has(tab.id)}))}, phase: 'readback_complete'}; }
+      try {
+        const tabs = await this.chrome.tabs.query({}), turns = this.hasJourneyStore ? await this.journeys.tabTurns() : {};
+        if (this.session !== session) fail('connection_lost', 'Connection changed during tabs query.');
+        return {ok: true, result: {tabs: tabs.map(tab => ({...tabInfo(tab), opened_by_faustus: this.created.has(tab.id),
+          ...(turns[tab.id] ? {human_turn: turns[tab.id].status === 'waiting', ceded_to_faustus: turns[tab.id].kind === 'adoption' && turns[tab.id].status === 'continued'} : {})}))}, phase: 'readback_complete'};
+      }
       catch (error) { return {ok: false, error: {code: error.code ?? 'browser_command_failed', message: String(error.message ?? error)}, phase: 'not_dispatched'}; }
     }
     if (args.action === 'open_tab') {
@@ -507,6 +533,7 @@ export class BrowserController {
       } catch (error) { return {ok: false, error: {code: 'browser_command_failed', message: String(error.message ?? error)}, phase: 'outcome_unknown'}; }
     }
     if (args.action === 'close_tab') {
+      if (this.hasJourneyStore && await this.journeys.waiting(args.tab_id)) return {ok: false, error: {code: 'human_turn', message: 'Wait for the person to Continue before closing this tab.'}, phase: 'not_dispatched'};
       if (!this.created.has(args.tab_id)) return {ok: false, error: {code: 'not_opened_by_faustus', message: 'close_tab only closes tabs this extension opened with open_tab; the person\'s own tabs are never closed.'}, phase: 'not_dispatched'};
       try { await this.detachOwned(args.tab_id).catch(() => {}); await this.chrome.tabs.remove(args.tab_id); this.created.delete(args.tab_id); return {ok: true, result: {closed: args.tab_id}, phase: 'action_confirmed'}; }
       catch (error) { return {ok: false, error: {code: 'browser_command_failed', message: String(error.message ?? error)}, phase: 'outcome_unknown'}; }
@@ -520,8 +547,16 @@ export class BrowserController {
     const state = this.state(args.tab_id), lifetime = state.lifetime;
     const task = state.queue.then(async () => {
       const context = this.context(session, args.tab_id, lifetime);
-      try { context.current(); const result = await this.execute(context, args); return {ok: true, result, phase: context.phase === 'not_dispatched' ? 'readback_complete' : context.phase}; }
-      catch (error) { return {ok: false, error: {code: error.code ?? 'browser_command_failed', message: String(error.message ?? error)}, phase: context.phase}; }
+      try {
+        context.current();
+        if (this.hasJourneyStore && !['snapshot', 'screenshot', 'release', 'har_stop', 'recording_stop', 'last_minute', 'wait'].includes(args.action)
+            && await this.journeys.waiting(args.tab_id)) fail('human_turn', 'The person has this tab. Wait for their real Continue click in Faustus Browser, then take a new snapshot.');
+        const result = await this.execute(context, args); return {ok: true, result, phase: context.phase === 'not_dispatched' ? 'readback_complete' : context.phase};
+      }
+      catch (error) {
+        const video = error.code === 'human_turn' ? null : this.capture.freeze(args.tab_id);
+        return {ok: false, error: {code: error.code ?? 'browser_command_failed', message: String(error.message ?? error)}, phase: context.phase, ...(video ? {failure_video: video} : {})};
+      }
     });
     state.queue = task.catch(() => {}); return task;
   }

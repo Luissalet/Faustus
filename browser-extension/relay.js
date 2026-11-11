@@ -38,6 +38,7 @@ export class BrowserRelay {
   lose(connection, message) {
     if (this.connection !== connection) return;
     this.connection = null; connection.ready = false;
+    if (this.controller.capture) this.controller.capture.onFrame = null;
     if (connection.heartbeat !== null) this.timers.clearInterval(connection.heartbeat);
     const previous = this.cleanup; this.cleanup = Promise.allSettled([previous, this.controller.disconnect()]).then(() => {});
     try { connection.socket.close(); } catch { /* The transport may already be closed. */ }
@@ -51,7 +52,13 @@ export class BrowserRelay {
     if (message.type === 'ready') {
       if (connection.readyStarted || !uuid(message.connection_id)) throw new BrowserCommandError('invalid_protocol', 'Invalid or repeated ready handshake.');
       connection.readyStarted = true; await this.cleanup; if (this.connection !== connection) return;
-      this.controller.openSession(message.connection_id); connection.ready = true; this.attempt = 0; this.report('ready'); return;
+      this.controller.openSession(message.connection_id); connection.ready = true; this.attempt = 0;
+      if (this.controller.capture) this.controller.capture.onFrame = (tabId, frame) => {
+        if (this.connection !== connection || !connection.ready) return;
+        try { connection.socket.send(JSON.stringify({type: 'recording_frame', tab_id: tabId, frame})); }
+        catch (error) { this.lose(connection, String(error)); }
+      };
+      this.report('ready'); return;
     }
     if (message.type === 'error') throw new BrowserCommandError(message.error?.code ?? 'relay_error', message.error?.message ?? message.message ?? 'Relay refused the connection.');
     if (message.type !== 'command' || !uuid(message.id)) throw new BrowserCommandError('invalid_protocol', 'Expected command with UUID id.');

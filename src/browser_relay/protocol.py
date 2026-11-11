@@ -5,9 +5,11 @@ from copy import deepcopy
 
 EXTENSION_ID = "cneonpjikbdhbaddfpmmdjemfdphlppa"
 ORIGIN = "chrome-extension://" + EXTENSION_ID
-READ_ACTIONS = frozenset({"tabs", "snapshot", "screenshot", "wait"})
+READ_ACTIONS = frozenset({"tabs", "snapshot", "screenshot", "wait", "sessions", "handoff_status"})
 ACTIONS = (*sorted(READ_ACTIONS), "click", "type", "press", "navigate", "release", "upload", "download",
-           "scroll", "hover", "select", "reload", "back", "forward", "open_tab", "close_tab", "reload_extension")
+           "scroll", "hover", "select", "reload", "back", "forward", "open_tab", "close_tab", "reload_extension",
+           "session_save", "session_open", "session_forget", "adopt_tab", "handoff",
+           "har_start", "har_stop", "recording_start", "recording_stop", "last_minute")
 READBACK_ACTIONS = ("snapshot", "click", "type", "press", "navigate", "upload", "scroll", "hover", "select", "reload", "back",
                     "forward", "wait")
 SCHEMA = {
@@ -21,6 +23,10 @@ SCHEMA = {
         "output_path": {"type": "string", "minLength": 1},
         "key": {"type": "string", "minLength": 1},
         "url": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1, "description": "Durable browser session name; uses the existing browser profile."},
+        "reason": {"type": "string", "description": "handoff/adopt_tab: explain the person's next step in the extension card."},
+        "cursor": {"type": "boolean", "default": False, "description": "recording_start: show a cursor marker in this tab's video."},
+        "include_bodies": {"type": "boolean", "default": False, "description": "har_start: include available response bodies in the local HAR."},
         "detail": {"type": "string", "enum": ["compact", "full"], "default": "compact"},
         "direction": {"type": "string", "enum": ["up", "down", "left", "right"],
                       "description": "scroll: wheel direction; with a ref the wheel turns over that element."},
@@ -67,13 +73,22 @@ SCHEMA = {
             ("scroll", ["tab_id"]), ("hover", ["tab_id", "ref"]), ("select", ["tab_id", "ref", "value"]),
             ("reload", ["tab_id"]), ("back", ["tab_id"]), ("forward", ["tab_id"]),
             ("open_tab", ["url"]), ("close_tab", ["tab_id"]), ("wait", ["tab_id"]),
+            ("session_save", ["tab_id", "name"]), ("session_open", ["name"]), ("session_forget", ["name"]),
+            ("adopt_tab", ["tab_id"]), ("handoff", ["tab_id"]), ("handoff_status", ["tab_id"]),
+            ("har_start", ["tab_id"]), ("har_stop", ["tab_id", "output_path"]),
+            ("recording_start", ["tab_id", "output_path"]), ("recording_stop", ["tab_id"]),
+            ("last_minute", ["tab_id", "output_path"]),
         ]
     ] + [{"if": {"required": ["view"]},
           "then": {"properties": {"action": {"enum": list(READBACK_ACTIONS)}}}},
         {"if": {"required": ["region"]}, "then": {"properties": {"action": {"const": "screenshot"}}}},
         {"if": {"required": ["direction"]}, "then": {"properties": {"action": {"const": "scroll"}}}},
         {"if": {"required": ["files"]}, "then": {"properties": {"action": {"const": "upload"}}}},
-        {"if": {"required": ["output_path"]}, "then": {"properties": {"action": {"const": "download"}}}},
+        {"if": {"required": ["output_path"]}, "then": {"properties": {"action": {"enum": ["download", "har_stop", "recording_start", "recording_stop", "last_minute"]}}}},
+        {"if": {"required": ["cursor"]}, "then": {"properties": {"action": {"const": "recording_start"}}}},
+        {"if": {"required": ["include_bodies"]}, "then": {"properties": {"action": {"const": "har_start"}}}},
+        {"if": {"required": ["name"]}, "then": {"properties": {"action": {"enum": ["session_save", "session_open", "session_forget", "adopt_tab", "handoff"]}}}},
+        {"if": {"required": ["reason"]}, "then": {"properties": {"action": {"enum": ["adopt_tab", "handoff"]}}}},
     ],
 }
 
@@ -107,4 +122,7 @@ def validate_result(value: object) -> dict:
             raise ValueError("Error requires code and message")
         if value.get("phase") not in {"not_dispatched", "outcome_unknown", "action_confirmed"}:
             raise ValueError("Invalid error phase")
-    return {k: value[k] for k in ("ok", "phase", "result" if value["ok"] else "error")}
+    result = {k: value[k] for k in ("ok", "phase", "result" if value["ok"] else "error")}
+    if not value["ok"] and isinstance(value.get("failure_video"), dict):
+        result["failure_video"] = value["failure_video"]
+    return result

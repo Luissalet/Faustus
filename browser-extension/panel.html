@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Faustus Browser</title><link rel="stylesheet" href="panel.css"></head>
+<body><header><h1>Faustus Browser</h1><button id="reconnect" type="button">Reconectar</button></header>
+<p id="status" role="status" aria-live="polite"></p>
+<section aria-labelledby="turn-title"><h2 id="turn-title">Te toca</h2><div id="turns"></div></section>
+<section aria-labelledby="adopt-title"><h2 id="adopt-title">Ceder la pestaña activa</h2><p id="active-tab"></p>
+<label for="name">Nombre de la sesión (opcional)</label><input id="name" placeholder="Por ejemplo, compras" autocomplete="off"><button id="adopt" class="primary" type="button">Ceder pestaña</button></section>
+<section aria-labelledby="sessions-title"><h2 id="sessions-title">Sesiones guardadas</h2><ul id="sessions"></ul></section>
+<script src="panel.js" type="module"></script></body></html>

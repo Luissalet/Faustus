@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+import time
 import uuid
 
 import anyio
@@ -27,6 +29,7 @@ class BrowserRelay:
         self._ready = False
         self._serial = asyncio.Lock()
         self._pending = {}
+        self._recordings = {}
 
     async def start(self):
         try:
@@ -64,6 +67,9 @@ class BrowserRelay:
                 if value == {"type": "ping"}:
                     await peer.send('{"type":"pong"}')
                     continue
+                if value.get("type") == "recording_frame":
+                    self._recording_frame(value)
+                    continue
                 result = validate_result(value)
                 pending = self._pending.get(value["id"])
                 if pending is not None:
@@ -82,6 +88,41 @@ class BrowserRelay:
                 for future, action in self._pending.values():
                     if not future.done():
                         future.set_result(self._lost(action, "extension_disconnected", "Extension disconnected; no command was replayed"))
+
+    def _recording_frame(self, value):
+        tab_id, frame = value.get("tab_id"), value.get("frame")
+        capture = self._recordings.get(tab_id) if type(tab_id) is int else None
+        if capture is None:
+            return
+        if not isinstance(frame, dict) or not isinstance(frame.get("data"), str):
+            raise ValueError("Invalid recording frame")
+        timestamp = frame.get("timestamp")
+        if type(timestamp) not in (int, float) or not math.isfinite(timestamp):
+            raise ValueError("Invalid recording timestamp")
+        frames = capture["frames"]
+        if frames and timestamp < frames[-1]["timestamp"]:
+            raise ValueError("Recording timestamps must be ordered")
+        frames.append(frame)
+        # Keep the preceding still image too, so a quiet tab fills the beginning
+        # of the minute instead of appearing to start at the next animation.
+        older = [item for item in frames if item["timestamp"] < timestamp - 60]
+        capture["frames"] = older[-1:] + [item for item in frames if item["timestamp"] >= timestamp - 60]
+
+    def recent_video(self, tab_id):
+        capture = self._recordings.get(tab_id)
+        if not capture or not capture["frames"]:
+            return None
+        frames = capture["frames"]
+        end = max(time.time(), frames[-1]["timestamp"])
+        start = max(frames[0]["timestamp"], end - 59.8)
+        anchor = next((frame for frame in reversed(frames) if frame["timestamp"] <= start), frames[0])
+        recent = [{**anchor, "timestamp": start}] + [frame for frame in frames if start < frame["timestamp"] < end]
+        if end > start:
+            recent.append({**frames[-1], "timestamp": end})
+        return {**capture, "frames": recent, "last_minute": True}
+
+    def forget_video(self, tab_id):
+        self._recordings.pop(tab_id, None)
 
     async def _retire(self, peer, reason: str):
         # Retire the captured peer only, even if a replacement becomes ready.
@@ -116,10 +157,18 @@ class BrowserRelay:
             request_id = str(uuid.uuid4())
             future = asyncio.get_running_loop().create_future()
             self._pending[request_id] = (future, args["action"])
+            previous_recording = self._recordings.get(args.get("tab_id"))
+            if args["action"] == "recording_start":
+                self._recordings[args["tab_id"]] = {"mime": "video/webm", "cursor": args.get("cursor", False), "frames": []}
             try:
                 # A send failure can be partial: mutations are conservatively unknown.
                 await asyncio.wait_for(peer.send(json.dumps({"type": "command", "id": request_id, "arguments": args}, ensure_ascii=False)), self.timeout)
-                return await asyncio.wait_for(asyncio.shield(future), self.timeout)
+                result = await asyncio.wait_for(asyncio.shield(future), self.timeout)
+                if args["action"] == "recording_start" and not result.get("ok"):
+                    self._recordings.pop(args["tab_id"], None)
+                    if previous_recording is not None:
+                        self._recordings[args["tab_id"]] = previous_recording
+                return result
             except asyncio.CancelledError:
                 await self._retire(peer, "browser_relay_command_cancelled")
                 raise
