@@ -1681,3 +1681,7 @@ Faustus can use Browser with the installed extension in existing Brave tabs. An 
 With the approved 536848fe code active and the configured global model, native run R7 read the literal Library counter “36 visibles de 36 · Todos los documentos”, returned to Home with six projects, preserved all ten tabs and the active tab, then released its QA tab. The normal CLI completed with 12 successful Browser calls, 13 rounds and 71.7 seconds; it used no other tools and made no calls after release.
 
 This completes the bounded native check previously marked pending. It establishes this real workflow, not global autonomy, Writer feature parity or a controlled performance gain. Moving the installed extension to its canonical folder and portable runtime acceptance remain separate pending work. [Browser setup and limits](src/browser_relay/README.md).
+
+### Live Agora view
+
+The Agora server has an **En directo** view with one named, coloured cursor per active agent. It shares the Hub console view, showing source-timestamped task changes, path locks, observed tool commands and edit excerpts, and channel messages. Select a cursor to inspect its observed session or follow its target. Cursors rest after 60 seconds without a signal and disappear when the observed turn ends. Reduced-motion preferences apply to cursor travel and text reveal. This requires the Hub live API and a current build of `apps/agora`. Existing conversations, boards and task controls remain available.
