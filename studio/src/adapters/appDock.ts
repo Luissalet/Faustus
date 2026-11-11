@@ -161,6 +161,8 @@ export function useAppDockEvents(session: string | null, openPanel: () => void):
       }
     });
     source.addEventListener('open', event => {
+      // The browser also fires a bare open when the stream connects; only the server's message is a request.
+      if (!(event instanceof MessageEvent)) return;
       const d = parse(event);
       if (d.app) setSel(sid, { appId: String(d.app), name: String(d.name || d.app), url: String(d.url || '') });
       if (quiet) { quiet = false; return; }
