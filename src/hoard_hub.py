@@ -150,9 +150,10 @@ def hub_location() -> Dict[str, Any]:
 # ── talking to it ───────────────────────────────────────────────────────────
 
 def _call(method: str, path: str, body: Optional[dict] = None, *,
-          timeout: float = TIMEOUT_S) -> Tuple[Optional[int], Any, Dict[str, Any]]:
-    """``(status, json, location)``; status None when nothing answered."""
-    where = hub_location()
+          timeout: float = TIMEOUT_S, where: Optional[Dict[str, Any]] = None) -> Tuple[Optional[int], Any, Dict[str, Any]]:
+    """``(status, json, location)``; status None when nothing answered. ``where`` names another address for the hub
+    (the link towards the PC when Faustus runs on another machine)."""
+    where = where or hub_location()
     headers = {"Accept": "application/json"}
     token = _read_text(where["token_file"]) if where["token_file"] else ""
     if token:

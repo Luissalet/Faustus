@@ -484,8 +484,10 @@ def _slim_app(app: Dict[str, Any]) -> Dict[str, Any]:
 
 def list_apps() -> Dict[str, Any]:
     """The family's apps as the Hub lists them. Blocking: call it from a thread."""
-    from src import hoard_hub
-    status, body, where = hoard_hub._call("GET", "/api/apps")  # noqa: SLF001
+    from src import hoard_hub, hub_link
+    # On another machine the hub is the PC's, reached through the link; the apps it lists run on the PC, where the
+    # person's browser is, so their loopback addresses are the right ones to frame.
+    status, body, where = hoard_hub._call("GET", "/api/apps", where=hub_link.location())  # noqa: SLF001
     apps = body.get("apps") if isinstance(body, dict) else None
     if status != 200 or not isinstance(apps, list):
         return {"apps": [], "hub": where.get("url"), "available": False,
@@ -530,8 +532,8 @@ def find_app(query: str, apps: Optional[List[Dict[str, Any]]] = None) -> Optiona
 
 def start_through_hub(app_id: str, timeout: float = 90.0) -> bool:
     """Start the app through the Hub and wait until it reports running. Blocking."""
-    from src import hoard_hub
-    status, body, _ = hoard_hub._call("POST", f"/api/apps/{app_id}/start", {}, timeout=timeout)  # noqa: SLF001
+    from src import hoard_hub, hub_link
+    status, body, _ = hoard_hub._call("POST", f"/api/apps/{app_id}/start", {}, timeout=timeout, where=hub_link.location())  # noqa: SLF001
     if status is None or status >= 400:
         return False
     return not (isinstance(body, dict) and body.get("ok") is False)
@@ -540,8 +542,8 @@ def start_through_hub(app_id: str, timeout: float = 90.0) -> bool:
 def app_icon(app_id: str) -> Optional[tuple]:
     """``(bytes, content_type)`` of the app's icon from the Hub, or None. Blocking."""
     import urllib.request
-    from src import hoard_hub
-    where = hoard_hub.hub_location()
+    from src import hoard_hub, hub_link
+    where = hub_link.location()
     headers = {}
     token = hoard_hub._read_text(where["token_file"]) if where["token_file"] else ""  # noqa: SLF001
     if token:
