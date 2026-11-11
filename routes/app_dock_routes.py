@@ -93,7 +93,7 @@ def setup_app_dock_routes() -> APIRouter:
         body = await _json(request)
         try:
             return app_dock.report(body.get("session"), ready=body.get("ready"), tools=body.get("tools"),
-                                   context=body.get("context"), app=body.get("app"))
+                                   context=body.get("context"), app=body.get("app"), viewport=body.get("viewport"))
         except app_dock.DockError as exc:
             return _fail(exc)
 

@@ -50,3 +50,7 @@ body[data-fs-panel-resizing] .fs-appdock__frame { pointer-events: none; }
 .fs-appdock__starting { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12px; color: var(--fs-text-2); }
 .fs-appdock__empty { margin: 0; display: grid; justify-items: start; gap: var(--fs-space-3); font-size: 13px; color: var(--fs-text-2); }
 .fs-appdock__fail { margin: 0; font-size: 12px; color: var(--fs-danger); overflow-wrap: anywhere; }
+
+/* Maximising only makes sense where the chat sits beside the panel. */
+.fs-appdock__max { display: none; }
+@media (min-width: 1280px) { .fs-appdock__max { display: inline-flex; } }

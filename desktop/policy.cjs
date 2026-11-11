@@ -13,13 +13,18 @@ function externalNavigation(value){try{const url=new URL(value);return ['https:'
 // Ctrl+C, so the local page gets it without a prompt. clipboard-read, media
 // and notifications still ask. Everything else is denied.
 const PROMPTED=new Set(['media','notifications','clipboard-read']);
-function permissionCheck(permission,requestingOrigin,origin,granted){
+// An app docked beside the chat (App Dock) is a Hoard on a loopback port, framed by the Faustus page. It may
+// copy text (the same as Ctrl+C); nothing else is granted to it.
+function loopbackOrigin(value){try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)&&!url.username&&!url.password;}catch{return false;}}
+function permissionCheck(permission,requestingOrigin,origin,granted,pageUrl){
+  if(permission==='clipboard-sanitized-write'&&pageUrl&&localNavigation(pageUrl,origin)&&loopbackOrigin(requestingOrigin))return true;
   if(!localNavigation(requestingOrigin,origin))return false;
   if(permission==='clipboard-sanitized-write')return true;
   return Boolean(granted&&granted.has(permission));
 }
-function permissionRequest(permission,pageUrl,origin){
+function permissionRequest(permission,pageUrl,origin,requestingUrl){
   if(!localNavigation(pageUrl,origin))return 'deny';
+  if(permission==='clipboard-sanitized-write'&&requestingUrl&&loopbackOrigin(requestingUrl))return 'allow';
   if(permission==='clipboard-sanitized-write')return 'allow';
   if(PROMPTED.has(permission))return 'prompt';
   return 'deny';

@@ -10,7 +10,7 @@ call answers `no_host` at once.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from src import app_dock
 
@@ -82,7 +82,35 @@ def _page_args(action: str, a: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _render_view(snap: Dict[str, Any], outline: Any) -> str:
+_OUTLINE_CAP = 6000   # the bridge's default `max_chars` for app_read
+_NARROW_PX = 700
+
+
+def _outline_text(outline: Any) -> str:
+    if isinstance(outline, str):
+        return outline
+    if isinstance(outline, dict):
+        return str(outline.get("text") or outline.get("outline") or "")
+    return ""
+
+
+def _view_note(scope: str, text: str, page_text: Optional[str], viewport: Any) -> str:
+    """One line telling the model the outline may be incomplete, and why: cut at the cap, only the visible
+    screen (with how much more the whole page has), or a panel narrow enough for the app to hide parts."""
+    bits: List[str] = []
+    if len(text) >= _OUTLINE_CAP - 40:
+        bits.append(f"the outline was cut at {_OUTLINE_CAP} characters (app_act action=read with args max_chars for more)")
+    if scope == "screen" and page_text is not None:
+        extra = len([ln for ln in page_text.splitlines() if ln.strip()]) - len([ln for ln in text.splitlines() if ln.strip()])
+        if extra > 0:
+            bits.append(f"{extra} more lines exist outside the visible area (scroll, or call app_view with scope \"page\")")
+    w = (viewport or {}).get("w") if isinstance(viewport, dict) else None
+    if isinstance(w, int) and w < _NARROW_PX:
+        bits.append(f"the panel is only {w}px wide, so the app may be hiding parts of its layout (ask the person to widen or maximise it)")
+    return ("Note: " + "; ".join(bits) + ".") if bits else ""
+
+
+def _render_view(snap: Dict[str, Any], outline: Any, note: str = "") -> str:
     ctx = snap.get("context") or {}
     lines = [f"App docked: {snap.get('name')} ({snap.get('app_id')})"]
     for key in ("title", "view", "url", "selection", "summary"):
@@ -93,6 +121,8 @@ def _render_view(snap: Dict[str, Any], outline: Any) -> str:
     text = outline if isinstance(outline, str) else (outline.get("text") or outline.get("outline") or json.dumps(outline, ensure_ascii=False)) if isinstance(outline, dict) else ""
     if text:
         lines += ["", "Screen:", str(text)]
+    if note:
+        lines += ["", note]
     tools = snap.get("tools") or []
     own = [t for t in tools if not str(t.get("name", "")).startswith("app_")]
     if own:
@@ -138,7 +168,18 @@ class AppViewTool:
         if not res.get("ok"):
             e = res.get("error") or {}
             return _fail("app_view", str(e.get("code") or "error"), str(e.get("message") or "the app did not answer"))
-        return {"output": _render_view(snap, res.get("result")), "exit_code": 0, "result": {**snap, "outline": res.get("result")}}
+        text = _outline_text(res.get("result"))
+        page_text: Optional[str] = None
+        if scope == "screen":
+            # Compare with the whole page to know whether the visible screen left something out.
+            try:
+                full = await app_dock.call(sid, "app_read", {"scope": "page"}, app_dock.actor_for((ctx or {}).get("session_id")))
+                if full.get("ok"):
+                    page_text = _outline_text(full.get("result"))
+            except Exception:  # noqa: BLE001
+                page_text = None
+        note = _view_note(scope, text, page_text, snap.get("viewport"))
+        return {"output": _render_view(snap, res.get("result"), note), "exit_code": 0, "result": {**snap, "outline": res.get("result")}}
 
 
 class AppActTool:

@@ -2,12 +2,12 @@
 
 ## App Dock: lo que queda — 11-11-2026 (Ágora #2779)
 
-Hecho y comprobado en vivo: anfitrión, servidor, herramientas `app_open`/`app_view`/`app_act`, bloque de contexto por turno y pestaña «App» (FAUSTUS.md, sección del 11-11). Lo siguiente:
+Hecho y comprobado en vivo con las apps reales: anfitrión, servidor, herramientas `app_open`/`app_view`/`app_act`, contexto por turno, pestaña «App» con sitio (60 %, maximizar, ancho recordado), presencia (`cursor`), `changed` con una llamada MCP real y entrada desde Conectores (FAUSTUS.md, secciones del 11-11). Lo siguiente:
 
-- **Puente en los Hoards:** Darwin, Links y el resto no hablan `hoardDock:1` hasta que llegue el puente del Hub; mientras tanto se ven y se usan a mano y el agente recibe `not_ready`. Cuando llegue, repasar cada app con `app_view`.
+- **Hoards sin puente:** los que aún no cargan el puente del Hub se abren y se usan a mano y el agente recibe `not_ready`; repasar cada app con `app_view` cuando lo tengan.
 - **Herramientas propias por app:** cada Hoard debe anunciar en `dock/ready` las suyas (crear, buscar, exportar) para que el agente no dependa solo de pulsar y rellenar.
-- **Cursores en vivo en el Ágora:** que el servidor emita los eventos `cursor` (quién señala qué) y que varios agentes y la persona se vean a la vez; el anfitrión ya los reenvía a la página.
-- **`changed` en vivo:** ver el aviso llegar a una página real tras una llamada MCP del conector de la app (hoy solo con prueba unitaria).
+- **Cursores en vivo en el Ágora:** que varios agentes y la persona se vean a la vez en la misma app (hoy hay un cursor por chat).
+- **Capa por debajo de 1280 px en las demás pestañas:** una regla posterior (`aside.fs-panel { position: relative }`) deja el panel en una segunda fila bajo el chat; solo se corrigió para la pestaña App.
 
 ## Paneles con datos, revisión con peces, bucle de mejora y Bases — 10-11-2026 (faustus#2389, faustus#2400)
 

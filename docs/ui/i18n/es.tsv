@@ -11456,3 +11456,9 @@ Reload the app	Recargar la app
 Open in its own window	Abrir en su propia ventana
 Close the app	Cerrar la app
 The agent cannot act in this app yet. You can still use it here.	El agente aún no puede actuar en esta app. Tú sí puedes usarla aquí.
+Make the app fill the window	Ampliar la app a toda la ventana
+Bring the chat back (Esc)	Volver al chat (Esc)
+Open beside the chat	Abrir al lado del chat
+Send a first message and {name} will open beside it.	Envía un primer mensaje y {name} se abrirá a su lado.
+This app has no interface to open	Esta app no tiene interfaz que abrir
+Send a first message and the app picker will open beside it.	Envía un primer mensaje y el selector de apps se abrirá a su lado.

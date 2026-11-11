@@ -1,9 +1,9 @@
 import {
   AlertCircle, Calendar, CheckCircle2, ChevronDown, Download, ExternalLink, HelpCircle, Loader2,
-  Mail, MinusCircle, Play, Plug, Plus, PowerOff, RefreshCw, Settings2, Wrench, XCircle,
+  Mail, MinusCircle, PanelRight, Play, Plug, Plus, PowerOff, RefreshCw, Settings2, Wrench, XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, EmptyState, IconButton, QuickMenu, Skeleton, Toast } from '../../components';
 import {
   checkConnector,
@@ -88,6 +88,7 @@ function ConnectorRow({
   onEdit: () => void;
   onNotice: (msg: string) => void;
 }) {
+  const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   // Two-step removal inline (the pattern Settings › Behaviour modes uses)
@@ -167,6 +168,16 @@ function ConnectorRow({
           onClick={() => { if (recordId) void run('check', () => checkConnector(recordId)); }}
           testId="connector-check"
         />
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={PanelRight}
+          label={t('Open beside the chat')}
+          title={canOpen ? undefined : t('This app has no interface to open')}
+          disabled={!canOpen || !!busy}
+          onClick={() => navigate('/studio?dock=' + encodeURIComponent(c.preset_id || c.preset?.id || c.server?.name || c.id || ''))}
+          testId="connector-open-dock"
+        />
         <QuickMenu
           label={t('More actions')}
           icon={Settings2}
@@ -226,6 +237,7 @@ export function ConnectorsScreen() {
   const [presets, setPresets] = useState<ConnectorPreset[]>([]);
   const [failed, setFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const goStudio = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<{ preset: ConnectorPreset; existing?: Connector; initialValues?: Record<string, string> } | null>(null);
   const [showProfiles, setShowProfiles] = useState(false);
@@ -300,6 +312,7 @@ export function ConnectorsScreen() {
         </div>
         <div className="fs-set__row-actions">
           <IconButton icon={RefreshCw} label={t('Refresh (check now)')} onClick={() => reload(true)} testId="connectors-refresh" />
+          <Button size="sm" variant="secondary" icon={PanelRight} label={t('Open an app beside the chat')} onClick={() => goStudio('/studio?dock=pick')} testId="connectors-open-dock" />
           <Button size="sm" variant="ghost" icon={Settings2} label={t('Launch profiles')} onClick={() => setShowProfiles(true)} testId="connectors-profiles" />
           <Button size="sm" variant="secondary" icon={Download} label={t('Plugin marketplace')} aria-expanded={marketplaceOpen} aria-controls="plugin-marketplace-panel" onClick={() => setMarketplaceOpen((open) => !open)} testId="connectors-marketplace" />
           <Button size="sm" variant="primary" icon={Plus} label={t('Add')} onClick={() => setAddOpen((v) => !v)} testId="connectors-add" />

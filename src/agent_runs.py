@@ -1698,10 +1698,21 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
         # independent of whether/when `_schedule_evict` later frees `run`
         # from memory. No-op for `waiting_user` (not a terminal state).
         _record_finished_marker(session_id, run)
+        if _RUNS.get(session_id) is run:
+            _dock_presence(session_id, "idle")
         # Run is terminal — arm the grace timer so it (and its buffer) is
         # eventually freed even if nobody ever reconnects. subscribe() cancels
         # this on connect and re-arms on disconnect.
         _schedule_evict(session_id, run)
+
+
+def _dock_presence(session_id: str, state: str) -> None:
+    """Tell the app docked beside the chat that a turn started (`thinking`) or ended (`idle`)."""
+    try:
+        from src import app_dock
+        app_dock.presence(session_id, state)
+    except Exception:
+        pass
 
 
 def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] = None, label: str = "",
@@ -1752,6 +1763,7 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
     run.model = str(model or "")
     run.endpoint_url = str(endpoint_url or "")
     _RUNS[session_id] = run
+    _dock_presence(session_id, "thinking")
     if persistence_enabled():
         try:
             run.log = _RunLog(session_id, run)

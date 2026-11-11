@@ -48,7 +48,7 @@ export const openApp = (session: string, app: string) =>
   post<DockServerState & { started?: boolean }>('/api/app-dock/open', { session, app });
 export const closeApp = (session: string) => post<{ closed: boolean }>('/api/app-dock/close', { session });
 export const getDockState = (session: string) => request<DockServerState>('/api/app-dock/state?session=' + encodeURIComponent(session));
-export const postDockState = (body: { session: string; ready?: boolean; tools?: unknown; context?: unknown; app?: unknown }) =>
+export const postDockState = (body: { session: string; ready?: boolean; tools?: unknown; context?: unknown; app?: unknown; viewport?: { w: number; h: number } }) =>
   post<DockServerState>('/api/app-dock/state', body).catch(() => null);
 export const postDockResult = (body: { session: string; id: string; ok: boolean; result?: unknown; error?: unknown }) =>
   post<{ resolved: boolean }>('/api/app-dock/result', body).catch(() => null);

@@ -22,6 +22,13 @@ test('clipboard-read and media still need a prompt; anything else is denied',()=
   assert.equal(permissionCheck('geolocation',origin,origin,granted),false);
   assert.equal(permissionRequest('geolocation',origin+'/studio',origin),'deny');
   assert.equal(permissionCheck('clipboard-sanitized-write','https://evil.example',origin,granted),false);
+// A Hoard framed beside the chat (loopback) may copy text; a remote page or any other permission stays refused.
+assert.equal(permissionCheck('clipboard-sanitized-write','http://127.0.0.1:5233',origin,granted,origin+'/studio'),true);
+assert.equal(permissionCheck('clipboard-sanitized-write','http://127.0.0.1:5233',origin,granted,'https://evil.example/'),false);
+assert.equal(permissionCheck('clipboard-sanitized-write','https://evil.example',origin,granted,origin+'/studio'),false);
+assert.equal(permissionCheck('geolocation','http://127.0.0.1:5233',origin,granted,origin+'/studio'),false);
+assert.equal(permissionRequest('clipboard-sanitized-write',origin+'/studio',origin,'http://127.0.0.1:5233/x'),'allow');
+assert.equal(permissionRequest('clipboard-read',origin+'/studio',origin,'http://127.0.0.1:5233/x'),'prompt');
   assert.equal(permissionRequest('clipboard-sanitized-write','https://evil.example',origin),'deny');
 });
 test('a grant remembered from the prompt is enough for a later check',()=>{

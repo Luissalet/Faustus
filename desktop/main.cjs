@@ -278,11 +278,11 @@ else{
     const allowed=new Set();
     session.defaultSession.setPermissionCheckHandler((contents,permission,requestingOrigin)=>{
       const from=requestingOrigin||(liveContents(contents)&&contents.getURL())||'';
-      return permissionCheck(permission,from,origin,allowed);
+      return permissionCheck(permission,from,origin,allowed,(liveContents(contents)&&contents.getURL())||'');
     });
-    session.defaultSession.setPermissionRequestHandler(async(contents,permission,callback)=>{
+    session.defaultSession.setPermissionRequestHandler(async(contents,permission,callback,details)=>{
       const page=(liveContents(contents)&&contents.getURL())||'';
-      const decision=permissionRequest(permission,page,origin);
+      const decision=permissionRequest(permission,page,origin,details&&details.requestingUrl);
       if(decision==='allow'){callback(true);return;}
       if(decision!=='prompt'||!alive(mainWindow)){callback(false);return;}
       const response=await dialog.showMessageBox(mainWindow,{type:'question',title:'Faustus',message:`Allow ${permission} / ¿Permitir ${permission}?`,detail:'Only for this Faustus window. / Sólo para esta ventana de Faustus.',buttons:['Allow / Permitir','Deny / Denegar'],defaultId:1,cancelId:1});

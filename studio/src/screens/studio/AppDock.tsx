@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, LayoutGrid, RotateCw, X } from 'lucide-react';
+import { ExternalLink, LayoutGrid, Maximize2, Minimize2, RotateCw, X } from 'lucide-react';
 import { Button, IconButton } from '../../components';
 import {
   closeApp, iconUrl, listApps, openApp, postDockResult, postDockState, registerFrame, setSel, useDockSel,
@@ -125,9 +125,12 @@ function Picker({ sessionId, current, onPicked, onCancel }: {
   );
 }
 
-export default function AppDock({ sessionId, hidden, onMessage }: {
+export default function AppDock({ sessionId, hidden, maximized, onToggleMaximize, onMessage }: {
   sessionId: string | null;
   hidden?: boolean;
+  /** The app has the whole work area and the chat is a composer strip. */
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
   /** `dock/message` from the page: put text in the composer, and send it when asked. */
   onMessage: (text: string, send: boolean) => void;
 }) {
@@ -219,6 +222,21 @@ export default function AppDock({ sessionId, hidden, onMessage }: {
   useEffect(() => () => window.clearTimeout(timer.current), []);
   useEffect(() => { setLoaded(false); setBridge('pending'); readyRef.current = false; }, [sel?.appId, sel?.url, reloads]);
 
+  // How much room the page has, so app_view can say when a narrow panel hides parts of the app.
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || !sessionId || !sel || typeof ResizeObserver === 'undefined') return;
+    let timer2: number | undefined;
+    const send = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) void postDockState({ session: sessionId, viewport: { w: Math.round(r.width), h: Math.round(r.height) } });
+    };
+    const ro = new ResizeObserver(() => { window.clearTimeout(timer2); timer2 = window.setTimeout(send, 400); });
+    ro.observe(el);
+    send();
+    return () => { ro.disconnect(); window.clearTimeout(timer2); };
+  }, [sessionId, sel?.appId, sel?.url, reloads, loaded]);
+
   // The app follows the theme.
   useEffect(() => {
     const send = () => post({ type: 'dock/theme', theme: currentTheme() });
@@ -245,6 +263,12 @@ export default function AppDock({ sessionId, hidden, onMessage }: {
             <span className="fs-appdock__bartitle" title={sel.name}>{sel.name}</span>
             {bridge === 'ready' && <span className="fs-appdock__chip" data-state="agent" data-testid="app-dock-agent-chip">{t('Agent connected')}</span>}
             <span className="fs-appdock__grow" />
+            {onToggleMaximize && (
+              <span className="fs-appdock__max">
+                <IconButton icon={maximized ? Minimize2 : Maximize2} label={maximized ? t('Bring the chat back (Esc)') : t('Make the app fill the window')} size="sm"
+                  onClick={onToggleMaximize} testId="app-dock-maximize" />
+              </span>
+            )}
             <IconButton icon={LayoutGrid} label={t('Switch app')} size="sm" onClick={() => setPicking(true)} testId="app-dock-switch" />
             <IconButton icon={RotateCw} label={t('Reload the app')} size="sm" onClick={() => setReloads(n => n + 1)} testId="app-dock-reload" />
             <IconButton icon={ExternalLink} label={t('Open in its own window')} size="sm" onClick={() => window.open(sel.url, '_blank', 'noopener')} testId="app-dock-external" />
@@ -261,7 +285,6 @@ export default function AppDock({ sessionId, hidden, onMessage }: {
               src={sel.url}
               title={sel.name}
               allow="clipboard-read; clipboard-write; fullscreen"
-              allowFullScreen
               onLoad={onLoad}
               data-testid="app-dock-frame"
             />

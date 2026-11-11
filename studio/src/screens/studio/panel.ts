@@ -38,6 +38,12 @@ export interface PanelState {
   files: {workspace:string;path:string}[];
   drafts: Record<string,PanelDraft>;
   width: number;
+  /** The width the person chose by dragging, per tab (the App tab starts wider than the others). */
+  widths: Partial<Record<PanelTab, number>>;
+  /** The App tab takes the whole work area; the chat shrinks to a composer strip. */
+  maximized: boolean;
+  /** The App tab is at its automatic width (about 60% of the work area): nobody has dragged it yet. */
+  widthAuto: boolean;
   streamDoc: DocState | null;
   /** Lote 93: the issue open in the Board tab's detail view, or `null` for
    *  the list (ready + in_progress). Set by the Board tab's own row clicks,
@@ -86,7 +92,7 @@ export const initialPanel: PanelState = {
   live: false,
   doc: null,
   file: null,
-  documents: [], files: [], drafts: {}, width: 520, streamDoc: null,
+  documents: [], files: [], drafts: {}, width: 520, widths: {}, maximized: false, widthAuto: false, streamDoc: null,
   boardIssue: null,
   todos: [],
   todosLive: false,
@@ -97,6 +103,7 @@ export type PanelAction =
   | {type:'draft';key:string;draft:PanelDraft|null}
   | {type:'draft-saved';key:string;submitted:PanelDraft;base:string;revision?:string}
   | {type:'width';width:number}
+  | {type:'maximize';on?:boolean}
   | {type:'forget';key:string}
   | {type:'doc-saved';doc:DocState}
   | {type:'doc-renamed';id:string;title:string}
@@ -285,6 +292,25 @@ function reducePanel(state: PanelState, action: PanelAction): PanelState {
   }
 }
 
+const WIDTH_KEY = 'faustus.panel.width.';
+/** The widest the panel may be: the App tab may take most of the window, the others stay at 900. */
+export function maxPanelWidth(tab: PanelTab): number {
+  const w = typeof window === 'undefined' ? 1280 : window.innerWidth;
+  return tab === 'app' ? Math.max(900, Math.floor(w * 0.8)) : 900;
+}
+export const clampPanelWidth = (tab: PanelTab, width: number): number => Math.max(320, Math.min(maxPanelWidth(tab), Math.round(width)));
+function storedWidth(tab: PanelTab): number | null {
+  try {
+    const v = Number(localStorage.getItem(WIDTH_KEY + tab));
+    return Number.isFinite(v) && v >= 320 ? v : null;
+  } catch { return null; }
+}
+/** The App tab opens at about 60% of the window; every other tab at 520. A width the person dragged wins. */
+export function defaultPanelWidth(tab: PanelTab): number {
+  if (tab !== 'app') return 520;
+  const w = typeof window === 'undefined' ? 1280 : window.innerWidth;
+  return Math.round(w * 0.6);
+}
 export const fileKey=(file:{workspace:string;path:string})=>'file:'+JSON.stringify([file.workspace,file.path]);
 export const docKey=(doc:DocState)=>'doc:'+(doc.id || 'streaming');
 export function panelReducer(state:PanelState,action:PanelAction):PanelState {
@@ -315,7 +341,14 @@ export function panelReducer(state:PanelState,action:PanelAction):PanelState {
   }
   if(action.type==='doc-saved') return {...state,documents:[...state.documents.filter(d=>d.id!==action.doc.id),action.doc],doc:state.doc?.id===action.doc.id?action.doc:state.doc};
   if(action.type==='draft') {const drafts={...state.drafts};if(action.draft)drafts[action.key]=action.draft;else delete drafts[action.key];return {...state,drafts};}
-  if(action.type==='width') return {...state,width:Math.max(320,Math.min(900,action.width))};
+  if(action.type==='width') {
+    const width=clampPanelWidth(state.tab,action.width);
+    try{localStorage.setItem(WIDTH_KEY+state.tab,String(width));}catch{/* private mode */}
+    return {...state,width,widthAuto:false,widths:{...state.widths,[state.tab]:width}};
+  }
+  if(action.type==='maximize') return state.tab==='app'?{...state,maximized:action.on??!state.maximized}:state;
+  if(action.type==='session-switch') return {...initialPanel,widths:state.widths};
+  if(action.type==='close'&&state.maximized) return {...state,open:false,maximized:false};
   if(action.type==='forget') {
     if(state.drafts[action.key]) return state;
     const documents=state.documents.filter(d=>docKey(d)!==action.key),files=state.files.filter(f=>fileKey(f)!==action.key);
@@ -334,6 +367,12 @@ export function panelReducer(state:PanelState,action:PanelAction):PanelState {
   if(action.type==='event'&&state.open&&state.tab!=='outputs') {
     next.tab=state.tab;
     if(state.doc?.id&&next.doc?.id!==state.doc.id) next.doc=state.doc;
+  }
+  if(next.tab!==state.tab) {
+    // Each tab keeps the width the person gave it; the App tab starts wide.
+    next.width=clampPanelWidth(next.tab,next.widths[next.tab]??storedWidth(next.tab)??defaultPanelWidth(next.tab));
+    if(next.tab!=='app') next.maximized=false;
+    next.widthAuto=next.tab==='app'&&next.widths.app===undefined&&storedWidth('app')===null;
   }
   return next;
 }

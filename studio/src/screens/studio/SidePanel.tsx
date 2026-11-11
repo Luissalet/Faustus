@@ -9,7 +9,7 @@ import FileTree from './FileTree';
 import { currentTurnSteps, markCounts, splitHidden, turnFileMarks } from './file-activity';
 import { threeWayLines, threeWaySummary } from '../../adapters/fileConflict';
 import { Rich } from '../rich';
-import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
+import { autoOpenEnabled, setAutoOpen, maxPanelWidth, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
 import {
   currentText, discardDraft, findOccurrences, isDirty, markSaved, mergeSuggestions,
   redo as sessionRedo, replaceAt, sendComposerContext, setDraftText, setSelection, setSuggestions,
@@ -786,6 +786,17 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
   // The docked app keeps its page (and what the person was doing in it) while another tab is shown.
   const [appSeen,setAppSeen]=useState(false);
   useEffect(()=>{if(state.tab==='app')setAppSeen(true);},[state.tab]);
+  // Esc brings the chat back from a maximised app (Esc inside the framed page stays the page's own).
+  useEffect(()=>{
+    if(!state.maximized)return;
+    // Capture phase: the composer and the chat handle Esc themselves; an open menu or dialog still gets it first.
+    const onKey=(e:KeyboardEvent)=>{
+      if(e.key!=='Escape'||document.querySelector('[role="menu"],[role="dialog"],[aria-modal="true"]'))return;
+      dispatch({type:'maximize',on:false});
+    };
+    window.addEventListener('keydown',onKey,true);
+    return ()=>window.removeEventListener('keydown',onKey,true);
+  },[state.maximized,dispatch]);
   return (
     <aside className="fs-panel" data-testid="studio-panel" aria-label={t('Side panel')}>
       <div
@@ -794,7 +805,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
         aria-orientation="vertical"
         aria-label={t('Resize the panel')}
         aria-valuemin={320}
-        aria-valuemax={900}
+        aria-valuemax={maxPanelWidth(state.tab)}
         aria-valuenow={state.width}
         tabIndex={0}
         title={t('Drag to resize')}
@@ -803,12 +814,13 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
           // keeps the drag alive when the cursor leaves the 6px grip.
           e.preventDefault();
           const startX = e.clientX;
-          const startW = state.width;
+          // The width on screen, not the one asked for: the grid may be giving the panel less than it was told.
+          const startW = Math.round(e.currentTarget.parentElement?.getBoundingClientRect().width || state.width);
           const target = e.currentTarget;
           target.setPointerCapture(e.pointerId);
           document.body.setAttribute('data-fs-panel-resizing', ''); // a framed app must not swallow the drag
           const move = (ev: PointerEvent) => {
-            const next = Math.min(900, Math.max(320, Math.round(startW + (startX - ev.clientX))));
+            const next = Math.round(startW + (startX - ev.clientX)); // the reducer clamps it for the tab
             dispatch({ type: 'width', width: next });
           };
           const up = () => {
@@ -825,7 +837,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
         onKeyDown={(e) => {
           // Keyboard users resize with the arrows (the grip is a separator).
           const step = e.shiftKey ? 80 : 20;
-          if (e.key === 'ArrowLeft') { e.preventDefault(); dispatch({ type: 'width', width: Math.min(900, state.width + step) }); }
+          if (e.key === 'ArrowLeft') { e.preventDefault(); dispatch({ type: 'width', width: state.width + step }); }
           if (e.key === 'ArrowRight') { e.preventDefault(); dispatch({ type: 'width', width: Math.max(320, state.width - step) }); }
         }}
       />
@@ -865,7 +877,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
       {filesSeen&&workspace&&<div className="fs-workbench-files" hidden={state.tab!=='files'}><FileTree workspace={workspace} marks={fileMarks} refresh={settledSteps+(busy?'b':'i')} active={state.file?state.file.path:null} onOpen={path=>dispatch({type:'file',workspace,path})}/></div>}
-      {appSeen&&<AppDock sessionId={sessionId} hidden={state.tab!=='app'} onMessage={(text,send)=>onDockMessage?.(text,send)}/>}
+      {appSeen&&<AppDock sessionId={sessionId} hidden={state.tab!=='app'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onMessage={(text,send)=>onDockMessage?.(text,send)}/>}
       {state.tab==='progress'&&<ProgressTab state={state} turns={turns}/>}
       {state.tab === 'agents' && (
         <div className="fs-panel__body">

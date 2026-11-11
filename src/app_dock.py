@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import secrets
 import threading
 import time
@@ -51,6 +52,8 @@ _lock = threading.RLock()
 _state: Dict[str, Dict[str, Any]] = {}
 _subscribers: Dict[str, List["Subscriber"]] = {}
 _pending: Dict[str, "_Pending"] = {}
+# Who has shown presence (cursor `thinking`/`idle`) in each docked chat, so `gone` can reach them on close.
+_present: Dict[str, Dict[str, Dict[str, str]]] = {}
 
 
 class Subscriber:
@@ -98,7 +101,10 @@ def _clean_session(session: Any) -> str:
 def _public(rec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not rec:
         return {"app_id": None, "name": None, "url": None, "tools": [], "context": {}, "ready": False, "updated": None}
-    return {k: rec.get(k) for k in ("app_id", "name", "url", "tools", "context", "ready", "updated")}
+    out = {k: rec.get(k) for k in ("app_id", "name", "url", "tools", "context", "ready", "updated")}
+    if rec.get("viewport"):
+        out["viewport"] = dict(rec["viewport"])
+    return out
 
 
 def get(session: str) -> Dict[str, Any]:
@@ -116,6 +122,8 @@ def reset_for_tests() -> None:
     with _lock:
         _state.clear()
         _subscribers.clear()
+        _present.clear()
+        _listed_origins.clear()
         for p in list(_pending.values()):
             if not p.future.done():
                 try:
@@ -139,7 +147,13 @@ def dock(session: str, app_id: str, name: str, url: str) -> Dict[str, Any]:
 def close(session: str) -> Dict[str, Any]:
     sid = _clean_session(session)
     with _lock:
-        had = _state.pop(sid, None)
+        had = _state.get(sid)
+        gone = list(_present.pop(sid, {}).values()) if had else []
+    # The cursors leave before the page does.
+    for actor in gone:
+        emit(sid, "cursor", {"actor": actor, "state": "gone"})
+    with _lock:
+        _state.pop(sid, None)
     if had:
         emit(sid, "close", {"app": had.get("app_id")})
     # Calls waiting on a page that is gone end now.
@@ -148,7 +162,7 @@ def close(session: str) -> Dict[str, Any]:
 
 
 def report(session: str, *, ready: Optional[bool] = None, tools: Any = None, context: Any = None,
-           app: Any = None) -> Dict[str, Any]:
+           app: Any = None, viewport: Any = None) -> Dict[str, Any]:
     """What the host relayed from the page (``dock/ready``, ``dock/context``)."""
     sid = _clean_session(session)
     with _lock:
@@ -166,6 +180,13 @@ def report(session: str, *, ready: Optional[bool] = None, tools: Any = None, con
             rec["context"] = _clean_context(context)
         if ready is not None:
             rec["ready"] = bool(ready)
+        if isinstance(viewport, dict):
+            try:
+                w, h = int(viewport.get("w")), int(viewport.get("h"))
+                if 0 < w < 20000 and 0 < h < 20000:
+                    rec["viewport"] = {"w": w, "h": h}
+            except (TypeError, ValueError):
+                pass
         rec["updated"] = _now()
         return _public(rec)
 
@@ -271,6 +292,23 @@ def unsubscribe(sub: Subscriber) -> None:
     if gone:
         # Nobody can answer any more: calls in flight end now instead of at their timeout.
         _fail_pending(sub.session, "no_host", NO_HOST_MESSAGE)
+
+
+def presence(session_id: Optional[str], state: str) -> bool:
+    """Show that whoever runs ``session_id`` is working (``thinking``) or has finished (``idle``) in the docked
+    app. Sent only when the app is docked and its page answered the handshake, so a page without a bridge hears
+    nothing. Never raises: it runs on the edges of a turn."""
+    try:
+        sid = resolve_session(session_id)
+        with _lock:
+            rec = _state.get(sid)
+            if not rec or (state == "thinking" and not rec.get("ready")):
+                return False
+            actor = actor_for(session_id)
+            _present.setdefault(sid, {})[actor["id"]] = actor
+        return emit(sid, "cursor", {"actor": actor, "state": state}) > 0
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def has_host(session: str) -> bool:
@@ -391,11 +429,55 @@ def _app_key(value: Any) -> str:
     return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
 
 
+def _short(text: Any, limit: int) -> str:
+    """The first sentence or so of a description, cut at a word and marked."""
+    s = " ".join(str(text or "").split())
+    if len(s) <= limit:
+        return s
+    cut = s[:limit].rsplit(" ", 1)[0].rstrip(",;:.- ")
+    return cut + "\u2026"
+
+
+_listed_origins: set = set()
+_listed_at = 0.0
+
+
+def _origin_of(url: str) -> str:
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit(url)
+    except ValueError:
+        return ""
+    if u.scheme not in ("http", "https") or not u.hostname or u.hostname in ("127.0.0.1", "localhost", "::1"):
+        return ""
+    host = f"[{u.hostname}]" if ":" in u.hostname else u.hostname
+    return f"{u.scheme}://{host}" + (f":{u.port}" if u.port else "")
+
+
+def framable_origins() -> List[str]:
+    """Origins of the apps the Hub lists that are not on this machine (an app running on another host), for the
+    page's ``frame-src``. Read from what ``list_apps`` last saw; when that is old a refresh runs in the
+    background, so a page load never waits on the Hub."""
+    global _listed_at
+    if time.time() - _listed_at > 60:
+        _listed_at = time.time()
+        threading.Thread(target=_refresh_origins, name="app-dock-origins", daemon=True).start()
+    with _lock:
+        return sorted(_listed_origins)
+
+
+def _refresh_origins() -> None:
+    try:
+        list_apps()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _slim_app(app: Dict[str, Any]) -> Dict[str, Any]:
     state = str(app.get("state") or "unknown")
     return {"id": str(app.get("id") or ""), "name": str(app.get("name") or app.get("id") or ""),
             "url": str(app.get("url") or ""), "state": state,
-            "icon": bool(app.get("has_icon")), "purpose": str(app.get("purpose") or "")[:160],
+            "icon": bool(app.get("has_icon")), "purpose": _short(app.get("purpose"), 160),
             "launchable": bool(app.get("launchable", True)),
             "bridge": bool(app.get("agent_contract") or (app.get("family") or {}).get("copilot"))}
 
@@ -411,7 +493,20 @@ def list_apps() -> Dict[str, Any]:
     # Absorbed identities ("foreign") have no server of their own; an app that is down and cannot be launched cannot be shown.
     rows = [_slim_app(a) for a in apps if isinstance(a, dict) and a.get("id") and a.get("url")
             and a.get("state") != "foreign" and (a.get("state") == "running" or a.get("launchable", True))]
-    rows.sort(key=lambda r: r["name"].lower())
+    if os.environ.get("FAUSTUS_APP_DOCK_FIXTURES", "").strip().lower() in ("1", "true", "yes"):
+        # Test pages that speak (or lack) the dock protocol; never listed unless the test flag is set.
+        base = os.environ.get("FAUSTUS_APP_DOCK_FIXTURE_URL", "http://127.0.0.1:7014").rstrip("/")
+        rows += [
+            {"id": "stub", "name": "Stub Hoard", "url": base + "/app_dock_stub.html", "state": "running", "icon": False,
+             "purpose": "Test page that speaks the dock protocol", "launchable": True, "bridge": True},
+            {"id": "plain", "name": "Plain app", "url": base + "/app_dock_plain.html", "state": "running", "icon": False,
+             "purpose": "Test page without the bridge", "launchable": True, "bridge": False},
+        ]
+    # Running apps first, then alphabetical.
+    rows.sort(key=lambda r: (r["state"] != "running", r["name"].lower()))
+    with _lock:
+        _listed_origins.clear()
+        _listed_origins.update(o for o in (_origin_of(r["url"]) for r in rows) if o)
     return {"apps": rows, "hub": where.get("url"), "available": True}
 
 
@@ -517,6 +612,31 @@ def context_block(session: Optional[str]) -> str:
     return "\n".join(lines)
 
 
+def _server_names(server: str) -> List[str]:
+    """What an MCP server in a tool name (``mcp__<server>__<tool>``) is called: the segment itself, which for a
+    saved server is its id, plus the preset of its connector and the server's own name."""
+    names = [server]
+    try:
+        from src import connector_sidecar
+        entry = connector_sidecar.get_connector_for_server(server)
+        if entry and entry.get("preset_id"):
+            names.append(str(entry["preset_id"]))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from core.database import McpServer, SessionLocal
+        db = SessionLocal()
+        try:
+            row = db.query(McpServer).filter(McpServer.id == server).first()
+            if row is not None and getattr(row, "name", None):
+                names.append(str(row.name))
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001
+        pass
+    return names
+
+
 def note_mcp_call(session: Optional[str], qualified_tool: str) -> bool:
     """Tell the host that the docked app's data just changed when ``mcp__<server>__<tool>`` belongs to its connector."""
     if not session or not qualified_tool.startswith("mcp__"):
@@ -533,8 +653,8 @@ def note_mcp_call(session: Optional[str], qualified_tool: str) -> bool:
     if rec.get("name"):
         ids.add(_app_key(rec["name"]))
         ids.add(_app_key(str(rec["name"]).replace("'s", "")))
-    sk = _app_key(server)
-    if sk not in ids and sk.replace("hoard", "") not in {i.replace("hoard", "") for i in ids}:
+    shorts = {i.replace("hoard", "") for i in ids}
+    if not any(_app_key(n) in ids or _app_key(n).replace("hoard", "") in shorts for n in _server_names(server)):
         return False
     emit(sid, "changed", {"server": server, "tool": tool})
     return True

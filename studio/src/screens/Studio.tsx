@@ -105,7 +105,7 @@ import { ModelPicker } from './ModelPicker';
 import { PresetPicker } from './PresetPicker';
 import { ChatToolsMenu, ChatToolWorkspace, chatWorkspace, type ChatWorkspace } from './studio/ChatTools';
 import { toolHref } from '../shell/toolPlacement';
-import { setNavHidden } from '../shell/navSize';
+import { navHidden, setNavHidden } from '../shell/navSize';
 import { flipNav } from '../shell/navToggle';
 import { delegationLabel, genFromArgs, helpMarkdown, parseCommand, parseDelegation, resolveCommand } from './studio/commands';
 import * as cmd from '../adapters/commands';
@@ -122,7 +122,7 @@ import { Composer, type Knobs } from './studio/Composer';
 import { CoordinationStatus } from './studio/CoordinationStatus';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, restoreTerminalStatus, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
-import { useAppDockEvents } from '../adapters/appDock';
+import { openApp as openDockApp, setSel as setDockSel, useAppDockEvents } from '../adapters/appDock';
 import { AppWindow } from 'lucide-react';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
@@ -695,6 +695,49 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   // App Dock: the agent's app_open opens the App tab; its calls and `changed` reach the framed page.
   useAppDockEvents(sessionId, () => panelDispatch({ type: 'open', tab: 'app' }));
+  // `?dock=<app>`: the Hoards screen (or a link) asks for an app beside this chat.
+  const [paneKeep, setPaneKeep] = useState(false);
+  useEffect(() => { if (!(panel.open && panel.tab === 'app')) setPaneKeep(false); }, [panel.open, panel.tab]);
+  const dockWanted = params.get('dock');
+  useEffect(() => {
+    if (!dockWanted) return;
+    if (!sessionId) { say(t(dockWanted === 'pick' ? 'Send a first message and the app picker will open beside it.' : 'Send a first message and {name} will open beside it.', { name: dockWanted })); return; }
+    if (dockWanted === 'pick') {
+      // Just the picker: the App tab opens and the person chooses.
+      panelDispatch({ type: 'open', tab: 'app' });
+      const next = new URLSearchParams(params); next.delete('dock'); setParams(next, { replace: true });
+      return;
+    }
+    let live = true;
+    openDockApp(sessionId, dockWanted)
+      .then(snap => {
+        if (!live) return;
+        setDockSel(sessionId, { appId: snap.app_id || dockWanted, name: snap.name || dockWanted, url: snap.url || '' });
+        panelDispatch({ type: 'open', tab: 'app' });
+      })
+      .catch(e => { if (live) say(t('Could not open {name}: {reason}', { name: dockWanted, reason: (e as Error).message })); })
+      .finally(() => { if (live) { const next = new URLSearchParams(params); next.delete('dock'); setParams(next, { replace: true }); } });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dockWanted, sessionId]);
+  // A maximised app also puts the app's own sidebar away, and brings it back as it was.
+  const navWas = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (panel.maximized) {
+      navWas.current = navHidden();
+      if (!navWas.current) setNavHidden(true);
+    } else if (navWas.current === false) {
+      setNavHidden(false);
+      navWas.current = null;
+    } else {
+      navWas.current = null;
+    }
+  }, [panel.maximized]);
+  // A maximised app leaves the chat as a strip: show its last line.
+  useEffect(() => {
+    if (!panel.maximized) return;
+    requestAnimationFrame(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; });
+  }, [panel.maximized]);
   const chatTool = chatWorkspace(params.get('tool'));
   const openChatWorkspace = useCallback((tool: ChatWorkspace | null, projectId?: string) => {
     const next = new URLSearchParams(params);
@@ -3756,6 +3799,12 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       setDrawerOpen((v) => !v);
       return;
     }
+    // While the App tab is at its automatic width the list steps aside to give the app room (narrow windows
+    // only); asking for the list brings it back for as long as the App tab stays.
+    if (panel.open && panel.tab === 'app' && panel.widthAuto && !paneKeep && window.matchMedia('(min-width: 1280px) and (max-width: 1699px)').matches) {
+      setPaneKeep(true);
+      return;
+    }
     setPaneHidden((v) => {
       writeJson(PANE_KEY, { hidden: !v });
       return !v;
@@ -3881,7 +3930,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   }) ?? null;
 
   return (
-    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden || chatTool ? 'hidden' : undefined} data-panel={panel.open || chatTool || undefined} data-chat-tool={chatTool || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout}>
+    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden || chatTool ? 'hidden' : undefined} data-panel={panel.open || chatTool || undefined} data-chat-tool={chatTool || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout} data-panel-tab={panel.open ? panel.tab : undefined} data-width-auto={panel.open && panel.tab === 'app' && panel.widthAuto ? 'true' : undefined} data-pane-keep={paneKeep || undefined} data-maximized={panel.open && panel.maximized && panel.tab === 'app' ? 'true' : undefined}>
       <SessionsPane
         sessions={groupMode ? groupSessions : sessions}
         currentId={sessionId}

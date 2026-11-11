@@ -255,6 +255,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 if _hub.scheme in ('http', 'https') and _hub.hostname and _hub.hostname not in ('127.0.0.1', 'localhost', '::1'):
                     _hh = f'[{_hub.hostname}]' if ':' in _hub.hostname else _hub.hostname
                     frame_sources += f' {_hub.scheme}://{_hh}:*'
+                from src.app_dock import framable_origins as _framable_origins
+                for _origin in _framable_origins():
+                    if _origin not in frame_sources:
+                        frame_sources += f' {_origin}'
             except Exception:
                 pass
             if route_path.rstrip('/') == '/agora':

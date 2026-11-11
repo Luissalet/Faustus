@@ -14,6 +14,8 @@ from src import app_dock, tool_index, tool_schemas
 from src.agent_tools import TOOL_HANDLERS, TOOL_TAGS
 from src.agent_tools import app_dock_tools
 
+_REAL_LIST_APPS = app_dock.list_apps   # the autouse fixture replaces it; a few tests need the real one
+
 NAMES = ["app_open", "app_view", "app_act"]
 APPS = [
     {"id": "darwin", "name": "Darwin's Hoard", "url": "http://127.0.0.1:5233", "state": "running", "icon": True,
@@ -475,3 +477,130 @@ def test_mcp_server_lists_the_three_tools_with_a_session():
         assert "session" in t.inputSchema["properties"] and t.inputSchema["required"][0] == "session"
     bad = run(app_dock_server.call_tool("app_view", {}))
     assert bad.isError is True
+
+
+# ---------------------------------------------------------------------------
+# second pass: the Hub's list, presence, what app_view says about what it could not see
+# ---------------------------------------------------------------------------
+def _hub_body():
+    return {"apps": [
+        {"id": "zeta", "name": "Zeta Hoard", "url": "http://127.0.0.1:5300", "state": "stopped", "launchable": True,
+         "purpose": "Z " * 120},
+        {"id": "beta", "name": "Beta Hoard", "url": "http://127.0.0.1:5301", "state": "running", "purpose": "short"},
+        {"id": "alpha", "name": "Alpha Hoard", "url": "http://127.0.0.1:5302", "state": "running", "purpose": "a"},
+        {"id": "gone", "name": "Absorbed", "url": "http://127.0.0.1:5303", "state": "foreign"},
+        {"id": "dead", "name": "Dead", "url": "http://127.0.0.1:5304", "state": "stopped", "launchable": False},
+        {"id": "remote", "name": "Remote Hoard", "url": "https://spark3.example.ts.net:5221/products/", "state": "running"},
+    ]}
+
+
+def test_list_apps_orders_running_first_hides_foreign_and_fixtures(monkeypatch):
+    from src import hoard_hub
+    monkeypatch.setattr(hoard_hub, "_call", lambda *a, **k: (200, _hub_body(), {"url": "http://hub"}))
+    monkeypatch.delenv("FAUSTUS_APP_DOCK_FIXTURES", raising=False)
+    rows = _REAL_LIST_APPS()["apps"]
+    assert [r["id"] for r in rows] == ["alpha", "beta", "remote", "zeta"]            # running first, then A-Z; no foreign, no dead
+    assert not any(r["id"] in ("stub", "plain") for r in rows)
+    zeta = [r for r in rows if r["id"] == "zeta"][0]
+    assert len(zeta["purpose"]) <= 161 and zeta["purpose"].endswith("\u2026")         # cut at a word and marked
+    assert app_dock.framable_origins() == ["https://spark3.example.ts.net:5221"]      # an app on another host may be framed
+
+
+def test_fixture_pages_are_listed_only_with_the_test_flag(monkeypatch):
+    from src import hoard_hub
+    monkeypatch.setattr(hoard_hub, "_call", lambda *a, **k: (200, _hub_body(), {"url": "http://hub"}))
+    monkeypatch.setenv("FAUSTUS_APP_DOCK_FIXTURES", "1")
+    ids = [r["id"] for r in _REAL_LIST_APPS()["apps"]]
+    assert "stub" in ids and "plain" in ids
+
+
+def test_presence_thinking_idle_and_gone_reach_the_host(monkeypatch):
+    async def go():
+        sub = app_dock.subscribe("s1")
+        app_dock.dock("s1", "darwin", "Darwin's Hoard", "http://127.0.0.1:5233")
+        await sub.queue.get()                                              # open
+        assert app_dock.presence("s1", "thinking") is False               # the page has not answered: nothing is sent
+        app_dock.report("s1", ready=True)
+        assert app_dock.presence("s1", "thinking") is True
+        assert app_dock.presence("s1", "idle") is True
+        app_dock.close("s1")
+        await asyncio.sleep(0.05)                                          # the host queue is fed through the loop
+        seen = []
+        while not sub.queue.empty():
+            seen.append(await sub.queue.get())
+        return seen
+    seen = run(go())
+    states = [(e["event"], e["data"].get("state")) for e in seen]
+    assert states == [("cursor", "thinking"), ("cursor", "idle"), ("cursor", "gone"), ("close", None)]   # gone before close
+    assert seen[0]["data"]["actor"]["name"] == "Faustus" and seen[0]["data"]["actor"]["color"].startswith("#")
+    assert app_dock.presence("s1", "idle") is False                        # nothing docked any more
+
+
+def test_a_turn_starting_and_ending_shows_presence(monkeypatch):
+    from src import agent_runs
+    sent = []
+    monkeypatch.setattr(app_dock, "presence", lambda sid, state: sent.append((sid, state)) or True)
+
+    async def agen():
+        yield "data: hi\n\n"
+        yield "data: [DONE]\n\n"
+
+    async def go():
+        run_ = agent_runs.start("turn-sess", agen())
+        await run_.task
+    run(go())
+    assert sent[0] == ("turn-sess", "thinking") and sent[-1] == ("turn-sess", "idle")
+
+
+def test_viewport_is_kept_and_cleaned():
+    app_dock.dock("s1", "darwin", "Darwin", "http://127.0.0.1:5233")
+    assert "viewport" not in app_dock.get("s1")
+    app_dock.report("s1", viewport={"w": 612.4, "h": 700})
+    assert app_dock.get("s1")["viewport"] == {"w": 612, "h": 700}
+    app_dock.report("s1", viewport={"w": "x", "h": 5})
+    app_dock.report("s1", viewport={"w": -3, "h": 5})
+    assert app_dock.get("s1")["viewport"] == {"w": 612, "h": 700}
+
+
+def test_view_note_says_when_the_outline_is_incomplete():
+    note = app_dock_tools._view_note
+    assert note("screen", "a\nb", "a\nb", {"w": 900, "h": 600}) == ""
+    assert note("page", "a\nb", None, None) == ""
+    n = note("screen", "a\nb", "a\nb\nc\nd\ne", None)
+    assert "3 more lines" in n and 'scope "page"' in n and "\n" not in n
+    assert "cut at 6000" in note("page", "x" * 5990, None, None)
+    narrow = note("screen", "a", "a", {"w": 420, "h": 800})
+    assert "420px" in narrow and "maximise" in narrow
+    assert narrow.startswith("Note: ") and narrow.endswith(".")
+
+
+def test_app_view_adds_the_note_for_a_narrow_panel_and_a_cut_screen():
+    def answer(tool, args):
+        if tool == "app_read":
+            return True, ("Visible\n[e1] button \"A\"" if args.get("scope") == "screen" else "Visible\n[e1] button \"A\"\nBelow\n[e2] link \"B\"")
+        return True, {}
+    start, seen = _host("chat-v", answer)
+
+    async def go():
+        task = await start()
+        await app_dock_tools.AppOpenTool().execute({"app": "darwin"}, {"session_id": "chat-v"})
+        app_dock.report("chat-v", viewport={"w": 380, "h": 700})
+        v = await app_dock_tools.AppViewTool().execute({}, {"session_id": "chat-v"})
+        full = await app_dock_tools.AppViewTool().execute({"scope": "page"}, {"session_id": "chat-v"})
+        task.cancel()
+        return v, full
+    v, full = run(go())
+    notes = [ln for ln in v["output"].splitlines() if ln.startswith("Note:")]
+    assert len(notes) == 1 and "2 more lines" in notes[0] and "380px" in notes[0]
+    assert [c[1].get("scope") for c in seen if c[0] == "app_read"] == ["screen", "page", "page"]
+    assert "more lines" not in full["output"] and "380px" in full["output"]
+
+
+def test_note_mcp_call_knows_a_saved_server_by_the_connector_that_owns_it(monkeypatch):
+    # A saved MCP server is named in tool names by its id, not by the app: the connector says which app it is.
+    from src import connector_sidecar
+    monkeypatch.setattr(connector_sidecar, "get_connector_for_server",
+                        lambda server_id, redact=True: {"preset_id": "darwin"} if server_id == "78efbfda" else None)
+    app_dock.dock("s1", "darwin", "Darwin's Hoard", "http://x")
+    assert app_dock.note_mcp_call("s1", "mcp__78efbfda__add_discovery") is True
+    assert app_dock.note_mcp_call("s1", "mcp__deadbeef__add_discovery") is False
