@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.6
+version: 1.0.7
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -39,6 +39,14 @@ Use for a short Android journey on an available emulator/device through native A
 ## Pitfalls
 
 A connected server is not proof that the project exposes it. A project workspace must lie inside its configured root; a UI-only task can use that root without editing repository files, whereas code changes require a properly configured isolated worktree. Keep registration, binding and workspace failures separate from emulator failures. Do not reconnect a healthy device to fix a coordinator error. Do not claim physical ARM64 testing from an x86 emulator, successful tapping as visual verification, or build availability as installation proof.
+
+## Generated Images and Sharing
+
+Distinguish app preview, generated image, Android share sheet and recipient delivery. An export button or code proves no PNG. Inspect the attached-image thumbnail for the full composition, including groups outside the preview's scroll viewport; it does not certify original dimensions, bytes or every label.
+
+Use a named disposable QA fixture. A blank template omits selections; answers preserve their marks. Cancel the share sheet for a prepare-without-sending test, confirm the busy state clears, remove only the fixture and verify the return state. Selecting a recipient is a separate action.
+
+If retrieval is blocked, preserve its reason and report the unverified layer. Do not evade the restriction through another surface, protocol or capture method. Android generation does not certify a web download.
 
 ## Verification
 
