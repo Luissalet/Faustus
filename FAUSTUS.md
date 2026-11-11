@@ -1,5 +1,11 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## HoardDex entrega455 — 11-11-2026
+
+Main c1b73c97c69b80fc33259d46202e740300861e9b, versionCode455. Tarea2594, fuente 646c381e436f04c815be33bafbc5b0a382c966a4, CAS1 aprobado. Búsqueda rápida y acciones compartidas de tableros en italiano, alemán, francés, portugués de Brasil y hebreo: 33 claves por perfil, 165 valores, 314/2857 y 2543 pendientes por perfil. No cambian los 281 valores anteriores ni nombres, títulos personales, corpus o doce idiomas de datos. Revisión verificó 495 combinaciones de resolvedor, 12 pruebas y los consumidores reales.
+
+Main454/455: 986 pruebas, tipos, web, MCP38/1889. WEB454 verificó los cinco recuentos, búsqueda hebrea, sin coincidencias, número25, Escape, plantilla con rótulo Copiar código, duplicación y borrado de ambos tableros propios. No hubo envío ni cambio de portapapeles. NATIVE454 verificó francés/hebreo con datos ES, teclado, número25 Pikachu Eléctrico, tablero propio con rótulo y acciones localizadas, guardado mediante Enter y borrado. Restaurados ES/datos automáticos/Arceus/Mi colección 1/1025/226/vacío/cuadrícula. x86_64 exacto455 instalado, arranque frío visto; ARM64 compilado, sin teléfono físico. Runtime exacto y17140 medios en ambas ABI. APK locales c1b73c97, 204 JSON/202 históricos exactos, retirados sólo par453 y candidato454 propio. Sin push. Manual455: otras761 entradas y estilos exactos. Evidencia Research/hoarddex-shared-ui2594. No se declara paridad global ni certificación profesional. Sin nueva inferencia de Faustus; sigue siendo local sin cuota de proveedor.
+
 ## HoardDex entrega453 — 11-11-2026
 
 Main 14cbf18c62f7ecd0279c1fe374aab9a4c19b5744, versionCode453. Tarea2586, fuente a26afd912123bda8d9a3b4056d53c4f898102cfd, revisión2 aprobada. Se añaden 141 textos por perfil IT/DE/FR/PT-BR/HE (705), de 140 a 281/2857, 2576 por perfil pendientes. Tableros, encuentros e intercambios, Juego base, rótulos de idiomas de datos y Radar D/P. Los cinco títulos DLC y 14 claves de encuentros usadas por la capa de datos no cuentan como traducciones de interfaz. Se conservan los 140 valores previos, 12 idiomas de datos y el corpus. El revisor comprobó 75 combinaciones del selector y 12 pruebas.
