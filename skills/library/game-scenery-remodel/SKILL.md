@@ -4,6 +4,7 @@ description: Rebuild low-poly game scenery (buildings, towers, ruins, props) as 
 version: 1.0.0
 category: engineering
 tags: [3d, blender, mesh, modelado, malla, remodel, retopology, quads, game-assets, diorama, impresion-3d, texturas]
+apps: [phidias]
 status: published
 source: imported
 ---
