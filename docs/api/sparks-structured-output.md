@@ -24,8 +24,10 @@ reads this cache; this feature adds no OpenAPI request per completion.
 An endpoint may therefore use the existing tolerant parsing path before its
 first metadata sync, after expiry, or when metadata is unavailable.
 
-`local_structured_output=off`, hosted/unmanaged providers, unsupported
-endpoints and calls carrying tools keep their existing behavior. Native
+`local_structured_output=off`, hosted/unmanaged providers and unsupported
+endpoints keep their existing behavior. Calls carrying tools use the native
+function grammar described in [Native tool schemas](../GUIDED_TOOL_CALLS.md).
+Native
 Ollama and managed llama.cpp retain their fields and policies. llama.cpp's
 schema thinking suppression remains local to that backend; Sparks keeps the
 caller's High/Max effort, clear-thinking setting and explicit budgets,
