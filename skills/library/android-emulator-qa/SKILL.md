@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.11
+version: 1.0.12
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -10,7 +10,7 @@ source: imported
 
 ## When to Use
 
-Use for a short Android journey on an available emulator/device through native Android MCP or authorized ADB. Installing this skill supplies a procedure, not a bridge or permission to reset a device. Accessibility text proves labels/navigation, not visual polish.
+Run short journeys through native Android MCP or authorized ADB. Use accessibility text for labels and navigation, and inspect pixels for visual polish.
 
 ## Procedure
 
@@ -20,11 +20,13 @@ Use for a short Android journey on an available emulator/device through native A
 
    Check the execution host. A model on a Spark can plan or review while Windows runs ADB. Resolve the serial on the emulator host or its connected Android tool. If neither is reachable, send acceptance checks to the device owner through the task thread and request the receipt in step 9.
 
-3. Match the MCP device ID to its ADB serial and confirm the foreground package. Use the absolute SDK executable and explicit serial on each ADB command. Locate the executable once. Verify boot and package version.
+3. Match the MCP device ID to its ADB serial. Use the absolute SDK executable and explicit serial. Verify boot and package version.
 
    For an authorized update, allow a bounded transfer deadline suited to the device and APK. If installation stalls, check the original ADB process and matching package session before retrying. Record elapsed time and phase. Once installed, check version. For exact identity, resolve the APK with `pm path` and compare SHA-256. After a cold start, `am start -W` confirms activity launch. Wait within a separate deadline for the actual task content. At expiry capture the visible screen and scoped logs before further input.
 
-4. Observe the actual foreground package, tab, game, save, language, filters and counters. Record the return destination and expected values. Prove restoration only for states actually observed. Keep evidence compact.
+   Before coordinate input and after installation, app switches or dialogs, confirm both foreground observations. Run `python <skill-directory>/scripts/adb_foreground.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package>`. Exit 0 matches the package, including launcher aliases. On failure, record the observation, re-open the authorized app and refresh controls.
+
+4. Record the baseline tab, game, save, language, filters and counters. Use observed values to verify restoration.
 
 5. Use advertised tools and fresh references; labelled View nodes can be actionable tabs. After navigation or any layout change, get a new element listing before choosing the next control. A reference is scoped to that observation. A click followed by an element listing can be a sequential batch when the batch schema supports it; choose the next target only after inspecting that readback. Do not queue multiple navigations using references from one old tree. Record the action and the visible result. A dispatch acknowledgement may precede rendering: use a bounded fresh observation for a pending transition before repeating a mutation. For mobile_batch_commands, use listElementsAtEnd=false and an explicit mobile_list_elements_on_screen with format=text; automatic full JSON trees can exhaust the model context. Read the exact query and results after typing and after IME submit, which can autocorrect names. If only hiding the visible keyboard, use Back. Refresh before tapping uncovered results. A successful tap sent to a covered row can type into the keyboard instead of opening that row.
 
