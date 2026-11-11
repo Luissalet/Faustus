@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.10
+version: 1.0.11
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -16,7 +16,9 @@ Use for a short Android journey on an available emulator/device through native A
 
 1. Agree on one outcome and owner. Claim the device for the exact task before input. Project, actor, space and resources must match. Report a rejected binding to its owner even if a separate device lock succeeds. Use the exact identity and parameters. Keep work scoped to the task. Start an independent native chat after the prior turn ends, preserving history and using the revision-checked actor binding.
 
-2. Reuse a connected Android MCP server. Discover Android tools once and load only those needed. Use an injected global skill even if project-local skills_list is empty. Keep the emulator visible if requested, including inside Android Studio. Use Android tools or authorized ADB. Leave the current emulator running during discovery.
+2. Discover Android MCP tools once and load only those needed. Use the injected global skill even when project-local skills_list is empty. Keep the running emulator visible if requested, including inside Android Studio.
+
+   Check the execution host. A model on a Spark can plan or review while Windows runs ADB. Resolve the serial on the emulator host or its connected Android tool. If neither is reachable, send acceptance checks to the device owner through the task thread and request the receipt in step 9.
 
 3. Match the MCP device ID to its ADB serial and confirm the foreground package. Use the absolute SDK executable and explicit serial on each ADB command. Locate the executable once. Verify boot and package version.
 
@@ -34,11 +36,11 @@ Use for a short Android journey on an available emulator/device through native A
 
    Focus is not proof that the keyboard is visible. On Android, mIsInputViewShown can remain true while the actual IME InsetsSource has visible=false. Confirm the keyboard's current visibility and target window before using Back to dismiss it; Back with an already hidden keyboard can leave the current tool. If navigation changes, reconcile the new screen before resuming.
 
-7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. For resized images, convert image coordinates to device pixels using the reported dimensions. Opening a screenshot does not imply the model has inspected its pixels; explicitly separate a textual readback, a saved image and a visual inspection. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
+7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. For resized images, convert image coordinates to device pixels using the reported dimensions. Distinguish textual readback, saved images and inspected pixels. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
 
 8. Before declaring success, get a fresh compact listing after the last navigation. Require the intended screen/modal title, requested condition and uncertainty/source note together now. A species heading on another tab, earlier output or brief is insufficient. Capture this state and inspect its actual pixels; file creation alone proves no content. If pixels are unavailable to the model, mark text-only and checkpoint for visual review. Return via observed controls; close modal/keyboard and read the required destination, game, save, filters and counters. An unchanged count does not prove unchanged filters. State any intended difference from baseline. Never silently edit saved data or settings to manufacture restoration.
 
-9. Release ownership after the final readback and publish one concise receipt in the task's thread: installed build, route, condition actually read, input count, final state and any failures. Complete the task only when its acceptance conditions are met. A terminal model answer and an unverified harness outcome are separate facts. Preserve the failure receipt for the next improvement; avoid an extra terminal audit that merely repeats already sufficient mobile evidence.
+9. After the final readback, release ownership and post one receipt with the execution host, serial, installed version and SHA if verified, route, observed condition, inputs, restored baseline and failures. Finish when the receipt meets the acceptance checks. Keep a failure receipt for follow-up. A model answer without device observations is a plan.
 
 ## Pitfalls
 
