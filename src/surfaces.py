@@ -198,3 +198,22 @@ async def pizarra_edit(session: str, board_id: str, ops: Any, actor: Dict[str, s
     if err is not None:
         out["error"] = {"code": err.code, "message": err.message}
     return out
+
+
+async def sheet_write(session: str, sheet_id: str, ops: Any, actor: Dict[str, str]) -> Dict[str, Any]:
+    """Run ``ops`` on a workbook and tell the windows. Returns ``{meta, results, error?}``."""
+    from src import hoja
+    st = current(session, "hoja")
+    view = {"tab": st.get("tab"), "sel": st.get("sel")} if st and st.get("id") == sheet_id else None
+    meta, results, ch, err = await asyncio.to_thread(hoja.edit, sheet_id, ops, view=view)
+    target = meta.get("session_id") or session
+    if not ch.empty():
+        on_screen = current(target, "hoja")
+        if not on_screen or on_screen.get("id") != sheet_id:
+            emit(target, "open", {"kind": "hoja", "id": sheet_id, "title": meta["title"], "focus": False})
+        emit(target, "cells", {"kind": "hoja", "id": sheet_id, "rev": meta["rev"], "origin": "agent", "actor": actor, **ch.payload()})
+        await move_cursor(target, "hoja", sheet_id, actor, ch.cursor)
+    out: Dict[str, Any] = {"meta": meta, "results": results}
+    if err is not None:
+        out["error"] = {"code": err.code, "message": err.message}
+    return out

@@ -1315,6 +1315,26 @@ EXAMPLES: Dict[str, List[str]] = {
         "organiza lo seleccionado como un árbol",
         "lay the board out as a flow",
     ],
+    "sheet_create": [
+        "hazme una hoja de cálculo para controlar los gastos del mes",
+        "build me a tracker for the product launch tasks",
+        "monta un presupuesto en una hoja con totales",
+    ],
+    "sheet_read": [
+        "mira lo que hay en la hoja",
+        "qué celdas tengo seleccionadas",
+        "read the Historical tab",
+    ],
+    "sheet_write": [
+        "añade una pestaña de previsión a partir de la de Histórico",
+        "pon en negrita la cabecera y formato euro a la columna C",
+        "add a bar chart of sales by month",
+    ],
+    "sheet_query": [
+        "cuánto suma la columna Importe",
+        "ventas totales por región",
+        "how many rows are Done",
+    ],
     "panel_create": [
         "hazme un panel con mis conversaciones por día y los tokens por modelo",
         "build me a sidebar panel that shows my usage and cost",

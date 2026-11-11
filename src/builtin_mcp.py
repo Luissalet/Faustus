@@ -172,6 +172,7 @@ _BUILTIN_SERVERS = {
     "app_dock": ("mcp_servers/app_dock_server.py", "Built-in: App Dock"),
     # Pizarra / Hoja (src/pizarra.py, src/hoja.py): the same tools as the chat, over the running Faustus.
     "pizarra": ("mcp_servers/pizarra_server.py", "Built-in: Pizarra whiteboard"),
+    "sheet": ("mcp_servers/sheet_server.py", "Built-in: Hoja spreadsheet"),
     # User panels (src/panels.py) and Loop Cards (src/loop_card.py): the same tools as the chat.
     "panels": ("mcp_servers/panels_server.py", "Built-in: User panels"),
     "loop_cards": ("mcp_servers/loop_cards_server.py", "Built-in: Loop cards"),

@@ -132,6 +132,7 @@ from .uncertainty_tool import UncertaintyNextObservationTool
 from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOfficeTool, ReviewDeskTool
 from .app_dock_tools import AppOpenTool, AppViewTool, AppActTool
 from .pizarra_tools import PizarraCreateTool, PizarraReadTool, PizarraEditTool, PizarraArrangeTool
+from .sheet_tools import SheetCreateTool, SheetReadTool, SheetWriteTool, SheetQueryTool
 from .panel_tools import (
     PanelCreateTool, PanelUpdateTool, PanelGetTool, PanelListTool, PanelDeleteTool,
     PanelCheckTool, PanelVersionsTool, PanelRestoreTool,
@@ -431,6 +432,10 @@ TOOL_HANDLERS = {
     "pizarra_read": PizarraReadTool().execute,
     "pizarra_edit": PizarraEditTool().execute,
     "pizarra_arrange": PizarraArrangeTool().execute,
+    "sheet_create": SheetCreateTool().execute,
+    "sheet_read": SheetReadTool().execute,
+    "sheet_write": SheetWriteTool().execute,
+    "sheet_query": SheetQueryTool().execute,
     # User panels (src/panels.py) and Loop Cards (src/loop_card.py).
     "panel_create": PanelCreateTool().execute,
     "panel_update": PanelUpdateTool().execute,
@@ -701,6 +706,10 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "pizarra_read",
              "pizarra_edit",
              "pizarra_arrange",
+             "sheet_create",
+             "sheet_read",
+             "sheet_write",
+             "sheet_query",
              # User panels -- src/agent_tools/panel_tools.py; Loop Cards -- src/agent_tools/loop_card_tools.py.
              "panel_create",
              "panel_update",

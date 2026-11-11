@@ -696,6 +696,8 @@ _register({"app_act"}, ToolEffect.WRITE_PRIVATE)
 # Pizarra / Hoja (src/pizarra.py, src/hoja.py): files under DATA_DIR/surfaces; the window shows the change as it lands.
 _register({"pizarra_read"}, ToolEffect.READ_PRIVATE)
 _register({"pizarra_create", "pizarra_edit", "pizarra_arrange"}, ToolEffect.WRITE_PRIVATE)
+_register({"sheet_read", "sheet_query"}, ToolEffect.READ_PRIVATE)
+_register({"sheet_create", "sheet_write"}, ToolEffect.WRITE_PRIVATE)
 # User panels (src/panels.py): pages stored under DATA_DIR/panels. panel_check opens the page headless
 # on the loopback server and writes a screenshot next to it; nothing runs on the server itself.
 _register({"panel_list", "panel_get", "panel_versions"}, ToolEffect.READ_PRIVATE)

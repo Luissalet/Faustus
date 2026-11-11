@@ -1356,6 +1356,8 @@ app.include_router(setup_app_dock_routes())
 # Pizarra (src/pizarra.py) and Hoja (src/hoja.py): work surfaces the person and the agent edit together.
 from routes.pizarra_routes import setup_pizarra_routes
 app.include_router(setup_pizarra_routes())
+from routes.sheet_routes import setup_sheet_routes
+app.include_router(setup_sheet_routes())
 # User panels (src/panels.py) and Loop Cards (src/loop_card.py).
 from routes.panel_routes import setup_panel_routes
 app.include_router(setup_panel_routes())

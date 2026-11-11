@@ -82,3 +82,5 @@ httpx2
 sgp4>=2.23
 # headless browser for src/web_explain (then: python -m playwright install chromium)
 playwright>=1.40
+XlsxWriter>=3.2.0
+openpyxl>=3.1.2
