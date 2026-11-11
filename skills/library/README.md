@@ -157,3 +157,13 @@ and offers them as prompts. A skill improved here reaches those copies on
 their next refresh. `game-scenery-remodel` is the procedure for the
 remodelling studio: taking a game model apart, choosing what each piece is
 rebuilt as, comparing against the original and correcting.
+
+## Procedures for the family's apps
+
+Thirty procedures cover the everyday work of the family's apps: decks from a brief, company dossiers, recipes and menus,
+photo curation, scheduling with constraints, discoveries, engagements, household inventory, exam plans, job
+applications, paperwork and deadlines, the household ledger, read-later digests, plate heat and stress checks, data
+cleaning, follow-ups with people, fine-tuning and evaluation, voxel models, electronics checks, team and battle
+analysis, manuscript continuity, print-ready models, consistent characters, model serving on a small cluster, screen
+capture, shared project files, catalogue and sales metrics, game libraries, personal context and depth cameras. Each
+names the app whose tools it drives (`apps`), so it reaches that app and no other unless asked for by name.
