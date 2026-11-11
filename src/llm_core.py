@@ -2961,6 +2961,28 @@ def _apply_parallel_tool_calls(payload: Dict, url: str) -> None:
         payload.setdefault("parallel_tool_calls", True)
 
 
+def _apply_strict_tool_schemas(payload: Dict, url: str) -> None:
+    """Ask verified managed servers to constrain native tool arguments.
+
+    Strict auto mode preserves prose and batches while the server compiles
+    each function's original parameters into its native tool-call grammar.
+    Copy the wrappers because the caller retains its schemas for later rounds.
+    """
+    if not payload.get("tools") or not _structured_output_enabled() or not is_sparks_url(url):
+        return
+    from src.engine_controls import json_schema_capability
+    if not json_schema_capability(url, _endpoint_id_for_url(url)).get('strict_tools'):
+        return
+    tools = []
+    for tool in payload["tools"]:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        if isinstance(function, dict) and tool.get("type") == "function" and isinstance(function.get("parameters"), dict):
+            tool = dict(tool, function=dict(function))
+            tool["function"].setdefault("strict", True)
+        tools.append(tool)
+    payload["tools"] = tools
+
+
 def _apply_openrouter_session(payload: Dict, session_id: Optional[str]) -> None:
     """OpenRouter keeps a chat on the same upstream provider when requests
     carry a `session_id` (sticky routing), so its prompt cache is found
@@ -7038,6 +7060,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         if tools:
             payload["tools"] = _alias_harmony_tools(tools, model)
             _apply_parallel_tool_calls(payload, target_url)
+            _apply_strict_tool_schemas(payload, target_url)
         elif tool_choice_none:
             payload["tool_choice"] = "none"
         _apply_openai_cache_key(payload, target_url, session_id)

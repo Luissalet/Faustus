@@ -135,13 +135,48 @@ def _openapi_json_schema(document, api_base: str) -> bool:
     return False
 
 
+def _openapi_strict_tools(document, api_base: str) -> bool:
+    """Check strict function arguments on the served chat request itself."""
+    if not isinstance(document, dict) or not isinstance(document.get('paths'), dict):
+        return False
+    path = urlsplit(api_base).path.rstrip('/') + '/chat/completions'
+    route = document['paths'].get(path)
+    post = route.get('post') if isinstance(route, dict) else None
+    if not isinstance(post, dict):
+        return False
+    for body in _schema_variants(post.get('requestBody'), document):
+        content = body.get('content')
+        media = content.get('application/json') if isinstance(content, dict) else None
+        if not isinstance(media, dict):
+            continue
+        for request in _schema_variants(media.get('schema'), document):
+            fields = _schema_properties(request)
+            if fields is None:
+                continue
+            for tools in _schema_variants(fields.get('tools'), document):
+                if tools.get('type') != 'array':
+                    continue
+                for tool in _schema_variants(tools.get('items'), document):
+                    properties = _schema_properties(tool)
+                    if properties is None:
+                        continue
+                    for function in _schema_variants(properties.get('function'), document):
+                        parameters = _schema_properties(function)
+                        if parameters is not None and 'parameters' in parameters and all(
+                            _schema_type(parameters.get(name), kind, document)
+                            for name, kind in (('strict', 'boolean'), ('name', 'string'))
+                        ):
+                            return True
+    return False
+
+
 def json_schema_capability(base_url: str, endpoint_id: str) -> dict[str, Any]:
     """Hot-path cache read only. Metadata refresh is owned by Sparks.sync()."""
     key = (endpoint_id, _schema_base(base_url))
     cached = _schema_cache.get(key) if isinstance(endpoint_id, str) else None
     if cached and time.monotonic() - cached['at'] < _SCHEMA_TTL:
         return {k: v for k, v in cached.items() if k != 'at'}
-    return {'json_schema': False, 'status': 'unverified', 'source': 'served_openapi'}
+    return {'json_schema': False, 'strict_tools': False, 'status': 'unverified', 'source': 'served_openapi'}
 
 
 def _openapi_native_thinking(document, api_base: str, *, exact_route: bool = False) -> bool:
@@ -220,7 +255,7 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
                 _schema_cache.pop(key, None)
                 previous = None  # a different served model must establish its own proof
             base = key[1]
-            status, supported, native_thinking = 'unavailable', False, False
+            status, supported, native_thinking, strict_tools = 'unavailable', False, False, False
             try:
                 if fetch_openapi is not None:
                     document = fetch_openapi(base)
@@ -230,6 +265,7 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
                         document = json.load(response)
                 supported = _openapi_json_schema(document, base)
                 native_thinking = _openapi_native_thinking(document, base)
+                strict_tools = _openapi_strict_tools(document, base)
                 status = 'verified' if supported else 'unsupported'
             except Exception:
                 pass
@@ -242,6 +278,7 @@ def refresh_json_schema(endpoints: list[dict[str, Any]], *, fetch_openapi=None) 
             elif status != 'unavailable' and not native_thinking:
                 _invalidate_direct_history(base)
             _schema_cache[key] = {'at': time.monotonic(), 'models': models, 'json_schema': supported,
+                                  'strict_tools': strict_tools,
                                   'status': status, 'source': 'served_openapi', 'native_thinking': native_thinking,
                                   'history_native_thinking': history_native}
             while len(_schema_cache) > _SCHEMA_MAX_ENDPOINTS:
