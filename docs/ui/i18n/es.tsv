@@ -11668,3 +11668,5 @@ Include data	Incluir datos
 Show original identifiers	Mostrar identificadores originales
 Issuer	Emisor
 Offset	Desplazamiento
+Status pulse bar	Barra de pulso de estado
+Shows activity at the top of the window: a glow for this conversation and a travelling pulse for background work.	Muestra la actividad en el borde superior de la ventana: un resplandor para esta conversación y un pulso que se desplaza cuando hay trabajo en segundo plano.

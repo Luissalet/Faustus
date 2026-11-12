@@ -1,5 +1,9 @@
 # Objetivos acordados
 
+## Pulso de estado de Studio — Ágora #3124
+
+La línea de 3 px distingue reposo, inferencia en la conversación abierta y trabajo en segundo plano. Incluye movimiento reducido, un ajuste de Apariencia y consulta mediante `hoard_status_pulse`.
+
 ## Hoja: lo que queda — 12-11-2026 (Ágora #2792)
 
 Hecho y comprobado en vivo: motor de fórmulas (142 funciones, español e inglés), `.xlsx` y CSV, interfaz completa con cuadrícula virtualizada, herramientas `sheet_*`, cursor del agente, contexto por turno, SSE, Biblioteca, `/hoja`, apertura de `.xlsx` y `.csv`, tres turnos reales de modelo (FAUSTUS.md, sección del 12-11). Lo siguiente:
