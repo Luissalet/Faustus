@@ -203,7 +203,7 @@ def build_report(snapshot: dict) -> dict:
             continue
         accounts = pref.get("caldav_accounts") or []
         legacy = pref.get("caldav") or {}
-        if not accounts and legacy.get("url"):
+        if "caldav_accounts" not in pref and legacy.get("url"):
             accounts = [legacy]
         for j, acc in enumerate(accounts):
             add("sync", f"caldav:{i}:{j}", "CalDAV", acc.get("url", ""),
@@ -213,14 +213,19 @@ def build_report(snapshot: dict) -> dict:
                 data="Calendar events and changes exchanged with the calendar service.")
     search = cfg.get("search_provider") or "searxng"
     research_search = cfg.get("research_search_provider")
-    providers = {"brave": "https://api.search.brave.com", "duckduckgo": "https://duckduckgo.com",
+    from src.constants import SEARXNG_INSTANCE
+
+    providers = {
+        "searxng": cfg.get("search_url") or SEARXNG_INSTANCE,
+        "firecrawl": cfg.get("firecrawl_url") or os.environ.get("FIRECRAWL_API_URL") or "http://localhost:3002",
+        "brave": "https://api.search.brave.com", "duckduckgo": "https://duckduckgo.com",
                  "google": "https://www.googleapis.com", "google_pse": "https://www.googleapis.com",
                  "tavily": "https://api.tavily.com", "serper": "https://google.serper.dev"}
     for provider in dict.fromkeys([search, *(cfg.get("search_fallback_chain") or []), research_search]):
         if not provider or provider == "disabled":
             continue
-        add("web", "search:" + provider, "Web search: {provider}", cfg.get("search_url") if provider == search and cfg.get("search_url") else providers.get(provider, ""),
-            scope="external" if provider == "searxng" else None,
+        add("web", "search:" + provider, "Web search: {provider}", providers.get(provider, ""),
+            kind="proxy" if provider in {"searxng", "firecrawl"} else "auto",
             enabled=search != "disabled" or provider == research_search, provider=provider, data="Search queries; a self-hosted search engine still queries external engines.")
     add("web", "web_fetch", "Web pages", scope="external", data="Requested URLs and queries sent to the sites visited by web and browser tools.")
     add("web", "prior_art", "Source lookup", "https://api.github.com", enabled=cfg.get("prior_art_enabled", True), data="Search terms and source lookup requests.")
@@ -228,8 +233,8 @@ def build_report(snapshot: dict) -> dict:
         provider = cfg.get(component + "_provider", "disabled")
         ep = next((e for e in endpoints if e["id"] == str(provider).removeprefix("endpoint:")), None) if str(provider).startswith("endpoint:") else None
         add("auxiliary", component, component.upper(), ep.get("base_url", "") if ep else cfg.get("tts_prospero_url", "") if component == "tts" and provider == "prospero" else "",
-            kind=ep.get("endpoint_kind") if ep else "auto", scope=None if ep or provider == "prospero" else "unknown" if provider == "command" else "machine",
-            enabled=cfg.get(component + "_enabled", True) and provider != "disabled", data="Text to speak." if component == "tts" else "Audio to transcribe.")
+            kind=ep.get("endpoint_kind") if ep else "auto", scope="machine" if provider in {"local", "piper", "parakeet", "system"} else None,
+            enabled=cfg.get(component + "_enabled", True) and bool(provider and provider != "disabled") and (ep is None or ep.get("is_enabled", True)), data="Text to speak." if component == "tts" else "Audio to transcribe.")
     embed = snapshot.get("embedding", {})
     add("auxiliary", "embedding", "Embeddings", embed.get("url") or os.environ.get("EMBEDDING_URL") or f"http://{os.environ.get('LLM_HOST', 'localhost')}:11434",
         data="Text fragments used for retrieval; local embedding fallback stays on this machine.")

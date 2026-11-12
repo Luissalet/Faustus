@@ -1,5 +1,9 @@
 # Objetivos acordados
 
+## Destinos de los datos — Ágora #3126
+
+El informe bajo demanda identifica destinos configurados y las conversaciones y proyectos que los usan. Está disponible en Ajustes, terminal y MCP. El aviso de Studio acompaña a los adjuntos cuando pueden salir del equipo. Las rutas indirectas se muestran según lo que permite conocer la configuración.
+
 ## Pulso de estado de Studio — Ágora #3124
 
 La línea de 3 px distingue reposo, inferencia en la conversación abierta y trabajo en segundo plano. Incluye movimiento reducido, un ajuste de Apariencia y consulta mediante `hoard_status_pulse`.

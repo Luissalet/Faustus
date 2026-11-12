@@ -30,6 +30,8 @@ mantienen las reglas de disponibilidad del escritorio.
 
 La navegación se organiza por trabajo: acciones y documentos en el chat, repositorios dentro del proyecto, aplicaciones especializadas en Hoards y cinco áreas de ajustes con búsqueda. Todas las herramientas y los datos guardados siguen accesibles. Consulta [navegación](docs/ui/navigation.md).
 
+En Ajustes → Destinos de los datos puedes consultar los destinos configurados de modelos, conectores, canales, búsqueda y sincronizaciones. Studio avisa al adjuntar archivos cuando el modelo puede recibirlos fuera del equipo. El mismo informe está disponible mediante MCP y terminal. [Destinos de los datos](docs/api/data_boundary.md).
+
 La barra de pulso de Studio refleja la inferencia de la conversación abierta y la actividad en segundo plano. Se puede apagar en Ajustes → Apariencia. La herramienta MCP `hoard_status_pulse` permite consultar el estado.
 
 La sesión de navegador propia usa MCP y una extensión en las pestañas existentes

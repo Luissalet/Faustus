@@ -54,8 +54,8 @@ export function DataBoundarySection() {
     <section className="fs-set__card">
       <div className="fs-set__card-head"><h2>{t('Data destinations')}</h2></div>
       <p className="fs-prose">{t('See what can leave the machine running Faustus under its current configuration.')}</p>
-      <div className="fs-boundary__actions"><Button size="sm" icon={RefreshCw} disabled={loading} onClick={() => setRevision(n => n + 1)}>{t(loading ? 'Loading…' : 'Refresh report')}</Button>
-        <Button size="sm" icon={Download} disabled={!report || loading || error} onClick={download}>{t('Download report')}</Button></div>
+      <div className="fs-boundary__actions"><Button size="sm" icon={RefreshCw} loading={loading} label={t('Refresh report')} onClick={() => setRevision(n => n + 1)} />
+        <Button size="sm" icon={Download} disabled={!report || loading || error} label={t('Download report')} onClick={download} /></div>
       {loading && !report && <Skeleton height="100px" label={t('Loading…')} />}
       {error && <p role="alert" className="fs-prose">{t('The report could not be refreshed. Retry to read the current configuration.')}</p>}
       {report && <><p className="fs-boundary__metadata">{t(error ? 'Previous report' : 'Computed at')}: <time dateTime={report.computed_at}>{new Date(report.computed_at).toLocaleString()}</time> · {t('Active profile')}: {t(PROFILES[report.profile] ?? report.profile)}</p>
