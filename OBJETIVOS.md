@@ -1,5 +1,17 @@
 # Objetivos acordados
 
+## Hoja: lo que queda — 12-11-2026 (Ágora #2792)
+
+Hecho y comprobado en vivo: motor de fórmulas (142 funciones, español e inglés), `.xlsx` y CSV, interfaz completa con cuadrícula virtualizada, herramientas `sheet_*`, cursor del agente, contexto por turno, SSE, Biblioteca, `/hoja`, apertura de `.xlsx` y `.csv`, tres turnos reales de modelo (FAUSTUS.md, sección del 12-11). Lo siguiente:
+
+- **`OFFSET`, matrices dinámicas (derrame) y constantes de matriz** dentro de `IRR` y similares.
+- **Lista de valores en el filtro** (hoy se escribe una condición) y filtros por varias columnas a la vez.
+- **Gráficos arrastrables** y con ejes y leyendas editables desde la interfaz.
+- **Validación de datos, celdas combinadas y tablas dinámicas.**
+- **Cursores de varias personas** en la misma hoja.
+- **Búsqueda de herramientas sin índice semántico:** cuando el modelo de incrustaciones no está cargado, `lookup_tools` cae a coincidencia de palabras en el orden del catálogo y puede poner `manage_spreadsheet` o herramientas de MCP antes que `sheet_create`; conviene ordenar ese último recurso por número de coincidencias.
+- **Rendimiento con GPU:** medir el desplazamiento de 100 000 filas en un navegador con aceleración; sin GPU ronda 100 ms por fotograma.
+
 ## Pizarra: lo que queda — 12-11-2026 (Ágora #2792)
 
 Hecho y comprobado en vivo: formato `.canvas`, interfaz completa, herramientas `pizarra_*`, cursor del agente, contexto por turno, SSE, Biblioteca, `/pizarra` y apertura de `.canvas` (FAUSTUS.md, sección del 12-11). Lo siguiente:
