@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { chatActivity, EMPTY_ACTIVITY, type ChatActivity } from '../adapters/chat';
 import { groupActivity, sessionActivity, type SessionActivity } from '../lib/activity';
+import { getDisplay } from './display';
 
 export { groupActivity, sessionActivity };
 export type { SessionActivity };
@@ -44,7 +45,9 @@ let timer = 0;
 let reading = false;
 
 function anythingLive(activity: ChatActivity): boolean {
-  return activity.running.length > 0 || activity.awaiting.length > 0 || !!activity.backgroundJobs?.some((job) => job.active);
+  return activity.running.length > 0 || activity.awaiting.length > 0
+    || Object.keys(activity.workers ?? {}).length > 0 || (activity.consoleWorkers ?? 0) > 0
+    || !!activity.backgroundJobs?.some((job) => job.active);
 }
 
 function schedule(delay: number): void {
@@ -66,7 +69,19 @@ async function tick(force = false): Promise<void> {
   }
   reading = true;
   try {
+    // The console already exposes observed worker states. It is independent
+    // of chat health: a missing Hub must not hide a live conversation.
+    const consoleRead = getDisplay().pulseBar
+      ? import('../adapters/agora').then(({ getConsole }) => getConsole(''))
+        .then(({ workers }) => workers.filter((w) => w.state === 'running' || w.state === 'stopping').length)
+        .catch(() => useActivityStore.getState().activity.consoleWorkers ?? 0)
+      : Promise.resolve(0);
     const next = await chatActivity();
+    // Do not hold up chat dots while the Hub is unavailable.
+    void consoleRead.then((consoleWorkers) => {
+      if (watchers) useActivityStore.getState().apply({ ...useActivityStore.getState().activity, consoleWorkers });
+    });
+    next.consoleWorkers = useActivityStore.getState().activity.consoleWorkers;
     if (watchers) useActivityStore.getState().apply(next);
     schedule(anythingLive(next) ? LIVE_MS : IDLE_MS);
   } catch {

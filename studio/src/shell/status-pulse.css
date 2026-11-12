@@ -1,0 +1,56 @@
+/* Fixed overlay: the shell keeps its height and all controls receive input. */
+.fs-pulse {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 3px;
+  z-index: 70;
+  pointer-events: none;
+  background: var(--fs-border);
+  opacity: 0.55;
+  overflow: clip;
+}
+
+.fs-pulse[data-state='inferring'] {
+  background: var(--fs-brand);
+  box-shadow: 0 0 10px var(--fs-ember-strong);
+  opacity: 1;
+  animation: fs-pulse-breathe 1.6s var(--fs-ease) infinite alternate;
+}
+
+/* A queued run or approval keeps a quiet, static accent instead of breathing. */
+.fs-pulse[data-state='idle'][data-waiting] {
+  background: var(--fs-brand);
+  opacity: 0.45;
+}
+
+.fs-pulse[data-state='background'] {
+  opacity: 1;
+}
+
+.fs-pulse[data-state='background']::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inline-size: 28%;
+  background: linear-gradient(90deg, transparent, var(--fs-brand), transparent);
+  animation: fs-pulse-travel 2.4s linear infinite;
+}
+
+@keyframes fs-pulse-breathe {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
+}
+
+@keyframes fs-pulse-travel {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(360%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-pulse[data-state='inferring'] { animation: none; }
+  .fs-pulse[data-state='background']::after {
+    animation: none;
+    inset-inline-start: 36%;
+  }
+}

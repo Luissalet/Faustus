@@ -232,6 +232,9 @@ export function AppearanceSection({ say }: { say: (t: string) => void }) {
         <Field label={t('Welcome screen')} htmlFor="dp-welcome" help={t('The greeting and the suggestions on an empty conversation.')}>
           <Toggle id="dp-welcome" checked={display.welcome} onChange={(v) => setDisplay({ welcome: v })} />
         </Field>
+        <Field label={t('Status pulse bar')} htmlFor="dp-pulse" help={t('Shows activity at the top of the window: a glow for this conversation and a travelling pulse for background work.')}>
+          <Toggle id="dp-pulse" checked={display.pulseBar} onChange={(v) => setDisplay({ pulseBar: v })} />
+        </Field>
         <Field label={t('Full-width transcript')} htmlFor="dp-wide" help={t('Use the whole window instead of a reading column.')}>
           <Toggle id="dp-wide" checked={display.fullWidth} onChange={(v) => setDisplay({ fullWidth: v })} />
         </Field>

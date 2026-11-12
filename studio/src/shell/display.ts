@@ -13,8 +13,10 @@ export interface Display {
   blur: boolean;
   welcome: boolean;
   fullWidth: boolean;
+  /** The three-pixel state line along the top edge of the window. */
+  pulseBar: boolean;
 }
-const DEFAULTS: Display = { thinking: true, emojis: true, blur: false, welcome: true, fullWidth: false };
+const DEFAULTS: Display = { thinking: true, emojis: true, blur: false, welcome: true, fullWidth: false, pulseBar: true };
 const KEY = 'faustus_studio_display';
 
 function read(): Display {

@@ -12,6 +12,7 @@ import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } fr
 import { Skeleton } from '../components';
 import { NotFound } from '../screens/NotFound';
 
+import { StatusPulse } from './StatusPulse';
 import { BrandMark } from './BrandMark';
 import { NotificationTray } from './notifications-tray';
 import { ApprovalBell, ApprovalInbox } from './ApprovalInbox';
@@ -441,6 +442,7 @@ export function AppShell() {
   return (
     <BrowserRouter>
       <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={navMode} data-peek={(navMode === 'hidden' && peek) || undefined} data-theme-source={theme.name !== 'studio' && theme.colors ? 'faustus' : undefined} data-resizing={nav.resizing || undefined} style={nav.style}>
+        <StatusPulse />
         <a className="fs-skip-link" href="#fs-main">
           {t('Skip to content')}
         </a>
