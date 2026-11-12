@@ -70,7 +70,7 @@ function startQuickQuestion({BrowserWindow, globalShortcut, ipcMain, net, screen
     const revision = placementRevision;
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await net.fetch(base() + '/api/auth/settings', {signal: controller.signal});
+      const response = await net.fetch(base() + '/api/auth/settings', {credentials: 'include', signal: controller.signal});
       if (!response.ok) return;
       const settings = await response.json();
       if (stopped || revision !== placementRevision) return;
