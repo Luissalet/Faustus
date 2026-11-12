@@ -18197,3 +18197,17 @@ El bucle del agente ya enviaba `parallel_tool_calls`, ensamblaba llamadas fragme
 - **Catálogo «Flujos de agente por app»** (Skills): el Hub sirve los procedimientos de las estanterías actuales por `/api/skills/flows`. El panel usa el buscador y los botones de Skills, secciones por app con icono y número de flujos, nombres legibles y descripción de cada skill. Las filas despliegan el disparador, los pasos y las salidas con formato Markdown; permiten leer la skill completa o abrir su estantería. Las apps sin flujos quedan agrupadas al final. Los errores de conexión se traducen al idioma de la interfaz. Consultar el catálogo no ejecuta los flujos ni arranca apps.
 - **Pruebas:** 386 pasan en `test_hoja`, `test_hoja_surface`, `test_pizarra`, `test_surfaces_studio_js`, `test_tool_serve`, `test_agent_harness` y `test_app_dock`.
 
+
+## Family connectors with Faustus on a Spark
+
+Family app connectors resolve their MCP transport through the PC Hub when
+`FAUSTUS_HUB_LINK` points to that machine. The Hub launches the installed
+manifest's bridge on the PC and Faustus uses its existing Streamable HTTP client
+with the link credential. Tool refresh, app skills and structured tool results
+use that session. Connector health is checked on the PC, and the connector's
+explicit Launch action starts the app through the Hub.
+
+Saved commands and values stay intact, including Windows paths and PC browser
+URLs. Disabled connector preferences remain effective. Local connections and
+non-family MCP servers retain their configured transport. Family connector
+migration follows the PC Hub while the link is remote.

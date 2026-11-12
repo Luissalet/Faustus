@@ -152,6 +152,17 @@ async def compute_status(
         return {"state": "error", "app": empty_app, "adapter": adapter,
                 "reasons": ["Unknown preset for this connector"]}
 
+    from src import connector_relay
+    try:
+        remote = await connector_relay.describe(preset.id, check=force_check)
+    except RuntimeError as exc:
+        return {"state": "error", "app": empty_app, "adapter": adapter, "reasons": [str(exc)]}
+    if remote is not None:
+        if force_check:
+            _health_cache[connector_id] = (time.monotonic(), remote["health"])
+        cached = _health_cache.get(connector_id)
+        return _finish_status(preset, remote["app_url"], cached[1] if cached else None, adapter, reasons)
+
     resolved = resolve_preset_values(preset, values)
     if not resolved["ok"]:
         reasons.extend(resolved.get("reasons") or [])

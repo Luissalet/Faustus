@@ -1687,3 +1687,18 @@ This completes the bounded native check previously marked pending. It establishe
 ### Live Agora view
 
 The Agora server has an **En directo** view with one named, coloured cursor per active agent. It shares the Hub console view, showing source-timestamped task changes, path locks, observed tool commands and edit excerpts, and channel messages. Select a cursor to inspect its observed session or follow its target. Cursors rest after 60 seconds without a signal and disappear when the observed turn ends. Reduced-motion preferences apply to cursor travel and text reveal. This requires the Hub live API and a current build of `apps/agora`.
+
+
+## Family connectors with Faustus on a Spark
+
+Family app connectors resolve their MCP transport through the PC Hub when
+`FAUSTUS_HUB_LINK` points to that machine. The Hub launches the installed
+manifest's bridge on the PC and Faustus uses its existing Streamable HTTP client
+with the link credential. Tool refresh, app skills and structured tool results
+use that session. Connector health is checked on the PC, and the connector's
+explicit Launch action starts the app through the Hub.
+
+Saved commands and values stay intact, including Windows paths and PC browser
+URLs. Disabled connector preferences remain effective. Local connections and
+non-family MCP servers retain their configured transport. Family connector
+migration follows the PC Hub while the link is remote.

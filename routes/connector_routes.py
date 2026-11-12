@@ -136,6 +136,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         the MCP server's env (the bridge reads JOBHUNT_URL/WH_BRIDGE_URL at
         spawn), and the cached health. Returns the (possibly updated) entry
         with `relocated_from` set when it moved."""
+        from src import connector_relay
+        if await connector_relay.describe(entry.get("preset_id")) is not None:
+            return entry
         preset = connectors.get_preset(entry["preset_id"])
         if preset is None:
             return entry
@@ -621,6 +624,14 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         entry = connector_sidecar.get_connector(connector_id, redact=False)
         if entry is None:
             raise HTTPException(404, "Connector not found")
+        from src import connector_relay
+        try:
+            remote = await connector_relay.start(entry)
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if remote is not None:
+            connector_status.invalidate_health(connector_id)
+            return remote
         profile_id = entry.get("launch_profile_id")
         if not profile_id:
             raise HTTPException(403, "No launch profile configured for this connector")

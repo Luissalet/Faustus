@@ -1206,10 +1206,20 @@ class McpManager:
             return False
         try:
             if transport == "stdio":
-                res = await self._connect_stdio(
-                    server_id, name, command, args or [], env or {},
-                    inherit_env=True if inherit_env is None else bool(inherit_env),
-                )
+                from src import connector_relay
+                relay = await connector_relay.for_server(server_id, command, args)
+                if relay is not None:
+                    from mcp.client.streamable_http import streamablehttp_client
+                    res = await self._connect_remote(server_id, name, relay["url"], "http", lambda: streamablehttp_client(
+                        relay["url"], headers={"Authorization": "Bearer " + relay["token"]},
+                        sse_read_timeout=None))  # _do_call applies the tool's declared timeout.
+                    if res:
+                        self._connections[server_id]["hub_app"] = relay["id"]
+                else:
+                    res = await self._connect_stdio(
+                        server_id, name, command, args or [], env or {},
+                        inherit_env=True if inherit_env is None else bool(inherit_env),
+                    )
             elif transport == "sse":
                 res = await self._connect_sse(server_id, name, url)
             elif transport == "http":
@@ -1952,8 +1962,13 @@ class McpManager:
         if not name:
             return result
         try:
-            from src import hoard_hub
-            started = await asyncio.to_thread(hoard_hub.start_app_named, name)
+            hub_app = (self._connections.get(server_id) or {}).get("hub_app")
+            if hub_app:
+                from src import connector_relay
+                started = await connector_relay.start({"preset_id": hub_app})
+            else:
+                from src import hoard_hub
+                started = await asyncio.to_thread(hoard_hub.start_app_named, name)
         except Exception:  # noqa: BLE001 - keep the original answer
             logger.debug("auto-start of %s failed", name, exc_info=True)
             return result

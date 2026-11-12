@@ -351,6 +351,9 @@ async def _migrate_one(entry: Dict[str, Any], manager: Any, finder: Finder,
     preset = connectors.get_preset(entry.get("preset_id") or "")
     if preset is None or preset.transport != "stdio":
         return None
+    from src import connector_relay
+    if await connector_relay.describe(preset.id) is not None:
+        return None  # PC paths are resolved by its Hub at connection time.
     if not retry_blocked and time.time() - _blocked_at.get(entry["id"], 0.0) < BLOCKED_RETRY_S:
         return None
     row = await asyncio.to_thread(_read_server, factory, entry.get("server_id"))
