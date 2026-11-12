@@ -236,3 +236,16 @@ async def test_scheduler_delegates_to_same_cycle_without_a_second_timer(store, m
     monkeypatch.setattr(cycles, "run", run)
     result, ok = await cycles.scheduled_entry("fixture", spec().model_dump_json())
     assert ok and 'scheduled' in result and seen == [("target", "fixture")]
+
+
+@pytest.mark.asyncio
+async def test_blocked_tool_does_not_satisfy_required_tool_check(monkeypatch):
+    from src.harness_refinement import rollout
+    async def blocked(*a, **k):
+        return {"text": "fixed", "steps": [{"tool": "read_file", "ok": False}], "seconds": .01, "error": ""}
+    monkeypatch.setattr(rollout, "run_rollout", blocked)
+    cfg = spec()
+    case = cycles.Case(id="blocked", group="target", mode="agent", prompt="Read the file", checks={"tools_any": ["read_file"]})
+    row = await cycles._evaluate_case(case, [], cfg, ("url", "model", None), "fixture", None)
+    assert row["score"] == 0
+    assert any(not c["ok"] and c["check"].startswith("used one of") for c in row["checks"])

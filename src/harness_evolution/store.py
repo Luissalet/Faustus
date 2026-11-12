@@ -1,7 +1,8 @@
 """harness_evolution/store.py — sqlite persistence for the versioned harness.
 
 One database file under `DATA_DIR` (or an explicit `db_path`, mainly for
-tests), two tables (`harness_revisions`, `candidate_patches`). Every method
+tests), with `harness_revisions` and `candidate_patches`. The cycle runner
+adds its history table in this same file. Every method
 opens its own connection and closes it before returning — no long-lived
 handle, no `.db-journal` left mid-write, and safe under Windows where an
 open handle blocks the next process from touching the file.

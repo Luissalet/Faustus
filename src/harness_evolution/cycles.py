@@ -248,7 +248,7 @@ async def _evaluate_case(case, edits, spec, route, owner, model_call):
             result = await rollout.run_rollout(case.id, "trial", case.messages or [{"role": "user", "content": case.prompt}],
                                               url=url, model=model, headers=headers, owner=owner, loop=loop)
             if result.get("error"): raise ValueError(result["error"])
-            check_result = {"answer": result["text"], "tools": [s["tool"] for s in result["steps"]],
+            check_result = {"answer": result["text"], "tools": [s["tool"] for s in result["steps"] if s.get("ok")],
                             "seconds": result["seconds"], "cards": 0}
         else:
             if any(e["kind"] in ("tool_description", "tool_selection", "context") for e in edits):

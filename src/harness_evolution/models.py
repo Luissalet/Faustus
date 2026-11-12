@@ -22,7 +22,7 @@ from src.contracts.base import now_iso
 #: yet running (`candidate`), or one superseded/reverted (`retired`).
 REVISION_STATUSES = ("active", "candidate", "retired")
 
-#: The three typed changes a `CandidatePatch` may carry (dictamen §7). A
+#: The three original ref changes and bounded runtime configuration edits. A
 #: patch always names exactly one — composing several is a sequence of
 #: patches, not one patch with mixed intent, so a promotion never has to
 #: guess which half of a mixed change caused a regression.
