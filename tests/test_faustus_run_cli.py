@@ -444,6 +444,7 @@ class _Live(BaseHTTPRequestHandler):
     #: a busy stream ends on its own here even if nothing abandons it, so a
     #: regression fails an assertion instead of hanging the suite.
     busy_seconds = 4.0
+    on_progress = None
     stop_response = {"stopped": True}
     stops = []
     forms = []
@@ -509,6 +510,8 @@ class _Live(BaseHTTPRequestHandler):
                 if frames == "heartbeat":
                     self.wfile.write(b'data: {"type":"run_activity","heartbeat":1}\n\n')
                 else:
+                    if _Live.on_progress is not None:
+                        _Live.on_progress()
                     self.wfile.write(b'x' if frames == "drip" else b'data: {"delta": "."}\n\n')
                 self.wfile.flush()
                 time.sleep(_Live.interval)
@@ -776,3 +779,23 @@ def test_worker_reports_premature_stream_eof(capsys):
         _close_live(srv)
     assert code == fr.EXIT_ERROR
     assert _summary(capsys)["stop"] == "connection_lost"
+
+
+def test_worker_crosses_the_old_1800_second_deadline_on_a_simulated_clock(capsys, monkeypatch):
+    from types import SimpleNamespace
+
+    virtual = [0]
+    monkeypatch.setattr(_Live, "busy_seconds", 0.55)
+    monkeypatch.setattr(_Live, "on_progress", lambda: virtual.__setitem__(0, virtual[0] + 240))
+    monkeypatch.setattr(fr, "time", SimpleNamespace(monotonic=lambda: virtual[0], time=time.time))
+    for extra, expected in (([], "timeout"), (["--no-timeout", "--idle-timeout", "3600"], "answered")):
+        virtual[0] = 0
+        srv, url = _serve_live([None])
+        try:
+            code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                            "--json", "--timeout", "1800", *extra])
+        finally:
+            _close_live(srv)
+        assert virtual[0] >= 1800
+        assert _summary(capsys)["stop"] == expected
+        assert code == (fr.EXIT_TIMEOUT if expected == "timeout" else fr.EXIT_OK)
