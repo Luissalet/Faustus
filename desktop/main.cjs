@@ -224,7 +224,9 @@ async function waitForRemote(timeoutMs=90000){
 }
 // Starts (or joins) the Faustus of this PC, or joins the one the Hub moved to a Spark, and loads the interface.
 async function attach(){
+  const previousOrigin=origin;
   place=findPlace();origin=place.origin;let started=false;
+  if(origin!==previousOrigin)quickQuestion?.retarget();
   if(place.remote){
     ownedToken='';
     if(!await waitForRemote())throw new Error(`Faustus does not answer at ${origin}. / Faustus no responde en ${origin}.`);
@@ -258,7 +260,6 @@ async function followPlacement(){
     stopDictation();
     if(process.platform==='win32')stopDictation=require('./dictation.cjs').startDictation(require('electron'),{origin});
     turnTray?.retarget();
-    quickQuestion?.retarget();
   }catch(error){trayLog('could not follow Faustus: '+error.message);if(!quitting)dialog.showErrorBox('Faustus',error.message);}
 }
 if(!Number.isInteger(port)||port<1024||port>65535){app.quit();}
@@ -302,7 +303,7 @@ else{
         const test=action==='alerts-test'?await turnTray.test():null,view=turnTray.view();
         return {...windowState(target),alerts:{available:true,tooltip:view.tooltip,link:view.link,where:place.where,test}};
       }
-      if(action==='quick-state')return {...windowState(target),quick:quickQuestion?.view()||{registered:'',error:''}};
+      if(action==='quick-state')return {...windowState(target),quick:quickQuestion?.view()};
       if(action==='quick-open'){quickQuestion?.show();return windowState(target);}
       if(!['state','minimize','maximize','fullscreen','close'].includes(action))throw new Error('Unknown window action');
       if(action==='minimize')target.minimize();
@@ -338,7 +339,16 @@ else{
     await mainWindow.loadURL(splash);
     startup=attach();
     try{await startup;}catch(error){console.error(error.stack||error.message);if(!quitting&&!process.argv.includes('--smoke-test'))dialog.showErrorBox('Faustus',error.message);app.quit();return;}
-    quickQuestion=require('./quick-question.cjs').startQuickQuestion(require('electron'),{origin:()=>origin,profile,secureWindow,openChat,showMain:showMainWindow});
+    if(!quitting&&process.platform==='win32')quickQuestion=require('./quick-question.cjs').startQuickQuestion(require('electron'),{
+      origin:()=>origin,profile,secureWindow,
+      openChat:id=>{
+        const current=new URL(mainWindow.webContents.getURL(),origin);
+        if(current.origin===origin&&current.pathname==='/studio'&&current.searchParams.get('s')===id){
+          openDeepLink('/studio?s='+encodeURIComponent(id));
+        }else openChat(id);
+      },
+      showMain:showMainWindow,
+    });
     if(!process.env.FAUSTUS_DESKTOP_URL)watchFile(join(root,'data','runtime','placement.json'),{interval:5000},()=>void followPlacement());
   }).catch(error=>{dialog.showErrorBox('Faustus',error.message);app.quit();});
 }

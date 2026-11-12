@@ -42,6 +42,10 @@ async def call_tool(name, arguments):
     if action not in {'status', 'configure', 'open'}:
         raise ValueError('Unknown action')
     base = (os.environ.get('FAUSTUS_INTERNAL_API_URL') or os.environ.get('FAUSTUS_URL') or internal_api_base()).rstrip('/')
+    headers = _headers()
+    owner = os.getenv('FAUSTUS_QUICK_QUESTION_OWNER', '').strip()
+    if owner and 'X-Odysseus-Internal-Token' in headers:
+        headers['X-Odysseus-Owner'] = owner
     async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
         patch = {}
         if action == 'configure':
@@ -60,15 +64,17 @@ async def call_tool(name, arguments):
             # Check visibility through the normal API before asking a desktop
             # to show an existing chat. The same owner rules still apply.
             if sid:
-                response = await client.get(base + '/api/sessions', headers=_headers())
+                response = await client.get(base + '/api/sessions', headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 rows = data if isinstance(data, list) else data.get('sessions', [])
                 if not any(row.get('id') == sid for row in rows):
                     raise ValueError('Session is not visible to this connection')
             patch['quick_question_request'] = {'id': str(uuid.uuid4()), 'session_id': sid}
-        response = await (client.post(base + '/api/auth/settings', json=patch, headers=_headers()) if patch
-                          else client.get(base + '/api/auth/settings', headers=_headers()))
+        if patch:
+            response = await client.post(base + '/api/auth/settings', json=patch, headers=headers)
+        else:
+            response = await client.get(base + '/api/auth/settings', headers=headers)
         response.raise_for_status()
         settings = response.json()
         result = {'enabled': settings.get('quick_question_enabled', True),

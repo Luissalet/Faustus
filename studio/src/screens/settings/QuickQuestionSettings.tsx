@@ -10,7 +10,10 @@ export function QuickQuestionSettings({ say }: { say: (text: string) => void }) 
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [registered, setRegistered] = useState('');
+  const [native, setNative] = useState<{registered: string; shortcutUnavailable: boolean}>();
+  const bridge = window.faustusWindow as unknown as {
+    command(action: 'quick-state' | 'quick-open'): Promise<{quick?: typeof native}>;
+  } | undefined;
   useEffect(() => {
     let live = true;
     void loadSettings().then(settings => {
@@ -20,17 +23,14 @@ export function QuickQuestionSettings({ say }: { say: (text: string) => void }) 
       setReady(true);
     }).catch(err => { if (live) setError((err as Error).message); });
     const readNative = () => {
-      const bridge = window.faustusWindow as unknown as { command(action: string): Promise<{quick?: {registered: string; error: string}}> } | undefined;
       void bridge?.command('quick-state').then(result => {
-        if (!live) return;
-        setRegistered(result.quick?.registered || '');
-        setError(result.quick?.error ? t('This shortcut is unavailable. Choose another combination; the previous shortcut still works.') : '');
+        if (live) setNative(result.quick);
       }).catch(() => undefined);
     };
     readNative();
-    const timer = window.setInterval(readNative, 3000);
+    const timer = bridge ? window.setInterval(readNative, 3000) : undefined;
     return () => { live = false; clearInterval(timer); };
-  }, []);
+  }, [bridge]);
   const save = async () => {
     setBusy(true); setError('');
     try {
@@ -46,8 +46,12 @@ export function QuickQuestionSettings({ say }: { say: (text: string) => void }) 
     <Field label={t('Global shortcut')} htmlFor="quick-question-hotkey" help={t('For example Ctrl+Shift+Space. Esc hides the window without stopping the answer.')}>
       <Text id="quick-question-hotkey" value={hotkey} onChange={setHotkey} disabled={!ready || busy} />
     </Field>
-    {registered && <p className="fs-set__help">{t('Active shortcut: {key}', {key: registered})}</p>}
+    {native?.registered && <p className="fs-set__help">{t('Active shortcut: {key}', {key: native.registered})}</p>}
+    {native?.shortcutUnavailable && <p className="fs-set__help" role="alert" data-tone="bad">{t('This shortcut is unavailable. Choose another combination.')}</p>}
     {error && <p className="fs-set__help" role="alert" data-tone="bad">{error}</p>}
     <Button variant="secondary" size="sm" label={t('Save')} loading={busy} disabled={!ready || !hotkey.trim()} onClick={() => void save()} />
+    {native && <Button variant="ghost" size="sm" label={t('Open quick question')} onClick={() => {
+      void bridge?.command('quick-open').catch(err => setError((err as Error).message));
+    }} />}
   </div>;
 }

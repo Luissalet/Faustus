@@ -8,7 +8,7 @@ declare global {
   interface Window {
     faustusQuick?: {
       isQuick: boolean;
-      openStudio(id: string): Promise<unknown>;
+      openStudio(id?: string): Promise<unknown>;
       hide(): Promise<unknown>;
       onFocus(callback: () => void): () => void;
     };

@@ -3989,15 +3989,19 @@ export function StudioScreen({ groupContext }: { groupContext?: {
 
       <section className="fs-studio__stage">
         {quickQuestion ? <QuickQuestion input={textareaRef} onContinue={async () => {
-          const text = draft, files = [...attachments];
-          const sid = sessionId || await ensureSession(t('Quick question'));
-          if (!sid) return;
-          writeDraftFor(sid, text);
-          writeAttachmentsFor(sid, files, knobs.incognito);
+          const text = textareaRef.current?.value ?? draft;
+          const files = [...attachments];
           try {
-            if (!knobs.incognito) await saveSessionDraft(sid, text, files.map(a => a.id));
+            const hasDraft = Boolean(text || files.length);
+            const sid = sessionId || (hasDraft ? await ensureSession(t('Quick question')) : undefined);
+            if (sid === null) return;
+            if (sid && (hasDraft || !busy)) {
+              writeDraftFor(sid, text);
+              writeAttachmentsFor(sid, files, knobs.incognito);
+              if (!knobs.incognito) await saveSessionDraft(sid, text, files.map(a => a.id));
+            }
             if (window.faustusQuick) await window.faustusQuick.openStudio(sid);
-            else navigate('/studio?s=' + encodeURIComponent(sid));
+            else navigate(sid ? '/studio?s=' + encodeURIComponent(sid) : '/studio');
           } catch (error) { say((error as Error).message, 'danger'); }
         }} /> : <header className="fs-studio__head">
           <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen || (!paneHidden && !chatTool)} title={t('Show or hide the conversations (Ctrl+B)')} onClick={() => { if (chatTool) { openChatWorkspace(null); if (paneHidden) toggleSidebar(); } else toggleSidebar(); }} data-testid="studio-drawer">

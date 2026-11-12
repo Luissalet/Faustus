@@ -918,20 +918,38 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         # characters and POST swaps a mask sent back for the stored value.
         if (user and auth_manager.is_admin(user)) or _auth_disabled():
             return mask_secrets(settings)
+        if not user:
+            settings.pop("quick_question_request", None)
         return scrub_settings(settings)
 
     @router.post("/settings")
     async def set_settings(request: Request):
-        """Admin only: update app settings."""
+        """Update app settings as admin, or the quick question keys via the local MCP."""
         user = _get_current_user(request)
-        if not _auth_disabled() and (not user or not auth_manager.is_admin(user)):
+        from core.middleware import is_agent_channel
+        from src.settings import SettingsError, update_settings
+
+        agent_channel = is_agent_channel(request)
+        admin = _auth_disabled() or (user and auth_manager.is_admin(user))
+        local_agent = agent_channel and request.client and request.client.host in {"127.0.0.1", "::1"}
+        if not admin and not local_agent:
             raise HTTPException(403, "Admin only")
         body = await request.json()
+        quick_keys = {"quick_question_enabled", "quick_question_hotkey", "quick_question_request"}
+        if isinstance(body, dict) and body and body.keys() <= quick_keys:
+            try:
+                settings = update_settings(body)["settings"]
+            except SettingsError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            if not admin:
+                return {key: settings[key] for key in quick_keys}
+            return mask_secrets(without_retired_settings(settings))
+        if not admin:
+            raise HTTPException(403, "Admin only")
         current = _load_settings()
         # The daily paid spend cap is a person's decision: the model's own
         # tool layer (internal token) may neither raise nor switch it off.
-        from core.middleware import is_agent_channel
-        if is_agent_channel(request):
+        if agent_channel:
             from src.spend_cap import PROTECTED_SETTINGS as _cap_keys
             for _cap_key in _cap_keys:
                 if _cap_key in body and body[_cap_key] != current.get(_cap_key, DEFAULT_SETTINGS.get(_cap_key)):

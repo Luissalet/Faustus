@@ -173,6 +173,7 @@ _BUILTIN_SERVERS = {
     "app_dock": ("mcp_servers/app_dock_server.py", "Built-in: App Dock"),
     "data_boundary": ("mcp_servers/data_boundary_server.py", "Built-in: Data destinations"),
     "approval_inbox": ("mcp_servers/approval_inbox_server.py", "Built-in: Approval inbox"),
+    "quick_question": ("mcp_servers/quick_question_server.py", "Built-in: Quick question"),
     # Pizarra / Hoja (src/pizarra.py, src/hoja.py): the same tools as the chat, over the running Faustus.
     "pizarra": ("mcp_servers/pizarra_server.py", "Built-in: Pizarra whiteboard"),
     "sheet": ("mcp_servers/sheet_server.py", "Built-in: Hoja spreadsheet"),
