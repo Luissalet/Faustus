@@ -65,6 +65,14 @@ def test_native_coordination_success_is_a_nonfile_effect(tmp_path, tool):
     assert not ledger.mutations
 
 
+@pytest.mark.parametrize("tool", ["pizarra_create", "pizarra_edit", "pizarra_arrange", "sheet_create", "sheet_write"])
+def test_whiteboard_and_sheet_writes_are_nonfile_effects(tmp_path, tool):
+    ledger = h.TurnLedger(str(tmp_path), "Hazme una pizarra del plan.")
+    ledger.record(tool, "{}", {"output": "ok", "exit_code": 0})
+    assert ledger.events[-1]["kind"] == "effect"
+    assert "claims_without_mutation" not in ledger.check_completion("He creado la pizarra con el plan de lanzamiento.")["reasons"]
+
+
 @pytest.mark.parametrize("result", [{"error": "offline"}, {"status": "failed"}, {"approval_required": True}, {"exit_code": 1}])
 def test_failed_native_write_does_not_back_completion(tmp_path, result):
     ledger = h.TurnLedger(str(tmp_path), "Publica en Ágora.")

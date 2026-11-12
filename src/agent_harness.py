@@ -104,6 +104,8 @@ OTHER_EFFECT_TOOLS = frozenset({
     "coordination_heartbeat", "coordination_add", "coordination_claim",
     "coordination_checkpoint", "coordination_post", "coordination_submit",
     "coordination_review", "coordination_done", "coordination_lock", "coordination_unlock",
+    # The whiteboard and the spreadsheet beside the chat: a successful call changes what the person sees.
+    "pizarra_create", "pizarra_edit", "pizarra_arrange", "sheet_create", "sheet_write",
 })
 # MCP tools (plugins, connectors) are only known here by name, so the verb in
 # the tool's own name decides whether a successful call is evidence for an
