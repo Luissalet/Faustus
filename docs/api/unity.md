@@ -95,6 +95,16 @@ Fixed-step playback is not a real-time FPS benchmark. Review every recording
 for occlusion, lighting and movement before claiming visual acceptance.
 Automatic failures remain red with their reproduction and follow-up tasks.
 
+The final Windows player validation for task 3123 records build source
+`2a6d199`, eight journeys, 1,920 effective/requested input samples, 320 PNGs
+and eight four-second MP4 clips. Seven journeys pass automatic rules;
+straight flight retains 4.8785° rocking against 2° (Blood Arrows #3132).
+Tunnel movement passes, including entry and interior, but frame review flags
+camera occlusion at its exit (#3140). The report retains both automatic and
+visual results. A cached build succeeded with zero errors and 527 warnings;
+the initial cold shader build timeout remains recorded (#3137). Evidence:
+`E:/Development/IA/Research/juegos3123/player-final/index.html`.
+
 These operations extend the project's existing native bridge. Workflow sources:
 [MCP Unity](https://github.com/CoderGamester/mcp-unity/tree/d572dc88f1b982a0fdfc09cd14cfdfd760b658e8)
 (MIT) and [game development skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills/tree/38a4c2500eeb5ff9ac084336b8f66108069d2f8d)
