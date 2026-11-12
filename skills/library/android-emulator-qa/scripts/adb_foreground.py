@@ -18,17 +18,30 @@ def package_for(lines, marker):
     return next(iter(packages)) if len(packages) == 1 else None
 
 
-def check_foreground(activity_dump, window_dump, expected):
+def ime_visibility(window_dump):
+    states = {
+        match.group(1)
+        for line in window_dump.splitlines()
+        if (match := re.match(r"\s*InsetsSource\s+.*\btype=ime\b.*\bvisible=(true|false)\b", line))
+    }
+    return next(iter(states)) == "true" if len(states) == 1 else None
+
+
+def check_foreground(activity_dump, window_dump, expected, expect_ime=None):
     activity = package_for(activity_dump, "topResumedActivity=")
     if activity is None and "topResumedActivity=" not in activity_dump:
         activity = package_for(activity_dump, "mResumedActivity:")
     window = package_for(window_dump, "mCurrentFocus=")
-    return {
+    result = {
         "expectedPackage": expected,
         "resumedPackage": activity,
         "focusedPackage": window,
         "matched": activity == window == expected,
     }
+    if expect_ime is not None:
+        visible = ime_visibility(window_dump)
+        result.update(imeVisible=visible, imeMatched=visible is (expect_ime == "visible"))
+    return result
 
 
 def main():
@@ -36,6 +49,7 @@ def main():
     parser.add_argument("--adb", type=Path, required=True)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--package", required=True)
+    parser.add_argument("--expect-ime", choices=("hidden", "visible"))
     args = parser.parse_args()
     if not args.adb.is_absolute() or not args.adb.is_file():
         parser.error("use the absolute path to the Android SDK adb executable")
@@ -46,9 +60,9 @@ def main():
     except (subprocess.SubprocessError, OSError) as error:
         print(json.dumps({"serial": args.serial, "matched": False, "error": str(error)}))
         return 2
-    result = check_foreground(activity, window, args.package)
+    result = check_foreground(activity, window, args.package, args.expect_ime)
     print(json.dumps({"serial": args.serial, **result}))
-    return 0 if result["matched"] else 1
+    return 0 if result["matched"] and result.get("imeMatched", True) else 1
 
 
 if __name__ == "__main__":
