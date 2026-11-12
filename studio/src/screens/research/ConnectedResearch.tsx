@@ -86,7 +86,7 @@ export function ConnectedReport({ id, sources, children }: { id: string; sources
     event.preventDefault();
     if (busy) return;
     setBusy(true); setError('');
-    try { navigate(`/studio?s=${encodeURIComponent(await openResearchSource(id, source.url))}`); }
+    try { navigate(`/studio?s=${encodeURIComponent(await openResearchSource(id, source.url))}&dock=pick`); }
     catch { setError(t('This source could not open beside the chat. Open the original in its own window.')); }
     finally { setBusy(false); }
   };
