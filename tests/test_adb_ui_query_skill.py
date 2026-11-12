@@ -50,20 +50,23 @@ def test_returns_both_observed_matches_without_choosing_an_ambiguous_field(monke
     assert [item["text"] for item in find_nodes(tree, PACKAGE, "Mote", RECT, FIELD, 48)] == ["Uno", "Dos"]
 
 
-def run_cli(monkeypatch, tmp_path, capsys, readbacks, foregrounds, wait=6000):
+def run_cli(monkeypatch, tmp_path, capsys, readbacks, foregrounds, wait=6000, selection=("--label", "Mote", "--class", FIELD), dump_error=None):
     query(monkeypatch)
     module = importlib.import_module("adb_ui_query")
     adb = tmp_path / "adb"
     adb.touch()
     monkeypatch.setattr(sys, "argv", [
         "adb_ui_query.py", "--adb", str(adb), "--serial", "emulator-5554", "--package", PACKAGE,
-        "--label", "Mote", "--class", FIELD, "--rect", *map(str, RECT), "--wait-tree-ms", str(wait),
+        *selection, "--rect", *map(str, RECT), "--wait-tree-ms", str(wait),
     ])
     commands = []
 
     def observe(args, *, timeout):
         command = args[3:]
         commands.append(command)
+        if command[:3] == ["shell", "uiautomator", "dump"] and dump_error is not None:
+            if sum(item[:3] == command[:3] for item in commands) == 1:
+                raise dump_error
         if command[:2] == ["exec-out", "cat"]:
             value = next(readbacks)
             if isinstance(value, Exception):
@@ -104,3 +107,21 @@ def test_tree_wait_preserves_transport_timeout(monkeypatch, tmp_path, capsys):
         iter([error]), iter([{"matched": True}]))
     assert status == 2 and "timed out" in result["error"]
     assert sum(cmd[:3] == ["shell", "uiautomator", "dump"] for cmd in commands) == 1
+
+
+def test_list_recovers_after_android_dump_process_crashes(monkeypatch, tmp_path, capsys):
+    failure = subprocess.CalledProcessError(139, ["adb", "uiautomator"], stderr=b"invalid pthread_t")
+    tree = "<hierarchy>" + element(label="Ruta 13") + element(label="Ruta 13") + element(label="", text="Tabla") + "</hierarchy>"
+    status, result, commands = run_cli(monkeypatch, tmp_path, capsys,
+        iter([tree]), iter([{"matched": True}]*3), selection=("--list",), dump_error=failure)
+    assert status == 0 and result["matchCount"] == 3
+    assert [node["label"] for node in result["nodes"]] == ["Ruta 13", "Ruta 13", "Tabla"]
+    assert sum(cmd[:3] == ["shell", "uiautomator", "dump"] for cmd in commands) == 2
+    assert all("input" not in cmd for cmd in commands)
+
+
+def test_list_reports_full_count_and_bounds_output(monkeypatch, tmp_path, capsys):
+    tree = "<hierarchy>" + element(label="Control") * 81 + element(label="Blocked", enabled=False) + "</hierarchy>"
+    status, result, _ = run_cli(monkeypatch, tmp_path, capsys,
+        iter([tree]), iter([{"matched": True}]*2), selection=("--list",))
+    assert status == 0 and result["matchCount"] == 81 and len(result["nodes"]) == 80

@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.16
+version: 1.0.17
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -29,6 +29,8 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 4. Record the baseline tab, game, save, language, filters and counters. Use observed values to verify restoration.
 
 5. Use advertised tools and fresh references; labelled View nodes can be actionable tabs. After navigation or any layout change, get a new element listing before choosing the next control. A reference is scoped to that observation. A click followed by an element listing can be a sequential batch when the batch schema supports it; choose the next target only after inspecting that readback. Do not queue multiple navigations using references from one old tree. Record the action and the visible result. A dispatch acknowledgement may precede rendering: use a bounded fresh observation for a pending transition before repeating a mutation. For mobile_batch_commands, use listElementsAtEnd=false and an explicit mobile_list_elements_on_screen with format=text; automatic full JSON trees can exhaust the model context. Read the exact query and results after typing and after IME submit, which can autocorrect names. If only hiding the visible keyboard, use Back. Refresh before tapping uncovered results. Add `--expect-ime hidden` to the foreground guard before tapping where the keyboard covered a result.
+
+   Use the same helper with `--list` in place of `--label` to discover up to 80 enabled, labeled nodes inside the observed rectangle. It reports the total match count and retains multiple nodes with the same label. After navigation, use `--wait-tree-ms 6000` to retry a failed hierarchy read without sending input. Select a target only after checking its bounds and context.
 
    To resolve a duplicate label or read back a field, run `python <skill-directory>/scripts/adb_ui_query.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package> --label "<observed label>" --class android.widget.EditText --rect <left> <top> <right> <bottom> --min-height <observed field height> --expect-ime hidden`. The rectangle excludes the visible app header, footer and overlays. The helper reads a fresh tree and returns the actual text and center only for a unique matching node. It sends no input. After a confirmed navigation, add `--wait-tree-ms 6000` if the field has yet to settle. The helper retries a missing, incomplete or ambiguous fresh tree only while the expected app and IME still match. A transport timeout or package change ends the observation. When a match is clipped, scroll the field clear and query again. Compare the actual text after typing or closing the IME before committing a form.
 
