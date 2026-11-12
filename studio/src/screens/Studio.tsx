@@ -1,5 +1,5 @@
 import { chooseStudioRoute, configuredDefaultRoute } from '../adapters/model-selection';
-import { Info, CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Sparkles, Waypoints, X } from 'lucide-react';
+import { Info, CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Sparkles, Waypoints, X, Table2 } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
@@ -123,7 +123,7 @@ import { CoordinationStatus } from './studio/CoordinationStatus';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, restoreTerminalStatus, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
 import { isWideTab } from './studio/panel';
-import { createBoard, listBoards, useSurfaceEvents } from '../adapters/surfaces';
+import { createBoard, createSheet, listBoards, listSheets, useSurfaceEvents } from '../adapters/surfaces';
 import { openApp as openDockApp, setSel as setDockSel, useAppDockEvents } from '../adapters/appDock';
 import { AppWindow, PenTool } from 'lucide-react';
 import ChatTeam from './studio/ChatTeam';
@@ -1567,11 +1567,14 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   /* The Library opens a whiteboard in the side panel: ?pizarra=<id>. */
   useEffect(() => {
     const boardParam = params.get('pizarra');
-    if (!boardParam) return;
+    const sheetParam = params.get('hoja');
+    if (!boardParam && !sheetParam) return;
     if (!sessionId) return;
-    panelDispatch({ type: 'surface', kind: 'pizarra', id: boardParam, title: '', focus: true });
+    if (boardParam) panelDispatch({ type: 'surface', kind: 'pizarra', id: boardParam, title: '', focus: true });
+    if (sheetParam) panelDispatch({ type: 'surface', kind: 'hoja', id: sheetParam, title: '', focus: true });
     const next = new URLSearchParams(params);
     next.delete('pizarra');
+    next.delete('hoja');
     setParams(next, { replace: true });
   }, [params, setParams, sessionId]);
 
@@ -2318,6 +2321,18 @@ export function StudioScreen({ groupContext }: { groupContext?: {
             panelDispatch({ type: 'surface', kind: 'pizarra', id: board.id, title: board.title, focus: true });
           } catch (error) {
             say(t('Could not open the whiteboard.') + ' ' + (error as Error).message, 'danger');
+          }
+          return true;
+        }
+        case 'hoja': {
+          const sid = await ensureSession(args || t('Spreadsheet'));
+          if (!sid) return true;
+          try {
+            const existing = args ? [] : (await listSheets(sid)).sheets;
+            const sheet = existing[0] ?? await createSheet(sid, args || t('Untitled spreadsheet'), project?.id ?? '');
+            panelDispatch({ type: 'surface', kind: 'hoja', id: sheet.id, title: sheet.title, focus: true });
+          } catch (error) {
+            say(t('Could not open the spreadsheet.') + ' ' + (error as Error).message, 'danger');
           }
           return true;
         }
@@ -4062,6 +4077,13 @@ export function StudioScreen({ groupContext }: { groupContext?: {
               size="sm"
               onClick={() => void runCommand('pizarra', '')}
               testId="studio-open-pizarra"
+            />
+            <IconButton
+              icon={Table2}
+              label={t('Open a spreadsheet beside the chat')}
+              size="sm"
+              onClick={() => void runCommand('hoja', '')}
+              testId="studio-open-hoja"
             />
             <IconButton
               icon={PanelRight}

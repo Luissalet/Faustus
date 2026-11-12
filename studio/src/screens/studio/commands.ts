@@ -214,6 +214,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'extract', aliases: ['extraction'], category: 'Tools', usage: '/extract', help: 'Extract structured data beside this conversation.' },
   { name: 'git', category: 'Tools', usage: '/git', help: 'Open this project’s repositories.' },
   { name: 'pizarra', aliases: ['whiteboard'], category: 'Tools', usage: '/pizarra [title]', help: 'Open a whiteboard beside the chat (a new one, or this chat\'s latest).' },
+  { name: 'hoja', aliases: ['spreadsheet', 'sheet'], category: 'Tools', usage: '/hoja [title]', help: 'Open a spreadsheet beside the chat (a new one, or this chat\'s latest).' },
   { name: 'context', category: 'Tools', usage: '/context', help: 'Inspect context for this project and conversation.' },
   { name: 'hoards', aliases: ['connectors'], category: 'Tools', usage: '/hoards', help: 'Open connected Hoards.', route: '/connectors' },
   { name: 'group', category: 'Tools', usage: '/group', help: 'Group chat: several models (with personas) in one conversation.', route: '/group' },

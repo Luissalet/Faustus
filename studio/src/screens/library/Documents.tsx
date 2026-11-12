@@ -8,6 +8,7 @@ import { t, tn } from '../../i18n';
 import { BulkBar, downloadBlob, Highlight, SelectToggle, useSelection } from './parts';
 import { PageCursor } from '../../lib/page-cursor';
 import { WhiteboardShelf } from './WhiteboardShelf';
+import { SheetShelf } from './SheetShelf';
 
 const PAGE = 50;
 
@@ -221,6 +222,7 @@ export function DocumentsLibrary({ query, say, archived = false }: { query: stri
       {docs && !docs.length && <EmptyState icon={FileText} title={archived ? t('No archived documents') : query || language ? t('Nothing matches') : t('No documents yet')} body={archived ? t('Archived documents wait here until you restore or delete them.') : t('Import files, or ask the assistant to write one: documents it creates in a chat land here too.')} />}
 
       {!archived && <WhiteboardShelf query={query} />}
+      {!archived && <SheetShelf query={query} />}
       {docs && docs.length > 0 && (
         <ul className="fs-lib__list">
           {docs.map((doc) => {

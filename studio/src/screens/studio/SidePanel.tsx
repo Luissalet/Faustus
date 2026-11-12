@@ -1,4 +1,4 @@
-import { PenTool, AppWindow, Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
+import { PenTool, AppWindow, Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Menu, Popover, Skeleton } from '../../components';
@@ -21,7 +21,8 @@ import SubagentBoard from './SubagentBoard';
 import AppDock from './AppDock';
 import Pizarra from './Pizarra';
 import SurfaceHome from './SurfaceHome';
-import { createBoard } from '../../adapters/surfaces';
+import Hoja from './Hoja';
+import { createBoard, openSheetFile } from '../../adapters/surfaces';
 import { useDockSel } from '../../adapters/appDock';
 import { ProgressList } from './ProgressList';
 import { SourceControlPanel } from '../source-control/SourceControlPanel';
@@ -79,6 +80,7 @@ const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   { id: 'app', label: 'App', icon: AppWindow },
   // Native work surfaces the person and the agent edit together (src/pizarra.py).
   { id: 'pizarra', label: 'Whiteboard', icon: PenTool },
+  { id: 'hoja', label: 'Spreadsheet', icon: Table2 },
 ];
 
 /* ── Browser ── */
@@ -778,7 +780,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
     (tab.id!=='board'||Boolean(project)),
   );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
-  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'app' && Boolean(dockSel)) || (tab.id === 'pizarra' && Boolean(state.pizarra)) || (tab.id === 'agents' && workers.length > 0));
+  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'app' && Boolean(dockSel)) || (tab.id === 'pizarra' && Boolean(state.pizarra)) || (tab.id === 'hoja' && Boolean(state.hoja)) || (tab.id === 'agents' && workers.length > 0));
   const otherTabs = availableTabs.filter(tab => !tabs.includes(tab));
   // #247: what the current turn has read / written, for the Files tab.
   const fileMarks=useMemo(()=>turnFileMarks(turns,workspace),[turns,workspace]);
@@ -895,11 +897,19 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
           }).catch((error:Error)=>onNotice(`${t('Could not open the whiteboard.')} ${error.message}`,'danger'));
           return;
         }
+        // An .xlsx / .csv in the workspace opens as a spreadsheet (a copy; the file itself stays as it is).
+        if(/\.xlsx$/i.test(path)&&sessionId){
+          void openSheetFile(workspace,path,sessionId,project?.id??'').then(sheet=>dispatch({type:'surface',kind:'hoja',id:sheet.id,title:sheet.title,focus:true}))
+            .catch((error:Error)=>onNotice(`${t('Could not open the spreadsheet.')} ${error.message}`,'danger'));
+          return;
+        }
         dispatch({type:'file',workspace,path});
       }}/></div>}
       {appSeen&&<AppDock sessionId={sessionId} hidden={state.tab!=='app'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onMessage={(text,send)=>onDockMessage?.(text,send)}/>}
       {state.pizarra&&<Pizarra key={pizarraKey??''} boardId={state.pizarra.id} title={state.pizarra.title} sessionId={sessionId} hidden={state.tab!=='pizarra'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onNotice={onNotice} onTitle={title=>state.pizarra&&dispatch({type:'surface-title',kind:'pizarra',id:state.pizarra.id,title})}/>}
       {state.tab==='pizarra'&&!state.pizarra&&<SurfaceHome kind="pizarra" sessionId={sessionId} onOpen={(id,title)=>dispatch({type:'surface',kind:'pizarra',id,title})}/>}
+      {state.hoja&&<Hoja key={state.hoja.id} sheetId={state.hoja.id} title={state.hoja.title} sessionId={sessionId} hidden={state.tab!=='hoja'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onNotice={onNotice} onTitle={title=>state.hoja&&dispatch({type:'surface-title',kind:'hoja',id:state.hoja.id,title})}/>}
+      {state.tab==='hoja'&&!state.hoja&&<SurfaceHome kind="hoja" sessionId={sessionId} onOpen={(id,title)=>dispatch({type:'surface',kind:'hoja',id,title})}/>}
       {state.tab==='progress'&&<ProgressTab state={state} turns={turns}/>}
       {state.tab === 'agents' && (
         <div className="fs-panel__body">

@@ -42,3 +42,27 @@ def test_panel_and_command_wiring():
     assert "name: 'pizarra'" in commands
     studio = (_REPO / "studio" / "src" / "screens" / "Studio.tsx").read_text(encoding="utf-8")
     assert "useSurfaceEvents(" in studio and "case 'pizarra'" in studio
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node needed")
+def test_hoja_model_checks_pass():
+    proc = subprocess.run(["node", str(_REPO / "studio" / "checks" / "hoja.check.mjs")], capture_output=True, text=True, encoding="utf-8", cwd=str(_REPO), timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ok hoja" in proc.stdout
+    assert "FAIL" not in proc.stdout
+
+
+def test_hoja_model_is_pure_logic():
+    text = (_REPO / "studio" / "src" / "lib" / "hojaModel.ts").read_text(encoding="utf-8")
+    for banned in ("document.", "window.", "fetch(", "from 'react'", "useState("):
+        assert banned not in text, f"hojaModel.ts should stay pure logic (found {banned!r})"
+
+
+def test_hoja_screen_goes_through_the_adapter_and_is_wired():
+    for rel in ("studio/src/screens/studio/Hoja.tsx", "studio/src/screens/library/SheetShelf.tsx"):
+        assert "fetch(" not in (_REPO / rel).read_text(encoding="utf-8"), f"{rel} must go through adapters/surfaces.ts"
+    panel = (_REPO / "studio/src/screens/studio/panel.ts").read_text(encoding="utf-8")
+    assert "'hoja'" in panel
+    side = (_REPO / "studio/src/screens/studio/SidePanel.tsx").read_text(encoding="utf-8")
+    assert "<Hoja" in side and "SurfaceHome" in side
+    assert "name: 'hoja'" in (_REPO / "studio/src/screens/studio/commands.ts").read_text(encoding="utf-8")
+    assert "case 'hoja'" in (_REPO / "studio/src/screens/Studio.tsx").read_text(encoding="utf-8")

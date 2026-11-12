@@ -11520,3 +11520,76 @@ Gray	Gris
 Open a whiteboard beside the chat	Abrir una pizarra junto al chat
 That file is not a valid whiteboard.	Ese archivo no es una pizarra válida.
 Open a whiteboard beside the chat (a new one, or this chat's latest).	Abre una pizarra junto al chat (una nueva, o la última de esta conversación).
+A workbook needs at least one tab.	Un libro necesita al menos una pestaña.
+Add a tab	Añadir una pestaña
+Align center	Centrar
+Bar chart	Gráfico de barras
+CSV of this tab	CSV de esta pestaña
+Cell	Celda
+Clear conditional formats	Quitar formatos condicionales
+Clear the filter	Quitar el filtro
+Colour scale	Escala de color
+Conditional formatting	Formato condicional
+Could not open the spreadsheet.	No se pudo abrir la hoja de cálculo.
+Could not read that file.	No se pudo leer ese archivo.
+Currency ($)	Moneda ($)
+Currency (€)	Moneda (€)
+Delete column	Eliminar columna
+Delete row	Eliminar fila
+Delete tab	Eliminar pestaña
+Excel workbook (.xlsx)	Libro de Excel (.xlsx)
+Fewer decimals	Menos decimales
+File imported.	Archivo importado.
+Fill colour	Color de relleno
+Filter this column	Filtrar esta columna
+Fit column to its content	Ajustar la columna al contenido
+Formula bar	Barra de fórmulas
+Freeze the top row	Inmovilizar la fila superior
+Freeze up to this column	Inmovilizar hasta esta columna
+Freeze up to this row	Inmovilizar hasta esta fila
+Greater than	Mayor que
+Highlight	Resaltar
+Highlight duplicates	Resaltar duplicados
+Highlight values greater than…	Resaltar valores mayores que…
+Import an .xlsx or .csv file	Importar un archivo .xlsx o .csv
+Insert a chart	Insertar un gráfico
+Insert column left	Insertar columna a la izquierda
+Insert column right	Insertar columna a la derecha
+Insert row above	Insertar fila encima
+Insert row below	Insertar fila debajo
+Integer	Entero
+Line chart	Gráfico de líneas
+Loading the spreadsheet	Cargando la hoja de cálculo
+Make the spreadsheet fill the window	Ampliar la hoja de cálculo a toda la ventana
+More decimals	Más decimales
+Move left	Mover a la izquierda
+Move right	Mover a la derecha
+New spreadsheet	Nueva hoja de cálculo
+No spreadsheets in this conversation yet.	Todavía no hay hojas de cálculo en esta conversación.
+Nothing to redo.	No hay nada que rehacer.
+Nothing to undo.	No hay nada que deshacer.
+Number format	Formato de número
+Open a spreadsheet beside the chat	Abrir una hoja de cálculo junto al chat
+Open a spreadsheet beside the chat (a new one, or this chat's latest).	Abre una hoja de cálculo junto al chat (una nueva, o la última de esta conversación).
+Percent	Porcentaje
+Pie chart	Gráfico circular
+Remove the chart	Quitar el gráfico
+Scatter chart	Gráfico de dispersión
+Selected cells	Celdas seleccionadas
+Sheet	Hoja
+Show only rows of column {col} where it is (for example >10, Madrid)	Mostrar solo las filas de la columna {col} donde sea (por ejemplo >10, Madrid)
+Sort A to Z	Ordenar de A a Z
+Sort Z to A	Ordenar de Z a A
+Spreadsheet	Hoja de cálculo
+Spreadsheet title	Título de la hoja de cálculo
+Spreadsheet tools	Herramientas de la hoja de cálculo
+Spreadsheets	Hojas de cálculo
+Start a conversation first; the spreadsheet belongs to it.	Empieza antes una conversación; la hoja de cálculo pertenece a ella.
+Sum the selection below it	Sumar la selección en la celda de debajo
+Tab name	Nombre de la pestaña
+Tabs	Pestañas
+Text colour	Color del texto
+Unfreeze panes	Movilizar paneles
+Untitled spreadsheet	Hoja de cálculo sin título
+Wrap text	Ajustar texto
+{n} cells	{n} celdas
