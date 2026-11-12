@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import time
 
 COMPONENT = re.compile(r"\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/[\w.$]+")
 
@@ -44,24 +45,55 @@ def check_foreground(activity_dump, window_dump, expected, expect_ime=None):
     return result
 
 
+def query_foreground(base, package, expect_ime, wait_ime_ms):
+    deadline = None
+    previous = None
+    probes = (("activity", "activities"), ("window",))
+    while True:
+        dumps = []
+        for probe in probes:
+            remaining = 12 if deadline is None else min(12, deadline - time.monotonic())
+            if remaining <= 0:
+                return previous
+            try:
+                dumps.append(subprocess.check_output(
+                    base + list(probe), text=True, errors="replace", timeout=remaining,
+                ))
+            except subprocess.TimeoutExpired as error:
+                if deadline is not None:
+                    return previous
+                return {"matched": False, "probe": probe[0], "error": str(error)}
+            except (subprocess.SubprocessError, OSError) as error:
+                return {"matched": False, "probe": probe[0], "error": str(error)}
+        result = check_foreground(*dumps, package, expect_ime)
+        if not wait_ime_ms or not result["matched"] or result.get("imeMatched", True):
+            return result
+        previous = result
+        if deadline is None:
+            deadline = time.monotonic() + wait_ime_ms / 1000
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return result
+        time.sleep(min(.15, remaining))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adb", type=Path, required=True)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--package", required=True)
     parser.add_argument("--expect-ime", choices=("hidden", "visible"))
+    parser.add_argument("--wait-ime-ms", type=int, default=0)
     args = parser.parse_args()
+    if not 0 <= args.wait_ime_ms <= 4000 or (args.wait_ime_ms and args.expect_ime is None):
+        parser.error("--wait-ime-ms must be between 0 and 4000 and requires --expect-ime")
     if not args.adb.is_absolute() or not args.adb.is_file():
         parser.error("use the absolute path to the Android SDK adb executable")
     base = [str(args.adb), "-s", args.serial, "shell", "dumpsys"]
-    try:
-        activity = subprocess.check_output(base + ["activity", "activities"], text=True, errors="replace", timeout=12)
-        window = subprocess.check_output(base + ["window"], text=True, errors="replace", timeout=12)
-    except (subprocess.SubprocessError, OSError) as error:
-        print(json.dumps({"serial": args.serial, "matched": False, "error": str(error)}))
-        return 2
-    result = check_foreground(activity, window, args.package, args.expect_ime)
+    result = query_foreground(base, args.package, args.expect_ime, args.wait_ime_ms)
     print(json.dumps({"serial": args.serial, **result}))
+    if "error" in result:
+        return 2
     return 0 if result["matched"] and result.get("imeMatched", True) else 1
 
 

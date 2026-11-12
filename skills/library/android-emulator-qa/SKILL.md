@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.14
+version: 1.0.15
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -24,7 +24,7 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 
    For an authorized update, allow a bounded transfer deadline suited to the device and APK. If installation stalls, check the original ADB process and matching package session before retrying. Record elapsed time and phase. Once installed, check version. For exact identity, resolve the APK with `pm path` and compare SHA-256. After a cold start, `am start -W` confirms activity launch. Wait within a separate deadline for the actual task content. At expiry capture the visible screen and scoped logs before further input.
 
-   Before coordinate input and after installation, app switches or dialogs, confirm both foreground observations. Run `python <skill-directory>/scripts/adb_foreground.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package>`. Exit 0 matches the package, including launcher aliases. On failure, record the observation, re-open the authorized app and refresh controls.
+   Before coordinate input and after installation, app switches or dialogs, confirm both foreground observations. Run `python <skill-directory>/scripts/adb_foreground.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package>`. Exit 0 matches the package, including launcher aliases. Use `--wait-ime-ms 1500` with an expected IME state after an observed field tap or keyboard dismissal when Android is still animating. The guard reads both foreground observations again during the short settle window and stops if the app loses focus. It sends no input. An exit 2 identifies the activity or window probe that failed.
 
 4. Record the baseline tab, game, save, language, filters and counters. Use observed values to verify restoration.
 
@@ -35,6 +35,8 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
    A control can have plausible screen coordinates while hidden under a fixed app header or bottom navigation. Use the observed unobscured content area, not just the physical screen bounds. Scroll the whole target into that area and get fresh references before tapping. Distinguish the app header from system bars, cutouts and the actual IME. Dismiss a covering IME through observed permitted controls, then refresh. A header control persistently behind a system bar or cutout is an app defect: record it rather than replay taps or scroll the body; use observed exterior close or Back if permitted. After a picker tap, confirm that its filter or options actually appeared before typing. Read translated labels from the current tree rather than guessing their wording.
 
 6. Keep a small action budget, normally twelve inputs for a smoke journey. If an action leaves the state unchanged, inspect focus, keyboard, a modal or scroll position before trying again. Two unsuccessful attempts at the same outcome end blind retries. Use an observed text field, a small scroll in its actual container or documented Back when appropriate. If the route remains blocked, report the last confirmed state and stop inputs. Do not reset storage or change unrelated preferences as a shortcut.
+
+   A reachable ADB transport and `sys.boot_completed=1` can coexist with unresponsive activity and window services. Record which service failed before any input. Verify the AVD name with `adb -s <serial> emu avd name`. If a restart is already in scope and the guest cannot reboot, relaunch the same visible AVD with its existing userdata and a cold start. Wait for both service probes to recover, confirm the installed build again and resume from a fresh listing.
 
    If the guest shell times out or UI Automator exits while the emulator console still responds, try the SDK console's display capture. Check `adb -s <serial> emu help screenrecord screenshot`, then use `adb -s <serial> emu screenrecord screenshot <existing-host-directory>` in a dedicated evidence folder. Identify and inspect the new PNG. It can have physical display dimensions and a device frame even when `adb shell wm size` reports a logical override. Use the actual dimensions and coordinate space of the input method. An `OK` reply or a frame that still shows the prior screen is not proof that a tap landed. This fallback applies to tool or guest failures within the authorized QA session.
 
