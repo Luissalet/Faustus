@@ -4,12 +4,19 @@ The inbox is a view over `ToolApprovalStore` and the existing contract approval
 store. It creates no additional approval points and changes no global approval
 mode. Studio exposes `/approvals`, linked by a bell in the sidebar.
 
-Each pending request shows a stable ten-character code, an effect-derived level
+Each pending request shows a stable four-character code, an effect-derived level
 (trivial, low, medium or high), its age, origin, and the proposed action. Approve
 and Deny use the native one-use decision. A tool approval resumes its original
 session through `/api/chat_stream`, with `approve_action`, the sealed workspace
 and input, current tool availability and the usual persisted timeline. Contract
 cards retain native grant/deny semantics; their consumer executes the plan.
+
+Codes use uppercase letters and digits without 0/O or 1/I. Assignments persist
+across restarts, resolve collisions without changing earlier codes, and are not
+reused for another card. Previously delivered ten-character codes still work.
+Studio uses the chat approval card treatment, colored level chips, origin icons
+and conversation/task names, a visible action summary, shared primary/secondary
+buttons, and a collapsible remembered-answer section below the requests.
 
 Scheduled assistants and automations retain their existing exact-action cards
 instead of discarding them. The continuation resumes the parked action in the
@@ -24,6 +31,8 @@ self-chat. It neither starts nor pairs a bridge, and never sends to contacts or
 groups. Literal replies are parsed with standard-library rules:
 
 - `<code> sí` / `<code> no` (also `yes` / `no`).
+- `sí` / `no` alone when exactly one request is pending, already delivered to
+  that channel. Multiple pending requests require a code.
 - `<code> siempre sí` / `<code> siempre no` (also prefix order and English).
 - `sí a todo` / `yes all`: the snapshot of still-pending codes delivered there.
 
@@ -50,7 +59,7 @@ only after the existing machinery has produced a pending card; it never widens
 the global gate or task/chat approval scope. A remembered denial uses native
 deny. Studio can switch a remembered answer or forget it.
 
-`approval_inbox.json` stores patterns, channel delivery state and scheduled
+`approval_inbox.json` stores code assignments, patterns, channel delivery state and scheduled
 origins under the normal data directory. Pending tool cards retain their existing
 store/persistence/expiry. No duplicate approval database is introduced.
 

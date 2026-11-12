@@ -1015,7 +1015,9 @@ y el manifiesto de compatibilidad de Talos identifica Funes como absorbido.
 ### Bandeja de aprobaciones y respuestas desde el móvil
 
 La bandeja de Studio reúne las decisiones ya pendientes de herramientas y
-contratos, con código, nivel, antigüedad y respuestas recordadas editables.
+contratos, con código de cuatro caracteres, nivel, antigüedad y respuestas
+recordadas editables en tarjetas como las del chat. Si solo hay una pendiente,
+basta con responder «sí» o «no».
 El chat propio de WhatsApp acepta sí/no por reglas sin consultar al modelo;
 los chats privados de Telegram pueden responder a sus propias tarjetas.
 Asistentes y automatizaciones conservan su acción exacta para reanudarla.

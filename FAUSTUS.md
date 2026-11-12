@@ -18246,11 +18246,17 @@ y el manifiesto de compatibilidad de Talos identifica Funes como absorbido.
 ## 12-11-2026 · Bandeja de aprobaciones y decisiones por mensaje (#3120)
 
 Candidato para revisión: Studio `/approvals` y campana lateral muestran las
-tarjetas nativas pendientes con código estable, nivel derivado de efectos,
+tarjetas nativas pendientes con código estable de cuatro caracteres sin 0/O ni
+1/I, nivel derivado de efectos,
 antigüedad, origen, aprobar y denegar. «Siempre» recuerda la misma herramienta,
 entrada completa, documento y carpeta; se puede editar o retirar el recuerdo.
 WhatsApp envía solo al chat de la propia cuenta ya conectada y lee respuestas
 literales propias: código sí/no/siempre sí/siempre no o sí a todo lo recibido.
+Con una sola petición pendiente ya recibida, basta «sí» o «no». Los códigos
+persisten sin reutilizarse y los largos enviados antes siguen funcionando.
+La bandeja usa tarjetas como las del chat, chips de nivel con color, iconos y
+nombres de origen, resumen visible de la acción, botones comunes de Studio y
+recuerdos plegables debajo; incluye estado vacío en claro y oscuro.
 El análisis de la respuesta no llama a ningún modelo. El turno aprobado continúa
 por `chat_stream` con la acción sellada y el alcance de una sola acción; puede
 consultar al modelo configurado al seguir trabajando. Telegram admite el mismo

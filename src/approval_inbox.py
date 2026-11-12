@@ -47,10 +47,39 @@ def owner_key(owner):
     return str(owner or "").strip().casefold()
 
 
-def code_for(kind, identifier):
-    # 40 bits, collision checked when a reply is resolved. No card index that
-    # changes when another request arrives or an earlier card disappears.
+_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+
+def _legacy_code(kind, identifier):
     return hashlib.sha256(f"{kind}:{identifier}".encode()).hexdigest()[:10].upper()
+
+
+def code_for(kind, identifier):
+    # Persist assignments, including retired ones: a delayed phone reply must
+    # never resolve a different card. Linear probing handles hash collisions
+    # without renaming codes that have already reached the phone.
+    key = f"{kind}:{identifier}"
+    with _lock:
+        codes = _load().get("codes", {})
+        if key in codes:
+            return codes[key]
+        def allocate(data):
+            codes = data.setdefault("codes", {})
+            used = set(codes.values())
+            size = len(_CODE_ALPHABET) ** 4
+            start = int(hashlib.sha256(key.encode()).hexdigest(), 16) % size
+            for offset in range(size):
+                value = (start + offset) % size
+                chars = []
+                for _ in range(4):
+                    value, digit = divmod(value, len(_CODE_ALPHABET))
+                    chars.append(_CODE_ALPHABET[digit])
+                code = "".join(reversed(chars))
+                if code not in used:
+                    codes[key] = code
+                    return code
+            raise ValueError("No approval codes available")
+        return change(allocate)
 
 
 def parse_reply(text):
@@ -58,9 +87,12 @@ def parse_reply(text):
     text = " ".join("".join(c for c in text if not unicodedata.combining(c)).split())
     if text in ("si a todo", "yes all"):
         return {"all": True, "granted": True, "remember": False}
-    match = re.fullmatch(r"([a-f0-9]{10}) (si|yes|no|siempre si|siempre no|always yes|always no)", text)
+    if text in ("si", "yes", "no"):
+        return {"code": None, "granted": text != "no", "remember": False, "all": False}
+    code_pattern = r"([2-9a-hj-np-z]{4}|[a-f0-9]{10})"
+    match = re.fullmatch(code_pattern + r" (si|yes|no|siempre si|siempre no|always yes|always no)", text)
     if not match:
-        match = re.fullmatch(r"(siempre si|siempre no|always yes|always no) ([a-f0-9]{10})", text)
+        match = re.fullmatch(r"(siempre si|siempre no|always yes|always no) " + code_pattern, text)
         if not match:
             return None
         answer, code = match.groups()
@@ -121,8 +153,16 @@ def pending(owner=None):
                      "session_id": "", "title": card.plan.action, "action": action,
                      "preview": card.plan.detail, "created_at": datetime.fromisoformat(card.requested_at.replace("Z", "+00:00")).timestamp(),
                      "expires_at": None, "level": "medium", "origin": {"kind": "contract"}})
+    from src.chat_bridges.turn import get_session, TurnUnavailable
     for row in rows:
         row["code"] = code_for(row["kind"], row["id"])
+        if row["origin"]["kind"] == "chat":
+            try:
+                session = get_session(row["session_id"])
+                if session and session.name:
+                    row["origin"] = {**row["origin"], "name": session.name}
+            except TurnUnavailable:
+                pass
         row["pattern"] = _pattern(row["kind"], row["action"])
         row["age_seconds"] = max(0, int(time.time() - row["created_at"]))
     return sorted(rows, key=lambda row: row["created_at"])
@@ -194,7 +234,8 @@ async def decide(owner, code, *, granted, remember=False):
     key = (owner_key(owner), code.upper())
     lock = _decisions.setdefault(key, asyncio.Lock())
     async with lock:
-        matches = [r for r in pending(owner) if r["code"] == code.upper()]
+        matches = [r for r in pending(owner) if code.upper() in
+                   (r["code"], _legacy_code(r["kind"], r["id"]))]
         if len(matches) != 1:
             return {"ok": False, "code": code, "reason": "not_found" if not matches else "ambiguous"}
         row = matches[0]
@@ -233,7 +274,16 @@ async def reply(owner, text, *, allowed_codes=None):
     parsed = parse_reply(text)
     if parsed is None:
         return {"handled": False}
-    codes = [r["code"] for r in pending(owner)] if parsed["all"] else [parsed["code"]]
+    rows = pending(owner)
+    if not parsed["all"] and parsed["code"] is None:
+        # An unqualified yes/no is meaningful only for exactly one pending
+        # request, and only once that request was delivered to this channel.
+        if len(rows) != 1:
+            return {"handled": True, "results": [{"ok": False, "reason": "ambiguous" if rows else "not_found"}]}
+        parsed["code"] = rows[0]["code"]
+        if allowed_codes is not None and _legacy_code(rows[0]["kind"], rows[0]["id"]) in allowed_codes:
+            parsed["code"] = _legacy_code(rows[0]["kind"], rows[0]["id"])
+    codes = [r["code"] for r in rows] if parsed["all"] else [parsed["code"]]
     # A channel's 'all' is a snapshot of requests actually delivered there.
     if allowed_codes is not None:
         codes = [code for code in codes if code in allowed_codes]
@@ -247,9 +297,10 @@ async def reply(owner, text, *, allowed_codes=None):
 
 
 def message(row):
-    origin = row["origin"].get("name") or row["origin"]["kind"]
+    origin = row["origin"].get("name") or {"chat": "Conversación", "assistant": "Asistente", "automation": "Automatización", "contract": "Aprobación"}.get(row["origin"]["kind"], row["origin"]["kind"])
     levels = {"trivial": "trivial", "low": "bajo", "medium": "medio", "high": "alto"}
     return (f"Faustus · decisión {row['code']}\n{row['title']} · {origin} · nivel {levels[row['level']]}\n"
-            f"{str(row['preview'])[:1200]}\n\nResponde: {row['code']} sí / {row['code']} no / "
+            f"{str(row['preview'])[:1200]}\n\nPor ejemplo: {row['code']} sí\nResponde: {row['code']} sí / {row['code']} no / "
             f"{row['code']} siempre sí / {row['code']} siempre no.\n"
+            "Si solo hay una petición pendiente, basta con «sí» o «no».\n"
             "«Siempre» recuerda esta misma herramienta, entrada y carpeta. «Sí a todo» resuelve las peticiones recibidas.")

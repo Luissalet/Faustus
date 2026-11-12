@@ -532,10 +532,14 @@ class TelegramBridge:
             mapped = self.store.get_session(chat_id)
             sid = mapped["session_id"] if mapped else ""
             codes = {row["code"] for row in approval_inbox.pending(owner) if sid and row["session_id"] == sid}
-            result = await approval_inbox.reply(owner, text, allowed_codes=codes)
-            count = sum(row.get("ok", False) for row in result["results"])
-            await self._say(api, chat_id, f"Faustus · {count} decisiones resueltas.")
-            return
+            parsed = approval_inbox.parse_reply(text)
+            # A plain yes/no remains a normal chat message when this private
+            # conversation has no pending decision of its own.
+            if codes or parsed.get("code") or parsed["all"]:
+                result = await approval_inbox.reply(owner, text, allowed_codes=codes)
+                count = sum(row.get("ok", False) for row in result["results"])
+                await self._say(api, chat_id, f"Faustus · {count} decisiones resueltas.")
+                return
         if command is not None:
             name, arg = command
             if name == "other":

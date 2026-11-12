@@ -2599,5 +2599,7 @@ Candidato de bandeja común y respuestas literales sobre las aprobaciones
 existentes: WhatsApp al chat propio, Telegram privado, reanudación exacta y
 recuerdos editables por patrón. No cambia cuándo se solicita aprobación.
 El contrato y los límites actuales figuran en `docs/api/approval-inbox.md`.
+La segunda revisión acorta los códigos a cuatro caracteres estables, admite
+«sí»/«no» con una sola pendiente y adapta las tarjetas al estilo de Studio.
 Integración, reinicio y despliegue en Spark quedan a cargo del revisor;
 el seguimiento del TaskRun conserva la pausa y la continuación vive en su chat.

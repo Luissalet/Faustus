@@ -1736,7 +1736,8 @@ Talos compatibility manifest identifies Funes as absorbed.
 ### Approval inbox and phone replies
 
 Studio's approval inbox lists existing pending tool and contract decisions with
-codes, effect levels, age, and editable remembered answers. The paired WhatsApp
+four-character codes, effect levels, age, and editable remembered answers in
+chat-style cards. A lone pending request accepts a bare yes/no. The paired WhatsApp
 self-chat accepts literal yes/no replies without model parsing; private Telegram
 chats can answer their own conversation's cards. Scheduled assistants and
 automations keep their exact-action cards for the same continuation flow.

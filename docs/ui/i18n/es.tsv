@@ -11630,3 +11630,8 @@ No remembered answers.	No hay respuestas recordadas.
 Remembered answer for {tool}	Respuesta recordada para {tool}
 Always	Siempre
 Trivial	Trivial
+Run {tool}: {action}	Ejecutar {tool}: {action}
+Use {tool}: {action}	Usar {tool}: {action}
+Full action details	Ver la acción completa
+New requests will appear here. You can keep working in your conversations.	Las nuevas peticiones aparecerán aquí. Puedes seguir trabajando en tus conversaciones.
+Open Studio	Abrir Studio

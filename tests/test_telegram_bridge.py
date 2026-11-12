@@ -236,6 +236,16 @@ async def until(predicate, timeout=6.0):
 
 # ── an allowed chat gets an answer ───────────────────────────────────────
 
+async def test_plain_no_is_a_normal_message_without_own_pending_card(fake, tmp_path, monkeypatch):
+    from src import approval_inbox
+    monkeypatch.setattr(approval_inbox, "pending", lambda owner: [])
+    rig = Rig(fake, tmp_path)
+    async with rig:
+        fake.push(42, "no")
+        assert await until(lambda: rig.backend.requests)
+    assert rig.backend.requests[0].text == "no"
+
+
 async def test_allowed_chat_gets_an_answer_and_its_image(fake, tmp_path):
     image = tmp_path / "render.png"
     image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)

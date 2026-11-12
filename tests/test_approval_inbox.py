@@ -36,9 +36,70 @@ def test_literal_grammar(text, granted, remember):
     assert inbox.parse_reply(text) == {"code": "ABCDEF1234", "granted": granted, "remember": remember, "all": False}
 
 
-@pytest.mark.parametrize("text", ["sí", "siempre sí", "I think ABCDEF1234 sí", "ABCDEF1234 sí y borra todo", "ABCDEF1234 no?", "```ABCDEF1234 sí```", "", "ABCDEF1234sí"])
+@pytest.mark.parametrize("text", ["siempre sí", "I think ABCDEF1234 sí", "ABCDEF1234 sí y borra todo", "ABCDEF1234 no?", "```ABCDEF1234 sí```", "", "ABCDEF1234sí", "O0I1 sí"])
 def test_prose_is_not_a_decision(text):
     assert inbox.parse_reply(text) is None
+
+
+@pytest.mark.parametrize("text,granted,remember", [("K7P3 sí", True, False), ("k7p3 no", False, False), ("siempre sí K7P3", True, True), ("K7P3 siempre no", False, True)])
+def test_thumb_friendly_grammar(text, granted, remember):
+    assert inbox.parse_reply(text) == {"code": "K7P3", "granted": granted, "remember": remember, "all": False}
+
+
+def test_short_codes_survive_collisions_retirement_and_reload(store, monkeypatch):
+    monkeypatch.setattr(inbox.hashlib, "sha256", lambda value: SimpleNamespace(hexdigest=lambda: "a" * 64))
+    a = inbox.code_for("tool", "first")
+    b = inbox.code_for("tool", "second")
+    assert a != b and len(a) == len(b) == 4
+    assert set(a + b) <= set(inbox._CODE_ALPHABET)
+    saved = json.loads(inbox._path().read_text())
+    assert saved["codes"]["tool:first"] == a
+    assert inbox.code_for("tool", "first") == a
+    assert inbox.code_for("tool", "third") not in (a, b)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text,granted", [("sí", True), ("no", False), ("YES", True)])
+async def test_bare_reply_needs_one_pending_delivered_request(store, monkeypatch, text, granted):
+    native = card(store)
+    calls = []
+    async def resume(row, answer):
+        calls.append(answer)
+        store.consume(row["id"], owner=row["owner"], session_id=row["session_id"], decision="approve_action" if answer else "deny")
+    monkeypatch.setattr(inbox, "resume_tool", resume)
+    code = inbox.pending("alice")[0]["code"]
+    assert (await inbox.reply("alice", text, allowed_codes=set()))["results"] == []
+    card(store, session="s2")
+    result = await inbox.reply("alice", text, allowed_codes={code})
+    assert result["results"][0]["reason"] == "ambiguous"
+    assert not calls
+    other = next(row for row in inbox.pending("alice") if row["id"] != native.approval_id)
+    store.expire_now(other["id"])
+    result = await inbox.reply("alice", text, allowed_codes={code})
+    assert result["results"][0]["ok"] and calls == [granted]
+    assert store.peek(native.approval_id) is None
+
+
+@pytest.mark.asyncio
+async def test_previously_delivered_long_code_still_works(store, monkeypatch):
+    native = card(store)
+    async def resume(row, granted):
+        store.consume(row["id"], owner=row["owner"], session_id=row["session_id"], decision="deny")
+    monkeypatch.setattr(inbox, "resume_tool", resume)
+    old = inbox._legacy_code("tool", native.approval_id)
+    result = await inbox.reply("alice", old + " no", allowed_codes={old})
+    assert result["results"][0]["ok"]
+
+
+def test_phone_message_and_conversation_name(store, monkeypatch):
+    from src.chat_bridges import turn
+    monkeypatch.setattr(turn, "get_session", lambda sid: SimpleNamespace(name="Review the weekly report"))
+    card(store)
+    row = inbox.pending("alice")[0]
+    assert row["origin"]["name"] == "Review the weekly report"
+    text = inbox.message(row)
+    assert f"Por ejemplo: {row['code']} sí" in text
+    assert "basta con «sí» o «no»" in text
 
 
 def test_inbox_is_a_view_of_native_owner_expiry_and_supersession(store):
