@@ -57,6 +57,44 @@ such. This metadata reader does not provide native Godot/Unreal editor control.
 The bundled `gamedev` skill routes to the appropriate engine reference and is
 also readable as a standard SKILL.md by other coding agents.
 
+## Recorded Blood Arrows journeys
+
+`build_playtest` constructs a generated laboratory scene and fixture prefab
+from an optional JSON-string `recipe` (`version:1`, `floorWidth`, `floorLength`,
+`wallHeight`, `lighting:light|dark`). It reuses the game's player prefab,
+camera, materials and HDRP environment. Save open scenes and stop Play mode
+first. Generated assets are reproducible and excluded from Git; the authored
+Course scene and gameplay source are preserved.
+
+`run_playtest` takes `output` (a fresh absolute directory), optional `routes`
+(`straight`, `arrow35`, `arrow90`, `wall_parallel`, `wall_perpendicular`,
+`walk`, `run`, `tunnel`), `seconds` (default 4), `warmup` (2), `simulationHz`
+(60), `captureHz` (10), `width` (960), `height` (540), `capture` (true) and
+the same `recipe`. It starts real Play mode and drives `PlayerInputReader`.
+Setup positions and settles the existing player; it does not force collision
+responses or Animator states. The tunnel uses the authored `Course.unity`.
+
+Poll `playtest_status` with that `output`; do not resubmit the start after
+a timeout. `completed` describes execution, not design acceptance. The raw
+report retains positions, speeds, souls, contact callbacks, turn events,
+model/hips/limbs, clip names/weights and normalized animation time. It also
+retains simulation, game and wall clocks. Console errors during preparation,
+simulation and editor teardown remain visible.
+
+The game's `python Tools/playtest.py run --unity <Unity.exe> --output <new-dir>`
+compiles and runs the suite without an editor window, evaluates design rules,
+uses local FFmpeg for MP4 clips and writes `index.html`, `summary.json`,
+`raw.json`, PNG sequences and a SHA-256 manifest. Use `--attach` for an editor
+already open on that exact project, or `report --output <dir>` after starting
+through MCP. `build-player` and `run-player` compile and execute an optional
+standalone Windows laboratory build. The procedure/library does not deploy
+anything or start a model.
+
+Captures use the HDRP gameplay camera; screen-space overlay HUD is excluded.
+Fixed-step playback is not a real-time FPS benchmark. Review every recording
+for occlusion, lighting and movement before claiming visual acceptance.
+Automatic failures remain red with their reproduction and follow-up tasks.
+
 These operations extend the project's existing native bridge. Workflow sources:
 [MCP Unity](https://github.com/CoderGamester/mcp-unity/tree/d572dc88f1b982a0fdfc09cd14cfdfd760b658e8)
 (MIT) and [game development skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills/tree/38a4c2500eeb5ff9ac084336b8f66108069d2f8d)

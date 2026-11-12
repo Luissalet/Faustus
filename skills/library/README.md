@@ -1,5 +1,16 @@
 # Skill library
 
+## Recorded Unity verification
+
+Six original procedures extend the existing `gamedev` and game-production
+workflows: `unity-animation`, `unity-collision`, `unity-speed-feel`,
+`unity-hdrp-lighting`, `unity-model-import` and `unity-recorded-playtest`.
+They use the installed editor bridge and Blood Arrows' recorded journeys,
+with actual input, collision callbacks and live Animator/bone samples.
+They require reading the generated report and watching the recordings;
+compilation and a configured clip do not establish gameplay behavior.
+The new procedures do not install Unity or change the game by themselves.
+
 This folder ships a curated set of `SKILL.md` procedures with the app
 itself — engineering habits (TDD, verification, security review, per-
 language patterns, research, planning) that would otherwise take a while

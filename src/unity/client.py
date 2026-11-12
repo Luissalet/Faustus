@@ -8,8 +8,8 @@ import httpx
 OPERATIONS = ("status", "scene", "object", "material", "select", "create_object", "add_component", "set_properties",
               "create_material", "modify_material", "assign_material", "create_prefab", "instantiate_prefab",
               "new_scene", "load_scene", "save_scene", "active_scene", "unload_scene", "undo", "redo",
-              "playmode", "run_tests", "tests_job")
-READ_OPERATIONS = frozenset({"status", "scene", "object", "material", "tests_job"})
+              "playmode", "run_tests", "tests_job", "build_playtest", "run_playtest", "playtest_status")
+READ_OPERATIONS = frozenset({"status", "scene", "object", "material", "tests_job", "playtest_status"})
 
 
 class UnityClient:

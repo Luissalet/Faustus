@@ -8,7 +8,8 @@ from .project import profile
 DESCRIPTION = ("Read and edit the open local Unity editor project through its native bridge. "
     "Inspect scenes, uniquely identify objects, read serialized component properties, edit fields with Unity undo, "
     "create/assign HDRP materials, create/instantiate prefabs, save/load scenes, select objects and control Play mode. "
-    "Run real EditMode/PlayMode tests and read retained results. No hosted API or model. "
+    "Run real EditMode/PlayMode tests and read retained results. Build a reproducible Blood Arrows playtest lab, "
+    "run recorded input journeys and inspect retained playtest status. No hosted API or model. "
     "Use schema first. project is the Unity project folder. Pending responses require job, never resubmission. "
     "project_profile detects local Unity, Godot, Unreal or Three.js metadata without starting them.")
 SCHEMA = {"type": "object", "properties": {
@@ -35,6 +36,9 @@ OPERATION_HELP = {
     "playmode": "action:play|stop|pause|resume|step; requested state is distinct from observed state.",
     "run_tests": "mode:EditMode|PlayMode, optional filter: full test name; returns a persistent test job_id.",
     "tests_job": "job_id: hex ID from run_tests; includes actual pass/fail/skip counts and tests.",
+    "build_playtest": "Optional recipe: JSON string with version:1, floorWidth, floorLength, wallHeight, lighting:light|dark. Builds only generated lab scene and fixture prefab, reusing the game's player and HDRP assets; stop Play mode and save scenes first.",
+    "run_playtest": "output: new absolute directory, optional routes:[straight,arrow35,arrow90,wall_parallel,wall_perpendicular,walk,run,tunnel], seconds:4, warmup:2, simulationHz:60, captureHz:10, width:960, height:540, capture:true, recipe: JSON string. Starts Play mode, drives real input and records raw.json and camera PNGs. Poll playtest_status; do not resubmit. Tools/playtest.py report --output ... evaluates rules and builds clips/HTML.",
+    "playtest_status": "output: directory passed to run_playtest. Reads retained state, routes, sample counts and runtime errors; completed does not mean gameplay assertions passed. Read the generated report and watch recordings.",
 }
 
 
