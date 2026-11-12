@@ -11731,3 +11731,12 @@ Local scorecards do not export telemetry. Local processing does not itself uploa
 Configured destinations show what can leave, not evidence that data has been sent. Enabled does not mean connected or healthy.	Los destinos configurados indican por dónde podrían salir los datos. Un destino activo puede estar desconectado o no responder.
 Local proxies, connectors and command tools can forward data elsewhere; their downstream destinations cannot be inferred from configuration.	Los proxies locales, los conectores y las herramientas de comandos pueden reenviar datos. Su destino final puede quedar fuera de la configuración disponible.
 Per-turn routing, model fallback, tools, user overrides and external folder synchronizers can add destinations. This is not a packet capture or a guarantee of local-only operation.	El enrutamiento por turno, los modelos alternativos, las herramientas, los ajustes por usuario y la sincronización externa de carpetas pueden añadir destinos. El informe describe la configuración disponible.
+Active shortcut: {key}	Atajo activo: {key}
+Ask a question or paste text or an image. Esc hides this window; your conversation stays in Studio.	Escribe una pregunta o pega texto o una imagen. Esc oculta esta ventana y la conversación sigue en Studio.
+For example Ctrl+Shift+Space. Esc hides the window without stopping the answer.	Por ejemplo, Ctrl+Mayús+Espacio. Esc oculta la ventana y la respuesta sigue en curso.
+Global shortcut	Atajo global
+In the Windows desktop app, open a small window from any app. It uses the same Faustus and conversation as Studio, including on a Spark.	En Faustus para Windows puedes abrir una ventana desde cualquier aplicación. Comparte la conversación con Studio y se conecta a la misma instancia de Faustus, también si está en una Spark.
+Open quick question	Abrir pregunta rápida
+Quick question	Pregunta rápida
+Quick question settings saved.	Ajustes de pregunta rápida guardados.
+This shortcut is unavailable. Choose another combination.	Este atajo no está disponible. Elige otra combinación.

@@ -3,6 +3,9 @@
 ## Destinos de los datos — Ágora #3126
 
 El informe bajo demanda identifica destinos configurados y las conversaciones y proyectos que los usan. Está disponible en Ajustes, terminal y MCP. El aviso de Studio acompaña a los adjuntos cuando pueden salir del equipo. Las rutas indirectas se muestran según lo que permite conocer la configuración.
+## Pregunta rápida en Windows — Ágora #3127
+
+La ventana flotante de Studio se abre con un atajo global configurable, admite pegar texto e imágenes y conserva la conversación al ocultarla con Esc. «Seguir en Studio» lleva el mismo chat y su borrador a la ventana principal. La herramienta MCP `quick_question` consulta los ajustes, cambia el atajo y puede solicitar que se abra una conversación visible.
 
 ## Pulso de estado de Studio — Ágora #3124
 
