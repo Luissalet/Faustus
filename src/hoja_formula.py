@@ -1730,7 +1730,7 @@ def f_text(ctx, v, fmt):
         raise ErrExc(v)
     if isinstance(v, str) and _NUM_TEXT.match(v):
         v = float(v)
-    return F.format_value(v, F.format_code(to_str(fmt)))
+    return F.format_value(v, F.format_code(to_str(fmt)), "en")
 
 
 @fn("VALUE")

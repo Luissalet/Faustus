@@ -262,6 +262,46 @@ def test_chart_series_with_the_header_in_the_first_cell(wb):
     d = hoja.chart_data(wb, wb.tab("Data"), ch)
     assert d["categories"] == ["a", "b", "a", "c"] and d["series"][0]["values"] == [2, 3, 5, 1]
 
+@pytest.fixture
+def spanish():
+    from src import hoja_format as F
+    F.set_locale("es")
+    yield F
+    F.set_locale("en")
+
+
+def test_cells_show_the_language_of_the_viewer(spanish):
+    F = spanish
+    nb = "\u00a0"
+    assert F.format_value(850, "\u20ac#,##0.00") == "850,00" + nb + "\u20ac"
+    assert F.format_value(-850.5, "$#,##0.00") == "-850,50" + nb + "$"
+    assert F.format_value(1234567.891, "#,##0.00") == "1.234.567,89"
+    assert F.format_value(1.0244, "0.0%") == "102,4" + nb + "%"
+    assert F.format_value(3.5, "General") == "3,5" and F.format_value(7, "General") == "7"
+    assert F.format_value(45000, "yyyy-mm-dd") == "15/03/2023"
+    assert F.format_value(45000, "d mmmm yyyy") == "15 marzo 2023"
+    F.set_locale("en")
+    assert F.format_value(850, "\u20ac#,##0.00") == "\u20ac850.00" and F.format_value(45000, "yyyy-mm-dd") == "2023-03-15"
+    assert F.format_value(1.0244, "0.0%") == "102.4%"
+
+
+def test_typed_numbers_are_read_in_both_notations(spanish):
+    F = spanish
+    assert F.parse_input("1.234,56") == (1234.56, None)
+    assert F.parse_input("12,5 %") == (0.125, "0.0%")
+    assert F.parse_input("850,00 \u20ac") == (850.0, "\u20ac#,##0.00")
+    assert F.parse_input("3.14") == (3.14, None) and F.parse_input("42") == (42, None)
+    assert F.parse_input("1.234") == (1234, None)
+    assert F.parse_input("15/03/2023")[0] == 45000
+    F.set_locale("en")
+    assert F.parse_input("1,234.56") == (1234.56, "#,##0.00") and F.parse_input("12.5%") == (0.125, "0.0%")
+
+
+def test_text_function_and_stored_values_do_not_depend_on_the_viewer(wb, spanish):
+    run(wb, [{"op": "set", "at": "A1", "values": [["=TEXT(1234.5,\"#,##0.00\")", 1.5]]}])
+    assert wb.tab("Data").cells[(1, 1)].v == "1,234.50" and wb.tab("Data").cells[(1, 2)].v == 1.5
+
+
 def test_batch_keeps_what_ran_before_a_failure(wb):
     with pytest.raises(hoja.SheetError) as e:
         run(wb, [{"op": "set", "at": "A1", "values": [[1]]}, {"op": "format", "range": "A1", "color": "nope"}, {"op": "set", "at": "A2", "values": [[2]]}])

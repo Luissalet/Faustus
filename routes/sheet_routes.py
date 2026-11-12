@@ -86,6 +86,7 @@ def setup_sheet_routes() -> APIRouter:
 
     def guard(request: Request) -> None:
         require_admin(request)
+        hoja.F.set_locale(request.headers.get("x-hoja-locale") or request.query_params.get("locale"))   # how cells are shown and typed numbers read
 
     @router.get("/api/hoja")
     async def list_(request: Request, session: str = "", project: str = ""):

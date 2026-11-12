@@ -17,7 +17,7 @@ import {
   type Cell, type Sel, type Style,
 } from '../../lib/hojaModel';
 import HojaChart from './HojaChart';
-import { t } from '../../i18n';
+import { getLang, locale, t } from '../../i18n';
 import './hoja.css';
 
 /**
@@ -280,6 +280,7 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
     if (cell.formula) return cell.formula;
     const nf = styleOf(cell)?.nf ?? '';
     if (/[ymd]/i.test(nf) && !/General/i.test(nf)) return cell.shown;
+    if (typeof cell.v === 'number' && getLang() === 'es') return String(cell.v).replace('.', ',');   // typed back it reads as the same number
     return cell.v == null ? '' : String(cell.v);
   };
 
@@ -631,6 +632,7 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
     return n > 1 && n <= 50000 ? summarise(vals) : null;
   }, [sel, tabId, tick]);
 
+  const num4 = new Intl.NumberFormat(locale(), { maximumFractionDigits: 4 });
   const barText = editing ? editing.text : rawOf(active);
   const nameBox = whole === 'col' ? `${colLetters(sel.c0)}:${colLetters(sel.c1)}` : whole === 'row' ? `${sel.r0}:${sel.r1}` : rangeText(sel);
   const colHeads = [];
@@ -855,7 +857,7 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
         </div>
         <span className="fs-hj-grow" />
         {status && status.count > 0 && (
-          <span className="fs-hj-sum" data-testid="hoja-summary">{t('Sum')} {+status.sum.toFixed(4)} · {t('Average')} {+status.avg.toFixed(4)} · {t('Count')} {status.count}</span>
+          <span className="fs-hj-sum" data-testid="hoja-summary">{t('Sum')} {num4.format(status.sum)} · {t('Average')} {num4.format(status.avg)} · {t('Count')} {status.count}</span>
         )}
         <span className="fs-hj-rows">{tab ? t('{n} rows', { n: tab.used[0] }) : ''}</span>
       </div>

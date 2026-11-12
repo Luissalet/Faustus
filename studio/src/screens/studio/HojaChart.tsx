@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
-import { compactNumber, niceTicks } from '../../lib/hojaModel';
+import { compactNumber as compact, niceTicks } from '../../lib/hojaModel';
+import { getLang } from '../../i18n';
+
+const compactNumber = (n: number): string => (getLang() === 'es' ? compact(n).replace('.', ',') : compact(n));
 import type { HojaChartData } from '../../adapters/surfaces';
 
 /**

@@ -6,6 +6,7 @@ Dates are serial numbers (1900 system, day 0 = 1899-12-30, which is what Excel a
 """
 from __future__ import annotations
 
+import contextvars
 import datetime as _dt
 import math
 import re
@@ -18,6 +19,22 @@ DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sun
 NAMED = {"general": "General", "number": "#,##0.00", "integer": "0", "thousands": "#,##0", "percent": "0.00%",
          "date": "yyyy-mm-dd", "datetime": "yyyy-mm-dd hh:mm", "time": "hh:mm:ss", "text": "@", "scientific": "0.00E+00"}
 CURRENCY = {"usd": "$", "eur": "€", "gbp": "£", "jpy": "¥", "$": "$", "€": "€", "£": "£", "¥": "¥"}
+
+# What a cell SHOWS follows the interface language of whoever looks (the files keep real numbers and Excel codes).
+# The language rides a context variable set by the route (header X-Hoja-Locale); the agent and the files use English.
+_LOCALE: "contextvars.ContextVar[str]" = contextvars.ContextVar("hoja_locale", default="en")
+NBSP = "\u00a0"
+MONTHS_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+DAYS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_SYMBOLS = {"$", "€", "£", "¥"}
+
+
+def set_locale(value: Any) -> None:
+    _LOCALE.set("es" if str(value or "").strip().lower().startswith("es") else "en")
+
+
+def get_locale() -> str:
+    return _LOCALE.get()
 
 
 def serial_from_date(d: _dt.date) -> int:
@@ -71,7 +88,7 @@ def is_date_format(code: str) -> bool:
     return _is_date_code(code or "")
 
 
-def _num_section(x: float, sec: str) -> str:
+def _num_section(x: float, sec: str, loc: str = "en") -> str:
     sec_clean = re.sub(r'"[^"]*"', lambda m: "\x00" + str(len(m.group(0))) + "\x00", sec)
     percent = "%" in sec_clean
     m = re.search(r"[#0?][#0?,]*(?:\.[0#?]*)?", sec_clean)
@@ -90,12 +107,23 @@ def _num_section(x: float, sec: str) -> str:
     if min_int == 0 and head == "0" and (dec > 0 or int_part):
         head = ""
     s = head + ("." + tail if dec else "")
-    s = re.sub(r'"([^"]*)"', r"\1", pre).replace("\\", "") + s + re.sub(r'"([^"]*)"', r"\1", post).replace("\\", "")
-    return s.replace("%", "%") if percent else s
+    pre_t = re.sub(r'"([^"]*)"', r"\1", pre).replace("\\", "")
+    post_t = re.sub(r'"([^"]*)"', r"\1", post).replace("\\", "")
+    if loc == "es":
+        s = s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")      # 1.234,56
+        sym = pre_t.strip()
+        if sym in _SYMBOLS and not post_t.strip():
+            return s + NBSP + sym                                                 # 850,00 €
+        if post_t.startswith("%"):
+            post_t = NBSP + post_t                                                # 102,4 %
+    return pre_t + s + post_t
 
 
-def _date_text(n: float, code: str) -> str:
+def _date_text(n: float, code: str, loc: str = "en") -> str:
     dt = datetime_from_serial(n)
+    if loc == "es":
+        code = {NAMED["date"]: "dd/mm/yyyy", NAMED["datetime"]: "dd/mm/yyyy hh:mm"}.get(code, code)
+    months, days = (MONTHS_ES, DAYS_ES) if loc == "es" else (MONTHS, DAYS)
     out = []
     ampm = bool(re.search(r"AM/PM|A/P", code, re.I))
     toks = _TOKEN.findall(code)
@@ -110,7 +138,7 @@ def _date_text(n: float, code: str) -> str:
         elif lo[:1] == "y":
             out.append(f"{dt.year:04d}" if len(t) > 2 else f"{dt.year % 100:02d}")
         elif lo[:1] == "d":
-            wd = DAYS[dt.weekday()]
+            wd = days[dt.weekday()]
             out.append({1: str(dt.day), 2: f"{dt.day:02d}", 3: wd[:3]}.get(len(t), wd))
         elif lo[:1] == "h":
             h = dt.hour % 12 or 12 if ampm else dt.hour
@@ -124,7 +152,7 @@ def _date_text(n: float, code: str) -> str:
             if minute:
                 out.append(f"{dt.minute:02d}" if len(t) > 1 else str(dt.minute))
             else:
-                mon = MONTHS[dt.month - 1]
+                mon = months[dt.month - 1]
                 out.append({1: str(dt.month), 2: f"{dt.month:02d}", 3: mon[:3]}.get(len(t), mon))
         elif lo in ("am/pm", "a/p"):
             out.append(("AM" if dt.hour < 12 else "PM") if lo == "am/pm" else ("A" if dt.hour < 12 else "P"))
@@ -149,8 +177,9 @@ def general(v: float) -> str:
     return s
 
 
-def format_value(v: Any, code: str = "General") -> str:
-    """What a cell shows for ``v`` under the Excel format ``code``."""
+def format_value(v: Any, code: str = "General", locale: Optional[str] = None) -> str:
+    """What a cell shows for ``v`` under the Excel format ``code`` (separators and names of ``locale``, else the viewer's)."""
+    loc = "es" if (locale or get_locale()) == "es" else "en"
     if v is None:
         return ""
     if hasattr(v, "code") and not isinstance(v, (int, float, str)):
@@ -165,26 +194,25 @@ def format_value(v: Any, code: str = "General") -> str:
         if len(parts) >= 4:
             return parts[3].replace("@", v).replace('"', "")
         return v
-    if code == "General":
-        return general(v)
-    if code == "@":
-        return general(v)
+    if code == "General" or code == "@":
+        g = general(v)
+        return g.replace(".", ",") if loc == "es" and not isinstance(v, int) else g
     parts = code.split(";")
     if _is_date_code(parts[0]):
         try:
-            return _date_text(float(v), parts[0])
+            return _date_text(float(v), parts[0], loc)
         except (ValueError, OverflowError):
             return "#VALUE!"
     x = float(v)
     if x < 0 and len(parts) > 1:
         sec = parts[1]
-        s = _num_section(x, sec)
+        s = _num_section(x, sec, loc)
         return s
     if x == 0 and len(parts) > 2:
-        return _num_section(0.0, parts[2])
-    s = _num_section(x, parts[0])
+        return _num_section(0.0, parts[2], loc)
+    s = _num_section(x, parts[0], loc)
     if x < 0 and s.strip("0.,% ") != "" and abs(x) * 10 ** 15 >= 1:
-        neg = _num_section(x, parts[0])
+        neg = _num_section(x, parts[0], loc)
         # a negative with one section gets a leading minus unless rounding made it zero
         if re.search(r"[1-9]", neg):
             return "-" + s
@@ -234,6 +262,12 @@ def parse_input(text: str) -> Tuple[Any, Optional[str]]:
         return True, None
     if low in ("false", "falso"):
         return False, None
+    if get_locale() == "es":                # 1.234,56 · 12,5 % · 850,00 € typed in a Spanish interface; 3.14 still works
+        m = re.match(r"^([+-]?)\s*([$€£¥]?)\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?[\s\u00a0]*([%$€£¥]?)$", t)
+        if m and (m.group(4) is not None or "." in m.group(3)):
+            sign, lead, whole, dec, tail = m.groups()
+            t = f"{sign}{lead}{whole.replace('.', '')}" + (f".{dec}" if dec else "") + tail
+            low = t.lower()
     if _NUM.match(t):
         f = float(t)
         return (int(f) if f.is_integer() and "e" not in low and "." not in t and abs(f) < 1e15 else f), None

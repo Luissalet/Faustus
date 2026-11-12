@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ApiError, CLIENT_API_VERSION, CLIENT_VERSION_HEADER } from './api';
 import type { Doc, Patch } from '../lib/pizarraModel';
 import type { Style } from '../lib/hojaModel';
-import { t } from '../i18n';
+import { getLang, t } from '../i18n';
 
 /**
  * Pizarra and Hoja (`/api/pizarra`, `/api/hoja`, `/api/surfaces/events`): the REST calls, and the one stream of
@@ -24,6 +24,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       Accept: 'application/json',
       [CLIENT_VERSION_HEADER]: CLIENT_API_VERSION,
+      'X-Hoja-Locale': getLang(),
       ...(init?.body && typeof init.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       ...(init?.headers ?? {}),
     },
