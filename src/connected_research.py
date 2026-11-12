@@ -402,6 +402,18 @@ class ConnectedResearcher(DeepResearcher):
             self._last_round_note = "No new evidence in the selected connected sources"
         return findings
 
+    @staticmethod
+    def _trim_findings_for_checkpoint(findings):
+        # Preserve the metadata that makes an app citation open in the dock
+        # after resuming an interrupted run.
+        rows = DeepResearcher._trim_findings_for_checkpoint(findings)
+        originals = (finding for finding in findings if isinstance(finding, dict))
+        for row, original in zip(rows, originals):
+            for key in ("source_id", "app_id", "retrieval_lane", "excerpt"):
+                if key in original:
+                    row[key] = original[key]
+        return rows
+
     async def _final_report(self, question, report, **kwargs):
         final = await super()._final_report(question, report, **kwargs)
         from src.research_citations import audit_citations

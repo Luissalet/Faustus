@@ -224,3 +224,13 @@ def test_connected_brief_includes_filters_and_clarification(monkeypatch):
     prompt = llm.call_args.args[0][0]["content"]
     assert '{"notes": {"tag": "project"}}' in prompt
     assert "this month" in prompt
+
+
+
+def test_connected_checkpoint_preserves_original_app_links():
+    finding = {"url": "http://kafka.test/?doc=12#/documentos/12", "title": "Invoice",
+               "evidence": "Document text", "source_id": "mcp:kafka", "app_id": "kafka",
+               "retrieval_lane": "text", "excerpt": False}
+    saved = cr.ConnectedResearcher._trim_findings_for_checkpoint([None, finding])
+    assert saved == [{"summary": "", **finding}]
+    assert rh.ResearchHandler._extract_sources(saved)[0]["app_id"] == "kafka"
