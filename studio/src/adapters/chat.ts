@@ -2509,8 +2509,10 @@ export interface SkillAuditJob {
 export interface ChatActivity {
   /** Live native subagents, including those outside the detached-run registry. */
   workers?: Record<string, unknown>;
-  /** Active Agora console workers, read by the shell's shared poller. */
-  consoleWorkers?: number;
+  /** Scheduled automation runs currently executing. */
+  activeAutomations?: number;
+  /** Active Agora workers, read independently by the shell's shared poller. */
+  agoraWorkers?: number;
   /** Sessions with a run going (queued ones included). */
   running: string[];
   /** Session → opaque run id, so a list can Stop what it shows. */
@@ -2536,6 +2538,7 @@ export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> 
     queued?: unknown;
     unverified?: unknown;
     background_jobs?: unknown;
+    active_automations?: unknown;
     workers?: Record<string, unknown>;
   }>('/api/chat/activity', signal);
   // The server could not confirm some runs this time (a busy database): the
@@ -2591,6 +2594,7 @@ export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> 
   return {
     running: ids(raw.running),
     workers: raw.workers ?? {},
+    activeAutomations: num(raw.active_automations),
     runs: map(raw.runs, String),
     details: detailMap,
     awaiting: ids(raw.awaiting_approval),

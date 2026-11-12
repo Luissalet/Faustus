@@ -43,10 +43,31 @@ const IDLE_MS = 20_000;
 let watchers = 0;
 let timer = 0;
 let reading = false;
+let agoraReading = false;
+let nextAgoraRead = 0;
+
+async function readAgora(): Promise<void> {
+  if (agoraReading || Date.now() < nextAgoraRead || !getDisplay().pulseBar) return;
+  agoraReading = true;
+  nextAgoraRead = Date.now() + IDLE_MS;
+  try {
+    const response = await fetch('/api/agora/worker-activity', { signal: AbortSignal.timeout(8_000) });
+    if (!response.ok) return;
+    const { active_workers: agoraWorkers } = await response.json();
+    const { activity, apply } = useActivityStore.getState();
+    if (watchers && typeof agoraWorkers === 'number' && agoraWorkers !== activity.agoraWorkers) {
+      apply({ ...activity, agoraWorkers });
+    }
+  } catch {
+    // Keep the last observation when the Hub is unavailable, just like chat.
+  } finally {
+    agoraReading = false;
+  }
+}
 
 function anythingLive(activity: ChatActivity): boolean {
   return activity.running.length > 0 || activity.awaiting.length > 0
-    || Object.keys(activity.workers ?? {}).length > 0 || (activity.consoleWorkers ?? 0) > 0
+    || Object.keys(activity.workers ?? {}).length > 0 || (activity.activeAutomations ?? 0) > 0
     || !!activity.backgroundJobs?.some((job) => job.active);
 }
 
@@ -68,20 +89,13 @@ async function tick(force = false): Promise<void> {
     return;
   }
   reading = true;
+  // One shared timer, independent reads: a missing Hub never holds up chat dots.
+  void readAgora();
   try {
-    // The console already exposes observed worker states. It is independent
-    // of chat health: a missing Hub must not hide a live conversation.
-    const consoleRead = getDisplay().pulseBar
-      ? import('../adapters/agora').then(({ getConsole }) => getConsole(''))
-        .then(({ workers }) => workers.filter((w) => w.state === 'running' || w.state === 'stopping').length)
-        .catch(() => useActivityStore.getState().activity.consoleWorkers ?? 0)
-      : Promise.resolve(0);
     const next = await chatActivity();
-    // Do not hold up chat dots while the Hub is unavailable.
-    void consoleRead.then((consoleWorkers) => {
-      if (watchers) useActivityStore.getState().apply({ ...useActivityStore.getState().activity, consoleWorkers });
-    });
-    next.consoleWorkers = useActivityStore.getState().activity.consoleWorkers;
+    const previous = useActivityStore.getState().activity;
+    next.agoraWorkers = previous.agoraWorkers;
+    next.activeAutomations ??= previous.activeAutomations;
     if (watchers) useActivityStore.getState().apply(next);
     schedule(anythingLive(next) ? LIVE_MS : IDLE_MS);
   } catch {

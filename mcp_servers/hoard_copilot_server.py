@@ -18,6 +18,11 @@ server = Server("hoard-copilot")
 CONTEXT = {"type": "object", "description": "Hoard origin with app_id/data_space_id, native project, active objects and selection."}
 OPERATIONS = {
     "hoard_activity": ("GET", "/api/chat/activity", "Read native chat and skill-audit activity, including active state and last terminal audit summaries; does not start work.", {}),
+    "hoard_status_pulse": (
+        "GET", "/api/chat/activity",
+        "Read Studio's status pulse (idle, inferring or background). Pass the conversation visible in Studio as session_id; omit it when no conversation is open.",
+        {"session_id": {"type": "string"}},
+    ),
     "hoard_skill_audit_status": ("GET", "/api/skills/audit-all/status", "Read visible native skill audit progress and results. Pass job_id to select that exact audit; never starts or repeats it.", {"job_id": {"type": "string"}}),
     "hoard_project_search": ("GET", "/projects/search", "Find prior Hoard work by title, canonical conversation and actual activity dates, returning native references.", {**{key: {"type": "string"} for key in ('query', 'app_id', 'data_space_id', 'after', 'before')}, 'offset': {'type': 'integer'}, 'limit': {'type': 'integer'}}),
     "hoard_project_recall": ("GET", "/projects/{project_link_id}", "Recall a linked Hoard project, recent canonical messages, memory scope and existing workspace.", {"project_link_id": {"type": "string"}}),
@@ -33,6 +38,26 @@ OPERATIONS = {
     "hoard_turn_status": ("GET", "/turns/{session_id}/status", "Read the active or finished Faustus turn, including its terminal error, without starting or repeating it. Pass run_id to keep observing that exact turn.", {"session_id": {"type": "string"}, "run_id": {"type": "string"}}),
     "hoard_turn_stop": ("POST", "/api/chat/stop/{session_id}", "Stop the shared Faustus turn; pass run_id to select the exact turn. Without it, observe the current identity once before stopping. Domain changes already applied remain in their Hoard.", {"session_id": {"type": "string"}, "run_id": {"type": "string"}, "scope": {"type": "string", "enum": ["generation", "task", "work"]}}),
 }
+
+
+def _pulse_view(activity: dict, session_id: str | None, agora_workers: int | None) -> dict:
+    running = set(activity.get("running") or ())
+    queued = {sid for sid, position in (activity.get("queued") or {}).items() if position}
+    waiting = set(activity.get("awaiting_approval") or ())
+    active = running - waiting - queued
+    phase = ((activity.get("details") or {}).get(session_id) or {}).get("phase")
+    inferring = session_id in active and (not phase or phase in ("waiting_model", "thinking", "writing", "finishing"))
+    background = (
+        (active | set(activity.get("workers") or {})) - {session_id}
+        or any(job.get("kind") == "skill_audit" and job.get("active") for job in activity.get("background_jobs") or ())
+        or activity.get("active_automations") or agora_workers
+    )
+    return {
+        "state": None if activity.get("unverified") else "inferring" if inferring else "background" if background else "idle",
+        "waiting": session_id in waiting or session_id in queued or phase == "awaiting_user",
+        "active_automations": activity.get("active_automations"),
+        "active_agora_workers": agora_workers,
+    }
 
 
 @server.list_tools()
@@ -61,6 +86,18 @@ async def call_tool(name, arguments):
     base = os.environ.get("FAUSTUS_URL", "http://127.0.0.1:7000").rstrip("/")
     url = base + (path if path.startswith("/api/") else "/api/hoard-copilot" + path)
     async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+        if name == "hoard_status_pulse":
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            agora_workers = None
+            try:
+                observed = await client.get(base + "/api/agora/worker-activity", headers=headers, timeout=8)
+                observed.raise_for_status()
+                agora_workers = observed.json().get("active_workers")
+            except (httpx.HTTPError, ValueError):
+                pass  # The Hub is independent of the native activity sources.
+            result = _pulse_view(response.json(), payload.get("session_id") or None, agora_workers)
+            return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False))]
         if name == "hoard_turn_stop":
             run_id = payload.pop("run_id", None)
             if not run_id:

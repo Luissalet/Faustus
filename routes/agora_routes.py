@@ -131,6 +131,21 @@ def setup_agora_routes() -> APIRouter:
         require_admin(request)
         return {"ok": True, "remote": bool(hub_link.location()["remote"])}
 
+    @router.get("/api/agora/worker-activity")
+    async def worker_activity(request: Request):
+        require_admin(request)
+        # The transcript observer covers agents across spaces. Only return the
+        # aggregate needed by the pulse, never the transcripts or their paths.
+        status, payload, _ = await asyncio.to_thread(
+            hub_request, "GET", "/api/agora/watch", query={"limit": "1"}, timeout=5.0)
+        agents = payload.get("agents") if status == 200 and isinstance(payload, dict) else None
+        if not isinstance(agents, dict):
+            return JSONResponse({"active_workers": None}, status_code=503)
+        return {"active_workers": sum(
+            isinstance(agent, dict) and agent.get("state") in ("working", "tool")
+            for agent in agents.values()
+        )}
+
     @router.get("/api/agora/icon/{app_id}")
     async def icon(app_id: str, request: Request):
         require_admin(request)

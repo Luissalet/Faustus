@@ -5834,10 +5834,21 @@ def setup_chat_routes(
         except Exception:
             logger.warning("[activity] could not read skill audit activity", exc_info=True)
             unverified += 1
+        active_automations = None
+        try:
+            from core.database import ScheduledTask, TaskRun
+            with SessionLocal() as db:
+                query = db.query(TaskRun.id).join(ScheduledTask).filter(TaskRun.status == "running")
+                if owner is not None:
+                    query = query.filter(ScheduledTask.owner == owner)
+                active_automations = query.count()
+        except Exception:
+            logger.warning("[activity] could not read automation activity", exc_info=True)
         return {"running": running, "runs": runs, "details": details,
                 "awaiting_approval": awaiting, "queued": queued,
                 "interrupted": interrupted, "workers": workers,
-                "background_jobs": background_jobs, "unverified": unverified, "ts": time.time()}
+                "background_jobs": background_jobs, "active_automations": active_automations,
+                "unverified": unverified, "ts": time.time()}
 
     # ------------------------------------------------------------------ #
     # GET /api/questions — every `ask_user` question still waiting for an
