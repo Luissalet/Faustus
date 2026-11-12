@@ -2534,6 +2534,14 @@ def setup_chat_routes(
                 )
 
                 pending_tool_approval = tool_approval_store.peek(tool_approval_id)
+                # No-login mode owns all historical owner buckets, including
+                # scheduled-task cards. Restore the canonical card owner for
+                # continuation rather than comparing it to the empty browser
+                # identity. Login mode retains the exact owner check below.
+                from src.owner_identity import single_user_mode
+                if pending_tool_approval is not None and single_user_mode():
+                    owner = pending_tool_approval.owner
+                    request.state.current_user = owner or None
                 normalized_owner = str(owner or "").strip().casefold()
                 if (
                     pending_tool_approval is None

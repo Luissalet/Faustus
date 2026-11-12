@@ -3732,23 +3732,16 @@ class TaskScheduler:
                                     "tool": data.get("tool") or "tool",
                                     "approval_id": approval.get("approval_id"),
                                 }
-                                # Scheduled tasks have no interactive surface that
-                                # can safely resume a one-use grant. Retire the
-                                # record immediately instead of leaving it pending
-                                # and report an explicit manual-action boundary.
+                                # Keep the native sealed card. The inbox resumes
+                                # its task session through the normal chat route,
+                                # rather than rerunning the scheduled mission.
                                 try:
-                                    from src.tool_approvals import tool_approval_store
-                                    tool_approval_store.consume(
-                                        approval_pause["approval_id"],
-                                        decision="deny",
-                                        owner=task.owner,
-                                        session_id=session_id,
-                                    )
+                                    from src.approval_inbox import mark_origin
+                                    mark_origin(approval_pause["approval_id"],
+                                                kind="assistant" if is_assistant_task(task) else "automation",
+                                                name=task.name, task_id=task.id)
                                 except Exception:
-                                    logger.debug(
-                                        "Could not retire scheduled-task approval",
-                                        exc_info=True,
-                                    )
+                                    logger.warning("Scheduled approval origin could not be saved", exc_info=True)
                                 break
                     except (json.JSONDecodeError, KeyError):
                         pass
@@ -3764,7 +3757,7 @@ class TaskScheduler:
                     )
                     break
         finally:
-            if budget_exhausted is not None:
+            if budget_exhausted is not None or approval_pause is not None:
                 await agen.aclose()
 
         if budget_exhausted is not None:
@@ -3793,8 +3786,8 @@ class TaskScheduler:
             return (
                 "Scheduled task paused safely: "
                 f"{approval_pause['tool']} requested an exact action after "
-                "untrusted context. That action was not executed. Run this task "
-                "interactively to inspect and approve the action."
+                "untrusted context. That action was not executed. Answer its "
+                "pending card in the approval inbox or the connected self-chat."
             )
 
         # Grace summarization — if the model exhausted rounds on tool calls

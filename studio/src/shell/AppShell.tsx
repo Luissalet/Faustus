@@ -14,6 +14,7 @@ import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
 import { NotificationTray } from './notifications-tray';
+import { ApprovalBell, ApprovalInbox } from './ApprovalInbox';
 import { SphereChip } from '../screens/studio/SphereChip';
 import { DESTINATIONS, MOBILE_DESTINATIONS } from './routes';
 import { ContextualTools } from './contextualTools';
@@ -189,6 +190,7 @@ function Rail() {
       ))}
 
       {platform === 'mobile' && <AgoraNavLink tab />}
+      {platform === 'mobile' && <ApprovalBell tab />}
       {platform === 'mobile' && <button type="button" className="fs-nav__item" onClick={() => setPaletteOpen(true)} data-testid="nav-more" aria-label={t('Search and navigate')}>
         <span className="fs-nav__node"><Search size={14} aria-hidden="true" /></span><span className="fs-nav__label">{t('More')}</span>
       </button>}
@@ -221,6 +223,7 @@ function Rail() {
               <Settings2 size={13} aria-hidden="true" />
               <span>{t('Settings')}</span>
             </NavLink>
+            <ApprovalBell />
             <NotificationTray side="top" align="start" />
           </div>
           <button type="button" className="fs-nav__hint fs-nav__search" onClick={() => setPaletteOpen(true)} data-testid="nav-search" aria-label={t('Search and navigate')} title={t('Search and navigate')}><Search size={13} aria-hidden="true" /><span>{t('Search')}</span><kbd>Ctrl K</kbd></button>
@@ -311,6 +314,7 @@ function RouteBody() {
         <Route path="/library/edit" element={<EditorScreen />} />
         <Route path="/documents/:id" element={<DocumentScreen />} />
         <Route path="/activity" element={<ActivityScreen />} />
+        <Route path="/approvals" element={<ApprovalInbox />} />
         <Route path="/automations" element={<AutomationsScreen />} />
         <Route path="/notes" element={<NotesScreen />} />
         <Route path="/brain" element={<KnowledgeScreen />} />

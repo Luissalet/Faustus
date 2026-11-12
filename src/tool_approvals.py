@@ -880,6 +880,13 @@ class ToolApprovalStore:
             allow_remaining_actions=True,
         )
 
+    def list_pending(self, *, owner: Any = None) -> list[PendingToolApproval]:
+        """Canonical cards for the inbox; display text is never authority."""
+        with self._lock:
+            self._purge_expired_locked(time.time())
+            return [card for card in self._pending.values()
+                    if owner is None or card.owner == _normalized_owner(owner)]
+
     def pending_session_ids(self, *, owner: Any) -> list[str]:
         """Sessions of this owner that are parked on an approval card."""
         now = time.time()

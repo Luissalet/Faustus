@@ -94,6 +94,7 @@ export const TOOLS: Tool[] = [
   // The WhatsApp bridge screen (routes/whatsapp_routes.py, src/whatsapp_bridge.py):
   // read chats from your own linked account and answer from within Faustus.
   { path: '/whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  { path: '/approvals', label: 'Approval inbox', icon: ListChecks },
   // The control center (src/process_center.py): what is running because of
   // Faustus — ports, background jobs, launched apps — and a Stop for each.
   { path: '/processes', label: 'Processes', icon: Cpu },

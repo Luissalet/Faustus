@@ -9,8 +9,8 @@ connections and needs no public address.
   with that id so the owner can add it, and ignored from then on.
 * **What a message can do.** It is a normal turn in a normal Faustus session
   (`src/chat_bridges/turn.py`): the text is marked as outside text, so a tool
-  that changes something stops at an approval card. The bot never approves
-  anything; it says what is waiting and links to the conversation in Studio.
+  that changes something stops at an approval card. Literal replies in an
+  allowed private chat resolve its own cards through the approval inbox.
 * **One chat, one conversation.** The mapping lives in a small sqlite file;
   `/new` starts a fresh conversation, `/status` and `/help` answer at once.
   One turn at a time per chat; messages that arrive meanwhile are queued in
@@ -80,7 +80,7 @@ HELP_TEXT = (
     "/new - start a fresh conversation\n"
     "/status - model, conversation link and whether a turn is running\n"
     "/help - this text\n\n"
-    "Anything that needs an approval waits in Studio: the bot replies with a link."
+    "Pending approvals include a code: reply <code> yes/no, <code> always yes/no or yes all. You can also answer in Studio."
 )
 
 
@@ -522,6 +522,20 @@ class TelegramBridge:
         state.title = title
 
         command = self._command(text)
+        # Literal decisions bypass the model. Only private, original messages
+        # from this already-allowed chat can answer its own session's cards.
+        from src import approval_inbox
+        if (message.get("chat", {}).get("type") == "private"
+                and not any(message.get(k) for k in ("forward_origin", "forward_from", "edit_date"))
+                and approval_inbox.parse_reply(text)):
+            owner = self._backend.resolve_owner(cfg.owner)
+            mapped = self.store.get_session(chat_id)
+            sid = mapped["session_id"] if mapped else ""
+            codes = {row["code"] for row in approval_inbox.pending(owner) if sid and row["session_id"] == sid}
+            result = await approval_inbox.reply(owner, text, allowed_codes=codes)
+            count = sum(row.get("ok", False) for row in result["results"])
+            await self._say(api, chat_id, f"Faustus · {count} decisiones resueltas.")
+            return
         if command is not None:
             name, arg = command
             if name == "other":
@@ -665,6 +679,13 @@ class TelegramBridge:
                 logger.warning("telegram bridge: could not send an image: %s", exc)
                 await self._say(api, chat_id, "The turn produced an image that could not be sent here. It is in the conversation in Studio.")
         if result.approvals:
+            from src import approval_inbox
+            mapped = self.store.get_session(chat_id)
+            sid = mapped["session_id"] if mapped else ""
+            owner = self._backend.resolve_owner(self._cfg.owner)
+            for row in approval_inbox.pending(owner):
+                if sid and row["session_id"] == sid:
+                    await self._say(api, chat_id, approval_inbox.message(row))
             lines = ["Waiting for you in Faustus:"]
             for card in result.approvals[:3]:
                 question = " ".join(str(card.get("question") or "").split())[:300] or "an approval"

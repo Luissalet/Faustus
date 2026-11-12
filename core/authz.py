@@ -260,6 +260,7 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     _read("/api/questions", "sessions", note="the token owner's own open ask_user questions"),
     _read("/api/approvals/pending", "sessions",
           note="the token owner's own pending approval cards (never another owner's)"),
+    _read("/api/approval-inbox", "sessions", note="the token owner's pending codes and remembered answers"),
     _read("/api/approvals/active", "sessions",
           note="the token owner's own active approval cards (never another owner's); "
                "granting/denying/revoking a card stays require_human — not opened here"),

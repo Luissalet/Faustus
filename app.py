@@ -896,6 +896,8 @@ app.include_router(setup_tool_registry_routes())
 # token does not open.
 from routes.approvals_routes import setup_approvals_routes
 app.include_router(setup_approvals_routes())
+from routes.approval_inbox_routes import setup_approval_inbox_routes
+app.include_router(setup_approval_inbox_routes())
 
 # Shadow mode / confidence-tiered auto-approval (feature 2): read-only stats
 # are admin, changing the mode setting or a family's promotion is
@@ -1881,6 +1883,7 @@ async def serve_library(request: Request):
 # assert JSON error bodies. The whitelist costs six lines and cannot do that.
 # `/library` above is already one of the seven; `/` is the root route.
 @app.get("/studio")
+@app.get("/approvals")
 async def serve_studio(request: Request):
     return await serve_index(request)
 
@@ -3019,6 +3022,8 @@ async def _startup_event():
 
     # WhatsApp bridge kept alive where this Faustus runs (src/whatsapp_keeper.py).
     from src.whatsapp_keeper import keep_loop as _whatsapp_keep_loop
+    from src.approval_channels import keep_loop as _approval_channel_loop
+    _supervisor.spawn(_approval_channel_loop(), name="approval-inbox")
     _supervisor.spawn(_whatsapp_keep_loop(), name="whatsapp-keeper")
 
     # A snapshot for diagnostics only. The supervisor owns these; nothing may
