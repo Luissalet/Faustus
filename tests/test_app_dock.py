@@ -604,3 +604,23 @@ def test_note_mcp_call_knows_a_saved_server_by_the_connector_that_owns_it(monkey
     app_dock.dock("s1", "darwin", "Darwin's Hoard", "http://x")
     assert app_dock.note_mcp_call("s1", "mcp__78efbfda__add_discovery") is True
     assert app_dock.note_mcp_call("s1", "mcp__deadbeef__add_discovery") is False
+def test_list_apps_asks_twice_and_keeps_the_last_list_when_the_hub_misses(monkeypatch):
+    from src import app_dock, hoard_hub, hub_link
+    monkeypatch.setattr(hub_link, "location", lambda: {"url": "http://hub.test", "token": ""})
+    monkeypatch.setattr(app_dock, "_last_listing", None)
+    good = {"apps": [{"id": "links", "name": "Links Hoard", "url": "http://127.0.0.1:5181", "state": "running"}]}
+    answers = [(None, None), (200, good)]
+    calls = []
+
+    def fake(method, path, body=None, *, timeout=3.0, where=None):
+        calls.append(timeout)
+        status, payload = answers.pop(0) if answers else (None, None)
+        return status, payload, where or {}
+
+    monkeypatch.setattr(hoard_hub, "_call", fake)
+    first = _REAL_LIST_APPS()
+    assert first["available"] and [a["id"] for a in first["apps"]] == ["links"]
+    assert len(calls) == 2 and calls[1] > calls[0]
+    later = _REAL_LIST_APPS()  # the hub misses both questions now
+    assert later["available"] and later.get("stale") is True and later["apps"] == first["apps"]
+    assert "did not answer" in later["error"]

@@ -482,16 +482,32 @@ def _slim_app(app: Dict[str, Any]) -> Dict[str, Any]:
             "bridge": bool(app.get("agent_contract") or (app.get("family") or {}).get("copilot"))}
 
 
+LIST_TIMEOUT_S = 6.0
+_last_listing: Optional[Dict[str, Any]] = None
+
+
 def list_apps() -> Dict[str, Any]:
     """The family's apps as the Hub lists them. Blocking: call it from a thread."""
     from src import hoard_hub, hub_link
     # On another machine the hub is the PC's, reached through the link; the apps it lists run on the PC, where the
     # person's browser is, so their loopback addresses are the right ones to frame.
-    status, body, where = hoard_hub._call("GET", "/api/apps", where=hub_link.location())  # noqa: SLF001
-    apps = body.get("apps") if isinstance(body, dict) else None
+    global _last_listing
+    status, body, where, apps = None, None, {}, None
+    # The hub lists dozens of apps and checks each one's health; while it is busy the answer can take a few seconds,
+    # more so through the link from another machine. Ask twice before giving up.
+    for timeout in (LIST_TIMEOUT_S, LIST_TIMEOUT_S * 2):
+        status, body, where = hoard_hub._call("GET", "/api/apps", timeout=timeout, where=hub_link.location())  # noqa: SLF001
+        apps = body.get("apps") if isinstance(body, dict) else None
+        if status == 200 and isinstance(apps, list):
+            break
     if status != 200 or not isinstance(apps, list):
-        return {"apps": [], "hub": where.get("url"), "available": False,
-                "error": "The Hoard Hub did not answer" if status is None else f"The Hoard Hub answered {status}"}
+        error = "The Hoard Hub did not answer" if status is None else f"The Hoard Hub answered {status}"
+        with _lock:
+            kept = dict(_last_listing) if _last_listing else None
+        if kept:
+            # A hub that misses one question has not lost its apps: show the last list it gave, said to be stale.
+            return {**kept, "stale": True, "error": error}
+        return {"apps": [], "hub": where.get("url"), "available": False, "error": error}
     # Absorbed identities ("foreign") have no server of their own; an app that is down and cannot be launched cannot be shown.
     rows = [_slim_app(a) for a in apps if isinstance(a, dict) and a.get("id") and a.get("url")
             and a.get("state") != "foreign" and (a.get("state") == "running" or a.get("launchable", True))]
@@ -509,6 +525,7 @@ def list_apps() -> Dict[str, Any]:
     with _lock:
         _listed_origins.clear()
         _listed_origins.update(o for o in (_origin_of(r["url"]) for r in rows) if o)
+        _last_listing = {"apps": rows, "hub": where.get("url"), "available": True}
     return {"apps": rows, "hub": where.get("url"), "available": True}
 
 
