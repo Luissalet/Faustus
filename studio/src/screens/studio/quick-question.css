@@ -1,0 +1,24 @@
+/* Compact presentation of the same Studio chat, composer and attachments. */
+.fs-shell:has(.fs-quick) { grid-template-columns: minmax(0, 1fr) !important; }
+.fs-shell:has(.fs-quick) > :is(.fs-nav, .fs-nav__resize, .fs-nav-gutter, .fs-nav-peek),
+.fs-shell:has(.fs-quick)::before, .fs-shell:has(.fs-quick)::after { display: none; }
+.fs-shell:has(.fs-quick) .fs-main { grid-column: 1; margin: 0; }
+.fs-studio:has(.fs-quick) { grid-template-columns: minmax(0, 1fr) !important; }
+.fs-studio:has(.fs-quick) > :not(.fs-studio__stage) { display: none; }
+.fs-quick {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  background: var(--fs-surface-1);
+  border-block-end: 1px solid var(--fs-border);
+  -webkit-app-region: drag;
+}
+.fs-quick h1 { flex: 1; min-inline-size: 0; margin: 0; font-size: var(--fs-body-size); font-weight: 600; }
+.fs-quick button { -webkit-app-region: no-drag; }
+.fs-quick__empty { align-self: center; padding: var(--fs-space-5); color: var(--fs-text-2); text-align: center; }
+.fs-studio:has(.fs-quick) .fs-studio__scroll { padding-inline: var(--fs-space-4); }
+@media (max-width: 430px) {
+  .fs-quick { flex-wrap: wrap; }
+  .fs-quick h1 { flex-basis: 100%; }
+}

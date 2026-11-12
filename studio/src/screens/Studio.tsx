@@ -145,6 +145,7 @@ import { useDisplay } from '../shell/display';
 import { getSessionMode, listModes, modeLabel, resolveModeCommand, setSessionMode, type BehaviorMode } from '../adapters/behaviorModes';
 import { getChatMode, parseChatModeWord, setChatMode, type ChatMode } from '../adapters/chatMode';
 import ChatModeChip from './studio/ChatModeChip';
+import { QuickQuestion } from './studio/QuickQuestion';
 
 /* Rare, and the eager bundle has a budget: the folder picker and the side
    panel (browser frames, document editor, file viewer) arrive when opened. */
@@ -415,6 +416,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   navigation?: ReactNode;
 } } = {}) {
   const [params, setParams] = useSearchParams();
+  const quickQuestion = params.get('quick') === '1' || Boolean(window.faustusQuick?.isQuick);
   const navigate = useNavigate();
   const groupId = groupContext?.selected || params.get('agora')
     || (params.get('s') && knownGroupParents().has(params.get('s')!) ? params.get('s') : null);
@@ -3986,7 +3988,18 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       {drawerOpen && <button type="button" className="fs-studio__scrim" aria-label={t('Close the conversation list')} onClick={() => setDrawerOpen(false)} />}
 
       <section className="fs-studio__stage">
-        <header className="fs-studio__head">
+        {quickQuestion ? <QuickQuestion input={textareaRef} onContinue={async () => {
+          const text = draft, files = [...attachments];
+          const sid = sessionId || await ensureSession(t('Quick question'));
+          if (!sid) return;
+          writeDraftFor(sid, text);
+          writeAttachmentsFor(sid, files, knobs.incognito);
+          try {
+            if (!knobs.incognito) await saveSessionDraft(sid, text, files.map(a => a.id));
+            if (window.faustusQuick) await window.faustusQuick.openStudio(sid);
+            else navigate('/studio?s=' + encodeURIComponent(sid));
+          } catch (error) { say((error as Error).message, 'danger'); }
+        }} /> : <header className="fs-studio__head">
           <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen || (!paneHidden && !chatTool)} title={t('Show or hide the conversations (Ctrl+B)')} onClick={() => { if (chatTool) { openChatWorkspace(null); if (paneHidden) toggleSidebar(); } else toggleSidebar(); }} data-testid="studio-drawer">
             <MessageSquare size={13} aria-hidden="true" />
             <span>{t('Conversations')}</span>
@@ -4092,9 +4105,9 @@ export function StudioScreen({ groupContext }: { groupContext?: {
               onClick={() => panelDispatch(panel.open ? { type: 'close' } : { type: 'open' })}
             />
           </div>
-        </header>
+        </header>}
 
-        {sessionId && !groupMode && !knobs.incognito && <ConversationObjective key={sessionId} sessionId={sessionId} projectId={project?.id} workspace={workspace} route={route} turns={turns || []}
+        {!quickQuestion && sessionId && !groupMode && !knobs.incognito && <ConversationObjective key={sessionId} sessionId={sessionId} projectId={project?.id} workspace={workspace} route={route} turns={turns || []}
           onContinue={(runId) => { if (!controllerRef.current) void rejoin(sessionId, {runId: runId || undefined}); refreshActivity(); }}
           onFile={(folder, path) => panelDispatch({type: 'file', workspace: folder, path})}
           onAgents={() => panelDispatch({type: 'open', tab: 'agents'})}
@@ -4113,7 +4126,8 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           )}
           {groupConversation.error && <p className="fs-notice" data-tone="danger">{groupConversation.error}</p>}
 
-          {isEmpty && !groupMode && !knobs.incognito && <StudioStart welcome={display.welcome} onDraft={text => {
+          {isEmpty && quickQuestion && <p className="fs-quick__empty">{t('Ask a question or paste text or an image. Esc hides this window; your conversation stays in Studio.')}</p>}
+          {isEmpty && !quickQuestion && !groupMode && !knobs.incognito && <StudioStart welcome={display.welcome} onDraft={text => {
             const current = textareaRef.current?.value ?? draft;
             setDraft([current.trimEnd(), text].filter(Boolean).join('\n\n'));
             textareaRef.current?.focus();

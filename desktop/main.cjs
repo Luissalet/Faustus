@@ -14,6 +14,7 @@ const port=Number(process.env.FAUSTUS_PORT||7000);
 const findPlace=()=>resolveTarget({env:process.env,placement:readPlacement(root),port});
 let place=findPlace(),origin=place.origin,fixedTitle='';
 let mainWindow,tray=null,turnTray=null,uiLang='es',ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{},stopDictation=()=>{};
+let quickQuestion=null;
 // A faustus:// link waiting for the app to load, and whether it has.
 let pendingLink=findDeepLink(process.argv),appLoaded=false;
 // Closing the window parks Faustus in the tray (hidden icons). Quitting from
@@ -197,6 +198,7 @@ function watchChatRequests(){
 }
 async function shutdown(){
   if(quitting)return;quitting=true;stopDesktopControl();stopDictation();
+  quickQuestion?.stop();
   try{unwatchFile(join(root,'data','runtime','placement.json'));}catch{/* never watched */}
   try{turnTray?.stop();}catch{/* already stopped */}
   try{await startup;}catch{/* A failed page load must not skip server cleanup. */}
@@ -256,6 +258,7 @@ async function followPlacement(){
     stopDictation();
     if(process.platform==='win32')stopDictation=require('./dictation.cjs').startDictation(require('electron'),{origin});
     turnTray?.retarget();
+    quickQuestion?.retarget();
   }catch(error){trayLog('could not follow Faustus: '+error.message);if(!quitting)dialog.showErrorBox('Faustus',error.message);}
 }
 if(!Number.isInteger(port)||port<1024||port>65535){app.quit();}
@@ -299,6 +302,8 @@ else{
         const test=action==='alerts-test'?await turnTray.test():null,view=turnTray.view();
         return {...windowState(target),alerts:{available:true,tooltip:view.tooltip,link:view.link,where:place.where,test}};
       }
+      if(action==='quick-state')return {...windowState(target),quick:quickQuestion?.view()||{registered:'',error:''}};
+      if(action==='quick-open'){quickQuestion?.show();return windowState(target);}
       if(!['state','minimize','maximize','fullscreen','close'].includes(action))throw new Error('Unknown window action');
       if(action==='minimize')target.minimize();
       if(action==='maximize'){if(target.isFullScreen())target.setFullScreen(false);if(target.isMaximized())target.unmaximize();else target.maximize();}
@@ -333,6 +338,7 @@ else{
     await mainWindow.loadURL(splash);
     startup=attach();
     try{await startup;}catch(error){console.error(error.stack||error.message);if(!quitting&&!process.argv.includes('--smoke-test'))dialog.showErrorBox('Faustus',error.message);app.quit();return;}
+    quickQuestion=require('./quick-question.cjs').startQuickQuestion(require('electron'),{origin:()=>origin,profile,secureWindow,openChat,showMain:showMainWindow});
     if(!process.env.FAUSTUS_DESKTOP_URL)watchFile(join(root,'data','runtime','placement.json'),{interval:5000},()=>void followPlacement());
   }).catch(error=>{dialog.showErrorBox('Faustus',error.message);app.quit();});
 }

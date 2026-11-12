@@ -13,6 +13,7 @@ import {
   type PushSubscriptionRow,
 } from '../../adapters/push';
 import { canInstall, isInstalled, needsManualInstallHint, promptInstall, subscribeInstallPrompt } from '../../lib/installPrompt';
+import { QuickQuestionSettings } from './QuickQuestionSettings';
 
 /**
  * "This device" (lot P-B): the phone-install half of Settings — whether
@@ -140,6 +141,7 @@ export function ThisDeviceSection({ say }: { say: (t: string) => void }) {
         </div>
       </header>
 
+      <QuickQuestionSettings say={say} />
       <div className="fs-set__card">
         <h3 className="fs-set__card-title">{t('Install')}</h3>
         {installed && <p className="fs-set__help">{t('Faustus is already installed on this device.')}</p>}

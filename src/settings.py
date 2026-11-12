@@ -451,6 +451,10 @@ DEFAULT_SETTINGS = {
     # takeover, so it stays opt-in even when STT itself is on.
     "dictation_anywhere_enabled": False,
     "dictation_global_hotkey": "Ctrl+Alt+Space",
+    # Desktop quick question uses the same server and Studio conversation.
+    "quick_question_enabled": True,
+    "quick_question_hotkey": "Ctrl+Shift+Space",
+    "quick_question_request": {},
     # "clipboard" (save/paste/restore via Ctrl+V) or "type" (SendInput
     # Unicode, for apps that block synthetic paste).
     "dictation_paste_method": "clipboard",
