@@ -1328,6 +1328,27 @@ def _op_chart(wb: Workbook, op: Dict[str, Any], view, ch: Changes) -> str:
             series.append({"name": str(s.get("name") or f"Series {len(series) + 1}"), "ref": s.get("ref") or s.get("values")})
     if not series:
         raise SheetError("bad_args", "chart needs `range` (a block with a header row) or `series`")
+    shifted = False
+    for s in series:                         # a series given as B1:B7 with its header in the first cell: the header is the name, not data
+        if not isinstance(s.get("ref"), str):
+            continue
+        sheet, body = _split_sheet(s["ref"])
+        pr = _rng(body, "series ref")
+        t_src = (wb.tab(sheet) if sheet else None) or src_tab
+        top = t_src.cells.get((pr[0], pr[1]))
+        below = t_src.cells.get((pr[0] + 1, pr[1])) if pr[2] > pr[0] else None
+        if top is not None and isinstance(top.v, str) and top.v != "" and below is not None and isinstance(below.v, (int, float)) and not isinstance(below.v, bool):
+            if s["name"].startswith("Series ") or not s["name"]:
+                s["name"] = top.v
+            s["ref"] = (sheet + "!" if sheet else "") + H.range_text(pr[0] + 1, pr[1], pr[2], pr[3])
+            shifted = True
+    if shifted and isinstance(x, str):
+        xs, xb = _split_sheet(x)
+        xr = _rng(xb, "x range")
+        xt = (wb.tab(xs) if xs else None) or src_tab
+        xtop = xt.cells.get((xr[0], xr[1]))
+        if xtop is not None and isinstance(xtop.v, str) and xr[2] > xr[0]:
+            x = (xs + "!" if xs else "") + H.range_text(xr[0] + 1, xr[1], xr[2], xr[3])
     for s in series:
         sheet, body = _split_sheet(str(s["ref"]))
         _rng(body, "series ref")

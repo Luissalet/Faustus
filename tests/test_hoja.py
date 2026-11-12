@@ -254,6 +254,14 @@ def test_charts_from_a_range(wb):
         run(wb, [{"op": "chart", "type": "radar", "range": "A1:C5"}])
 
 
+def test_chart_series_with_the_header_in_the_first_cell(wb):
+    fill(wb)          # a model often passes B1:B7 and A1:A7: the header text is the series name, not a data point
+    run(wb, [{"op": "chart", "type": "bar", "series": ["B1:B5", "C1:C5"], "x": "A1:A5", "title": "Stock"}])
+    ch = wb.tab("Data").charts[0]
+    assert [s["name"] for s in ch["series"]] == ["Qty", "Price"] and ch["x"] == "A2:A5"
+    d = hoja.chart_data(wb, wb.tab("Data"), ch)
+    assert d["categories"] == ["a", "b", "a", "c"] and d["series"][0]["values"] == [2, 3, 5, 1]
+
 def test_batch_keeps_what_ran_before_a_failure(wb):
     with pytest.raises(hoja.SheetError) as e:
         run(wb, [{"op": "set", "at": "A1", "values": [[1]]}, {"op": "format", "range": "A1", "color": "nope"}, {"op": "set", "at": "A2", "values": [[2]]}])

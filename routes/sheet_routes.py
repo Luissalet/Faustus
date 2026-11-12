@@ -16,6 +16,7 @@ DELETE /api/hoja/{id}
 GET    /api/hoja/{id}/export.xlsx              the .xlsx on disk (the durable artifact)
 GET    /api/hoja/{id}/export.csv?tab=
 POST   /api/hoja/{id}/import?format=xlsx|csv   the file as the body: xlsx replaces the workbook (undoable), csv is added at A1 of the tab
+POST   /api/hoja/open-file                     {workspace, path, session?, project?}  a copy of a workspace .xlsx / .csv as a new sheet
 """
 from __future__ import annotations
 
@@ -103,6 +104,41 @@ def setup_sheet_routes() -> APIRouter:
                                            tab_name=str(body.get("tab") or "Sheet1"))
         except hoja.SheetError as exc:
             return _fail(exc)
+        if meta.get("session_id"):
+            surfaces.emit(meta["session_id"], "open", {"kind": "hoja", "id": meta["id"], "title": meta["title"]})
+        return meta
+
+    @router.post("/api/hoja/open-file")
+    async def open_file(request: Request):
+        guard(request)
+        body = await _json(request)
+        from src.tool_execution import _resolve_tool_path_in_roots, vet_workspace
+        root = vet_workspace(str(body.get("workspace") or ""))
+        if not root:
+            return JSONResponse(status_code=400, content={"error": "workspace is not a valid folder", "error_class": "hoja.bad_args"})
+        try:
+            target = _resolve_tool_path_in_roots([root], str(body.get("path") or ""), root)
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc), "error_class": "hoja.bad_args"})
+        import os
+        if not os.path.isfile(target) or os.path.getsize(target) > 40_000_000:
+            return JSONResponse(status_code=404, content={"error": "file not found or too large", "error_class": "hoja.not_found"})
+
+        def make():
+            with open(target, "rb") as fh:
+                raw = fh.read()
+            name = os.path.splitext(os.path.basename(target))[0]
+            if target.lower().endswith(".csv"):
+                return hoja.create(name, session_id=str(body.get("session") or ""), project_id=str(body.get("project") or ""),
+                                   csv_text=raw.decode("utf-8-sig", errors="replace"))
+            return hoja.create(name, session_id=str(body.get("session") or ""), project_id=str(body.get("project") or ""), xlsx_bytes=raw)
+
+        try:
+            meta = await asyncio.to_thread(make)
+        except hoja.SheetError as exc:
+            return _fail(exc)
+        except Exception:  # noqa: BLE001
+            return JSONResponse(status_code=400, content={"error": "that file could not be read", "error_class": "hoja.bad_file"})
         if meta.get("session_id"):
             surfaces.emit(meta["session_id"], "open", {"kind": "hoja", "id": meta["id"], "title": meta["title"]})
         return meta
