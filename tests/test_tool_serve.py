@@ -228,3 +228,14 @@ def test_explicit_mcp_search_respects_disabled_and_non_admin_filters(monkeypatch
     non_admin = search_catalog(query, admin=False)
     assert "mcp__gh01__gamer_sessions" not in non_admin
     assert "mcp__gh01__gamer_log_session" in non_admin
+
+
+def test_keyword_fallback_puts_the_surface_tools_first_without_an_index():
+    from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
+    from src.tool_serve import _keyword_fallback_order
+    sheet = _keyword_fallback_order("crear hoja de cálculo spreadsheet xlsx con fórmulas", BUILTIN_TOOL_DESCRIPTIONS)
+    assert "sheet_create" in sheet[:3]
+    board = _keyword_fallback_order("pizarra whiteboard crear tablero", BUILTIN_TOOL_DESCRIPTIONS)
+    assert "pizarra_create" in board[:3]
+    assert _keyword_fallback_order("zzzz qqqq", BUILTIN_TOOL_DESCRIPTIONS) == []
+

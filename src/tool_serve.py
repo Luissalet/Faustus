@@ -463,16 +463,30 @@ def search_catalog(
                 logger.debug("tool catalog: permitted-pool completion failed", exc_info=True)
         if not retrieved:
             from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
-            needle = q.lower()
-            for name, desc in BUILTIN_TOOL_DESCRIPTIONS.items():
-                hay = f"{name} {desc}".lower()
-                if needle in hay or any(tok in hay for tok in needle.split() if len(tok) > 3):
-                    _add(name)
+            for name in _keyword_fallback_order(q, BUILTIN_TOOL_DESCRIPTIONS):
+                _add(name)
 
     if q and len(ordered) > 1:
         ordered = _break_lexical_tie(q, ordered, candidate_filter)
 
     return ordered[: max(1, min(int(k or _DEFAULT_K), _MAX_RETURN))]
+
+
+def _keyword_fallback_order(query: str, descriptions: Mapping[str, str]) -> List[str]:
+    """Last resort when no index is loaded: built-ins whose name or description share words with the query, the
+    ones sharing the most words first (a word in the tool's name counts double), ties in catalogue order."""
+    needle = query.lower()
+    toks = [t for t in re.findall(r"\w+", needle) if len(t) > 3]
+    scored: List[Tuple[int, int, str]] = []
+    for pos, (name, desc) in enumerate(descriptions.items()):
+        hay = f"{name} {desc}".lower()
+        score = sum(1 for t in toks if t in hay) + sum(1 for t in toks if t in name.lower())
+        if needle in hay:
+            score += 2
+        if score:
+            scored.append((-score, pos, name))
+    scored.sort()
+    return [n for _, _, n in scored]
 
 
 def _completion_on() -> bool:
