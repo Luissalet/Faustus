@@ -1,4 +1,4 @@
-"""Confirm the expected Android package before a coordinate-based QA phase."""
+"""Confirm the Android foreground package or dismiss a verified visible IME."""
 import argparse
 import json
 from pathlib import Path
@@ -77,20 +77,43 @@ def query_foreground(base, package, expect_ime, wait_ime_ms):
         time.sleep(min(.15, remaining))
 
 
+def dismiss_visible_ime(device, package, wait_ime_ms):
+    base = device + ["shell", "dumpsys"]
+    before = query_foreground(base, package, "visible", 0)
+    if not before["matched"] or not before.get("imeMatched"):
+        return {**before, "action": "dismiss-ime", "phase": "before-back", "backDispatched": False}
+    try:
+        subprocess.check_output(
+            device + ["shell", "input", "keyevent", "KEYCODE_BACK"],
+            text=True, errors="replace", timeout=12,
+        )
+    except (subprocess.SubprocessError, OSError) as error:
+        return {"matched": False, "action": "dismiss-ime", "phase": "dispatch",
+                "backDispatched": None, "error": str(error)}
+    after = query_foreground(base, package, "hidden", wait_ime_ms)
+    return {**after, "action": "dismiss-ime", "phase": "after-back", "backDispatched": True}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adb", type=Path, required=True)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--package", required=True)
-    parser.add_argument("--expect-ime", choices=("hidden", "visible"))
-    parser.add_argument("--wait-ime-ms", type=int, default=0)
+    ime = parser.add_mutually_exclusive_group()
+    ime.add_argument("--expect-ime", choices=("hidden", "visible"))
+    ime.add_argument("--dismiss-ime", action="store_true")
+    parser.add_argument("--wait-ime-ms", type=int)
     args = parser.parse_args()
-    if not 0 <= args.wait_ime_ms <= 4000 or (args.wait_ime_ms and args.expect_ime is None):
-        parser.error("--wait-ime-ms must be between 0 and 4000 and requires --expect-ime")
+    wait_ime_ms = args.wait_ime_ms if args.wait_ime_ms is not None else (1500 if args.dismiss_ime else 0)
+    if not 0 <= wait_ime_ms <= 4000 or (wait_ime_ms and not (args.expect_ime or args.dismiss_ime)):
+        parser.error("--wait-ime-ms must be between 0 and 4000 and requires --expect-ime or --dismiss-ime")
     if not args.adb.is_absolute() or not args.adb.is_file():
         parser.error("use the absolute path to the Android SDK adb executable")
-    base = [str(args.adb), "-s", args.serial, "shell", "dumpsys"]
-    result = query_foreground(base, args.package, args.expect_ime, args.wait_ime_ms)
+    device = [str(args.adb), "-s", args.serial]
+    if args.dismiss_ime:
+        result = dismiss_visible_ime(device, args.package, wait_ime_ms)
+    else:
+        result = query_foreground(device + ["shell", "dumpsys"], args.package, args.expect_ime, wait_ime_ms)
     print(json.dumps({"serial": args.serial, **result}))
     if "error" in result:
         return 2

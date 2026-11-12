@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.18
+version: 1.0.19
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -24,7 +24,7 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 
    For an authorized update, allow a bounded transfer deadline suited to the device and APK. If installation stalls, check the original ADB process and matching package session before retrying. Record elapsed time and phase. Once installed, check version. For exact identity, resolve the APK with `pm path` and compare SHA-256. After a cold start, `am start -W` confirms activity launch. Wait within a separate deadline for the actual task content. At expiry capture the visible screen and scoped logs before further input.
 
-   Before coordinate input and after installation, app switches or dialogs, confirm both foreground observations. Run `python <skill-directory>/scripts/adb_foreground.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package>`. Exit 0 matches the package, including launcher aliases. Use `--wait-ime-ms 1500` with an expected IME state after an observed field tap or keyboard dismissal when Android is still animating. The guard reads both foreground observations again during the short settle window and stops if the app loses focus. It sends no input. An exit 2 identifies the activity or window probe that failed.
+   Before coordinate input and after installation, app switches or dialogs, confirm both foreground observations. Run `python <skill-directory>/scripts/adb_foreground.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package>`. Exit 0 matches the package, including launcher aliases. Use `--wait-ime-ms 1500` with an expected IME state after an observed field tap or keyboard dismissal when Android is still animating. The guard reads both foreground observations again during the short settle window and stops if the app loses focus. The observation mode sends no input. An exit 2 identifies the activity or window probe that failed.
 
 4. Record the baseline tab, game, save, language, filters and counters. Use observed values to verify restoration.
 
@@ -42,7 +42,7 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 
    If the guest shell times out or UI Automator exits while the emulator console still responds, try the SDK console's display capture. Check `adb -s <serial> emu help screenrecord screenshot`, then use `adb -s <serial> emu screenrecord screenshot <existing-host-directory>` in a dedicated evidence folder. Identify and inspect the new PNG. It can have physical display dimensions and a device frame even when `adb shell wm size` reports a logical override. Use the actual dimensions and coordinate space of the input method. An `OK` reply or a frame that still shows the prior screen is not proof that a tap landed. This fallback applies to tool or guest failures within the authorized QA session.
 
-   Focus is not proof that the keyboard is visible. On Android, mIsInputViewShown can remain true while the actual IME InsetsSource has visible=false. Use `--expect-ime visible` to confirm a single observed IME state before Back; Back with an already hidden keyboard can leave the current tool. If navigation changes, reconcile the new screen before resuming.
+   Focus is not proof that the keyboard is visible. On Android, mIsInputViewShown can remain true while the actual IME InsetsSource has visible=false. When you have observed that the IME covers the current task, run the same guard with `--dismiss-ime` to verify the package and visible IME, send one Back, and wait for the hidden IME. A hidden or ambiguous starting state prevents input. Read `backDispatched` and `phase` before choosing any next step. An unknown dispatch outcome requires a new observation. After dismissal get a fresh app hierarchy and verify the expected screen before continuing.
 
 7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. For resized images, convert image coordinates to device pixels using the reported dimensions. Distinguish textual readback, saved images and inspected pixels. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
 

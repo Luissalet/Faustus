@@ -113,3 +113,41 @@ def test_initial_activity_timeout_identifies_the_unresponsive_probe(monkeypatch)
     assert not result["matched"] and result["probe"] == "activity"
     assert "timed out" in result["error"]
     assert len(calls) == 1
+
+
+DISMISS = CHECK.__globals__["dismiss_visible_ime"]
+
+
+def test_dismiss_visible_keyboard_dispatches_one_back_then_observes_hidden(monkeypatch):
+    calls = query_fixture(monkeypatch, [ACTIVITY, WINDOW + "true", "", ACTIVITY, WINDOW + "false"])
+    result = DISMISS(ADB[:3], DEX, 1500)
+    assert result["matched"] and result["imeMatched"] and result["imeVisible"] is False
+    assert result["phase"] == "after-back" and result["backDispatched"] is True
+    assert [command for command, _ in calls if command[4] == "input"] == [
+        ADB[:3] + ["shell", "input", "keyevent", "KEYCODE_BACK"],
+    ]
+
+
+def test_dismiss_stops_without_input_if_keyboard_is_hidden_ambiguous_or_other_app(monkeypatch):
+    for window in (WINDOW + "false", WINDOW.rsplit("\n", 1)[0],
+                   WINDOW.replace(DEX, "com.example.other") + "true"):
+        calls = query_fixture(monkeypatch, [ACTIVITY, window])
+        result = DISMISS(ADB[:3], DEX, 1500)
+        assert result["phase"] == "before-back" and result["backDispatched"] is False
+        assert len(calls) == 2
+
+
+def test_dismiss_reports_an_unknown_back_dispatch_and_never_retries(monkeypatch):
+    calls = query_fixture(monkeypatch, [ACTIVITY, WINDOW + "true", subprocess.TimeoutExpired("input", 12)])
+    result = DISMISS(ADB[:3], DEX, 1500)
+    assert result["phase"] == "dispatch" and result["backDispatched"] is None
+    assert "error" in result and len(calls) == 3
+
+
+def test_dismiss_rechecks_the_package_after_dispatch(monkeypatch):
+    overlay = "mCurrentFocus=Window{10 u0 com.android.settings/.Permission}"
+    calls = query_fixture(monkeypatch, [ACTIVITY, WINDOW + "true", "", ACTIVITY, overlay])
+    result = DISMISS(ADB[:3], DEX, 1500)
+    assert not result["matched"] and result["backDispatched"] is True
+    assert result["focusedPackage"] == "com.android.settings"
+    assert len(calls) == 5
