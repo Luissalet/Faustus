@@ -39,6 +39,7 @@ def _args(argv=None):
     ap.add_argument("--api-key", default=os.environ.get("FAUSTUS_ENDPOINT_KEY") or os.environ.get("OPENAI_API_KEY") or "")
     ap.add_argument("--settings", default=os.environ.get("FAUSTUS_SETTINGS_JSON", ""),
                     help="JSON object merged into settings.json before start")
+    ap.add_argument("--hub-url", default="", help="Connect an Agora worker runtime to its owning Hub")
     return ap.parse_args(argv)
 
 
@@ -62,7 +63,8 @@ def main(argv=None) -> int:
     os.environ.update(
         AUTH_ENABLED="false", ODYSSEUS_DATA_DIR=str(data), DATABASE_URL="sqlite:///" + (data / "app.db").as_posix(),
         HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", CUDA_VISIBLE_DEVICES="", CHROMADB_HOST="127.0.0.1",
-        CHROMADB_PORT="1", HOARD_HUB_URL="http://127.0.0.1:1", HOARD_EVENTS="0", HOARD_NOTIFY_DRY_RUN="1",
+        CHROMADB_PORT="1", HOARD_HUB_URL=args.hub_url or os.environ.get("HOARD_HUB_URL") or "http://127.0.0.1:1",
+        HOARD_EVENTS="0", HOARD_NOTIFY_DRY_RUN="1",
         ODYSSEUS_STARTUP_WARMUPS="0", ODYSSEUS_TOOL_INDEX_WARMUP="0", APP_PORT=str(args.port),
     )
     os.environ.setdefault("ODYSSEUS_INTERNAL_TOKEN", uuid.uuid4().hex)
@@ -79,7 +81,27 @@ def main(argv=None) -> int:
 
     src.chroma_client.get_chroma_client = _no_vector_store
     import app  # noqa: E402
-    from core.database import SessionLocal, ModelEndpoint  # noqa: E402
+    from core.database import SessionLocal, ModelEndpoint, McpServer  # noqa: E402
+
+    if args.hub_url:
+        # This runtime has separate data. Its connector uses the Hub's normal
+        # MCP entry point and inherited configuration, including its token file.
+        hub_python = os.environ.get("FAUSTUS_AGORA_HUB_PYTHON") or sys.executable
+        hub_root = os.environ.get("FAUSTUS_AGORA_HUB_ROOT") or str(APP_ROOT.parent / "Hoards" / "Faustusables" / "Hoard Hub")
+        connector_env = {key: os.environ[key] for key in
+                         ("HOARD_HUB_URL", "HOARD_HUB_TOKEN_FILE", "HOARD_HUB_DATA_DIR") if os.environ.get(key)}
+        connector_env["PYTHONPATH"] = hub_root
+        with SessionLocal() as db:
+            row = db.query(McpServer).filter(McpServer.id == "agora").first()
+            if row is None:
+                row = McpServer(id="agora", name="Agora", transport="stdio")
+                db.add(row)
+            row.command = hub_python
+            row.args = json.dumps(["-m", "hoard_link.hub.mcp"])
+            row.env = json.dumps(connector_env)
+            row.is_enabled = True
+            row.inherit_env = True
+            db.commit()
 
     if args.endpoint_url:
         base = args.endpoint_url.rstrip("/")
