@@ -1,5 +1,9 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
+import { ChevronRight, Folder, Plug } from 'lucide-react';
+import { iconUrl } from '../../adapters/appDock';
+import { safeExternal } from '../../lib/markdown';
+import { connectedTitle, groupEntries, sourceGroup, sourceGroups, type SourceGroup } from './connectedSources';
 import { Button } from '../../components';
 import { connectedPlan, connectedSources, openResearchSource, type ConnectedSource, type ResearchProgress, type ResearchSettings, type ResearchSource } from '../../adapters/research';
 import { t } from '../../i18n';
@@ -58,18 +62,42 @@ export function ConnectedSources({ query, settings, onChange }: { query: string;
   </div>;
 }
 
-export function ConnectedTimeline({ progress }: { progress?: ResearchProgress | null }) {
+export function ConnectedSourceLabel({ group }: { group: SourceGroup }) {
+  const [broken, setBroken] = useState(false);
+  const Icon = group.key === 'project_files' ? Folder : Plug;
+  return <span className="fs-rs__source-label">
+    {group.appId && !broken
+      ? <img src={iconUrl(group.appId)} width={16} height={16} alt="" onError={() => setBroken(true)} />
+      : <Icon size={16} aria-hidden="true" />}
+    {t(group.name)}
+  </span>;
+}
+
+function TimelineTime({ at }: { at: number }) {
+  const date = new Date(at * 1000);
+  return <time dateTime={date.toISOString()}>{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>;
+}
+
+export function ConnectedTimeline({ progress, sources = [] }: { progress?: ResearchProgress | null; sources?: ResearchSource[] }) {
   if (!progress?.plan && !progress?.timeline?.length) return null;
+  const events = progress.timeline ?? [];
+  const groups = sourceGroups(events, sources);
+  const buckets = groupEntries(events, event => groups.get(event.source) ?? sourceGroup(event.source));
   return <div className="fs-rs__connected-trace" data-testid="connected-research-timeline">
     {progress.plan && <details open><summary>{t('Research plan')}</summary><div className="fs-prose"><Rich text={progress.plan} /></div></details>}
-    {!!progress.timeline?.length && <details open><summary>{t('Source timeline')}</summary><ol className="fs-rs__timeline" aria-label={t('Source timeline')}>
-      {progress.timeline.map(event => <li key={event.id} data-status={event.status}>
-        <time dateTime={new Date(event.at * 1000).toISOString()}>{new Date(event.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>
-        <div><strong>{t(event.source_name ?? event.source)}</strong> · {t(event.lane === 'read' ? 'Reading original' : event.lane === 'ranking' ? 'Hybrid ranking' : event.lane === 'semantic' ? 'Semantic search' : 'Text search')} · {t(event.status === 'done' ? 'Completed' : event.status === 'error' ? 'Unavailable' : 'Searching…')}
-          <p>{event.query}</p>{event.status === 'done' && <small>{t('{n} citable results', { n: event.count })}</small>}{event.message && <p className="fs-muted">{event.message}</p>}
-        </div>
-      </li>)}
-    </ol></details>}
+    {!!buckets.length && <details open><summary>{t('Source timeline')}</summary><div className="fs-rs__timeline">
+      {buckets.map(group => <details key={group.key} className="fs-rs__timeline-group">
+        <summary><ChevronRight size={14} aria-hidden="true" /><ConnectedSourceLabel group={group} /> <TimelineTime at={group.entries[group.entries.length - 1].at} /></summary>
+        <ol aria-label={t(group.name)}>
+          {group.entries.map(event => <li key={event.id} data-status={event.status}>
+            <TimelineTime at={event.at} />
+            <div><strong>{t(event.lane === 'read' ? 'Reading original' : event.lane === 'ranking' ? 'Hybrid ranking' : event.lane === 'semantic' ? 'Semantic search' : 'Text search')}</strong> · {t(event.status === 'done' ? 'Completed' : event.status === 'error' ? 'Unavailable' : 'Searching…')}
+              <p>{event.query}</p>{event.status === 'done' && <small>{t('{n} citable results', { n: event.count })}</small>}{event.message && <p className="fs-muted">{event.message}</p>}
+            </div>
+          </li>)}
+        </ol>
+      </details>)}
+    </div></details>}
   </div>;
 }
 
@@ -80,8 +108,8 @@ export function ConnectedReport({ id, sources, children }: { id: string; sources
   const [busy, setBusy] = useState(false);
   const click = async (event: MouseEvent<HTMLDivElement>) => {
     const link = (event.target as HTMLElement).closest('a');
-    if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
-    const source = sources.find(s => s.appId && s.url === link.href);
+    if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    const source = sources.find(s => s.appId && (s.url === link.href || s.url === link.getAttribute('href')));
     if (!source) return;
     event.preventDefault();
     if (busy) return;
@@ -90,5 +118,5 @@ export function ConnectedReport({ id, sources, children }: { id: string; sources
     catch { setError(t('This source could not open beside the chat. Open the original in its own window.')); }
     finally { setBusy(false); }
   };
-  return <div onClick={e => void click(e)} aria-busy={busy || undefined}>{children}{error && <div role="alert"><p>{error}</p>{sources.filter(s => s.appId).map(s => <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>{s.title}</a>)}</div>}</div>;
+  return <div onClick={e => void click(e)} aria-busy={busy || undefined}>{children}{error && <div role="alert"><p>{error}</p>{sources.filter(s => s.appId && safeExternal(s.url)).map(s => <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>{connectedTitle(s)}</a>)}</div>}</div>;
 }

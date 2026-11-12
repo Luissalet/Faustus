@@ -477,13 +477,14 @@ function resultFrom(raw: Record<string, unknown>): ResearchResult {
   };
 }
 
-export interface ConnectedEvent { id: number; at: number; source: string; source_name?: string; query: string; lane: string; status: string; count: number; message: string; tool: string }
+export interface ConnectedEvent { id: number; at: number; source: string; source_name?: string; app_id?: string; query: string; lane: string; status: string; count: number; message: string; tool: string }
 function connectedEventFrom(raw: unknown): ConnectedEvent | null {
   if (!raw || typeof raw !== 'object') return null;
   const e = raw as Record<string, unknown>;
   if (typeof e.at !== 'number' || !Number.isFinite(new Date(e.at * 1000).getTime()) || typeof e.source !== 'string') return null;
   if (e.status !== 'running' && e.status !== 'done' && e.status !== 'error') return null;
   return { id: Number(e.id) || 0, at: e.at, source: e.source, source_name: typeof e.source_name === 'string' ? e.source_name : undefined,
+    ...(typeof e.app_id === 'string' && e.app_id ? { app_id: e.app_id } : {}),
     query: String(e.query ?? ''), lane: String(e.lane ?? ''), status: e.status, count: Number(e.count) || 0, message: String(e.message ?? ''), tool: String(e.tool ?? '') };
 }
 export interface ConnectedSource { id: string; name: string; lanes: string[]; filters: string[]; app_id: string; tools: string[] }

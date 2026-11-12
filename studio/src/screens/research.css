@@ -141,6 +141,7 @@
 
 .fs-rs__group {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fs-space-2);
 }
 
@@ -161,6 +162,7 @@
 
 .fs-rs__list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fs-space-2);
   margin: 0;
   padding: 0;
@@ -173,6 +175,7 @@
 
 .fs-rs__job {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fs-space-2);
   max-inline-size: none;
   padding: var(--fs-space-3) var(--fs-space-4);
@@ -400,6 +403,7 @@
 
 .fs-rs__report {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fs-space-3);
   padding: var(--fs-space-3);
   border-radius: var(--fs-radius-control);
@@ -849,7 +853,44 @@
 .fs-rs__source-picker small { display: block; color: var(--fs-text-3); font-size: 11px; max-width: 30ch; }
 .fs-rs__connected-trace { margin-block: 16px; }
 .fs-rs__connected-trace summary, .fs-rs__source-filters summary { cursor: pointer; padding-block: 8px; font-weight: 600; }
-.fs-rs__timeline { list-style: none; margin: 8px 0; padding: 0; max-height: 360px; overflow: auto; }
+.fs-rs__timeline { margin: 8px 0; }
+.fs-rs__timeline ol { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; }
+.fs-rs__timeline-group + .fs-rs__timeline-group { border-top: 1px solid var(--fs-border); }
+.fs-rs__timeline-group > summary > svg { margin-inline-end: var(--fs-space-1); vertical-align: middle; }
+.fs-rs__timeline-group[open] > summary > svg { transform: rotate(90deg); }
+.fs-rs__timeline-group summary time { margin-inline-start: var(--fs-space-2); font-weight: 400; }
+.fs-rs__source-heading { margin: 0; }
+.fs-rs__source-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  vertical-align: middle;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  overflow-wrap: anywhere;
+}
+.fs-rs__source-label :is(img, svg) { flex: none; object-fit: contain; }
+.fs-rs__bibliography { max-inline-size: 80ch; margin-block: var(--fs-space-4); }
+.fs-rs__bibliography h3 { margin: 0; font-size: 1rem; }
+.fs-rs__bibliography section, .fs-rs__sources section { margin-block-start: var(--fs-space-4); }
+.fs-rs__citation-rows {
+  margin: var(--fs-space-2) 0 0;
+  padding-inline-start: 2.75em;
+  font-size: var(--fs-label-size);
+}
+.fs-rs__sources .fs-rs__citation-rows { padding-inline-start: 1.25em; }
+.fs-rs__citation-rows li { padding-block: var(--fs-space-1); }
+.fs-rs__citation-rows li::marker { color: var(--fs-text-2); font-variant-numeric: tabular-nums; }
+.fs-rs__citation-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  max-inline-size: 100%;
+  vertical-align: middle;
+}
+.fs-rs__citation-title { min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+a.fs-rs__citation-link .fs-rs__citation-title { text-decoration: underline; text-underline-offset: 0.18em; }
+.fs-rs__citation-location { flex: none; color: var(--fs-text-2); white-space: nowrap; }
 .fs-rs__timeline li { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--fs-border); }
 .fs-rs__timeline time { font-variant-numeric: tabular-nums; color: var(--fs-text-3); font-size: 12px; }
 .fs-rs__timeline p { margin: 4px 0; overflow-wrap: anywhere; }

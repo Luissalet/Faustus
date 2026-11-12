@@ -157,6 +157,7 @@ class ConnectedResearcher(DeepResearcher):
         self.connected_plan = str((prior_progress or {}).get("plan") or "")
         self.manager = get_mcp_manager()
         self.source_names = dict(LOCAL_SOURCES)
+        self.source_apps = {}
         self._retrieval_semaphore = asyncio.Semaphore(self.extraction_concurrency)
 
     async def research(self, question, **kwargs):
@@ -171,6 +172,7 @@ class ConnectedResearcher(DeepResearcher):
     def _record(self, source, query, lane, status, *, count=0, message="", tool=""):
         self.timeline.append({"id": len(self.timeline) + 1, "at": time.time(), "source": source,
             "source_name": self.source_names.get(source, source),
+            **({"app_id": self.source_apps[source]} if source in self.source_apps else {}),
             "query": query, "lane": lane, "status": status, "count": count, "message": message, "tool": tool})
         self._emit(phase="searching", total_sources=len(self.urls_fetched))
 
@@ -178,6 +180,7 @@ class ConnectedResearcher(DeepResearcher):
         catalog = source_catalog(self.owner, self.manager)
         selected = [s for s in catalog if s["id"] in self.source_ids]
         self.source_names.update({s["id"]: s["name"] for s in selected})
+        self.source_apps.update({s["id"]: s["app_id"] for s in selected if s.get("app_id")})
         prompt = (question + "\n\nResearch only the person's existing sources; no web search. "
                   "Plan cross-source questions, date/entity filters and contradictions. "
                   "Every factual sentence in the final report MUST cite a numbered source actually read. "

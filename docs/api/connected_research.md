@@ -11,7 +11,9 @@ is optional: the configured research model returns a plan and, when useful, a
 clarification question. The person may answer in the context field or start
 directly. Each run shows its plan and a live source timeline: query, source,
 retrieval lane, original-item read, ranking, result count and failures. The
-timeline survives completion and checkpoint resume.
+timeline survives completion and checkpoint resume. Studio groups the timeline
+and bibliography by app, keeping the original citation numbers. File citations
+show the cited line and, when available, the excerpt index.
 
 ## Retrieval
 
@@ -76,7 +78,8 @@ returns `{plan: string[], clarification: string}`. It does not retrieve data.
 
 Omitting `data_scope` preserves web research. Omitting `source_ids` selects the
 current catalog. Existing status and stream endpoints carry `progress.plan`
-and `progress.timeline`. Result and result-peek include `connected_progress`;
+and `progress.timeline`. Connector events can include the app preset as
+`app_id`. Result and result-peek include `connected_progress`;
 saved reports also retain `connected_options`. Resume and incremental refresh
 retain the selected scope, source filters and clarification.
 

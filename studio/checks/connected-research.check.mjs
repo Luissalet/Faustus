@@ -35,4 +35,43 @@ response = { session_id: 'chat-with-original' };
 assert.equal(await research.openResearchSource('rp-connected', 'http://app.test/?open=12'), 'chat-with-original');
 assert.match(calls.at(-1).url, /rp-connected\/open-source$/);
 assert.deepEqual(calls.at(-1).body, { url: 'http://app.test/?open=12' });
-console.log('Connected research adapter: 10 checks passed');
+response = { result: '', sources: [], connected_progress: { timeline: [{ ...timeline[0], app_id: 'darwin' }] } };
+assert.equal((await research.researchResult('rp-connected')).connectedProgress.timeline[0].app_id, 'darwin');
+
+const ui = await build({ entryPoints: ['studio/src/screens/research/connectedSources.ts'], bundle: true, platform: 'node', format: 'esm', write: false });
+const { connectedTitle, groupEntries, sourceGroup, sourceGroups, sourceLocation, splitConnectedBibliography } =
+  await import('data:text/javascript;base64,' + Buffer.from(ui.outputFiles[0].text).toString('base64'));
+const post = { title: 'A discovery\n\nThe post body', url: 'http://darwin.test/?open=12', appId: 'darwin', sourceId: 'mcp:one' };
+const invoice = { title: 'Invoice [redacted] **reference**', url: 'http://kafka.test/?doc=3&page=5#/documents/3?page=5', appId: 'kafka' };
+const file = { title: 'FAUSTUS.md', url: 'http://local.test/api/research/project-source?path=&line=128&chunk=0', sourceId: 'project_files' };
+const sources = [post, invoice, file];
+const rows = [
+  '1. [' + post.title + '](' + post.url + ') — 127.0.0.1',
+  '9. [' + invoice.title + '](' + invoice.url + ') — 127.0.0.1',
+  '128. [' + file.title + '](' + file.url + ') — 127.0.0.1',
+];
+const report = '# Report\n\nClaim [9].\n\n## Fuentes\n\n' + rows.join('\n') + '\n\n## Disagreements\n\nKeep this.';
+const split = splitConnectedBibliography(report, sources);
+assert.deepEqual(split, { before: '# Report\n\nClaim [9].', after: '## Disagreements\n\nKeep this.',
+  citations: sources.map((source, i) => ({ source, number: [1, 9, 128][i] })) });
+const analysis = '## Sources\n\nThe connectors disagreed.';
+assert.deepEqual(splitConnectedBibliography(analysis, sources), { before: analysis, after: '', citations: [] });
+const inlineAnalysis = '## Sources\n\n' + rows[0] + '\n\nKeep this analysis.';
+assert.equal(splitConnectedBibliography(inlineAnalysis, sources).before, inlineAnalysis);
+assert.equal(connectedTitle(post), 'A discovery…');
+assert.equal(connectedTitle(invoice), 'Invoice redacted reference');
+assert.equal(Array.from(connectedTitle({ ...post, title: 'a'.repeat(300) })).length, 96);
+assert.deepEqual(sourceLocation(file), { line: '128', chunk: '0' });
+assert.deepEqual(sourceLocation(invoice), { page: '5' });
+const events = [
+  { source: 'mcp:one', source_name: 'Darwin test' },
+  { source: 'project_files', source_name: 'Project files' },
+  { source: 'mcp:two', app_id: 'darwin' },
+];
+const groups = sourceGroups(events, sources);
+assert.equal(groups.get('mcp:one').name, 'Darwin');
+assert.equal(groups.get('project_files').name, 'Project');
+assert.deepEqual(groupEntries(events, e => groups.get(e.source)).map(g => g.entries.map(e => e.source)),
+  [['mcp:one', 'mcp:two'], ['project_files']]);
+assert.equal(sourceGroup('mcp:custom', undefined, 'Custom connector').name, 'Custom connector');
+console.log('Connected research adapter and bibliography checks passed');

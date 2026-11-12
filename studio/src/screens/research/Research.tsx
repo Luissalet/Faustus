@@ -59,7 +59,8 @@ import { Rich } from '../rich';
 import { Vitals } from '../studio/Vitals';
 import { VramAdmissionDialog } from '../VramAdmissionDialog';
 import { PodcastPanel } from './Podcast';
-import { ConnectedSources, ConnectedTimeline, ConnectedReport } from './ConnectedResearch';
+import { ConnectedSources, ConnectedTimeline, ConnectedReport, ConnectedSourceLabel } from './ConnectedResearch';
+import { connectedTitle, groupEntries, sourceGroup, sourceGroups, sourceLocation, splitConnectedBibliography } from './connectedSources';
 import { OfficialOnlyFilter, SourceAuthorityFlags, officialCountOf, visibleSources } from './SourceAuthority';
 import '../research.css';
 
@@ -253,56 +254,87 @@ function ResearchStats({ stats }: { stats: Record<string, string> }) {
   );
 }
 
-/** The sources of a report, each with what the citation check made of it.
- *  When the check never ran for this report the chips are left out — the
- *  summary above says "not checked" once instead of on every line. */
-export function SourceList({ sources }: { sources: ResearchSource[] }) {
+function SourceLink({ source, connected }: { source: ResearchSource; connected?: boolean }) {
+  const title = connected ? connectedTitle(source) : source.title || source.url;
+  const location = connected ? sourceLocation(source) : {};
+  const label = <>
+    <span className={connected ? 'fs-rs__citation-title' : undefined} title={connected ? title : undefined}>{title}</span>
+    {location.line && <span className="fs-rs__citation-location">{t('Line {n}', { n: location.line })}</span>}
+    {location.chunk && <span className="fs-rs__citation-location">{t('Excerpt {n}', { n: location.chunk })}</span>}
+    {location.page && <span className="fs-rs__citation-location">{t('Page {n}', { n: location.page })}</span>}
+  </>;
+  const url = safeExternal(source.url);
+  const className = connected ? 'fs-rs__citation-link' : undefined;
+  return url
+    ? <a className={className} href={url} target="_blank" rel="noopener noreferrer">{label}</a>
+    : <span className={className}>{label}</span>;
+}
+
+function SourceDetails({ source: s, checked }: { source: ResearchSource; checked: boolean }) {
+  return <>
+    <SourceAuthorityFlags source={s} />
+    {s.excerpt && <span className="fs-rs__source-flag" data-tone="info">{t('Partial')}</span>}
+    {s.duplicateOf && <span className="fs-rs__source-flag" data-tone="info" title={s.duplicateOf}>{t('duplicate content')}</span>}
+    {s.stale && <span className="fs-rs__source-flag" data-tone="warning">
+      {s.ageDays != null ? t('stale · {n}d old', { n: Math.round(s.ageDays) }) : t('stale')}
+    </span>}
+    {s.fromCapture && <span className="fs-rs__source-flag" data-tone="info" title={s.captureModel || undefined}>{t('read from a screenshot')}</span>}
+    {checked && <SourceVerdict source={s} />}
+  </>;
+}
+
+/** The sources of a report, each with what the citation check made of it. */
+export function SourceList({ sources, connectedProgress }: { sources: ResearchSource[]; connectedProgress?: ResearchProgress }) {
   const [officialOnly, setOfficialOnly] = useState(false);
   if (sources.length === 0) return null;
   const checked = summarise(sources).checked;
   const officialCount = officialCountOf(sources);
   const shown = visibleSources(sources, officialOnly);
+  const names = sourceGroups(connectedProgress?.timeline ?? [], sources);
+  const groups = connectedProgress && groupEntries(shown, s => (
+    names.get(s.sourceId ?? '') ?? sourceGroup(s.sourceId ?? '', s.appId)
+  ));
+  const renderRows = (entries: ResearchSource[]) => entries.map((s, i) => (
+    <li key={`${s.url}-${i}`}>
+      <SourceLink source={s} connected={!!connectedProgress} />
+      <SourceDetails source={s} checked={checked} />
+    </li>
+  ));
   return (
     <details className="fs-rs__sources" data-testid="research-sources">
-      <summary>{tn(sources.length, '{n} source', '{n} sources')}{officialCount > 0 ? ` · ${t('{n} official', { n: officialCount })}` : ''}</summary>
+      <summary>{connectedProgress ? t('Consulted sources ({n})', { n: sources.length }) : tn(sources.length, '{n} source', '{n} sources')}{officialCount > 0 ? ` · ${t('{n} official', { n: officialCount })}` : ''}</summary>
       <OfficialOnlyFilter count={officialCount} checked={officialOnly} onChange={setOfficialOnly} />
-      <ol>
-        {shown.map((s, i) => (
-          <li key={`${s.url}-${i}`}>
-            {/* The source list is data from outside: a `javascript:`
-                URL there is a script, so it shows as text. */}
-            {safeExternal(s.url) ? (
-              <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">
-                {s.title || s.url}
-              </a>
-            ) : (
-              <span>{s.title || s.url}</span>
-            )}
-            {/* WEB-02: duplicate-content and staleness signals —
-                shown when the backend stamps them. */}
-            <SourceAuthorityFlags source={s} />
-            {s.excerpt && <span className="fs-rs__source-flag" data-tone="info">{t('Partial')}</span>}
-            {s.duplicateOf && (
-              <span className="fs-rs__source-flag" data-tone="info" title={s.duplicateOf}>
-                {t('duplicate content')}
-              </span>
-            )}
-            {s.stale && (
-              <span className="fs-rs__source-flag" data-tone="warning">
-                {s.ageDays != null ? t('stale · {n}d old', { n: Math.round(s.ageDays) }) : t('stale')}
-              </span>
-            )}
-            {s.fromCapture && (
-              <span className="fs-rs__source-flag" data-tone="info" title={s.captureModel || undefined}>
-                {t('read from a screenshot')}
-              </span>
-            )}
-            {checked && <SourceVerdict source={s} />}
-          </li>
-        ))}
-      </ol>
+      {groups ? groups.map(group => <section key={group.key}>
+        <h4 className="fs-rs__source-heading"><ConnectedSourceLabel group={group} /></h4>
+        <ul className="fs-rs__citation-rows">{renderRows(group.entries)}</ul>
+      </section>) : <ol>{renderRows(shown)}</ol>}
     </details>
   );
+}
+
+function ReportContents({ id, result }: { id: string; result: ResearchResult }) {
+  const { sources, connectedProgress } = result;
+  const report = connectedProgress ? splitConnectedBibliography(result.result, sources) : null;
+  const names = sourceGroups(connectedProgress?.timeline ?? [], sources);
+  const citations = groupEntries(report?.citations ?? [], ({ source }) => (
+    names.get(source.sourceId ?? '') ?? sourceGroup(source.sourceId ?? '', source.appId)
+  ));
+  return <ConnectedReport id={id} sources={sources}>
+    <div className="fs-prose fs-rs__prose"><Rich text={report?.before ?? result.result} /></div>
+    {citations.length > 0 && <section className="fs-rs__bibliography" data-testid="connected-research-bibliography">
+      <h3>{t('Sources')}</h3>
+      {citations.map(group => <section key={group.key}>
+        <h4 className="fs-rs__source-heading"><ConnectedSourceLabel group={group} /></h4>
+        <ol className="fs-rs__citation-rows" aria-label={t(group.name)}>
+          {group.entries.map(({ number, source }) => <li key={number} value={number}>
+            <SourceLink source={source} connected />
+          </li>)}
+        </ol>
+      </section>)}
+    </section>}
+    {report?.after && <div className="fs-prose fs-rs__prose"><Rich text={report.after} /></div>}
+    <SourceList sources={sources} connectedProgress={connectedProgress} />
+  </ConnectedReport>;
 }
 
 /** The report of a run this browser did not start (it is listed from the server
@@ -334,14 +366,10 @@ function RecentReport({ id }: { id: string }) {
           {loading && <Skeleton label={t('Loading the report')} count={3} height="20px" />}
           {error && <p className="fs-rs__meta">{t('Could not load the report: {e}', { e: error })}</p>}
           {result?.stats && <ResearchStats stats={result.stats} />}
-          <ConnectedTimeline progress={result?.connectedProgress} />
+          <ConnectedTimeline progress={result?.connectedProgress} sources={result?.sources} />
           {result && <VerificationSummary sources={result.sources} review={result.blindReview} />}
           {result && <BlindReviewPanel review={result.blindReview} />}
-          {result && (
-            <ConnectedReport id={id} sources={result.sources}><div className="fs-prose fs-rs__prose">
-              <Rich text={result.result} />
-            </div><SourceList sources={result.sources} /></ConnectedReport>
-          )}
+          {result && <ReportContents id={id} result={result} />}
         </div>
       )}
     </>
@@ -384,14 +412,11 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
           <Button variant="ghost" size="sm" icon={ChevronDown} label={open ? t('Hide the report') : t('Show the report')} onClick={() => setOpen((o) => !o)} testId="research-toggle-report" />
           {open && (
             <div className="fs-rs__report">
-              <ConnectedTimeline progress={r.connectedProgress} />
+              <ConnectedTimeline progress={r.connectedProgress} sources={sources} />
               {r.stats && <ResearchStats stats={r.stats} />}
               <VerificationSummary sources={sources} review={r.blindReview} />
               <BlindReviewPanel review={r.blindReview} />
-              <ConnectedReport id={job.sessionId ?? ''} sources={sources}><div className="fs-prose fs-rs__prose">
-                <Rich text={r.result} />
-              </div>
-              <SourceList sources={sources} /></ConnectedReport>
+              <ReportContents id={job.sessionId ?? ''} result={r} />
             </div>
           )}
         </>
