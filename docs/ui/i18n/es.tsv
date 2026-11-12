@@ -11615,3 +11615,18 @@ Written procedures from each app’s current skill shelf. Expected outputs come 
 Orphaned	Huérfano
 The saved MCP server is missing. Connector settings are kept.	Falta el servidor MCP guardado. Se conserva la configuración del conector.
 Scribe audio features moved to Funes and are now part of Talos. Use the Talos connector for audio.	Las funciones de audio de Scribe pasaron a Funes y ahora forman parte de Talos. Usa el conector de Talos para el audio.
+Approval inbox	Bandeja de aprobaciones
+Pending decisions from conversations, assistants and automations.	Decisiones pendientes de conversaciones, asistentes y automatizaciones.
+Could not load the approval inbox.	No se pudo cargar la bandeja de aprobaciones.
+The decision could not be saved. Refresh and try again.	No se pudo guardar la decisión. Actualiza y vuelve a intentarlo.
+No decisions are waiting.	No hay decisiones pendientes.
+{n} min waiting	{n} min de espera
+Review the proposed action	Revisar la acción propuesta
+Remember for this exact pattern	Recordar para este patrón exacto
+Same tool, complete input and workspace. You can edit this answer below.	Misma herramienta, entrada completa y carpeta. Puedes editar este recuerdo abajo.
+Remembered answers	Respuestas recordadas
+Only exact matches use a remembered answer. Other actions keep their current approval rules.	El recuerdo se aplica a coincidencias exactas. Las demás acciones mantienen sus reglas de aprobación.
+No remembered answers.	No hay respuestas recordadas.
+Remembered answer for {tool}	Respuesta recordada para {tool}
+Always	Siempre
+Trivial	Trivial

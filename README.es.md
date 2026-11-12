@@ -1010,3 +1010,15 @@ de herramientas queda vacía y sus valores se conservan. Studio explica el motiv
 El antiguo conector de audio Scribe remite a Talos, que contiene el audio de
 Funes. El manifiesto antiguo de Funes conserva la identidad de citas Scribe
 y el manifiesto de compatibilidad de Talos identifica Funes como absorbido.
+
+
+### Bandeja de aprobaciones y respuestas desde el móvil
+
+La bandeja de Studio reúne las decisiones ya pendientes de herramientas y
+contratos, con código, nivel, antigüedad y respuestas recordadas editables.
+El chat propio de WhatsApp acepta sí/no por reglas sin consultar al modelo;
+los chats privados de Telegram pueden responder a sus propias tarjetas.
+Asistentes y automatizaciones conservan su acción exacta para reanudarla.
+No se añaden puntos de aprobación ni se cambia el modo global. Véase el
+[contrato, la gramática y los límites](docs/api/approval-inbox.md). Candidato
+#3120: la activación en la Spark sigue a la integración y despliegue del revisor.

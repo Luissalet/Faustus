@@ -2591,3 +2591,13 @@ Base hecha y verificada en vivo (FAUSTUS.md 06-11, extensión 1.2.0): recarga/at
 3. Arrastrar (`drag {ref, to_ref | dx, dy}`) con la misma verificación de impacto que `click`.
 4. Que el modelo mire una captura cuando el texto no basta (botón gris sin texto, precio en imagen): comprobar si la ruta por defecto (DeepSeek por Prometheus) recibe las capturas como imagen y, si no, con qué modelo de visión se miran y cuánto cuesta.
 5. Prueba nativa del refresco de esquemas en mitad de un turno (reiniciar el relé con un esquema nuevo durante un turno largo); hoy está cubierta por pruebas unitarias y por la regla del bucle.
+
+
+## 12-11-2026 · Decisiones existentes desde el móvil (#3120)
+
+Candidato de bandeja común y respuestas literales sobre las aprobaciones
+existentes: WhatsApp al chat propio, Telegram privado, reanudación exacta y
+recuerdos editables por patrón. No cambia cuándo se solicita aprobación.
+El contrato y los límites actuales figuran en `docs/api/approval-inbox.md`.
+Integración, reinicio y despliegue en Spark quedan a cargo del revisor;
+el seguimiento del TaskRun conserva la pausa y la continuación vive en su chat.

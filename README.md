@@ -1731,3 +1731,15 @@ tools list is empty and its settings are retained. Studio shows an explanation.
 The old Scribe audio connector points to Talos, which contains Funes's audio
 features. The old Funes manifest retains the Scribe citation identity and the
 Talos compatibility manifest identifies Funes as absorbed.
+
+
+### Approval inbox and phone replies
+
+Studio's approval inbox lists existing pending tool and contract decisions with
+codes, effect levels, age, and editable remembered answers. The paired WhatsApp
+self-chat accepts literal yes/no replies without model parsing; private Telegram
+chats can answer their own conversation's cards. Scheduled assistants and
+automations keep their exact-action cards for the same continuation flow.
+No additional approval points or global mode changes. See the
+[API, reply grammar and limits](docs/api/approval-inbox.md). Candidate #3120;
+activation on the Spark follows reviewer integration and deployment.

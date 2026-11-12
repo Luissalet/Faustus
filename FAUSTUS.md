@@ -18241,3 +18241,26 @@ de herramientas queda vacía y sus valores se conservan. Studio explica el motiv
 El antiguo conector de audio Scribe remite a Talos, que contiene el audio de
 Funes. El manifiesto antiguo de Funes conserva la identidad de citas Scribe
 y el manifiesto de compatibilidad de Talos identifica Funes como absorbido.
+
+
+## 12-11-2026 · Bandeja de aprobaciones y decisiones por mensaje (#3120)
+
+Candidato para revisión: Studio `/approvals` y campana lateral muestran las
+tarjetas nativas pendientes con código estable, nivel derivado de efectos,
+antigüedad, origen, aprobar y denegar. «Siempre» recuerda la misma herramienta,
+entrada completa, documento y carpeta; se puede editar o retirar el recuerdo.
+WhatsApp envía solo al chat de la propia cuenta ya conectada y lee respuestas
+literales propias: código sí/no/siempre sí/siempre no o sí a todo lo recibido.
+El análisis de la respuesta no llama a ningún modelo. El turno aprobado continúa
+por `chat_stream` con la acción sellada y el alcance de una sola acción; puede
+consultar al modelo configurado al seguir trabajando. Telegram admite el mismo
+análisis en chats privados ya autorizados, dentro de su conversación.
+
+Las automatizaciones y asistentes ya podían producir estas tarjetas, pero el
+planificador las descartaba. Ahora las conserva y etiqueta su origen; la
+continuación pertenece a su chat y no repite la misión programada. Los contratos
+conservan su concesión nativa para el consumidor del plan. No se convierten
+preguntas libres en aprobaciones ni se añaden puertas o modos nuevos.
+HTTP y MCP de lectura exponen la misma bandeja. Entrega, límites y pruebas en
+`docs/api/approval-inbox.md`; reinicio, integración y despliegue corresponden a
+Claude. No se afirma activación en la instancia habitual por tener el código.
