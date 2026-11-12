@@ -13,3 +13,8 @@ The Hub derives flows from `When to Use`, `Procedure`, and `Outputs` or (when
 absent) `Verification`. It returns version, source hash and missing-section status.
 Changing an app's shelf changes the catalogue; Faustus keeps no duplicate map.
 The original Markdown is preserved, including numbered steps and references.
+
+The panel uses the Skills search and button styles. Each app has its icon and flow
+count; expandable rows show readable names, skill descriptions and formatted steps.
+Empty shelves are grouped at the end with links to configure them. Hub connection
+errors follow the interface language. The panel supports light/dark and mobile.

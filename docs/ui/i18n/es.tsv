@@ -11605,4 +11605,10 @@ Read full skill	Leer skill completa
 The flow catalogue is unavailable.	El catálogo de flujos no está disponible.
 The skill could not be read.	No se pudo leer la skill.
 Written procedure	Procedimiento escrito
+Explore when to use each app’s skills, the steps to follow and the results to expect.	Consulta cuándo usar las skills de cada app, qué pasos seguir y qué resultados esperar.
+{n} flow	{n} flujo
+{n} flows	{n} flujos
+No written flows:	Sin flujos escritos:
+The Hub flow catalogue is unavailable. Check the Hub connection and retry.	El catálogo de flujos del Hub no está disponible. Comprueba la conexión con el Hub y vuelve a intentarlo.
+The skill could not be read. Check the Hub connection and retry.	No se pudo leer la skill. Comprueba la conexión con el Hub y vuelve a intentarlo.
 Written procedures from each app’s current skill shelf. Expected outputs come from Outputs or Verification in the skill. Reading a flow does not run it.	Procedimientos escritos de la estantería actual de cada app. Las salidas proceden de Outputs o Verification en la skill. Leer un flujo no lo ejecuta.

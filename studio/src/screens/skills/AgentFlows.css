@@ -1,0 +1,47 @@
+.fs-flows { display: grid; gap: var(--fs-space-4); min-inline-size: 0; }
+.fs-flows__head h2 { margin: 0 0 var(--fs-space-2); font-size: var(--fs-title-size); font-weight: 600; }
+.fs-flows__head p { margin: 0; max-inline-size: 65ch; color: var(--fs-text-2); line-height: 1.6; }
+.fs-flows__toolbar { margin-block-end: var(--fs-space-2); }
+.fs-flows__toolbar .fs-sk__search { flex: 1; min-inline-size: 0; max-inline-size: 420px; }
+.fs-flows__app { min-inline-size: 0; border: 1px solid var(--fs-border); border-radius: var(--fs-radius-panel); background: var(--fs-surface-1); }
+.fs-flows__app-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--fs-space-3); padding: var(--fs-space-4); }
+.fs-flows__icon { display: grid; place-items: center; inline-size: 40px; block-size: 40px; flex: 0 0 40px; color: var(--fs-text-3); }
+.fs-flows__icon img { inline-size: 100%; block-size: 100%; object-fit: contain; }
+.fs-flows__app-title { flex: 1; min-inline-size: 0; }
+.fs-flows__app-title h3 { margin: 0 0 var(--fs-space-1); font-size: var(--fs-body-size); font-weight: 600; overflow-wrap: anywhere; }
+.fs-flows__app-title > span, .fs-flows__meta { font-size: var(--fs-label-size); color: var(--fs-text-3); font-variant-numeric: tabular-nums; }
+.fs-flows__shelf { display: inline-flex; align-items: center; gap: var(--fs-space-2); padding-block: var(--fs-space-2); font-size: var(--fs-label-size); color: var(--fs-text-2); text-decoration: none; }
+.fs-flows__shelf:hover { color: var(--fs-focus); text-decoration: underline; text-underline-offset: 3px; }
+.fs-flows__shelf:focus-visible, .fs-flows__summary:focus-visible, .fs-flows__empty a:focus-visible { outline: 2px solid var(--fs-focus); outline-offset: 2px; border-radius: var(--fs-radius-control); }
+/* Outrank Studio's element reset for legacy disclosures. */
+.fs-app .fs-flows__flow { border-block-start: 1px solid var(--fs-border); }
+.fs-app .fs-flows__summary { display: flex; align-items: center; gap: var(--fs-space-3); padding: var(--fs-space-4); cursor: pointer; list-style: none; }
+.fs-flows__summary::-webkit-details-marker { display: none; }
+.fs-flows__summary:hover { background: var(--fs-surface-2); }
+.fs-flows__flow:last-child:not([open]) > .fs-flows__summary { border-radius: 0 0 var(--fs-radius-panel) var(--fs-radius-panel); }
+.fs-flows__chevron { flex-shrink: 0; color: var(--fs-text-3); }
+.fs-flows__flow[open] > .fs-flows__summary .fs-flows__chevron { transform: rotate(90deg); }
+.fs-flows__flow-heading { display: grid; gap: var(--fs-space-1); min-inline-size: 0; flex: 1; }
+.fs-flows__flow-heading strong { font-size: var(--fs-body-size); font-weight: 500; overflow-wrap: anywhere; }
+.fs-flows__description { color: var(--fs-text-2); font-size: var(--fs-label-size); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-flows__incomplete { color: var(--fs-warning); font-size: var(--fs-label-size); }
+.fs-flows__reader { padding: 0 var(--fs-space-5) var(--fs-space-5) var(--fs-space-7); overflow-wrap: anywhere; }
+.fs-flows__meta { margin: 0 0 var(--fs-space-3); }
+.fs-flows__intro { max-inline-size: 75ch; color: var(--fs-text-2); line-height: 1.6; margin: 0 0 var(--fs-space-5); }
+.fs-flows__section { max-inline-size: 75ch; margin-block: var(--fs-space-5); }
+.fs-flows__section h4 { font-size: var(--fs-body-size); font-weight: 600; margin: 0 0 var(--fs-space-3); }
+.fs-flows__section .fs-rich { font-size: var(--fs-body-size); line-height: 1.65; }
+.fs-flows__source { margin-block-start: var(--fs-space-4); }
+.fs-flows__empty { margin: var(--fs-space-2) 0; color: var(--fs-text-3); font-size: var(--fs-label-size); line-height: 1.8; }
+.fs-flows__empty a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 767px) {
+  .fs-flows__toolbar .fs-sk__search { block-size: 44px; }
+  .fs-flows__toolbar .fs-btn { min-block-size: 44px; }
+  .fs-flows__app-head { gap: var(--fs-space-2); }
+  .fs-flows__app-title { flex-basis: calc(100% - 48px); }
+  .fs-flows__shelf { flex-basis: 100%; padding-inline-start: var(--fs-space-7); min-block-size: 44px; }
+  .fs-flows__reader { padding: 0 var(--fs-space-4) var(--fs-space-4); }
+  .fs-app .fs-flows__summary { flex-wrap: wrap; }
+  .fs-flows__incomplete { margin-inline-start: var(--fs-space-5); }
+  .fs-flows__empty a { display: inline-block; padding-block: var(--fs-space-2); }
+}

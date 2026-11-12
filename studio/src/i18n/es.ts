@@ -11613,4 +11613,10 @@ export const es: Record<string, string> = {
   "…or upload a file": "…o sube un archivo",
   "≥ {lower} GB (incomplete: {reason})": "≥ {lower} GB (incompleto: {reason})",
   "⟨insert⟩": "⟨insertar⟩",
+  "Explore when to use each app’s skills, the steps to follow and the results to expect.": "Consulta cuándo usar las skills de cada app, qué pasos seguir y qué resultados esperar.",
+  "{n} flow": "{n} flujo",
+  "{n} flows": "{n} flujos",
+  "No written flows:": "Sin flujos escritos:",
+  "The Hub flow catalogue is unavailable. Check the Hub connection and retry.": "El catálogo de flujos del Hub no está disponible. Comprueba la conexión con el Hub y vuelve a intentarlo.",
+  "The skill could not be read. Check the Hub connection and retry.": "No se pudo leer la skill. Comprueba la conexión con el Hub y vuelve a intentarlo.",
 };

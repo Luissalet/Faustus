@@ -3,6 +3,8 @@
 
 Skills → Flujos de agente por app consulta los procedimientos escritos de las
 estanterías del Hub: disparador, pasos, salidas esperadas y skill completa.
+El panel agrupa los flujos por app con su icono, descripciones y pasos desplegables;
+las estanterías vacías quedan al final y los errores siguen el idioma de la interfaz.
 Se puede buscar por app o flujo y abrir la estantería para elegir skills.
 Consulta el [catálogo de flujos](docs/AGENT-FLOWS.md); leerlo no ejecuta tareas.
 
