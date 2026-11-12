@@ -24,6 +24,9 @@ export interface ResearchItem {
 }
 
 export interface ResearchSource {
+  appId?: string;
+  sourceId?: string;
+  excerpt?: boolean;
   title: string;
   url: string;
   /** WEB-02: set when this source's content already arrived this run under
@@ -63,6 +66,9 @@ function sourceFrom(s: Record<string, unknown>): ResearchSource {
   const verdict = typeof s.citation_verdict === 'string' ? s.citation_verdict : '';
   const checks = checksFrom(s.citation_checks);
   return {
+    appId: typeof s.app_id === 'string' ? s.app_id : undefined,
+    sourceId: typeof s.source_id === 'string' ? s.source_id : undefined,
+    excerpt: s.excerpt === true,
     title: String(s.title ?? s.url ?? ''),
     url: typeof s.url === 'string' ? s.url : '',
     duplicateOf: typeof s.duplicate_of === 'string' && s.duplicate_of ? s.duplicate_of : undefined,
@@ -182,6 +188,10 @@ export async function exportFormats(): Promise<string[]> {
 /* ── Running research from the Research screen ── */
 
 export interface ResearchSettings {
+  dataScope?: 'web' | 'connected';
+  sourceIds?: string[];
+  sourceFilters?: Record<string, Record<string, string>>;
+  clarification?: string;
   maxRounds: number;
   /** Minutes the rounds may take before the report is written; 0 = let the server size it for the model. */
   maxMinutes?: number;
@@ -205,6 +215,8 @@ export interface CoverageNode {
 }
 
 export interface ResearchProgress {
+  plan?: string;
+  timeline?: ConnectedEvent[];
   model?: string;
   phase: string;
   round?: number;
@@ -223,6 +235,7 @@ export interface ResearchProgress {
 }
 
 export interface ResearchResult {
+  connectedProgress?: ResearchProgress;
   result: string;
   sources: ResearchSource[];
   findings: string[];
@@ -254,6 +267,7 @@ async function postJson(path: string, body: unknown): Promise<Record<string, unk
 
 export async function startResearch(query: string, s: ResearchSettings): Promise<string> {
   const body: Record<string, unknown> = { query, max_rounds: s.maxRounds };
+  if (s.dataScope === 'connected') Object.assign(body, { data_scope: 'connected', source_ids: s.sourceIds ?? [], source_filters: s.sourceFilters ?? {}, clarification: s.clarification ?? '' });
   if (s.maxMinutes && s.maxMinutes > 0) body.max_time = Math.round(s.maxMinutes * 60);
   if (s.category) body.category = s.category;
   if (s.searchProvider) body.search_provider = s.searchProvider;
@@ -283,6 +297,8 @@ function coverageNodeFrom(raw: unknown): CoverageNode | null {
 
 function progressFrom(raw: Record<string, unknown>): ResearchProgress {
   return {
+    plan: typeof raw.plan === 'string' ? raw.plan : undefined,
+    timeline: Array.isArray(raw.timeline) ? raw.timeline.map(connectedEventFrom).filter((e): e is ConnectedEvent => e !== null) : undefined,
     model: typeof raw.model === 'string' ? raw.model : undefined,
     phase: String(raw.phase ?? ''),
     round: typeof raw.round === 'number' ? raw.round : undefined,
@@ -449,6 +465,7 @@ export function followResearch(id: string, onProgress: (p: ResearchProgress) => 
 function resultFrom(raw: Record<string, unknown>): ResearchResult {
   const resumedFrom = typeof raw.resumed_from === 'string' && raw.resumed_from ? raw.resumed_from : undefined;
   return {
+    connectedProgress: raw.connected_progress && typeof raw.connected_progress === 'object' ? progressFrom(raw.connected_progress as Record<string, unknown>) : undefined,
     result: String(raw.result ?? ''),
     sources: asArray<Record<string, unknown>>(raw, 'sources').map(sourceFrom),
     findings: asArray<unknown>(raw, 'raw_findings').map((f) => (typeof f === 'string' ? f : String((f as { text?: unknown })?.text ?? ''))).filter(Boolean),
@@ -458,6 +475,28 @@ function resultFrom(raw: Record<string, unknown>): ResearchResult {
     stats: statsFrom(raw.stats),
     blindReview: blindReviewFrom(raw.blind_review),
   };
+}
+
+export interface ConnectedEvent { id: number; at: number; source: string; source_name?: string; query: string; lane: string; status: string; count: number; message: string; tool: string }
+function connectedEventFrom(raw: unknown): ConnectedEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  if (typeof e.at !== 'number' || !Number.isFinite(new Date(e.at * 1000).getTime()) || typeof e.source !== 'string') return null;
+  if (e.status !== 'running' && e.status !== 'done' && e.status !== 'error') return null;
+  return { id: Number(e.id) || 0, at: e.at, source: e.source, source_name: typeof e.source_name === 'string' ? e.source_name : undefined,
+    query: String(e.query ?? ''), lane: String(e.lane ?? ''), status: e.status, count: Number(e.count) || 0, message: String(e.message ?? ''), tool: String(e.tool ?? '') };
+}
+export interface ConnectedSource { id: string; name: string; lanes: string[]; filters: string[]; app_id: string; tools: string[] }
+export async function connectedSources(): Promise<ConnectedSource[]> {
+  const raw = await getJson<{ sources: ConnectedSource[] }>('/api/research/connected-sources');
+  return raw.sources;
+}
+export async function connectedPlan(query: string, sourceIds: string[], settings?: ResearchSettings): Promise<{ plan: string[]; clarification: string }> {
+  return await postJson('/api/research/connected-plan', { query, source_ids: sourceIds, endpoint_id: settings?.endpointId || undefined, model: settings?.model || undefined }) as unknown as { plan: string[]; clarification: string };
+}
+export async function openResearchSource(id: string, url: string): Promise<string> {
+  const out = await postJson(`/api/research/${encodeURIComponent(id)}/open-source`, { url });
+  return String(out.session_id ?? '');
 }
 
 function statsFrom(raw: unknown): Record<string, string> | undefined {

@@ -2627,3 +2627,6 @@ excesivo (Blood Arrows #3132). El túnel pasa movimiento pero la revisión visua
 marca oclusión de cámara en salida (#3140). Build con caché correcto, cero
 errores y 527 advertencias; primer timeout frío HDRP conservado (#3137).
 Evidencia: `E:/Development/IA/Research/juegos3123/player-final/index.html`.
+### Investigación sobre datos propios — mejoras 3122
+
+Implementado sobre Deep Research: fuentes y filtros, aclaración opcional, plan, cronología persistente, búsqueda y lecturas mediante los conectores existentes, fusión de resultados y citas a los originales. API y cinco herramientas MCP documentadas en `docs/api/connected_research.md`. Sin otra ingesta ni respaldo web. Las capacidades semánticas dependen de cada fuente y del endpoint de embeddings configurado; las fuentes sin texto o enlace original se muestran como carencias, sin inventar compatibilidad.

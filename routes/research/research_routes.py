@@ -245,6 +245,10 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         block anonymous access. Multi-tenant deploys should additionally
         verify the session belongs to this user."""
         user = get_current_user(request)
+        if user == INTERNAL_TOOL_USER:
+            tool_owner = (request.headers.get("X-Odysseus-Owner") or "").strip()
+            if tool_owner and tool_owner not in REQUEST_SENTINEL_OWNERS:
+                return tool_owner
         if user:
             return user
         if _auth_disabled():
@@ -361,7 +365,10 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         raw_findings = research_handler.get_raw_findings(session_id) or []
         # Read before clear_result() drops the in-memory entry.
         entry = research_handler._active_tasks.get(session_id) or {}
-        out = {"result": result, "sources": sources, "raw_findings": raw_findings}
+        saved_path = _find_owned_research_path(session_id, user)
+        saved = json.loads(saved_path.read_text(encoding="utf-8")) if saved_path else {}
+        out = {"result": result, "sources": sources, "raw_findings": raw_findings,
+               "connected_progress": entry.get("connected_progress") or saved.get("connected_progress")}
         if isinstance(entry.get("stats"), dict):
             out["stats"] = entry["stats"]
         _add_blind_review(out, research_handler.get_blind_review(session_id))
@@ -694,6 +701,46 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         # (src/mode_effort.py). auto = the owner's research level, "max" by
         # default: each provider's strongest setting.
         effort: Optional[str] = Field(default=None, max_length=12)
+        data_scope: str = Field(default="web", pattern="^(web|connected)$")
+        source_ids: List[str] = Field(default_factory=list)
+        source_filters: dict = Field(default_factory=dict)
+        clarification: str = ""
+
+    @router.get("/api/research/connected-sources")
+    async def connected_sources(request: Request):
+        user = _require_user(request)
+        from src.connected_research import source_catalog
+        return {"sources": source_catalog(user)}
+
+    @router.get("/api/research/project-source")
+    async def project_source(request: Request, project_id: str, link_id: str, path: str = "", line: int = Query(1, ge=1), chunk: Optional[int] = Query(None, ge=0)):
+        from src.connected_research import read_project_source
+        user = _require_user(request)
+        try:
+            content = await asyncio.to_thread(read_project_source, user, project_id, link_id, path, line, chunk)
+        except (FileNotFoundError, ValueError):
+            raise HTTPException(404, "Project source not found")
+        return Response(content, media_type="text/plain")
+
+    @router.post("/api/research/connected-plan")
+    async def connected_plan(body: ResearchStartRequest, request: Request):
+        user = _require_user(request)
+        from src.connected_research import prepare_brief
+        if body.endpoint_id:
+            from core.database import SessionLocal
+            db = SessionLocal()
+            try:
+                ep = _owned_enabled_endpoint(db, user, body.endpoint_id)
+                resolved = _resolve_endpoint_runtime(ep, owner=user, model=body.model) if ep else None
+                if not resolved:
+                    raise HTTPException(404, "Endpoint not found or disabled")
+                endpoint, model, headers = resolved
+            finally:
+                db.close()
+        else:
+            endpoint, model, headers = _resolve_default_endpoint(user, body.model)
+        return await prepare_brief(body.query, endpoint=endpoint, model=model, headers=headers,
+                                   owner=user, source_ids=body.source_ids)
 
     @router.post("/api/research/start")
     async def research_start(body: ResearchStartRequest, request: Request):
@@ -766,6 +813,16 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
 
         # max_rounds=0 → "Auto", let AI decide; pass 20 as the safety cap.
         effective_max_rounds = body.max_rounds if body.max_rounds > 0 else 20
+        connected_options = None
+        if body.data_scope == "connected":
+            from src.connected_research import source_catalog
+            catalog = source_catalog(user)
+            available = {s["id"] for s in catalog}
+            selected = body.source_ids or [s["id"] for s in catalog]
+            if set(selected) - available:
+                raise HTTPException(400, "Selected sources are unavailable. Refresh the source list.")
+            connected_options = {"source_ids": selected, "source_filters": body.source_filters,
+                                 "clarification": body.clarification}
         research_handler.start_research(
             session_id=session_id,
             query=body.query,
@@ -780,6 +837,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             extraction_concurrency=body.extraction_concurrency,
             owner=user,
             effort=body.effort,
+            connected_options=connected_options,
         )
         return {"session_id": session_id, "status": "running", "query": body.query}
 
@@ -972,6 +1030,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                     "sources": d.get("sources", []),
                     "raw_findings": d.get("raw_findings", []),
                     "category": d.get("category") or "",
+                    "connected_progress": d.get("connected_progress"),
                 }
                 if isinstance(d.get("stats"), dict):
                     out["stats"] = d["stats"]
@@ -985,6 +1044,8 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         raw_findings = research_handler.get_raw_findings(session_id) or []
         out = {"result": result, "sources": sources, "raw_findings": raw_findings, "category": ""}
         entry = research_handler._active_tasks.get(session_id) or {}
+        saved = json.loads(owned_disk_path.read_text(encoding="utf-8")) if owned_disk_path else {}
+        out["connected_progress"] = entry.get("connected_progress") or saved.get("connected_progress")
         if isinstance(entry.get("stats"), dict):
             out["stats"] = entry["stats"]
         _add_blind_review(out, research_handler.get_blind_review(session_id))
@@ -992,6 +1053,27 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             out["resumed_from"] = entry["resumed_from"]
             out["resumed_kept"] = entry.get("resumed_kept")
         return out
+
+    @router.post("/api/research/{session_id}/open-source")
+    async def research_open_source(session_id: str, request: Request):
+        """Open a cited original in its app beside a chat carrying the report."""
+        from urllib.parse import urlsplit
+        from src import app_dock
+        from src.connector_sidecar import list_connectors
+        user = _require_user(request)
+        _require_owned_or_active_research_path(session_id, user)
+        body = await request.json()
+        source = next((s for s in research_handler.get_sources(session_id) or [] if s.get("url") == body.get("url")), None)
+        if not source or not source.get("app_id"):
+            raise HTTPException(400, "This source opens in its own window")
+        conn = next((c for c in list_connectors() if c.get("preset_id") == source["app_id"]
+                     and c.get("owner") in (None, "", user)
+                     and urlsplit(c.get("ui_url") or c.get("app_url") or "").netloc == urlsplit(source["url"]).netloc), None)
+        if conn is None:
+            raise HTTPException(400, "This original is outside the connected app")
+        chat = await research_spinoff(session_id, request)
+        app_dock.dock(chat["session_id"], source["app_id"], source["app_id"], source["url"])
+        return chat
 
     @router.post("/api/research/spinoff/{session_id}")
     async def research_spinoff(session_id: str, request: Request):

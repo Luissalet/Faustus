@@ -59,6 +59,7 @@ import { Rich } from '../rich';
 import { Vitals } from '../studio/Vitals';
 import { VramAdmissionDialog } from '../VramAdmissionDialog';
 import { PodcastPanel } from './Podcast';
+import { ConnectedSources, ConnectedTimeline, ConnectedReport } from './ConnectedResearch';
 import { OfficialOnlyFilter, SourceAuthorityFlags, officialCountOf, visibleSources } from './SourceAuthority';
 import '../research.css';
 
@@ -280,6 +281,7 @@ export function SourceList({ sources }: { sources: ResearchSource[] }) {
             {/* WEB-02: duplicate-content and staleness signals —
                 shown when the backend stamps them. */}
             <SourceAuthorityFlags source={s} />
+            {s.excerpt && <span className="fs-rs__source-flag" data-tone="info">{t('Partial')}</span>}
             {s.duplicateOf && (
               <span className="fs-rs__source-flag" data-tone="info" title={s.duplicateOf}>
                 {t('duplicate content')}
@@ -332,14 +334,14 @@ function RecentReport({ id }: { id: string }) {
           {loading && <Skeleton label={t('Loading the report')} count={3} height="20px" />}
           {error && <p className="fs-rs__meta">{t('Could not load the report: {e}', { e: error })}</p>}
           {result?.stats && <ResearchStats stats={result.stats} />}
+          <ConnectedTimeline progress={result?.connectedProgress} />
           {result && <VerificationSummary sources={result.sources} review={result.blindReview} />}
           {result && <BlindReviewPanel review={result.blindReview} />}
           {result && (
-            <div className="fs-prose fs-rs__prose">
+            <ConnectedReport id={id} sources={result.sources}><div className="fs-prose fs-rs__prose">
               <Rich text={result.result} />
-            </div>
+            </div><SourceList sources={result.sources} /></ConnectedReport>
           )}
-          {result && <SourceList sources={result.sources} />}
         </div>
       )}
     </>
@@ -382,13 +384,14 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
           <Button variant="ghost" size="sm" icon={ChevronDown} label={open ? t('Hide the report') : t('Show the report')} onClick={() => setOpen((o) => !o)} testId="research-toggle-report" />
           {open && (
             <div className="fs-rs__report">
+              <ConnectedTimeline progress={r.connectedProgress} />
               {r.stats && <ResearchStats stats={r.stats} />}
               <VerificationSummary sources={sources} review={r.blindReview} />
               <BlindReviewPanel review={r.blindReview} />
-              <div className="fs-prose fs-rs__prose">
+              <ConnectedReport id={job.sessionId ?? ''} sources={sources}><div className="fs-prose fs-rs__prose">
                 <Rich text={r.result} />
               </div>
-              <SourceList sources={sources} />
+              <SourceList sources={sources} /></ConnectedReport>
             </div>
           )}
         </>
@@ -696,6 +699,7 @@ export function ResearchScreen() {
   };
 
   const addToQueue = () => {
+    if (settings.dataScope === 'connected' && settings.sourceIds?.length === 0) return;
     const q = query.trim();
     if (!q) {
       queryRef.current?.focus();
@@ -706,6 +710,7 @@ export function ResearchScreen() {
   };
 
   const startNow = () => {
+    if (settings.dataScope === 'connected' && settings.sourceIds?.length === 0) return;
     const q = query.trim();
     if (q) {
       const job = makeJob(q);
@@ -810,6 +815,9 @@ export function ResearchScreen() {
       </header>
 
       <section className="fs-rs__ask" aria-label={t('New research')}>
+        <label className="fs-rs__setting"><span>{t('Research in')}</span><select className="fs-field" value={settings.dataScope ?? 'web'} onChange={e => setSettings(s => ({ ...s, dataScope: e.target.value as 'web' | 'connected' }))} data-testid="research-data-scope">
+          <option value="web">{t('Web')}</option><option value="connected">{t('My connected data')}</option>
+        </select></label>
         <div className="fs-rs__prompt-heading">
           <label htmlFor="research-prompt">{t('Research instructions')}</label>
           <span className="fs-spacer" />
@@ -817,6 +825,7 @@ export function ResearchScreen() {
           <Button variant="ghost" size="sm" icon={Maximize2} label={t('Expand editor')} onClick={() => setExpandedPrompt(true)} testId="research-expand" />
         </div>
         <textarea id="research-prompt" ref={queryRef} className="fs-rs__query" rows={query.length > 1000 ? 10 : 5} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={submit} placeholder={hint} autoFocus data-testid="research-query" />
+        {settings.dataScope === 'connected' && <ConnectedSources query={query} settings={settings} onChange={setSettings} />}
         <div className="fs-rs__ask-row">
           <button type="button" className="fs-rs__settings-toggle" aria-expanded={showSettings} onClick={() => setShowSettings((s) => !s)}>
             <ChevronDown size={12} aria-hidden="true" data-open={showSettings || undefined} />
@@ -830,7 +839,7 @@ export function ResearchScreen() {
           </button>
           <span className="fs-spacer" />
           <Button variant="secondary" size="sm" icon={ListPlus} label={t('Queue')} onClick={addToQueue} testId="research-queue" />
-          <Button variant="primary" size="sm" icon={Play} label={t('Start')} onClick={startNow} testId="research-start" title="Ctrl+Enter" />
+          <Button variant="primary" size="sm" icon={Play} label={t('Start')} disabled={settings.dataScope === 'connected' && settings.sourceIds?.length === 0} onClick={startNow} testId="research-start" title="Ctrl+Enter" />
         </div>
         {showSettings && (
           <div className="fs-rs__settings">
@@ -980,6 +989,7 @@ export function ResearchScreen() {
                 </div>
                 <Orbit progress={job.progress} maxRounds={job.settings.maxRounds} />
                 <CoverageMap coverage={job.progress?.coverage ?? []} />
+                <ConnectedTimeline progress={job.progress} />
               </li>
             ))}
           </ul>

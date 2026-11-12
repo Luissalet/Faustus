@@ -120,6 +120,8 @@ class ResearchHandler:
                 "owner": entry.get("owner", ""),
                 "max_rounds": entry.get("max_rounds") or 0,
                 "effort": entry.get("effort") or "",
+                "connected_options": entry.get("connected_options"),
+                "connected_progress": entry.get("connected_progress"),
             }
             # A checkpoint (rounds/findings/report parts confirmed so far) is
             # written separately by `_write_checkpoint`, at round and report
@@ -348,6 +350,8 @@ class ResearchHandler:
             prior_report_parts=report_parts,
             resumed_from=session_id,
             resumed_kept=kept,
+            connected_options=({**data["connected_options"], "prior_progress": data.get("connected_progress")}
+                               if isinstance(data.get("connected_options"), dict) else None),
         )
         # The interrupted card's job is done — its checkpoint has been handed
         # to the new run. Best-effort: a failed dismiss just leaves the old
@@ -577,6 +581,7 @@ class ResearchHandler:
         resumed_from: str = None,
         resumed_kept: dict = None,
         effort: str = None,
+        connected_options: dict = None,
     ) -> dict:
         """Start research as a background task. Returns task info dict.
 
@@ -679,6 +684,8 @@ class ResearchHandler:
             "effort": effort_level,
             "resumed_from": resumed_from,
             "resumed_kept": resumed_kept,
+            "connected_options": ({k: v for k, v in connected_options.items() if k != "prior_progress"}
+                                  if connected_options is not None else None),
             # Incremental refresh (#274): origin report + which sections to redo.
             "incremental_from": None,
             "incremental_plan": None,
@@ -689,9 +696,13 @@ class ResearchHandler:
 
         def on_progress(event):
             entry["progress"] = {**event, "model": llm_model}
+            if event.get("data_scope") == "connected":
+                entry["connected_progress"] = {k: event[k] for k in ("plan", "timeline", "data_scope") if k in event}
 
         def on_checkpoint(checkpoint: dict):
             self._write_checkpoint(session_id, checkpoint)
+            if connected_options is not None:
+                self._write_marker(session_id, entry)
 
         _completed = False
 
@@ -727,6 +738,7 @@ class ResearchHandler:
                         extraction_concurrency=extraction_concurrency,
                         checkpoint_callback=on_checkpoint,
                         effort=effort_level,
+                        connected_options=connected_options,
                     ),
                     timeout=hard_timeout,
                 )
@@ -838,7 +850,7 @@ class ResearchHandler:
                     return None
                 out = {
                     "status": data.get("status", "done"),
-                    "progress": {},
+                    "progress": data.get("connected_progress") or {},
                     "query": data.get("query", ""),
                     "started_at": data.get("started_at", 0),
                 }
@@ -960,6 +972,9 @@ class ResearchHandler:
             if url and url not in seen and not is_low_quality(summary):
                 seen.add(url)
                 entry = {"url": url, "title": title}
+                for key in ("source_id", "app_id", "retrieval_lane", "excerpt"):
+                    if key in f:
+                        entry[key] = f[key]
                 # What kind of site this is and whether it is an official one (src/source_authority.py).
                 from src.source_authority import stamp as _stamp_authority
                 _stamp_authority(entry)
@@ -1258,6 +1273,8 @@ class ResearchHandler:
                 "completed_at": time.time(),
                 # SECURITY: stamp owner so route handlers can filter by user.
                 "owner": entry.get("owner", ""),
+                "connected_options": entry.get("connected_options"),
+                "connected_progress": entry.get("connected_progress"),
             }
             # A run resumed from a checkpoint says so and what it kept — the
             # honest record of where its findings actually came from.
@@ -1451,6 +1468,7 @@ class ResearchHandler:
             prior_urls=prior_urls,
             prior_citations=prior_citations,
             effort=effort or data.get("effort") or None,
+            connected_options=data.get("connected_options"),
         )
         entry = self._active_tasks.get(target) or {}
         entry["incremental_from"] = session_id
@@ -1725,6 +1743,7 @@ class ResearchHandler:
         prior_report_parts: list = None,
         checkpoint_callback=None,
         effort: str = None,
+        connected_options: dict = None,
     ) -> str:
         """
         Run iterative deep research using the LLM-in-the-loop DeepResearcher.
@@ -1761,10 +1780,17 @@ class ResearchHandler:
         # …and do the same for the search backend. A run that plans, searches
         # seven times and reads nothing because its own SearXNG container was
         # down is not a search failure, it is a dependency nobody started.
-        await self._ensure_search_backend(search_provider, progress_callback)
+        if connected_options is None:
+            await self._ensure_search_backend(search_provider, progress_callback)
 
         try:
             from src.deep_research import DeepResearcher
+            researcher_class = DeepResearcher
+            researcher_options = {}
+            if connected_options is not None:
+                from src.connected_research import ConnectedResearcher
+                researcher_class = ConnectedResearcher
+                researcher_options = connected_options
 
             from src.settings import get_setting
             _max_report_tokens = int(get_setting("research_max_tokens", 16384))
@@ -1826,7 +1852,8 @@ class ResearchHandler:
             except (TypeError, ValueError):
                 _confidence_stop = 0.7
 
-            researcher = DeepResearcher(
+            researcher = researcher_class(
+                **researcher_options,
                 llm_endpoint=llm_endpoint,
                 llm_model=llm_model,
                 llm_headers=llm_headers,
@@ -1898,6 +1925,8 @@ class ResearchHandler:
                              + (f" — causes: {'; '.join(e.causes[:4])}" if e.causes else ""))
                 raise
             logger.error(f"DeepResearcher failed: {e}", exc_info=True)
+            if connected_options is not None:
+                raise  # A private-data run must never fall back to a web query.
             return await self._fallback_research(query, llm_endpoint, llm_model, max_time, str(e))
 
     async def _fallback_research(
@@ -1939,6 +1968,8 @@ class ResearchHandler:
 
     def _format_completed_report(self, query, report, stats, elapsed, researcher):
         """Presentation seam; service reports also include the source appendix."""
+        if getattr(researcher, "connected_plan", None) is not None:
+            return strip_thinking(report)
         return self._format_research_report(query, report, stats, elapsed)
 
     def _format_research_report(

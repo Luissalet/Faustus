@@ -18393,3 +18393,13 @@ excesivo (Blood Arrows #3132). El túnel pasa movimiento pero la revisión visua
 marca oclusión de cámara en salida (#3140). Build con caché correcto, cero
 errores y 527 advertencias; primer timeout frío HDRP conservado (#3137).
 Evidencia: `E:/Development/IA/Research/juegos3123/player-final/index.html`.
+
+## Investigación sobre datos propios — mejoras 3122 (12-11-2026)
+
+Deep Research incorpora «Mis datos conectados» junto al modo web. Reutiliza DeepResearcher, su registro de citas, la biblioteca de informes, cancelación, checkpoints y selección del modelo configurado. Consulta las apps mediante sus herramientas MCP descubiertas; también reutiliza la búsqueda unificada, el transporte IMAP (selección readonly y BODY.PEEK), el calendario y los resolutores de contexto del proyecto. No crea otro almacén de ingesta ni arranca apps desconectadas.
+
+Fuentes y filtros seleccionables, plan visible y aclaración opcional antes de empezar. La cronología distingue consultas textuales/semánticas, lectura del original, ordenación y fallos por fuente; queda con el resultado y se conserva al reanudar. RRF fusiona las listas; BM25/hash y el endpoint de embeddings ya configurado ordenan candidatos. La ordenación de candidatos no equivale a búsqueda semántica sobre toda la colección; si faltan embeddings se indica degradación. No carga modelos como alternativa.
+
+Cada frase factual de la síntesis necesita cita numerada existente. Una pasada puede completar las citas; si persisten afirmaciones sin cita se entregan extractos citados, sin atribuciones inventadas. Darwin, Links y Kafka usan sus lectores y enlaces al registro guardado (Kafka conserva página). Los demás conectores deben devolver texto y enlace original utilizable; la ausencia de esos datos es un hueco visible. Una fuente fallida no borra las otras y el modo privado nunca cae a la web. Desde el informe, un original de app puede abrirse en App Dock junto a un chat con ese informe; sigue disponible abrirlo en su propia ventana.
+
+MCP `connected_research`: sources, plan, start, status y result sobre la misma API en ejecución; ámbito de propietario en los accesos y en los informes. Contrato: `docs/api/connected_research.md`. Pruebas: `tests/test_connected_research.py` y `studio/checks/connected-research.check.mjs`, además del área de investigación existente. Integración y despliegue quedan a cargo de la revisión de la entrega; no se afirma actualización de la Spark.

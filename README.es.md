@@ -1050,3 +1050,6 @@ excesivo (Blood Arrows #3132). El túnel pasa movimiento pero la revisión visua
 marca oclusión de cámara en salida (#3140). Build con caché correcto, cero
 errores y 527 advertencias; primer timeout frío HDRP conservado (#3137).
 Evidencia: `E:/Development/IA/Research/juegos3123/player-final/index.html`.
+## Investigación sobre datos conectados
+
+Deep Research también consulta los datos ya conectados: herramientas MCP de las apps, correo, calendario, notas, segundo cerebro y ficheros enlazados al proyecto. Permite seleccionar fuentes y filtros, preparar opcionalmente un plan y una aclaración, seguir la cronología de consultas y abrir los originales citados. Reutiliza el runtime y el catálogo de conectores, sin otra ingesta ni búsquedas web de respaldo. Combina búsqueda textual y semántica cuando la fuente las ofrece; indica cuándo falta la ordenación semántica. El [contrato de API y MCP](docs/api/connected_research.md) detalla las fuentes y los límites actuales.

@@ -1773,3 +1773,6 @@ and eight MP4 clips. Seven automatic cases pass; straight rocking remains red
 occlusion at its exit (#3140). The cached build succeeded with zero errors and
 527 warnings; the original cold shader timeout remains recorded (#3137).
 Evidence: `E:/Development/IA/Research/juegos3123/player-final/index.html`.
+## Connected-data research
+
+Deep Research also searches existing connected data: app MCP tools, mail, calendar, notes, second brain and linked project files. Select sources and filters, optionally prepare a plan and clarification, then follow the source timeline and open cited originals. It reuses the research runtime and connector registry, without another ingestion store or a web fallback. Text and semantic retrieval are fused where the source supports them; missing semantic ranking is explicit. See [the API and MCP contract](docs/api/connected_research.md) for supported sources and current limits.
