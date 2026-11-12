@@ -180,7 +180,7 @@ def validate(patch: CandidatePatch, *, parent: HarnessRevision) -> ValidationRes
             edit = ConfigEdit.model_validate(patch.changes["edit"])
             if not patch.changes.get("owner"):
                 raise ValueError("owner is required")
-            if edit.kind == "skill":
+            if edit.kind in ("skill", "skill_text"):
                 from src.harness_refinement.targets import read_current
                 if not read_current("skill", f"skill:{edit.key}", patch.changes["owner"]):
                     raise ValueError("skill does not exist for this owner")

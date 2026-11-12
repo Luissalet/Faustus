@@ -15,13 +15,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class ConfigEdit(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    kind: Literal["system_section", "model_parameter", "tool_description", "tool_selection", "skill", "context"]
+    kind: Literal["system_section", "model_parameter", "tool_description", "tool_selection", "skill", "skill_text", "context"]
     key: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_.-]+$")
     value: Any
 
     @model_validator(mode="after")
     def bounded_value(self):
-        if self.kind in ("system_section", "tool_description"):
+        if self.kind == "skill_text":
+            if not isinstance(self.value, str) or not self.value.strip() or len(self.value) > 60000:
+                raise ValueError("skill text must contain 1–60000 characters")
+        elif self.kind in ("system_section", "tool_description"):
             if not isinstance(self.value, str) or not self.value.strip() or len(self.value) > 2000 or len(self.value.splitlines()) > 30:
                 raise ValueError("text must contain 1–2000 characters and at most 30 lines")
             if self.kind == "system_section" and self.key not in ("response", "reasoning", "workflow", "verification"):
@@ -51,7 +54,7 @@ class ConfigEdit(BaseModel):
 
     @property
     def high_risk(self):
-        return self.kind in ("tool_selection", "skill", "context") or (self.kind == "system_section" and self.key == "workflow")
+        return self.kind in ("tool_selection", "skill", "skill_text", "context") or (self.kind == "system_section" and self.key == "workflow")
 
 
 def slot(changes):
@@ -102,9 +105,12 @@ def messages(edits, original, owner=""):
         edit = ConfigEdit.model_validate(raw)
         if edit.kind == "system_section":
             sections.append(f"## {edit.key}\n{edit.value}")
-        elif edit.kind == "skill" and edit.value:
+        elif edit.kind == "skill_text" or (edit.kind == "skill" and edit.value):
             from src.harness_refinement import targets
-            content = targets.read_current("skill", f"skill:{edit.key}", owner)
+            replacement = next((e["value"] for e in edits if e["kind"] == "skill_text" and e["key"] == edit.key), None)
+            if edit.kind == "skill" and replacement is not None:
+                continue
+            content = replacement if replacement is not None else targets.read_current("skill", f"skill:{edit.key}", owner)
             if content:
                 from src.prompt_security import untrusted_context_message
                 out.append(untrusted_context_message("skills", f"## Skill {edit.key}\n{content}"))

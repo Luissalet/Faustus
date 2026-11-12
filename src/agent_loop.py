@@ -6381,7 +6381,7 @@ def _build_system_prompt(
                     engines=_skill_engines,
                 ) if _skill_max_injected > 0 else []
                 _excluded_skills = {e["key"] for e in configuration_edits or ()
-                                    if e["kind"] == "skill" and not e["value"]}
+                                    if e["kind"] == "skill_text" or (e["kind"] == "skill" and not e["value"])}
                 relevant_skills = [s for s in relevant_skills if s.name not in _excluded_skills]
                 lines = [""]
                 level1 = None

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from core.middleware import require_admin, require_human
 from src.harness_evolution import cycles, promotion, service as evolution_service
+from src.harness_evolution import personal
 from src.harness_evolution.store import StaleParent
 
 
@@ -119,6 +120,13 @@ def setup_evolution_routes() -> APIRouter:
         if not owner or is_request_sentinel_owner(owner):
             raise HTTPException(400, "El ciclo necesita un propietario concreto.")
         return owner
+
+    @router.post("/personal")
+    async def personal_benchmark(request: Request, body: personal.PersonalRequest):
+        try:
+            return await personal.execute(body, cycle_owner(request))
+        except (ValueError, evolution_service.HarnessEvolutionError) as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.get("/cycles/cases")
     def cycle_cases(request: Request):

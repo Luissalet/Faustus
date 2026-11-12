@@ -106,6 +106,10 @@ def _json_result(payload: dict) -> list[TextContent]:
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     return [
+        Tool(name="personal_benchmark", description="Build a local anonymized personal text battery from rated traces, measure it or export to enabled Galton. Benchmark personal.",
+             inputSchema={"type": "object", "properties": {"action": {"type": "string", "enum": ["build", "list", "get", "measure", "export"]},
+                 "id": {"type": "string"}, "url": {"type": "string", "description": "Already enabled native Galton evaluation URL for export."},
+                 "spec": {"type": "object", "description": "Build: name, session_ids, redact_terms (names/entities), max_examples, optional endpoint_url+model. Measure: repeats, project_id, optional endpoint_url+model. Anonymization is heuristic; references are model-generated. CycleSpec accepts benchmark_id and text_target {kind: system_section|skill_text,key}."}}, "required": ["action"]}),
         Tool(name="improvement_cycle_start", description="Run a typed configuration improvement cycle with target and per-group regression checks. Lanzar ciclo de mejora.",
              inputSchema={"type": "object", "properties": {"spec": {"type": "object", "description": "CycleSpec: name, target_group, cases [{id,group,prompt,checks}], candidates, repeats, regression_threshold (default .01), optional project_id/endpoint_url/model/galton_url."}}, "required": ["spec"]}),
         Tool(name="improvement_cycle_status", description="List cycles or read one with candidate verdicts and before/after cases. Consultar ciclo de mejora.",
@@ -973,6 +977,14 @@ _TOOLS = {
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Dispatch, and never raise -- an exception here would kill the server."""
+    if name == "personal_benchmark":
+        try:
+            from src.harness_evolution import personal
+            owner = os.environ.get("ODYSSEUS_MCP_HARNESS_OWNER", "").strip()
+            return _json_result(await personal.execute(personal.PersonalRequest.model_validate(arguments), owner))
+        except Exception as exc:
+            return _json_result({"error": str(exc)})
+
     if name.startswith("improvement_cycle_"):
         try:
             from src.harness_evolution import cycles

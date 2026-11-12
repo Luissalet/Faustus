@@ -33,6 +33,13 @@ class Case(BaseModel):
     checks: dict = Field(default_factory=dict)
     source: str = "manual"
     galton_checker: dict | None = None
+    split: Literal["development", "heldout"] = "development"
+
+
+class TextTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["system_section", "skill_text"]
+    key: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_.-]+$")
 
 
 class CycleSpec(BaseModel):
@@ -51,9 +58,13 @@ class CycleSpec(BaseModel):
     galton_url: str = ""
     galton_run_ids: list[str] = Field(default_factory=list, max_length=20)
     session_ids: list[str] = Field(default_factory=list, max_length=50)
+    text_target: TextTarget | None = None
+    benchmark_id: str = Field(default="", max_length=100)
 
     @model_validator(mode="after")
     def groups_and_checks(self):
+        if self.text_target:
+            runtime.ConfigEdit(kind=self.text_target.kind, key=self.text_target.key, value="Validate text target")
         if len({c.id for c in self.cases}) != len(self.cases):
             raise ValueError("case ids must be unique")
         groups = {c.group for c in self.cases}
@@ -299,7 +310,10 @@ async def propose(spec, before, signals, route, model_call):
               "skill (skill name, boolean), context (no_memory/no_skills boolean, input_token_budget integer). "
               "Choose different hypotheses; do not bundle edits. Return JSON candidates with edit and reason.\n" +
               json.dumps({"base_system": spec.base_system, "results": before, "signals": signals,
-                          "cases": [c.model_dump() for c in spec.cases]}, ensure_ascii=False))
+                          "cases": [c.model_dump() for c in spec.cases if c.split == "development"]}, ensure_ascii=False))
+    if spec.text_target:
+        prompt += ("\nRewrite only this text target; return its complete replacement as edit.value. "
+                   "Keep its kind and key exactly. Original files must remain untouched.\n" + spec.text_target.model_dump_json())
     raw = await model_call(url, model, [{"role": "user", "content": prompt}], headers=headers,
                            temperature=.3, max_tokens=8192, response_schema=schema)
     from src.harness_refinement.proposer import _parse
@@ -321,6 +335,11 @@ async def propose(spec, before, signals, route, model_call):
 def create(spec: CycleSpec, owner, *, store=None):
     if not owner: raise ValueError("El ciclo necesita un propietario.")
     db = CycleStore(store)
+    if spec.benchmark_id:
+        from .personal import BenchmarkStore
+        benchmark = BenchmarkStore(db.harness).get(spec.benchmark_id, owner)
+        if not benchmark or benchmark["cases"] != [c.model_dump() for c in spec.cases]:
+            raise ValueError("La batería debe coincidir con el benchmark personal guardado.")
     record = {"id": new_id("cycle"), "owner": owner, "name": spec.name, "spec": spec.model_dump(),
               "created_at": now_iso(), "status": "queued", "phase": "queued", "candidates": []}
     db.save(record)
@@ -345,25 +364,47 @@ async def run(ident, owner, *, store=None, model_call=None, proposer_fn=None):
     try:
         route = _route(spec, owner)
         record["model"] = {"url": route[0], "model": route[1]}
-        record["signals"] = collect_signals(owner, spec.session_ids)
+        if spec.benchmark_id:
+            from .personal import BenchmarkStore
+            benchmark = BenchmarkStore(db.harness).get(spec.benchmark_id, owner)
+            record["signals"] = [{"type": "personal_examples", "evidence": benchmark["development_examples"]}]
+        else:
+            record["signals"] = collect_signals(owner, spec.session_ids)
+        if spec.text_target:
+            if spec.text_target.kind == "skill_text":
+                from src.harness_refinement.targets import read_current
+                text = read_current("skill", f"skill:{spec.text_target.key}", owner)
+                if not text: raise ValueError("No existe la skill seleccionada.")
+            else:
+                text = spec.base_system
+            active = runtime.snapshot(owner, spec.project_id, store=db.harness)
+            text = next((e["value"] for e in active if e["kind"] == spec.text_target.kind and e["key"] == spec.text_target.key), text)
+            record["signals"].append({"type": "text_target", "content": text})
         for run_id in spec.galton_run_ids:
             if not spec.galton_url: raise ValueError("Falta la URL de evaluación de Galton.")
             failures = await galton_call(spec.galton_url, "run_results", {"run": run_id, "only_failed": True, "include_output": True})
             record["signals"].append({"type": "galton_evaluation", "run_id": run_id, "evidence": failures})
         base_revision = svc.active_revision()
         edits = runtime.snapshot(owner, spec.project_id, store=db.harness)
+        if spec.text_target and spec.text_target.kind == "skill_text":
+            # Completion trials must compare against the original skill body too.
+            # Agent trials use this same explicit body through normal composition.
+            edits = runtime.with_edit(edits, {"kind": "skill_text", "key": spec.text_target.key, "value": text})
         before = await evaluate_cases(spec, edits, route, owner, call)
         record["baseline"] = before
         if any(r.get("error") for r in before):
             raise ValueError("La batería base no se ha podido completar; no se aplican ediciones.")
         record["phase"] = "proposing"
         db.save(record)
-        candidates = await (proposer_fn or propose)(spec, before, record["signals"], route, call)
+        development_ids = {c.id for c in spec.cases if c.split == "development"}
+        candidates = await (proposer_fn or propose)(spec, [r for r in before if r["case_id"] in development_ids], record["signals"], route, call)
         for proposal in candidates:
             entry = {"proposal": proposal, "status": "evaluating"}
             record["candidates"].append(entry)
             try:
                 edit = runtime.ConfigEdit.model_validate(proposal["edit"])
+                if spec.text_target and (edit.kind, edit.key) != (spec.text_target.kind, spec.text_target.key):
+                    raise ValueError("El candidato no corresponde al texto seleccionado.")
                 changes = {"type": "runtime_config", "edit": edit.model_dump(), "owner": owner, "project_id": spec.project_id}
                 patch = svc.propose_candidate(changes=changes, parent_revision=base_revision.revision_id,
                     scope=f"cycle:{ident}", source_trace_ids=spec.session_ids)
