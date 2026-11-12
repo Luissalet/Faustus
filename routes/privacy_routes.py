@@ -57,6 +57,7 @@ def setup_privacy_routes() -> APIRouter:
         from core.database import SessionLocal, Session, ModelEndpoint
         from src.auth_helpers import require_user, owner_filter
         from src.data_boundary_report import destination
+        from src.endpoint_resolver import normalize_base
         from src.settings import get_user_setting
         owner = require_user(request)
         response.headers["Cache-Control"] = "no-store"
@@ -74,7 +75,8 @@ def setup_privacy_routes() -> APIRouter:
                 if ep is None:
                     raise HTTPException(404, "Endpoint not found")
             else:
-                ep = query.filter(ModelEndpoint.base_url == session.endpoint_url).first() if session else None
+                base = normalize_base(session.endpoint_url) if session else ""
+                ep = next((row for row in query.all() if normalize_base(row.base_url) == base), None) if base else None
             target = destination(ep.base_url, ep.endpoint_kind) if ep else destination(session.endpoint_url if session else "")
         return {**target, "warning": target["scope"] != "machine"}
 

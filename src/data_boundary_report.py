@@ -117,6 +117,8 @@ def _models(row) -> list:
 
 
 def build_report(snapshot: dict) -> dict:
+    from src.endpoint_resolver import normalize_base
+
     cfg = snapshot.get("settings", {})
     endpoints = snapshot.get("endpoints", [])
     project_rows = snapshot.get("projects", [])
@@ -145,8 +147,8 @@ def build_report(snapshot: dict) -> dict:
         for session in snapshot.get("sessions", []):
             # Full route, not merely hostname: two paths on a provider may be
             # different accounts/backends. Nothing sensitive is returned.
-            endpoint_url = (ep.get("base_url") or "").rstrip("/")
-            if not endpoint_url or (session.get("endpoint_url") or "").rstrip("/") != endpoint_url:
+            endpoint_url = normalize_base(ep.get("base_url"))
+            if not endpoint_url or normalize_base(session.get("endpoint_url")) != endpoint_url:
                 continue
             assigned.add(session["id"])
             project = project_for(session)

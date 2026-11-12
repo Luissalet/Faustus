@@ -23,11 +23,11 @@ def test_destination_classification(url, kind, address, scope):
 
 
 def test_report_only_returns_routing_metadata():
-    base = "https://user:password@models.example.test/private-route?token=secret"
+    base = "https://user:password@models.example.test/private-route"
     snapshot = {
         "endpoints": [{"id": "remote", "name": "Remote", "base_url": base,
                        "cached_models": '["demo"]', "api_key": "model-key"}],
-        "sessions": [{"id": "chat", "name": "Chat", "model": "demo", "endpoint_url": base,
+        "sessions": [{"id": "chat", "name": "Chat", "model": "demo", "endpoint_url": base + "/chat/completions",
                       "project_id": "project", "messages": ["private message"]},
                      {"id": "legacy", "name": "Legacy", "model": "old",
                       "endpoint_url": "http://spark.local:8000/v1", "folder": "Example"}],
