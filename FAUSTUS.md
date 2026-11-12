@@ -10432,7 +10432,7 @@ Hypatia conserva su camino directo con timeout largo. Ahora respeta el nivel de 
 
 **Sin interfaz y uso de la sesión.**
 
-- `scripts/faustus_run.py -p "…" --json` lanza un turno contra un servidor en marcha e imprime NDJSON: inicio, eventos y resumen con uso y motivo de parada. Tiene `--approve`, o para limpio en una tarjeta con salida 2 y se reanuda con `--resume-approval`. También `--plan`, `--effort`, `--workspace` y `--session`.
+- `scripts/faustus_run.py -p "…" --json` lanza un turno contra un servidor en marcha e imprime NDJSON: inicio, eventos y resumen con uso y motivo de parada. Tiene `--approve`, o para limpio en una tarjeta con salida 2 y se reanuda con `--resume-approval`. También `--plan`, `--effort`, `--workspace` y `--session`. Para trabajadores de larga duración, `--no-timeout` desactiva el plazo total, `--idle-timeout SEGUNDOS` corta por inactividad y `--max-legs 0` permite reanudar las aprobaciones sin límite.
 - `GET /api/session/{id}/usage` suma las métricas de cada turno por modelo (`src/session_usage.py`), y `/stats` (o `/cost`) lo enseña. Probado en el 7000 sobre un chat real de 21 turnos: 1,25 M tokens de entrada y 73 % del prompt servido desde caché.
 
 **Arreglos de paso.**
