@@ -23,6 +23,11 @@ processes while retaining the existing desktop availability rules.
 
 Navigation now follows the work: chat actions and document workspaces in Studio, repositories inside each project, specialist apps under Hoards, and five searchable settings areas. All existing tools and saved data remain accessible. See [navigation](docs/ui/navigation.md).
 
+**Settings → Data destinations** shows the configured routes for models,
+connectors, messaging, web search and sync. Studio displays an advisory notice
+beside attachments that can reach a model outside this machine. The same report
+is available through MCP and the command line. [Data destinations](docs/api/data_boundary.md).
+
 The browser-session backend under task 1671 adds an MCP transport and an
 installable extension for existing Chromium tabs. It uses tab-specific browser
 input and returns an accessibility readback after actions. All eight actions

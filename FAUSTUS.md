@@ -18403,3 +18403,13 @@ Fuentes y filtros seleccionables, plan visible y aclaración opcional antes de e
 Cada frase factual de la síntesis necesita cita numerada existente. Una pasada puede completar las citas; si persisten afirmaciones sin cita se entregan extractos citados, sin atribuciones inventadas. Darwin, Links y Kafka usan sus lectores y enlaces al registro guardado (Kafka conserva página). Los demás conectores deben devolver texto y enlace original utilizable; la ausencia de esos datos es un hueco visible. Una fuente fallida no borra las otras y el modo privado nunca cae a la web. Desde el informe, un original de app puede abrirse en App Dock junto a un chat con ese informe; sigue disponible abrirlo en su propia ventana.
 
 MCP `connected_research`: sources, plan, start, status y result sobre la misma API en ejecución; ámbito de propietario en los accesos y en los informes. Contrato: `docs/api/connected_research.md`. Pruebas: `tests/test_connected_research.py` y `studio/checks/connected-research.check.mjs`, además del área de investigación existente. Integración y despliegue quedan a cargo de la revisión de la entrega; no se afirma actualización de la Spark.
+
+## Destinos de los datos — Ágora #3126
+
+Ajustes → Destinos de los datos muestra los modelos y destinos configurados, las
+conversaciones y proyectos que los usan, los conectores, la mensajería, la
+búsqueda, las sincronizaciones y el almacenamiento local. Se genera a partir de
+la configuración y sus metadatos. Studio avisa junto a los adjuntos cuando el
+modelo puede recibirlos fuera del equipo. El informe también se consulta con
+`data_boundary_report` por MCP y con `python -m src.data_boundary_report` en
+terminal. [Contrato y alcance](docs/api/data_boundary.md).

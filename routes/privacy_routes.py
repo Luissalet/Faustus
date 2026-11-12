@@ -1,9 +1,9 @@
-"""routes/privacy_routes.py â€” GET/PUT /api/privacy/profile (SEC-04).
+"""routes/privacy_routes.py — GET/PUT /api/privacy/profile (SEC-04).
 
 `src.privacy_policy` is a real, enforced gate (`assert_outbound`, wired into
-the embedding lane, ChromaDB, the compaction summarizer and the reranker â€”
+the embedding lane, ChromaDB, the compaction summarizer and the reranker —
 see that module's docstring for the full list and what still needs wiring
-outside this route's scope) â€” but nothing let an admin SEE or CHANGE which
+outside this route's scope) — but nothing let an admin SEE or CHANGE which
 of the three profiles (`local_only` / `local_preferred` / `cloud_allowed`) is
 active short of hand-editing `data/settings.json`. This is that surface: the
 read/write endpoint a Settings-screen selector calls (Studio wiring is a
@@ -101,7 +101,7 @@ def setup_privacy_routes() -> APIRouter:
             settings_mod.update_settings({privacy_policy.SETTING_KEY: payload.profile})
         except settings_mod.SettingsError as e:
             # Only reachable if a future edit narrows DEFAULT_SETTINGS's type
-            # for this key â€” the profile value itself is already validated
+            # for this key — the profile value itself is already validated
             # against `privacy_policy.PROFILES` above.
             raise HTTPException(status_code=400, detail=str(e))
         return {"profile": payload.profile, "profiles": list(privacy_policy.PROFILES)}
