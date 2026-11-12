@@ -49,7 +49,10 @@ def destination(value: str, kind: str = "auto") -> dict:
 
 def _json_metadata(path, default, missing):
     try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        parsed = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(parsed, type(default)):
+            raise ValueError("Unexpected configuration shape")
+        return parsed
     except FileNotFoundError:
         return default
     except (OSError, ValueError):
@@ -65,7 +68,7 @@ def collect_snapshot() -> dict:
     """
     from core.database import SessionLocal, Session, ModelEndpoint, McpServer, EmailAccount, CalendarCal
     from src import constants, settings
-    from services.projects import get_store
+    from services.projects import ProjectError, get_store
 
     def rows(db, model, fields):
         return [dict(zip(fields, row)) for row in db.query(*(getattr(model, f) for f in fields)).all()]
@@ -79,16 +82,24 @@ def collect_snapshot() -> dict:
         calendars = rows(db, CalendarCal, ("id", "name", "source", "caldav_base_url"))
     # The store is read-only. Project memory, instructions and linked sources
     # are never accessed; only these fields are projected from its JSON rows.
-    projects = [{k: r.get(k) for k in ("id", "name", "folder", "privacy_profile")}
-                for r in get_store().list()]
+    try:
+        projects = [{k: row.get(k) for k in ("id", "name", "folder", "owner", "privacy_profile")}
+                    for row in get_store().list() if row.get("id")]
+    except ProjectError:
+        missing.append("projects.json")
+        projects = []
     prefs = _json_metadata(constants.USER_PREFS_FILE, {}, missing)
     integrations = _json_metadata(constants.INTEGRATIONS_FILE, [], missing)
     embed = _json_metadata(constants.EMBEDDING_ENDPOINT_FILE, {}, missing)
     saved = _json_metadata(settings.SETTINGS_FILE, {}, missing)
-    config = {**settings.DEFAULT_SETTINGS, **(saved if isinstance(saved, dict) else {})}
+    config, _revision = settings._merge(saved)
+    whatsapp_dir = Path(constants.DATA_DIR) / "whatsapp"
+    whatsapp = (whatsapp_dir / "auth" / "creds.json").is_file()
+    keep = _json_metadata(whatsapp_dir / "keep.json", {}, missing)
     return {"endpoints": endpoints, "sessions": sessions, "connectors": connectors,
             "emails": emails, "calendars": calendars, "projects": projects,
             "prefs": prefs, "integrations": integrations, "embedding": embed,
+            "whatsapp_enabled": whatsapp and keep.get("wanted", True),
             "settings": config, "missing_sources": missing}
 
 
@@ -110,7 +121,13 @@ def build_report(snapshot: dict) -> dict:
     endpoints = snapshot.get("endpoints", [])
     project_rows = snapshot.get("projects", [])
     projects = {p["id"]: p for p in project_rows}
-    folders = {str(p.get("folder") or "").casefold(): p for p in project_rows if p.get("folder")}
+    folders = {(p.get("owner"), p["folder"].casefold()): p for p in project_rows if p.get("folder")}
+
+    def project_for(session):
+        if session.get("project_id"):
+            return projects.get(session["project_id"])
+        folder = (session.get("folder") or "").casefold()
+        return folders.get((session.get("owner"), folder)) or folders.get((None, folder))
     routes = []
 
     def add(category, identity, name, url="", *, data="", enabled=True, kind="auto", scope=None, **extra):
@@ -128,12 +145,11 @@ def build_report(snapshot: dict) -> dict:
         for session in snapshot.get("sessions", []):
             # Full route, not merely hostname: two paths on a provider may be
             # different accounts/backends. Nothing sensitive is returned.
-            if str(session.get("endpoint_url") or "").rstrip("/") != str(ep.get("base_url") or "").rstrip("/"):
+            endpoint_url = (ep.get("base_url") or "").rstrip("/")
+            if not endpoint_url or (session.get("endpoint_url") or "").rstrip("/") != endpoint_url:
                 continue
             assigned.add(session["id"])
-            project = projects.get(session.get("project_id"))
-            if not session.get("project_id"):
-                project = folders.get(str(session.get("folder") or "").casefold())
+            project = project_for(session)
             usages.append({"id": session["id"], "name": session["name"], "model": session["model"],
                            "archived": bool(session.get("archived")), "project_id": project.get("id") if project else None,
                            "project_name": project.get("name") if project else None})
@@ -145,7 +161,7 @@ def build_report(snapshot: dict) -> dict:
     for session in snapshot.get("sessions", []):
         if session["id"] in assigned:
             continue
-        project = projects.get(session.get("project_id"))
+        project = project_for(session)
         add("models", "session:" + session["id"], session["model"], session.get("endpoint_url", ""),
             data="Conversation context, attachments and tool results used by this model.", models=[session["model"]], roles=[],
             conversations=[{"id": session["id"], "name": session["name"], "model": session["model"],
@@ -154,10 +170,11 @@ def build_report(snapshot: dict) -> dict:
     # Per-user overrides are included as configuration usage, without returning
     # account names, unrelated preferences or credentials.
     prefs = snapshot.get("prefs", {})
-    users = prefs.get("_users", {}) if isinstance(prefs, dict) else {}
+    users = prefs.get("_users")
+    pref_rows = list(users.values()) if isinstance(users, dict) else [prefs]
     for ep_row in routes:
         if ep_row["category"] == "models":
-            ep_row["user_override_count"] = sum(1 for pref in users.values() if isinstance(pref, dict)
+            ep_row["user_override_count"] = sum(1 for pref in pref_rows if isinstance(pref, dict)
                 and any(pref.get(role + "_endpoint_id") == ep_row["id"] for role in ("default", "utility", "vision", "research", "rerank")))
     for row in snapshot.get("connectors", []):
         add("connectors", row["id"], row["name"], row.get("url", ""), enabled=row.get("is_enabled", True),
@@ -175,37 +192,36 @@ def build_report(snapshot: dict) -> dict:
     add("channels", "telegram", "Telegram", cfg.get("telegram_api_base", "https://api.telegram.org"),
         enabled=cfg.get("telegram_bridge_enabled", False), data="Messages and agent replies for the configured chats.")
     # WhatsApp's loopback bridge still communicates with the messaging service.
-    from src.constants import DATA_DIR
-    record = Path(DATA_DIR) / "whatsapp" / "bridge.json"
-    add("channels", "whatsapp", "WhatsApp", "https://web.whatsapp.com", enabled=record.is_file(),
+    add("channels", "whatsapp", "WhatsApp", "https://web.whatsapp.com", enabled=snapshot.get("whatsapp_enabled", False),
         data="Messages and attachments sent through the linked messaging session.")
     for row in snapshot.get("calendars", []):
         if row.get("source") != "local":
             add("sync", row["id"], row["name"], row.get("caldav_base_url", ""),
                 data="Calendar events and changes exchanged with the calendar service.")
-    pref_rows = list(users.values()) if users else [prefs]
     for i, pref in enumerate(pref_rows):
         if not isinstance(pref, dict):
             continue
-        accounts = pref.get("caldav_accounts", [])
-        if pref.get("caldav", {}).get("url"):
-            accounts = [*accounts, pref["caldav"]]
+        accounts = pref.get("caldav_accounts") or []
+        legacy = pref.get("caldav") or {}
+        if not accounts and legacy.get("url"):
+            accounts = [legacy]
         for j, acc in enumerate(accounts):
             add("sync", f"caldav:{i}:{j}", "CalDAV", acc.get("url", ""),
                 data="Calendar events and changes exchanged with the calendar service.")
-        for j, acc in enumerate(pref.get("google_calendar_accounts", [])):
+        for j, acc in enumerate(pref.get("google_calendar_accounts") or []):
             add("sync", f"calendar:{i}:{j}", "Google Calendar", "https://www.googleapis.com", enabled=acc.get("status") != "needs_reauth",
                 data="Calendar events and changes exchanged with the calendar service.")
-    search = cfg.get("search_provider", "searxng")
+    search = cfg.get("search_provider") or "searxng"
+    research_search = cfg.get("research_search_provider")
     providers = {"brave": "https://api.search.brave.com", "duckduckgo": "https://duckduckgo.com",
                  "google": "https://www.googleapis.com", "google_pse": "https://www.googleapis.com",
                  "tavily": "https://api.tavily.com", "serper": "https://google.serper.dev"}
-    for provider in dict.fromkeys([search, *(cfg.get("search_fallback_chain") or []), cfg.get("research_search_provider")]):
+    for provider in dict.fromkeys([search, *(cfg.get("search_fallback_chain") or []), research_search]):
         if not provider or provider == "disabled":
             continue
-        add("web", "search:" + provider, "Web search: " + provider, cfg.get("search_url") if provider == search and cfg.get("search_url") else providers.get(provider, ""),
+        add("web", "search:" + provider, "Web search: {provider}", cfg.get("search_url") if provider == search and cfg.get("search_url") else providers.get(provider, ""),
             scope="external" if provider == "searxng" else None,
-            enabled=search != "disabled", data="Search queries; a self-hosted search engine still queries external engines.")
+            enabled=search != "disabled" or provider == research_search, provider=provider, data="Search queries; a self-hosted search engine still queries external engines.")
     add("web", "web_fetch", "Web pages", scope="external", data="Requested URLs and queries sent to the sites visited by web and browser tools.")
     add("web", "prior_art", "Source lookup", "https://api.github.com", enabled=cfg.get("prior_art_enabled", True), data="Search terms and source lookup requests.")
     for component in ("tts", "stt"):
@@ -220,7 +236,7 @@ def build_report(snapshot: dict) -> dict:
     add("auxiliary", "vectors", "Vector store", f"{os.environ.get('CHROMADB_HOST', 'localhost')}:{os.environ.get('CHROMADB_PORT', '8100')}",
         data="Vectors, text fragments and metadata used for retrieval.")
     return {"version": 1, "computed_at": datetime.now(timezone.utc).isoformat(), "profile": cfg.get("privacy_profile", "local_preferred"),
-            "routes": routes, "projects": project_rows, "missing_sources": snapshot.get("missing_sources", []),
+            "routes": routes, "projects": [{k: p.get(k) for k in ("id", "name", "privacy_profile")} for p in project_rows], "missing_sources": snapshot.get("missing_sources", []),
             "local": ["This report is built locally from configuration and metadata, without contacting the listed destinations.",
                       "Conversation history, uploads, project files and memory are stored locally; selected context can be sent to models or tools.",
                       "Local scorecards do not export telemetry. Local processing does not itself upload source files."],
@@ -240,7 +256,7 @@ def main():
     from mcp_servers.app_dock_server import _headers
     from src.constants import internal_api_base
     parser = argparse.ArgumentParser(description="Report configured data destinations without changing them.")
-    parser.add_argument("--url", default=os.environ.get("FAUSTUS_URL") or internal_api_base())
+    parser.add_argument("--url", default=os.environ.get("FAUSTUS_INTERNAL_API_URL") or os.environ.get("FAUSTUS_URL") or internal_api_base())
     args = parser.parse_args()
     try:
         response = httpx.get(args.url.rstrip("/") + "/api/privacy/report", headers=_headers(), timeout=20, trust_env=False)

@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
 
 from core.middleware import require_admin
@@ -46,19 +46,20 @@ def setup_privacy_routes() -> APIRouter:
     router = APIRouter(prefix="/api/privacy", tags=["privacy"])
 
     @router.get("/report")
-    def get_report(request: Request) -> Dict[str, Any]:
+    def get_report(request: Request, response: Response) -> Dict[str, Any]:
         require_admin(request)
         from src.data_boundary_report import report
+        response.headers["Cache-Control"] = "no-store"
         return report()
 
     @router.get("/attachment-destination")
-    def attachment_destination(request: Request, endpoint_id: str = "", session_id: str = "") -> Dict[str, Any]:
+    def attachment_destination(request: Request, response: Response, endpoint_id: str = "", session_id: str = "") -> Dict[str, Any]:
         from core.database import SessionLocal, Session, ModelEndpoint
-        from src.auth_helpers import require_authenticated_request, effective_user, owner_filter
+        from src.auth_helpers import require_user, owner_filter
         from src.data_boundary_report import destination
         from src.settings import get_user_setting
-        require_authenticated_request(request)
-        owner = effective_user(request) or ""
+        owner = require_user(request)
+        response.headers["Cache-Control"] = "no-store"
         with SessionLocal() as db:
             session = None
             if session_id:

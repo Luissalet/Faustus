@@ -602,6 +602,7 @@ logger = logging.getLogger(__name__)
 _ADMIN_TOOLS = {
     "app_api",
     "manage_endpoints",
+    "mcp__data_boundary__data_boundary_report",
     "manage_mcp",
     "manage_webhooks",
     "manage_tokens",
