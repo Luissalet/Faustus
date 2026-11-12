@@ -14,4 +14,6 @@ For a journey that follows links and specific controls, the native and MCP `task
 
 After finishing an app or website, use this tool with the actual running URL and a short journey covering the completed features. Poll `{"job_id":"…"}` rather than submitting the recording again. The result gives `state`, progress and a local `video_url` for the completed MP4. The tool reports connection and recording errors; no generated promo is substituted. The native tool, external MCP client and button share the same operation.
 
+The built-in MCP client also accepts `session`, the chat id, to select that chat owner's configured Prospero connector when it uses the internal tool token. A personal API token selects its own account without this extra field.
+
 The configured Prospero connector supplies the server address and existing credentials. Faustus proxies the video with byte ranges so the player also works when the app runs on another machine. Prospero stores the video and contact sheet in its project library, with the actual page titles and visited URLs in the recipe. No GPU or text model is needed. Reading the summary or tool catalogue does not start a service.

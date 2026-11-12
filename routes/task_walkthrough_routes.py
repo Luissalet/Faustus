@@ -8,6 +8,20 @@ from src.auth_helpers import effective_user
 from src import task_walkthrough
 
 
+def owner_of(request, session=None):
+    owner = effective_user(request)
+    if owner == "internal-tool" and not session:
+        raise HTTPException(400, "Give the chat session id to select its Prospero connection")
+    if owner == "internal-tool" and session:
+        from src.database import Session, SessionLocal
+        with SessionLocal() as db:
+            row = db.query(Session).filter(Session.id == session).first()
+            if row:
+                return row.owner
+        raise HTTPException(404, "Chat session not found")
+    return owner
+
+
 def setup_task_walkthrough_routes():
     router = APIRouter(tags=["delivery"])
 
@@ -17,7 +31,7 @@ def setup_task_walkthrough_routes():
         body = await request.json()
         if not isinstance(body, dict):
             raise HTTPException(400, "Give a JSON object")
-        result = await task_walkthrough.run(effective_user(request), body)
+        result = await task_walkthrough.run(owner_of(request, body.get("session")), body)
         return JSONResponse(result, status_code=400 if result.get("error") else 200)
 
     @router.get("/api/task-walkthrough/{job_id}/video")

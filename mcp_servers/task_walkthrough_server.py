@@ -21,7 +21,9 @@ server = Server("task_walkthrough")
 
 @server.list_tools()
 async def list_tools():
-    return [Tool(name=SCHEMA["name"], description=SCHEMA["description"], inputSchema=SCHEMA["parameters"])]
+    schema = json.loads(json.dumps(SCHEMA["parameters"]))
+    schema["properties"]["session"] = {"type": "string", "description": "Chat session id, required when using the built-in internal tool token so its owner selects the Prospero connector"}
+    return [Tool(name=SCHEMA["name"], description=SCHEMA["description"], inputSchema=schema)]
 
 
 @server.call_tool()

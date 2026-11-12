@@ -20,12 +20,13 @@ SCHEMA = {"name": "task_walkthrough", "description": "Record a real journey thro
 def connection(owner):
     from src import plugin_runtime, connector_sidecar
     from src.connectors import read_token_file
-    found = plugin_runtime.resolve("prospero", owner=owner)
+    from src.owner_identity import single_user_mode, owners_match
+    found = plugin_runtime.resolve("prospero", owner=None if single_user_mode() else owner)
     row = found.get("connector")
     if not row:
         raise ValueError("Connect Prospero to record a walkthrough")
     row = connector_sidecar.get_connector(row["id"], redact=False) or row
-    if row.get("owner") and row["owner"] != owner:
+    if row.get("owner") and not owners_match(row["owner"], owner):
         raise ValueError("Prospero connection belongs to another account")
     base = str(row.get("app_url") or "").rstrip("/")
     if urlsplit(base).scheme not in ("http", "https"):

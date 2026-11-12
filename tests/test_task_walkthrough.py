@@ -65,3 +65,25 @@ def test_non_walkthrough_jobs_are_not_accepted(monkeypatch):
     monkeypatch.setattr(walk, "request", other)
     result = asyncio.run(walk.run("owner", {"job_id": "job1"}))
     assert result["exit_code"] == 1 and "not a website walkthrough" in result["error"]
+
+
+def test_internal_mcp_selects_the_chat_owner_not_the_pseudo_user(monkeypatch):
+    from types import SimpleNamespace
+    from src import database
+
+    class DB:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def query(self, *args): return self
+        def filter(self, *args): return self
+        def first(self): return SimpleNamespace(owner="chat-owner")
+
+    monkeypatch.setattr(routes, "effective_user", lambda request: "internal-tool")
+    monkeypatch.setattr(database, "SessionLocal", DB)
+    monkeypatch.setattr(database, "Session", SimpleNamespace(id="id"), raising=False)
+    assert routes.owner_of(None, "chat1") == "chat-owner"
+    with pytest.raises(Exception) as error:
+        routes.owner_of(None)
+    assert error.value.status_code == 400
+    monkeypatch.setattr(routes, "effective_user", lambda request: "person")
+    assert routes.owner_of(None, "chat1") == "person"
