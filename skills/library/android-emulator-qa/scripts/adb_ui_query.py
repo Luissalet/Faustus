@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import time
 import uuid
 import xml.etree.ElementTree as ET
 
@@ -49,7 +50,11 @@ def main():
     parser.add_argument("--class", dest="class_name")
     parser.add_argument("--min-height", type=int, default=1)
     parser.add_argument("--expect-ime", choices=("hidden", "visible"))
+    parser.add_argument("--wait-tree-ms", type=int, default=0,
+                        help="retry fresh tree reads while the expected app and IME still match")
     args = parser.parse_args()
+    if not 0 <= args.wait_tree_ms <= 15000:
+        parser.error("tree wait must be between 0 and 15000 ms")
     if not args.adb.is_absolute() or not args.adb.is_file():
         parser.error("use the absolute path to the Android SDK adb executable")
     left, top, right, bottom = args.rect
@@ -57,7 +62,6 @@ def main():
         parser.error("provide a positive minimum height and an observed unobscured rectangle")
 
     adb = [str(args.adb), "-s", args.serial]
-    remote = "/data/local/tmp/faustus-ui-" + uuid.uuid4().hex + ".xml"
     result = {"serial": args.serial, "matched": False}
     try:
         def observe(*command):
@@ -70,20 +74,38 @@ def main():
                 args.package, args.expect_ime,
             )
 
-        before = foreground()
-        if not before["matched"] or not before.get("imeMatched", True):
-            print(json.dumps({**result, "foreground": before}))
-            return 1
-        try:
-            observe("shell", "uiautomator", "dump", remote)
-            xml = observe("exec-out", "cat", remote)
-        finally:
-            observe("shell", "rm", "-f", remote)
-        after = foreground()
-        if not after["matched"] or not after.get("imeMatched", True):
-            print(json.dumps({**result, "foreground": after}))
-            return 1
-        nodes = find_nodes(xml, args.package, args.label, args.rect, args.class_name, args.min_height)
+        deadline = time.monotonic() + args.wait_tree_ms / 1000
+
+        def wait_for_next_tree():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(.15, remaining))
+            return time.monotonic() < deadline
+
+        while True:
+            before = foreground()
+            if not before["matched"] or not before.get("imeMatched", True):
+                print(json.dumps({**result, "foreground": before}))
+                return 1
+            remote = "/data/local/tmp/faustus-ui-" + uuid.uuid4().hex + ".xml"
+            try:
+                try:
+                    observe("shell", "uiautomator", "dump", remote)
+                    xml = observe("exec-out", "cat", remote)
+                finally:
+                    observe("shell", "rm", "-f", remote)
+                nodes = find_nodes(xml, args.package, args.label, args.rect, args.class_name, args.min_height)
+            except (subprocess.CalledProcessError, ET.ParseError):
+                if wait_for_next_tree():
+                    continue
+                raise
+            after = foreground()
+            if not after["matched"] or not after.get("imeMatched", True):
+                print(json.dumps({**result, "foreground": after}))
+                return 1
+            if len(nodes) == 1 or not wait_for_next_tree():
+                break
     except (OSError, subprocess.SubprocessError, ET.ParseError) as error:
         print(json.dumps({**result, "error": str(error)}))
         return 2
