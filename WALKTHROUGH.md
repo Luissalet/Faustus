@@ -17,3 +17,5 @@ After finishing an app or website, use this tool with the actual running URL and
 The built-in MCP client also accepts `session`, the chat id, to select that chat owner's configured Prospero connector when it uses the internal tool token. A personal API token selects its own account without this extra field.
 
 The configured Prospero connector supplies the server address and existing credentials. Faustus proxies the video with byte ranges so the player also works when the app runs on another machine. Prospero stores the video and contact sheet in its project library, with the actual page titles and visited URLs in the recipe. No GPU or text model is needed. Reading the summary or tool catalogue does not start a service.
+
+In Prospero's standalone workspace, enable its existing **Generation** module before recording. The walkthrough client reports an OFF module and leaves it OFF; it does not reactivate a module the person stopped.
