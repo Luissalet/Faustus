@@ -18418,3 +18418,27 @@ la configuración y sus metadatos. Studio avisa junto a los adjuntos cuando el
 modelo puede recibirlos fuera del equipo. El informe también se consulta con
 `data_boundary_report` por MCP y con `python -m src.data_boundary_report` en
 terminal. [Contrato y alcance](docs/api/data_boundary.md).
+
+## Benchmark personal y optimización de texto — mejoras 3125
+
+Skills → Ciclos de mejora reutiliza las trayectorias y la clasificación de
+reacciones para extraer ejemplos propios positivos, corregidos y con fallos.
+Aplica en local el enmascarado de identificadores reconocidos, secretos, URL,
+rutas y entidades indicadas antes de sintetizar con el modelo configurado.
+Guarda casos textuales fijos, referencias, comprobaciones y SHA-256 en el
+almacén de harness existente. La separación por conversación reserva casos
+para medir y limita las propuestas a los ejemplos de desarrollo.
+
+Cada medida conserva modelo, revisión activa, respuestas, errores y puntuación
+por grupo. Los ciclos optimizan una sección de prompt o el cuerpo de una skill
+existente mediante los sidecars, comparación y reversión individual de 3121.
+La comparación de skills incluye su texto original en el control. El turno
+normal incorpora el texto evaluado por el contexto de skills existente.
+
+`personal_benchmark` por MCP y `POST /api/harness/personal` comparten
+build/list/get/measure/export. La exportación crea una suite custom con sus
+comprobaciones y digest en el módulo nativo de Galton ya activado, cuya vista
+y ejecutor permiten medir modelos. Las referencias sintetizadas necesitan
+validación de dominio. El enmascarado es heurístico y admite entidades
+adicionales. La batería acredita respuestas textuales con su cobertura guardada.
+Contrato en `docs/api/improvement_cycles.md`.

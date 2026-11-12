@@ -2618,6 +2618,13 @@ el seguimiento del TaskRun conserva la pausa y la continuación vive en su chat.
 
 ### Mejora medible de configuración (mejoras 3121, 12-11-2026)
 
+La ampliación 3125 añade benchmark personal textual desde ejemplos propios
+valorados, enmascarado local, separación por conversación, casos fijos con
+digest, mediciones por modelo y exportación a Galton. Los ciclos optimizan
+texto de sección o skill mediante sidecars y comparación por grupo. La
+validación de referencias generadas y la representatividad del conjunto se
+revisan según el dominio y la cobertura de cada batería.
+
 Implementados los ciclos de propuestas tipadas y acotadas sobre las revisiones existentes, comparación por grupo con umbral configurable, sidecars efectivos en turnos normales, historial/casos/reversión individual en Studio, herramientas MCP y programación con el planificador existente. Los casos completion certifican solo el prompt; los agent reutilizan la repetición de solo lectura. El ciclo pequeño real verifica aceptación/rechazo; no establece una ganancia general ni significación estadística. Galton conserva su evaluador nativo dentro de Pygmalion.
 ## Unity: banco y procedimientos — mejoras #3123
 

@@ -148,6 +148,49 @@ def test_skill_text_uses_existing_patch_store_and_reverts_without_writing_origin
 
 
 @pytest.mark.asyncio
+async def test_skill_trial_compares_original_body_and_replacement(store, monkeypatch):
+    from src.harness_refinement import targets
+    monkeypatch.setattr(targets, "read_current", lambda *args: "Original skill")
+    monkeypatch.setattr(cycles, "collect_signals", lambda *args: [])
+    cfg = cycles.CycleSpec(target_group="target", text_target={"kind": "skill_text", "key": "fixture-skill"},
+        endpoint_url="http://127.0.0.1:9", model="fixture", cases=[
+            cycles.Case(id="t", group="target", prompt="Target", checks={"answer_all": ["^fixed$"]}),
+            cycles.Case(id="r", group="other", prompt="Other", checks={"answer_all": ["^stable$"]})])
+    inputs = []
+    async def model(url, name, messages, **kwargs):
+        body = json.dumps(messages)
+        inputs.append(body)
+        if any(m.get("content") == "Other" for m in messages):
+            return "stable"
+        return "fixed" if "Improved skill" in body else "wrong"
+    async def propose(*args):
+        return [{"edit": {"kind": "skill_text", "key": "fixture-skill", "value": "Improved skill"}, "reason": "Improve"}]
+    record = cycles.create(cfg, "fixture", store=store)
+    result = await cycles.run(record["id"], "fixture", store=store, model_call=model, proposer_fn=propose)
+    assert result["candidates"][0]["status"] == "awaiting_person", result
+    assert all("Original skill" in body for body in inputs[:2])
+    assert all("Improved skill" in body and "Original skill" not in body for body in inputs[2:])
+    assert not runtime.snapshot("fixture", store=store)
+
+
+def test_concurrent_results_append_without_losing_prior_measurements(store):
+    from concurrent.futures import ThreadPoolExecutor
+    db = personal.BenchmarkStore(store)
+    db.save({"id": "parallel", "owner": "fixture", "measurements": [], "galton_exports": []})
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda i: db.append("parallel", "fixture", "measurements", {"id": i}), range(12)))
+    assert {row["id"] for row in db.get("parallel", "fixture")["measurements"]} == set(range(12))
+
+
+@pytest.mark.parametrize("cls", [personal.BuildSpec, personal.MeasureSpec])
+def test_explicit_endpoint_requires_model(cls):
+    with pytest.raises(ValueError, match="together"):
+        cls(endpoint_url="http://127.0.0.1:9")
+    with pytest.raises(ValueError, match="together"):
+        cls(model="fixture")
+
+
+@pytest.mark.asyncio
 async def test_export_uses_native_suite_create_preserves_checker_and_digest(store, monkeypatch):
     record = await personal.build(build_spec(), "fixture", store=store, loader=distinct_loader, model_call=synthesizer)
     async def call(url, tool, args):

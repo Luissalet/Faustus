@@ -44,6 +44,7 @@ take precedence.
 | `tool_description` | tool name, text ≤2000 characters | Replaces that offered schema's description |
 | `tool_selection` | tool name, boolean | Selects or omits a tool from the model's offered set; existing execution policy still applies |
 | `skill` | existing skill name, boolean | Enables its body or omits it from automatic skill selection |
+| `skill_text` | existing owner skill name, full text of 1–60000 characters | Supplies the evaluated replacement body through the existing skill context |
 | `context` | no_memory/no_skills boolean; input_token_budget 4096–131072 | Existing context options |
 
 Workflow-section, tool-selection, skill and context edits are classified high
@@ -110,3 +111,47 @@ To schedule, the panel creates an ordinary `/api/tasks` action with
 `action: improvement_cycle` and `prompt: JSON.stringify(spec)`. Recurrence,
 time zone, leases, notifications and cancellation use the existing scheduler;
 there is no second background timer. The action is also available to API clients.
+
+## Personal benchmarks and text optimization
+
+Studio's personal benchmark panel and the `personal_benchmark` MCP tool share
+`POST /api/harness/personal`. Actions are `build`, `list`, `get`, `measure` and
+`export`. The owner comes from the existing HTTP identity or
+`ODYSSEUS_MCP_HARNESS_OWNER` in MCP. `get`, `measure` and `export` take `id`.
+
+`build` accepts a `spec` containing `name`, optional `session_ids`,
+`redact_terms`, `max_examples` (4–100, default 40), and an optional paired
+`endpoint_url`/`model`. It reads recent owned conversations through the existing
+trajectory loader and reaction classifier. Positive feedback, corrections and
+tool failures supply rated examples. Local masking covers recognized identifiers,
+secrets, URL, paths and supplied names before model synthesis. Arbitrary names
+and private prose require explicit `redact_terms` because masking is heuristic.
+
+The configured model synthesizes self-contained text cases with canonical
+references and exact-answer checks. References require domain validation.
+The resulting cases are frozen with a SHA-256 digest. Deduplicated examples
+must span at least two conversations. A stable source-session split keeps
+development and reserved conversations separate. Only development examples,
+cases and their scores reach the optimization proposer.
+
+`measure` accepts `spec` with optional paired `endpoint_url`/`model`,
+`project_id` and `repeats`. Each result records the frozen digest, model,
+active revision, per-case answers/errors and per-group score. Concurrent result
+appends are transactional. This battery measures text answers and has the
+coverage represented by its saved examples. Statistical representativeness,
+reference correctness and tool execution require their own verification.
+
+Set a cycle's `benchmark_id` and pass its exact saved `cases` to optimize against
+that battery. `text_target` chooses `{kind: system_section, key: response}` or
+`{kind: skill_text, key: existing-skill-name}`. The proposer reads the current
+text and good/bad development evidence, then proposes a full text sidecar for
+that target. Baseline skill trials include the original body. The existing
+per-group comparison, promotion and individual reversal handle these candidates.
+Skill text uses the existing high-risk skill handling in Studio.
+
+`export` takes the already enabled native evaluation `url`, including
+`/evaluation` for the unified app. It calls Galton's existing `suite_create`
+with the frozen prompts, references, regex checks, group/split tags and digest.
+The suite appears in Galton's normal view and can use its existing model
+measurement and comparison flow. Each export creates a suite and records its
+id. Exported suites have category `custom`.

@@ -71,6 +71,8 @@ En Windows sin Docker, `Start-Faustus-Desktop.bat` abre la ventana de escritorio
 - Trabaja con repositorios desde el panel de Git y lleva incidencias tipadas en un tablero de proyecto que los agentes pueden leer y actualizar.
 - Un enrutador de modelos elige en cada turno un modelo local o remoto según la velocidad medida y el historial, y nunca pasa a una ruta de pago sin permiso explícito. Consulta la [API del enrutador](docs/api/model_router.md).
 
+- Crea un benchmark personal de texto desde conversaciones valoradas, compara modelos sobre casos fijos y optimiza secciones de prompt o skills con ediciones medidas y reversibles. Consulta los [ciclos de mejora](docs/api/improvement_cycles.md).
+
 ### Conocimiento de proyecto y memoria
 
 - Los proyectos guardan archivos, documentos, fuentes, objetivos e instrucciones con independencia del nombre de la carpeta en la barra lateral.
