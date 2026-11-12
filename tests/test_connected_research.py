@@ -234,3 +234,11 @@ def test_connected_checkpoint_preserves_original_app_links():
     saved = cr.ConnectedResearcher._trim_findings_for_checkpoint([None, finding])
     assert saved == [{"summary": "", **finding}]
     assert rh.ResearchHandler._extract_sources(saved)[0]["app_id"] == "kafka"
+
+
+
+def test_source_title_stays_inside_one_markdown_link_label():
+    url = "http://kafka.test/?doc=12#/documentos/12"
+    finding = cr._finding({"url": url, "title": "Invoice\n[redacted]", "text": "Original text"}, "mcp:kafka")
+    assert finding["title"] == "Invoice (redacted)"
+    assert finding["url"] == url

@@ -135,7 +135,12 @@ def _finding(row: dict, source: str, *, base="", app_id="", lane="text") -> dict
         return None
     origin = urlsplit(base)
     dock_app = app_id if (parts.scheme, parts.netloc) == (origin.scheme, origin.netloc) else ""
-    return {"url": url, "title": str(row.get("title") or row.get("subject") or row.get("name") or url),
+    # The report writes this label inside Markdown link brackets.
+    title = " ".join(str(row.get("title") or row.get("subject") or row.get("name") or url).split())
+    title = title.replace("[", "(").replace("]", ")")
+    if len(title) > 240:
+        title = title[:239].rstrip() + "…"
+    return {"url": url, "title": title,
             "summary": text[:6000], "evidence": text[:12000], "source_id": source,
             "app_id": dock_app, "retrieval_lane": lane, "when": str(row.get("when") or row.get("date") or ""),
             "excerpt": len(text) > 12000 or not any(row.get(k) for k in ("content", "body", "text", "evidence"))}
