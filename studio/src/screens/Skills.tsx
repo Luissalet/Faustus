@@ -31,6 +31,7 @@ import './projects.css';
 import './skills.css';
 import { t, tn } from '../i18n';
 import { InstructionPortability } from './InstructionPortability';
+import { ImprovementCyclesPanel } from './skills/improvement_cycles';
 
 /**
  * Skills (the previous interface's Skills tab inside Brain, `/skills`).
@@ -43,7 +44,7 @@ import { InstructionPortability } from './InstructionPortability';
  * attention" is a filter, not a hidden rule inside a delete button.
  */
 
-type View = 'learned' | 'library' | 'flows' | 'instincts' | 'harness' | 'portability';
+type View = 'learned' | 'library' | 'flows' | 'instincts' | 'harness' | 'portability' | 'cycles';
 type Filter = 'all' | 'drafts' | 'published' | 'attention';
 const SORTS: { value: SkillSort; label: string }[] = [
   { value: 'confidence', label: 'Confidence' },
@@ -409,6 +410,7 @@ export function SkillsScreen() {
             ['flows', t('Agent flows by app')],
             ['instincts', t('Instincts')],
             ['harness', t('Harness proposals')],
+            ['cycles', t('Improvement cycles')],
             ['portability', t('Export')],
           ] as [View, string][]
         ).map(([key, label]) => (
@@ -422,6 +424,7 @@ export function SkillsScreen() {
       {view === 'flows' && <AgentFlowsPanel />}
       {view === 'instincts' && <InstinctsPanel say={say} />}
       {view === 'harness' && <HarnessProposalsPanel say={say} />}
+      {view === 'cycles' && <ImprovementCyclesPanel />}
       {view === 'portability' && <InstructionPortability />}
 
       {view === 'learned' && (

@@ -106,6 +106,12 @@ def _json_result(payload: dict) -> list[TextContent]:
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     return [
+        Tool(name="improvement_cycle_start", description="Run a typed configuration improvement cycle with target and per-group regression checks. Lanzar ciclo de mejora.",
+             inputSchema={"type": "object", "properties": {"spec": {"type": "object", "description": "CycleSpec: name, target_group, cases [{id,group,prompt,checks}], candidates, repeats, regression_threshold (default .01), optional project_id/endpoint_url/model/galton_url."}}, "required": ["spec"]}),
+        Tool(name="improvement_cycle_status", description="List cycles or read one with candidate verdicts and before/after cases. Consultar ciclo de mejora.",
+             inputSchema={"type": "object", "properties": {"id": {"type": "string"}}}),
+        Tool(name="improvement_cycle_revert", description="Undo one accepted configuration patch, preserving unrelated later changes. Revertir edición de un ciclo.",
+             inputSchema={"type": "object", "properties": {"patch_id": {"type": "string"}}, "required": ["patch_id"]}),
         Tool(
             name="degradation_status",
             description=(
@@ -967,6 +973,31 @@ _TOOLS = {
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Dispatch, and never raise -- an exception here would kill the server."""
+    if name.startswith("improvement_cycle_"):
+        try:
+            from src.harness_evolution import cycles
+            owner = os.environ.get("ODYSSEUS_MCP_HARNESS_OWNER", "").strip()
+            if not owner:
+                return _json_result({"error": "Set ODYSSEUS_MCP_HARNESS_OWNER to the configuration owner."})
+            if name == "improvement_cycle_start":
+                record = cycles.create(cycles.CycleSpec.model_validate(arguments["spec"]), owner)
+                task = asyncio.create_task(cycles.run(record["id"], owner))
+                _CYCLE_TASKS.add(task)
+                task.add_done_callback(_CYCLE_TASKS.discard)
+                return _json_result({"cycle": record})
+            if name == "improvement_cycle_revert":
+                return _json_result({"revision": cycles.revert(arguments["patch_id"], owner)})
+            if name == "improvement_cycle_status":
+                ident = arguments.get("id")
+                record = cycles.CycleStore().get(ident, owner) if ident else None
+                if ident and not record: return _json_result({"error": "No existe el ciclo."})
+                if record:
+                    svc = cycles.HarnessEvolutionService()
+                    patches = [svc.get_patch(c["patch_id"]).to_dict() for c in record["candidates"] if c.get("patch_id")]
+                    return _json_result({"cycle": record, "patches": patches})
+                return _json_result({"cycles": cycles.CycleStore().list(owner)})
+        except Exception as exc:
+            return _json_result({"error": str(exc)})
     handler = _TOOLS.get(name)
     if handler is None:
         return _text_result(f"Unknown tool: {name}")
@@ -992,6 +1023,8 @@ async def run():
         with stdout_guard():
             await server.run(read_stream, write_stream, server.create_initialization_options())
 
+
+_CYCLE_TASKS: set = set()
 
 if __name__ == "__main__":
     asyncio.run(run())

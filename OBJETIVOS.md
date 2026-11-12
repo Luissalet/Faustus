@@ -2603,3 +2603,8 @@ La segunda revisión acorta los códigos a cuatro caracteres estables, admite
 «sí»/«no» con una sola pendiente y adapta las tarjetas al estilo de Studio.
 Integración, reinicio y despliegue en Spark quedan a cargo del revisor;
 el seguimiento del TaskRun conserva la pausa y la continuación vive en su chat.
+
+
+### Mejora medible de configuración (mejoras 3121, 12-11-2026)
+
+Implementados los ciclos de propuestas tipadas y acotadas sobre las revisiones existentes, comparación por grupo con umbral configurable, sidecars efectivos en turnos normales, historial/casos/reversión individual en Studio, herramientas MCP y programación con el planificador existente. Los casos completion certifican solo el prompt; los agent reutilizan la repetición de solo lectura. El ciclo pequeño real verifica aceptación/rechazo; no establece una ganancia general ni significación estadística. Galton conserva su evaluador nativo dentro de Pygmalion.

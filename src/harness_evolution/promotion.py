@@ -60,6 +60,12 @@ def apply_change(parent_refs: Dict, patch: CandidatePatch) -> Dict:
     refs = copy.deepcopy(parent_refs or {})
     changes = patch.changes or {}
     change_type = str(changes.get("type") or "")
+    if change_type == "runtime_config":
+        from .runtime import slot
+        refs.setdefault("runtime_config", {})[slot(changes)] = {
+            "patch_id": patch.patch_id, "owner": changes["owner"],
+            "project_id": changes.get("project_id", ""), "edit": changes["edit"]}
+        return refs
     if change_type == "add_skill":
         skills = dict(refs.get("skills") or {})
         skill_id = str(changes.get("skill_id") or "")
@@ -95,6 +101,16 @@ def promote(store: HarnessEvolutionStore, patch: CandidatePatch, *, actor: str,
     if patch.status != "evaluated":
         raise PromotionRefused(f"patch {patch.patch_id!r} is {patch.status!r}, not 'evaluated'")
     outcome = outcome_from_dict(patch.evaluation)
+    if patch.change_type == "runtime_config":
+        from .cycles import gate
+        comparison = gate(patch.evaluation.get("before", []), patch.evaluation.get("after", []),
+                          patch.evaluation.get("target_group", ""),
+                          patch.evaluation.get("regression_threshold", .01))
+        if not comparison["eligible"]:
+            raise PromotionRefused("runtime configuration did not pass the regression comparison")
+        # The comparison has its own numeric gate; legacy A27 remains unchanged.
+        outcome = outcome_from_dict({"source": {"target_improved": True},
+                                     "held_out": {"regressions_within_threshold": True}})
     if not outcome.eligible:
         raise PromotionRefused(
             f"patch {patch.patch_id!r} evaluation is not eligible for promotion "
@@ -110,6 +126,11 @@ def promote(store: HarnessEvolutionStore, patch: CandidatePatch, *, actor: str,
     new_revision = HarnessRevision(
         revision_id=new_id("rev"), parent_id=parent.revision_id, created_at=now_iso(),
         refs=new_refs, status="active", version=parent.version + 1)
+    if patch.change_type == "runtime_config":
+        patch.status, patch.promoted_revision_id = "promoted", new_revision.revision_id
+        patch.rollback_target = parent.revision_id
+        patch.trace = f"promoted by {actor} at {now_iso()}: {parent.revision_id} -> {new_revision.revision_id}"
+        return store.promote_cas(parent_revision_id=parent.revision_id, new_revision=new_revision, patch_state=patch)
     committed = store.promote_cas(parent_revision_id=parent.revision_id, new_revision=new_revision)
     patch.status = "promoted"
     patch.promoted_revision_id = committed.revision_id

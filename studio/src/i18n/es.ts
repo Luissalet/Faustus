@@ -3632,6 +3632,7 @@ export const es: Record<string, string> = {
   "Imported: {what}": "Importado: {what}",
   "Importing {done} of {total}…": "Importando {done} de {total}…",
   "Import…": "Importar…",
+  "Improvement cycles": "Ciclos de mejora",
   "Improvement loop": "Bucle de mejora",
   "Improving the skill": "Mejorando la skill",
   "In": "En",

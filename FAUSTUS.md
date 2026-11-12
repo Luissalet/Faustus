@@ -18270,3 +18270,12 @@ preguntas libres en aprobaciones ni se añaden puertas o modos nuevos.
 HTTP y MCP de lectura exponen la misma bandeja. Entrega, límites y pruebas en
 `docs/api/approval-inbox.md`; reinicio, integración y despliegue corresponden a
 Claude. No se afirma activación en la instancia habitual por tener el código.
+
+
+## Ciclos de mejora de configuración — mejoras 3121 (12-11-2026)
+
+Se amplía harness_evolution y se reutilizan las señales de harness_refinement y las comprobaciones de la batería diaria. Cada candidato contiene una sola edición tipada: sección del sistema, parámetros, descripción/selección de herramienta, skill o contexto. Se evalúa frente al control actual en el grupo objetivo y en cada grupo de regresión (umbral inicial de un punto porcentual); errores o cobertura incompleta no permiten aplicar. Los sidecars por propietario/proyecto entran en el turno normal y se pueden deshacer individualmente, conservando ediciones ajenas. Las ediciones de riesgo alto esperan a la persona.
+
+Studio → Skills → Ciclos de mejora muestra historial, resultados por grupo, casos antes/después y reversión; permite lanzar o crear una automatización diaria con el planificador existente. MCP del arnés: improvement_cycle_start/status/revert. Galton se reutiliza en el módulo de evaluación nativo de Pygmalion: importar suites/fallos y answer_check opcional, sin activar ni arrancar aplicaciones. Contrato y límites en docs/api/improvement_cycles.md.
+
+Verificación del autor: ciclo sintético real mediante MCP con deepseek-v4.1-flash en las Sparks; tres propuestas del modelo, una aplicada (aritmética 0/2 a 2/2, geografía 2/2 conservada) y dos rechazadas por no aportar mejora adicional. Es una prueba pequeña del mecanismo, no evidencia de mejora general del arnés. Las pruebas deterministas cubren rechazo por regresión y reversión de una edición sin borrar cambios posteriores.

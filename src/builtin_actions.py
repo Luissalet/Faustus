@@ -3500,9 +3500,15 @@ BUILTIN_ACTIONS.update(_WATCH_ACTIONS)
 # A user panel's scheduled action (src/panel_actions.py): the prompt names {panel, action}.
 from src.panel_actions import scheduled_entry as _panel_action  # noqa: E402
 BUILTIN_ACTIONS["panel_action"] = _panel_action
+async def _improvement_cycle(owner: str, command: str = "", **kwargs):
+    from src.harness_evolution.cycles import scheduled_entry
+    return await scheduled_entry(owner, command, **kwargs)
+
+BUILTIN_ACTIONS["improvement_cycle"] = _improvement_cycle
 
 # Descriptions for the UI/API
 BUILTIN_ACTION_INFO = {
+    "improvement_cycle": "Ejecutar una batería de mejora con candidatos tipados y comparación de regresiones; prompt contiene CycleSpec JSON",
     **_WATCH_ACTION_INFO,
     "panel_action": "Run one server action of a user panel (a tool or URL whose answer is saved in the panel's database or storage); created from the panel's actions, the prompt is {\"panel\": id, \"action\": name}",
     "probe_model_capabilities": "Probe an OpenAI-compatible model endpoint (tool calls, streaming tool calls, JSON mode, vision) and record what it actually did, apart from what it declares",

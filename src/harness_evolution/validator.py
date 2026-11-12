@@ -174,6 +174,28 @@ def validate(patch: CandidatePatch, *, parent: HarnessRevision) -> ValidationRes
         raise ValidationError("changes.type", f"must be one of {CHANGE_TYPES}")
     if patch.parent_revision != parent.revision_id:
         raise ValidationError("parent_revision", "does not match the supplied parent revision")
+    if change_type == "runtime_config":
+        from .runtime import ConfigEdit
+        try:
+            edit = ConfigEdit.model_validate(patch.changes["edit"])
+            if not patch.changes.get("owner"):
+                raise ValueError("owner is required")
+            if edit.kind == "skill":
+                from src.harness_refinement.targets import read_current
+                if not read_current("skill", f"skill:{edit.key}", patch.changes["owner"]):
+                    raise ValueError("skill does not exist for this owner")
+            if edit.kind in ("tool_description", "tool_selection"):
+                from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+                names = {s["function"]["name"] for s in FUNCTION_TOOL_SCHEMAS}
+                from src.mcp_manager import get_mcp_manager
+                manager = get_mcp_manager()
+                if manager:
+                    names.update(t["qualified_name"] for t in manager.get_all_tools())
+                if edit.key not in names:
+                    raise ValueError("tool is not in the available catalogue")
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ValidationError("changes.edit", str(exc)) from None
+        return ValidationResult(ok=True)
     if change_type == "add_skill":
         return _validate_add_skill(patch.changes)
     return _validate_ref_update(patch.changes, parent)

@@ -26,7 +26,7 @@ REVISION_STATUSES = ("active", "candidate", "retired")
 #: patch always names exactly one — composing several is a sequence of
 #: patches, not one patch with mixed intent, so a promotion never has to
 #: guess which half of a mixed change caused a regression.
-CHANGE_TYPES = ("add_skill", "update_instruction", "update_specialist")
+CHANGE_TYPES = ("add_skill", "update_instruction", "update_specialist", "runtime_config")
 
 #: The lifecycle a `CandidatePatch` walks through. `proposed` -> `validated`
 #: (schema/refs/permissions ok) or `rejected` (A26) -> `evaluated` (source +

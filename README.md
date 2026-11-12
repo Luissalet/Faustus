@@ -1744,3 +1744,8 @@ automations keep their exact-action cards for the same continuation flow.
 No additional approval points or global mode changes. See the
 [API, reply grammar and limits](docs/api/approval-inbox.md). Candidate #3120;
 activation on the Spark follows reviewer integration and deployment.
+
+
+### Configuration improvement cycles
+
+Studio Skills includes owner/project-scoped configuration experiments with typed sidecars, target and per-group regression checks (1% default), real-model proposals, complete before/after evidence, individual undo, optional native Galton judging and the existing scheduler. The harness MCP exposes start/status/revert. High-risk edits wait for the person. See [the API and limits](docs/api/improvement_cycles.md).

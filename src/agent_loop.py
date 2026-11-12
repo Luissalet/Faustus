@@ -5705,6 +5705,7 @@ def _build_system_prompt(
     schema_tools: Optional[Set[str]] = None,
     project_id: Optional[str] = None,
     suppress_assistant_skills: Optional[bool] = None,
+    configuration_edits: Optional[List[Dict]] = None,
 ) -> List[Dict]:
     """Build agent system prompt, inject MCP/document context, merge consecutive system msgs.
 
@@ -6379,6 +6380,9 @@ def _build_system_prompt(
                     min_confidence=_skill_min_conf,
                     engines=_skill_engines,
                 ) if _skill_max_injected > 0 else []
+                _excluded_skills = {e["key"] for e in configuration_edits or ()
+                                    if e["kind"] == "skill" and not e["value"]}
+                relevant_skills = [s for s in relevant_skills if s.name not in _excluded_skills]
                 lines = [""]
                 level1 = None
                 if relevant_skills:
@@ -8726,6 +8730,22 @@ async def _stream_agent_loop_body(
         logger.info("[gate] user-dictated delegation in this turn: %d task(s)",
                     len((run_security.user_delegation.get("tasks") or [])) if isinstance(run_security.user_delegation.get("tasks"), list) else 0)
     _hopts: Dict[str, Any] = dict(harness_options or {})
+    from src.harness_evolution import runtime as _evaluated_config
+    _config_edits = _hopts.get("runtime_config_trial")
+    if _config_edits is None:
+        if not _hopts.get("project_id") and session_id and owner:
+            try:
+                from services.projects import project_for_session as _config_project_for_session
+                _config_project = _config_project_for_session(session_id, owner)
+                if _config_project:
+                    _hopts["project_id"] = _config_project["id"]
+            except Exception as _config_project_error:
+                logger.debug("[harness-config] project lookup unavailable: %s", _config_project_error)
+        _config_edits = _evaluated_config.snapshot(owner or "", str(_hopts.get("project_id") or ""))
+    _hopts, temperature, max_tokens = _evaluated_config.options(
+        _config_edits, _hopts, temperature, max_tokens, temperature_explicit=temperature_explicit)
+    if any(e["kind"] == "model_parameter" and e["key"] == "temperature" for e in _config_edits):
+        temperature_explicit = True
     from src.context_budget import parse_turn_input_budget
     _turn_input_budget = parse_turn_input_budget(_hopts.get("input_token_budget"))
     mcp_mgr = get_mcp_manager()
@@ -10932,6 +10952,8 @@ async def _stream_agent_loop_body(
 
     def _route_relevant_tools(candidate_model: str):
         route_tools = None if _base_relevant_tools is None else set(_base_relevant_tools)
+        if route_tools is not None:
+            route_tools.update(e["key"] for e in _config_edits if e["kind"] == "tool_selection" and e["value"])
         (
             _is_ody,
             doc_mode,
@@ -11339,6 +11361,7 @@ async def _stream_agent_loop_body(
             workspace=workspace,
             session_id=session_id,
             project_id=str(_hopts.get("project_id") or "").strip() or None,
+            configuration_edits=_config_edits,
         )
         if (_incident_tools and route_messages and route_messages[0].get("role") == "system"
                 and isinstance(route_messages[0].get("content"), str)):
@@ -11416,7 +11439,7 @@ async def _stream_agent_loop_body(
                 "objective was changed. Explain the blocker and the smallest next step needed.",
             )
         return {
-            "messages": route_messages,
+            "messages": _evaluated_config.messages(_config_edits, route_messages, owner or ""),
             "mcp_schemas": route_mcp_schemas,
             "relevant_tools": route_tools,
             "schema_tools": route_schema,
@@ -12215,6 +12238,7 @@ async def _stream_agent_loop_body(
         _review_max_fix = 1
 
     def _filter_route_tool_schemas(schemas):
+        schemas = _evaluated_config.tools(_config_edits, schemas)
         # Keep candidate actions visible after taint so the model can propose
         # the exact call that the server will seal for user approval.  Schema
         # visibility is not authority: both the loop and dispatcher still gate

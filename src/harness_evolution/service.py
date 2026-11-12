@@ -139,8 +139,12 @@ class HarnessEvolutionService:
 
     def promote_candidate(self, patch_id: str, *, actor: str,
                           canary_runner: Optional[Callable[[int], bool]] = None,
-                          canary_runs: Optional[int] = None) -> HarnessRevision:
+                          canary_runs: Optional[int] = None, human_approved: bool = False) -> HarnessRevision:
         patch = self._require(patch_id)
+        if patch.change_type == "runtime_config":
+            from .runtime import ConfigEdit
+            if ConfigEdit.model_validate(patch.changes["edit"]).high_risk and not human_approved:
+                raise HarnessEvolutionError("La edición de riesgo alto espera a la persona.")
         origin = str((patch.changes or {}).get("origin") or "").strip().lower()
         if origin:
             from src import skill_governance
@@ -191,6 +195,10 @@ class HarnessEvolutionService:
         automatic one) — always allowed on a `promoted` patch, restores
         `rollback_target` through the same CAS transition."""
         patch = self._require(patch_id)
+        if patch.change_type == "runtime_config":
+            from .cycles import revert
+            result = revert(patch_id, patch.changes["owner"], store=self.store)
+            return self.store.get_revision(result["revision_id"])
         if patch.status != "promoted" or not patch.promoted_revision_id:
             raise HarnessEvolutionError(f"patch {patch_id!r} is not a promoted candidate")
         if not patch.rollback_target:

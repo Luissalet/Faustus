@@ -165,7 +165,7 @@ class HarnessEvolutionStore:
                 (revision_id,))
 
     def promote_cas(self, *, parent_revision_id: str,
-                    new_revision: HarnessRevision) -> HarnessRevision:
+                    new_revision: HarnessRevision, patch_state: Optional[CandidatePatch] = None) -> HarnessRevision:
         """A28/A30's transaction: atomically retire `parent_revision_id`
         (only if it is STILL the active revision) and insert `new_revision`
         as the new active one. `BEGIN IMMEDIATE` takes SQLite's write lock
@@ -201,6 +201,10 @@ class HarnessEvolutionStore:
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (new_revision.revision_id, new_revision.parent_id, new_revision.created_at,
                  json.dumps(new_revision.refs), "active", new_revision.version))
+            if patch_state is not None:
+                conn.execute("UPDATE candidate_patches SET status=?, promoted_revision_id=?, rollback_target=?, trace=? WHERE patch_id=?",
+                             (patch_state.status, patch_state.promoted_revision_id, patch_state.rollback_target,
+                              patch_state.trace, patch_state.patch_id))
             return new_revision
 
     # ── candidate patches ───────────────────────────────────────────────

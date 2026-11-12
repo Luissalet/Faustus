@@ -11,8 +11,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from core.middleware import require_admin
-from src.harness_evolution import promotion, service as evolution_service
+from core.middleware import require_admin, require_human
+from src.harness_evolution import cycles, promotion, service as evolution_service
 from src.harness_evolution.store import StaleParent
 
 
@@ -30,6 +30,11 @@ class PromoteCandidateBody(BaseModel):
 
 class RollbackCandidateBody(BaseModel):
     reason: str = "manual rollback"
+
+
+class GaltonCasesBody(BaseModel):
+    url: str
+    suites: list[str]
 
 
 def _service() -> evolution_service.HarnessEvolutionService:
@@ -104,4 +109,73 @@ def setup_evolution_routes() -> APIRouter:
             raise HTTPException(400, str(exc))
         return {"ok": True, "revision": revision.to_dict()}
 
+    from src.auth_helpers import get_current_user
+    import asyncio
+
+    def cycle_owner(request):
+        from src.auth_helpers import effective_user
+        from src.owner_identity import effective_storage_owner, is_request_sentinel_owner
+        owner = effective_storage_owner(effective_user(request))
+        if not owner or is_request_sentinel_owner(owner):
+            raise HTTPException(400, "El ciclo necesita un propietario concreto.")
+        return owner
+
+    @router.get("/cycles/cases")
+    def cycle_cases(request: Request):
+        cycle_owner(request)
+        return {"cases": [c.model_dump() for c in cycles.daily_cases()]}
+
+    @router.post("/cycles/galton/cases")
+    async def import_galton_cases(request: Request, body: GaltonCasesBody):
+        cycle_owner(request)
+        if not 1 <= len(body.suites) <= 20: raise HTTPException(400, "Selecciona entre 1 y 20 suites.")
+        try:
+            return {"cases": await cycles.galton_cases(body.url, body.suites)}
+        except Exception as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.get("/cycles")
+    def list_cycles(request: Request):
+        owner = cycle_owner(request)
+        return {"cycles": cycles.CycleStore().list(owner)}
+
+    @router.get("/cycles/{cycle_id}")
+    def get_cycle(request: Request, cycle_id: str):
+        owner = cycle_owner(request)
+        record = cycles.CycleStore().get(cycle_id, owner)
+        if not record: raise HTTPException(404, "No existe el ciclo.")
+        patches = []
+        svc = _service()
+        for item in record["candidates"]:
+            patch = svc.get_patch(item.get("patch_id", ""))
+            if patch: patches.append(patch.to_dict())
+        return {"cycle": record, "patches": patches}
+
+    @router.post("/cycles")
+    async def start_cycle(request: Request, body: cycles.CycleSpec):
+        owner = cycle_owner(request)
+        record = cycles.create(body, owner)
+        task = asyncio.create_task(cycles.run(record["id"], owner))
+        _CYCLE_TASKS.add(task)
+        task.add_done_callback(_CYCLE_TASKS.discard)
+        return {"cycle": record}
+
+    @router.post("/cycles/patches/{patch_id}/revert")
+    def revert_cycle_patch(request: Request, patch_id: str):
+        try:
+            return {"revision": cycles.revert(patch_id, cycle_owner(request))}
+        except (ValueError, evolution_service.HarnessEvolutionError, StaleParent) as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @router.post("/cycles/patches/{patch_id}/accept")
+    def accept_cycle_patch(request: Request, patch_id: str):
+        require_human(request)
+        try:
+            return {"revision": cycles.accept(patch_id, cycle_owner(request))}
+        except (ValueError, evolution_service.HarnessEvolutionError, StaleParent, promotion.PromotionRefused) as exc:
+            raise HTTPException(409, str(exc)) from None
+
     return router
+
+
+_CYCLE_TASKS: set = set()
