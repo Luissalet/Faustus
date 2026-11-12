@@ -419,3 +419,67 @@ def test_creating_a_board_over_http_opens_it_in_the_window(monkeypatch):
     meta = client.post("/api/pizarra", json={"title": "Plan", "session": "s3"}).json()
     assert meta["title"] == "Plan"
     assert sent and sent[0][:2] == ("s3", "open") and sent[0][2]["id"] == meta["id"] and "focus" not in sent[0][2]
+
+
+def _inside(doc, nid, fid):
+    idx = P.index_nodes(doc)
+    n, f = idx[nid], idx[fid]
+    return (f["x"] <= n["x"] and n["x"] + n["width"] <= f["x"] + f["width"] and f["y"] <= n["y"] and n["y"] + n["height"] <= f["y"] + f["height"])
+
+
+def test_items_declared_in_a_frame_are_laid_out_inside_it_and_the_frame_fits():
+    doc = P.empty_doc()
+    res, _ = P.apply_ops(doc, [
+        {"op": "add", "kind": "frame", "id": "f1", "text": "Phase 1"},
+        {"op": "add", "kind": "frame", "id": "f2", "text": "Phase 2"},
+        {"op": "add", "id": "a", "text": "A", "frame": "f1"}, {"op": "add", "id": "b", "text": "B", "frame": "f1"},
+        {"op": "add", "id": "c", "text": "C", "frame": "f2"}, {"op": "add", "id": "d", "text": "D", "frame": "f2"}, {"op": "add", "id": "e", "text": "E", "in": "f2"},
+    ])
+    assert all("ignored" not in r for r in res)
+    idx = P.index_nodes(doc)
+    assert _inside(doc, "a", "f1") and _inside(doc, "b", "f1")
+    assert _inside(doc, "c", "f2") and _inside(doc, "d", "f2") and _inside(doc, "e", "f2")
+    assert not _inside(doc, "a", "f2")
+    f1, f2 = idx["f1"], idx["f2"]
+    assert f1["x"] + f1["width"] <= f2["x"] or f2["x"] + f2["width"] <= f1["x"] or f1["y"] + f1["height"] <= f2["y"]   # frames do not overlap
+    assert P.frame_members(doc, "f1") == ["a", "b"] or sorted(P.frame_members(doc, "f1")) == ["a", "b"]
+
+
+def test_a_frame_that_does_not_exist_is_an_error_that_names_the_op():
+    doc = P.empty_doc()
+    with pytest.raises(P.BoardError) as e:
+        P.apply_ops(doc, [{"op": "add", "id": "a", "text": "A", "frame": "nope"}])
+    assert "no frame" in e.value.message and "op 0" in e.value.message
+
+
+def test_unknown_fields_are_reported_with_the_accepted_ones():
+    doc = P.empty_doc()
+    res, _ = P.apply_ops(doc, [{"op": "add", "id": "a", "text": "A", "colour": "red", "phase": 2}])
+    assert "ignored fields: colour, phase" in res[0] and "add accepts:" in res[0] and "frame" in res[0]
+
+
+def test_layout_of_the_whole_board_respects_frames_and_lays_frames_out_among_themselves():
+    doc = P.empty_doc()
+    P.apply_ops(doc, [
+        {"op": "add", "kind": "frame", "id": "f1", "text": "Phase 1"}, {"op": "add", "kind": "frame", "id": "f2", "text": "Phase 2"},
+        {"op": "add", "id": "a", "text": "A", "frame": "f1"}, {"op": "add", "id": "b", "text": "B", "frame": "f1"},
+        {"op": "add", "id": "c", "text": "C", "frame": "f2"}, {"op": "add", "id": "loose", "text": "Loose", "x": -2000, "y": -2000},
+        {"op": "connect", "from": "b", "to": "c"},
+    ])
+    res, _ = P.apply_ops(doc, [{"op": "layout", "layout": "flow"}])
+    assert "frames" in res[0]
+    idx = P.index_nodes(doc)
+    for nid, fid in (("a", "f1"), ("b", "f1"), ("c", "f2")):
+        assert _inside(doc, nid, fid)
+    assert idx["f1"]["x"] + idx["f1"]["width"] <= idx["f2"]["x"]          # flow: the connector goes phase 1 -> phase 2, left to right
+    assert not P._overlap(P.box(idx["f1"]), P.box(idx["f2"]))
+    assert not P._overlap(P.box(idx["loose"]), P.box(idx["f1"])) and not P._overlap(P.box(idx["loose"]), P.box(idx["f2"]))
+
+
+def test_frames_without_connectors_go_side_by_side_on_a_flow():
+    doc = P.empty_doc()
+    P.apply_ops(doc, [{"op": "add", "kind": "frame", "id": "f1"}, {"op": "add", "kind": "frame", "id": "f2"},
+                      {"op": "add", "id": "a", "text": "A", "frame": "f1"}, {"op": "add", "id": "c", "text": "C", "frame": "f2"}])
+    P.apply_ops(doc, [{"op": "layout", "layout": "flow"}])
+    idx = P.index_nodes(doc)
+    assert abs(idx["f1"]["y"] - idx["f2"]["y"]) < 5 and idx["f1"]["x"] != idx["f2"]["x"]

@@ -152,12 +152,12 @@ class PizarraArrangeTool:
                     return _fail("pizarra_arrange", "bad_args", "the person has nothing selected on this board")
                 op["ids"] = sel
             elif scope == "all" or scope is None:
-                op["ids"] = [n["id"] for n in doc["nodes"] if pizarra.kind_of(n) not in ("frame", "stroke")]
+                op["all"] = True               # the whole board: frames lay out their own items, then the blocks
             elif isinstance(scope, str) and scope in idx:
                 op["frame"] = scope
             else:
                 return _fail("pizarra_arrange", "bad_args", "`scope` is all, selected, a frame id or a list of ids")
-            if not op.get("ids") and not op.get("frame"):
+            if not op.get("ids") and not op.get("frame") and not op.get("all"):
                 return _fail("pizarra_arrange", "bad_args", "nothing to arrange")
             res = await surfaces.pizarra_edit(session, meta["id"], [op], surfaces.actor_for((ctx or {}).get("session_id")))
         except pizarra.BoardError as exc:

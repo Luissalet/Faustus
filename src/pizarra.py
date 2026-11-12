@@ -762,23 +762,210 @@ def apply_ops(doc: Dict[str, Any], ops: Any, *, view: Optional[Dict[str, Any]] =
     results: List[str] = []
     unplaced: List[str] = []
     anchors: Dict[str, Optional[str]] = {}
+    declared: Dict[str, str] = {}          # new item id -> the frame it was declared to live in (`frame` / `in`)
+    inner_layout: Dict[str, str] = {}      # frame id -> how its items are laid out inside it
     for n, op in enumerate(ops):
         if not isinstance(op, dict):
             raise BoardError("bad_args", f"op {n} is not an object")
         name = str(op.get("op") or op.get("action") or "").lower()
+        before = set(index_nodes(doc))
         try:
+            if name == "layout":
+                _settle_frames(doc, declared, inner_layout, unplaced, ch)
             msg = _run_op(doc, name, op, ch, unplaced, anchors, view)
+            fid = op.get("frame") if name in ("add", "outline") else None
+            if name == "add" and op.get("in") is not None:
+                fid = op.get("in")
+            if fid is not None:
+                new = [i for i in index_nodes(doc) if i not in before]
+                if str(fid) not in index_nodes(doc) or kind_of(index_nodes(doc)[str(fid)]) != "frame":
+                    raise BoardError("not_found", f"no frame with id {fid!r} (create it first with kind=frame)")
+                for i in new:
+                    if kind_of(index_nodes(doc)[i]) != "frame":
+                        declared[i] = str(fid)
+            if name == "add" and str(op.get("kind") or op.get("type") or "") == "frame" and op.get("layout"):
+                inner_layout[[i for i in index_nodes(doc) if i not in before][0]] = str(op["layout"]).lower()
+            msg += _ignored_fields(name, op)
         except BoardError as exc:
             exc.message = f"op {n} ({name or '?'}): {exc.message}"
             exc.results = results  # type: ignore[attr-defined]
             exc.changes = ch  # type: ignore[attr-defined]
+            _settle_frames(doc, declared, inner_layout, unplaced, ch)
             _place_unplaced(doc, unplaced, anchors, ch, view)
             raise
         results.append(msg)
+    _settle_frames(doc, declared, inner_layout, unplaced, ch)
     _place_unplaced(doc, unplaced, anchors, ch, view)
     if len(doc["nodes"]) > MAX_NODES:
         raise BoardError("too_big", f"a board holds at most {MAX_NODES} items")
     return results, ch
+
+
+_COMMON_OP_KEYS = {"op", "action"}
+_OP_FIELDS: Dict[str, Set[str]] = {
+    "add": {"kind", "type", "id", "x", "y", "w", "width", "h", "height", "text", "label", "color", "url", "file", "points",
+            "width_px", "near", "frame", "in", "layout"},
+    "update": {"id", "ids", "text", "label", "color", "x", "y", "w", "width", "h", "height", "kind"},
+    "move": {"id", "ids", "x", "y", "dx", "dy", "with_content"},
+    "delete": {"id", "ids"},
+    "connect": {"from", "to", "fromNode", "toNode", "id", "arrow", "label", "color", "from_side", "to_side"},
+    "group": {"id", "ids", "title", "text", "label", "color", "x", "y", "w", "h"},
+    "layout": {"layout", "kind", "frame", "ids", "id", "all", "cols", "root", "x", "y", "near"},
+    "align": {"id", "ids", "how"},
+    "order": {"id", "ids", "to"},
+    "outline": {"items", "layout", "kind", "root_kind", "parent", "near", "cols", "frame_title", "frame"},
+}
+_OP_ALIASES = {"link": "connect", "edge": "connect", "frame": "group", "z": "order"}
+
+
+def _ignored_fields(name: str, op: Dict[str, Any]) -> str:
+    """A note for the result line when an op carried fields it does not use, with the ones it does."""
+    accepted = _OP_FIELDS.get(_OP_ALIASES.get(name, name))
+    if accepted is None:
+        return ""
+    extra = sorted(k for k in op if k not in accepted and k not in _COMMON_OP_KEYS)
+    if not extra:
+        return ""
+    return f" [ignored fields: {', '.join(extra)}; {name} accepts: {', '.join(sorted(accepted))}]"
+
+
+PAD, HEAD = 40, 64
+
+
+def _inner_kind(kind: str, ids: List[str], edges: List[Dict[str, Any]]) -> str:
+    inside = set(ids)
+    has = any(e["fromNode"] in inside and e["toNode"] in inside for e in edges)
+    return kind if has and kind in LAYOUTS else "grid"
+
+
+def _fill_frame(doc: Dict[str, Any], frame: Dict[str, Any], ids: List[str], kind: str, ch: Changes,
+                unplaced: List[str], at: Optional[Tuple[int, int]] = None) -> None:
+    """Lay ``ids`` out inside ``frame`` (top-left padded), then size the frame to hold them."""
+    idx = index_nodes(doc)
+    members = {i: idx[i] for i in ids}
+    rel = layout_positions(_inner_kind(kind, ids, doc["edges"]), ids, members, doc["edges"])
+    bw = max(rel[i][0] + members[i]["width"] for i in ids)
+    bh = max(rel[i][1] + members[i]["height"] for i in ids)
+    fw, fh = max(240, bw + 2 * PAD), max(160, bh + HEAD + PAD)
+    if at is not None:
+        frame["x"], frame["y"] = at
+    frame["width"], frame["height"] = fw, fh
+    for i in ids:
+        members[i]["x"], members[i]["y"] = frame["x"] + PAD + rel[i][0], frame["y"] + HEAD + rel[i][1]
+        ch.node(members[i])
+        if i in unplaced:
+            unplaced.remove(i)
+    if frame["id"] in unplaced:
+        unplaced.remove(frame["id"])
+    ch.node(frame)
+    ch.cursor.append({"x": frame["x"] + fw // 2, "y": frame["y"] + 20, "id": frame["id"]})
+
+
+def _settle_frames(doc: Dict[str, Any], declared: Dict[str, str], inner_layout: Dict[str, str], unplaced: List[str],
+                   ch: Changes) -> None:
+    """Items declared to live in a frame are laid out inside it and the frame is sized to them; a frame that was
+    not placed yet goes to the right of the other frames. Membership afterwards is plain geometry."""
+    if not declared:
+        return
+    idx = index_nodes(doc)
+    by_frame: Dict[str, List[str]] = {}
+    for nid, fid in declared.items():
+        if nid in idx and fid in idx:
+            by_frame.setdefault(fid, []).append(nid)
+    declared.clear()
+    claimed = {i for mem in by_frame.values() for i in mem}
+    for fid, mem in by_frame.items():
+        frame = idx[fid]
+        already = [m for m in frame_members(doc, fid)
+                   if m not in claimed and m not in unplaced and kind_of(idx[m]) not in ("frame", "stroke")]
+        ids = already + mem
+        at = None
+        if fid in unplaced:
+            others = [n for n in doc["nodes"] if kind_of(n) == "frame" and n["id"] != fid and n["id"] not in unplaced]
+            if others:
+                bb = bbox_of(others)
+                at = (bb[0] + bb[2] + 80, bb[1])
+            else:
+                free = [n for n in doc["nodes"] if n["id"] not in set(ids) | {fid} and n["id"] not in unplaced]
+                bb = bbox_of(free) if free else None
+                at = (bb[0] + bb[2] + 80, bb[1]) if bb else (0, 0)
+        _fill_frame(doc, frame, ids, inner_layout.get(fid, "grid"), ch, unplaced, at)
+
+
+def _layout_board(doc: Dict[str, Any], kind: str, ch: Changes, unplaced: List[str], cols: Optional[int] = None,
+                  root: Optional[str] = None) -> str:
+    """The whole board: what is inside each frame is laid out inside it, the frame is sized to fit, and the frames
+    (and the items that are in none) are laid out among themselves; connectors between items of two frames count
+    as a connector between the frames."""
+    idx = index_nodes(doc)
+    frames = [n for n in doc["nodes"] if kind_of(n) == "frame"]
+    frames.sort(key=lambda n: (n["x"], n["y"]))
+    owner: Dict[str, str] = {}
+    for n in doc["nodes"]:
+        if kind_of(n) == "frame":
+            continue
+        cx, cy = n["x"] + n["width"] / 2, n["y"] + n["height"] / 2
+        best = None
+        for f in frames:
+            if f["x"] <= cx <= f["x"] + f["width"] and f["y"] <= cy <= f["y"] + f["height"]:
+                if best is None or f["width"] * f["height"] < best["width"] * best["height"]:
+                    best = f
+        if best is not None:
+            owner[n["id"]] = best["id"]
+    free = [n["id"] for n in doc["nodes"] if kind_of(n) not in ("frame", "stroke") and n["id"] not in owner]
+    strokes_in = [n["id"] for n in doc["nodes"] if kind_of(n) == "stroke" and n["id"] in owner]
+    if not frames and not free:
+        raise BoardError("bad_args", "the board has nothing to lay out")
+    everything = [n for n in doc["nodes"] if kind_of(n) != "stroke" or n["id"] in owner]
+    bb = bbox_of(everything) or (0, 0, 0, 0)
+    inner: Dict[str, Dict[str, Tuple[int, int]]] = {}
+    size: Dict[str, Tuple[int, int]] = {}
+    unit_node: Dict[str, Dict[str, Any]] = {}
+    for f in frames:
+        mem = [i for i, o in owner.items() if o == f["id"] and kind_of(idx[i]) != "stroke"]
+        if mem:
+            rel = layout_positions(_inner_kind(kind, mem, doc["edges"]), mem, {i: idx[i] for i in mem}, doc["edges"], cols=cols, root=root)
+            bw = max(rel[i][0] + idx[i]["width"] for i in mem)
+            bh = max(rel[i][1] + idx[i]["height"] for i in mem)
+            inner[f["id"]] = rel
+            size[f["id"]] = (max(240, bw + 2 * PAD), max(160, bh + HEAD + PAD))
+        else:
+            size[f["id"]] = (f["width"], f["height"])
+        unit_node[f["id"]] = {"width": size[f["id"]][0], "height": size[f["id"]][1]}
+    for i in free:
+        unit_node[i] = idx[i]
+    units = [f["id"] for f in frames] + free
+    uedges: List[Dict[str, Any]] = []
+    seen: Set[Tuple[str, str]] = set()
+    for e in doc["edges"]:
+        a, b = owner.get(e["fromNode"], e["fromNode"]), owner.get(e["toNode"], e["toNode"])
+        if a != b and a in unit_node and b in unit_node and (a, b) not in seen:
+            seen.add((a, b)); uedges.append({"id": f"u{len(uedges)}", "fromNode": a, "toNode": b})
+    if uedges or kind == "grid":
+        pos = layout_positions(kind, units, unit_node, uedges, cols=cols, root=root)
+    else:                                   # no connectors between the blocks: a row (a column for a tree)
+        pos = layout_positions("grid", units, unit_node, [], cols=1 if kind == "tree" else len(units))
+    for f in frames:
+        fx, fy = bb[0] + pos[f["id"]][0], bb[1] + pos[f["id"]][1]
+        f["x"], f["y"] = fx, fy
+        f["width"], f["height"] = size[f["id"]]
+        ch.node(f)
+        for i, (rx, ry) in inner.get(f["id"], {}).items():
+            idx[i]["x"], idx[i]["y"] = fx + PAD + rx, fy + HEAD + ry
+            ch.node(idx[i])
+    for i in free:
+        idx[i]["x"], idx[i]["y"] = bb[0] + pos[i][0], bb[1] + pos[i][1]
+        ch.node(idx[i])
+    for i in set(free) | {m for rel in inner.values() for m in rel}:
+        if i in unplaced:
+            unplaced.remove(i)
+    for f in frames:
+        if f["id"] in unplaced:
+            unplaced.remove(f["id"])
+    first = frames[0] if frames else idx[free[0]]
+    ch.cursor.append({"x": first["x"] + first["width"] // 2, "y": first["y"] + 20, "id": first["id"]})
+    ch.order = True
+    return f"laid out the board as {kind}: {len(frames)} frames, {len(owner)} items inside them, {len(free)} loose"
 
 
 def _place_unplaced(doc: Dict[str, Any], unplaced: List[str], anchors: Dict[str, Optional[str]], ch: Changes,
@@ -1023,9 +1210,14 @@ def _op_layout(doc, op, idx, ch: Changes, unplaced: List[str], view) -> str:
     frame_id = op.get("frame")
     ids = _ids_of(op)
     frame = None
+    if frame_id is None and (op.get("all") or not ids):       # nothing named: the whole board, frames included
+        if kind not in LAYOUTS:
+            raise BoardError("bad_args", f"unknown layout {kind!r}; use one of {', '.join(LAYOUTS)}")
+        return _layout_board(doc, kind, ch, unplaced, cols=_int(op["cols"]) if op.get("cols") else None,
+                             root=str(op["root"]) if op.get("root") else None)
     if frame_id is not None:
         frame = _get(idx, frame_id, "frame")
-        ids = frame_members(doc, frame["id"])
+        ids = [i for i in frame_members(doc, frame["id"]) if kind_of(idx[i]) != "stroke"]
     if not ids:
         raise BoardError("bad_args", "give `ids` (or a `frame`) to lay out")
     nodes = {i: _get(idx, i) for i in ids}
@@ -1040,7 +1232,7 @@ def _op_layout(doc, op, idx, ch: Changes, unplaced: List[str], view) -> str:
     if op.get("x") is not None and op.get("y") is not None:
         x0, y0 = _int(op["x"]), _int(op["y"])
     elif frame is not None:
-        x0, y0 = frame["x"] + 40, frame["y"] + 64
+        x0, y0 = frame["x"] + PAD, frame["y"] + HEAD
     elif fresh:
         anc = op.get("near")
         x0, y0 = free_spot(doc, bw, bh, anchor=box(idx[str(anc)]) if anc is not None and str(anc) in idx else None, view=view, skip=set(ids))
@@ -1053,8 +1245,8 @@ def _op_layout(doc, op, idx, ch: Changes, unplaced: List[str], view) -> str:
         if i in unplaced:
             unplaced.remove(i)
     if frame is not None:
-        frame["x"], frame["y"] = x0 - 40, y0 - 64
-        frame["width"], frame["height"] = bw + 80, bh + 64 + 40
+        frame["x"], frame["y"] = x0 - PAD, y0 - HEAD
+        frame["width"], frame["height"] = max(240, bw + 2 * PAD), max(160, bh + HEAD + PAD)
         ch.node(frame)
     n0 = nodes[ids[0]]
     ch.cursor.append({"x": n0["x"] + n0["width"] // 2, "y": n0["y"] + n0["height"] // 2, "id": n0["id"]})

@@ -257,6 +257,24 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
   const dragStart = useRef<Map<string, { x: number; y: number }>>(new Map());
   const clipboard = useRef<{ nodes: JcNode[]; edges: JcEdge[] } | null>(null);
   const bump = () => setTick((n) => n + 1);
+  /* The view fits the content on open and when the agent finishes editing, until the person moves it themselves. */
+  const userMoved = useRef(false);
+  const fitTimer = useRef<number | undefined>(undefined);
+  const fitWhenReady = useCallback((delay: number, duration: number) => {
+    window.clearTimeout(fitTimer.current);
+    const go = (left: number) => {
+      const el = wrapRef.current;
+      if (!el || docRef.current.nodes.length === 0 || userMoved.current) return;
+      if (el.clientWidth < 40 || el.clientHeight < 40 || !rf.viewportInitialized) {   // hidden tab or not mounted yet: try again shortly
+        if (left > 0) fitTimer.current = window.setTimeout(() => go(left - 1), 150);
+        return;
+      }
+      void rf.fitView({ padding: 0.15, duration, maxZoom: 1 });
+    };
+    fitTimer.current = window.setTimeout(() => go(10), delay);
+  }, [rf]);
+  useEffect(() => () => window.clearTimeout(fitTimer.current), []);
+  useEffect(() => { if (!hidden) fitWhenReady(120, 0); }, [hidden, fitWhenReady]);
 
   useEffect(() => { setTitleText(title); }, [title]);
   useEffect(() => {
@@ -340,7 +358,9 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
         undoRef.current = []; redoRef.current = [];
         rebuild(r.doc, new Set());
         setLoad('ready');
-        window.setTimeout(() => { if (r.doc.nodes.length) void rf.fitView({ padding: 0.2, duration: 0, maxZoom: 1 }); }, 60);
+        userMoved.current = false;
+        fitWhenReady(80, 0);
+        if (r.meta?.title) { setTitleText(r.meta.title); if (r.meta.title !== title) onTitle(r.meta.title); }   // opened by link: the tab does not know the name yet
       })
       .catch((e: Error) => { if (live) { setLoadError(e.message); setLoad('error'); } });
     return () => { live = false; };
@@ -365,18 +385,8 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
         undoRef.current.push(diff); if (undoRef.current.length > MAX_UNDO) undoRef.current.shift(); redoRef.current = [];
       }
       window.setTimeout(() => { fresh.current.clear(); rebuild(docRef.current); }, 900);
-      // What the agent adds outside the view: bring the view to it (the person's own pan stays theirs).
-      if (d.origin === 'agent') {
-        const added = next.nodes.filter((n) => Object.prototype.hasOwnProperty.call(diff.after.nodes ?? {}, n.id) && !prev.nodes.some((p) => p.id === n.id));
-        const box = bounds(added);
-        const el = wrapRef.current;
-        if (box && el && el.clientWidth > 0) {
-          const vp = rf.getViewport();
-          const vx = -vp.x / vp.zoom, vy = -vp.y / vp.zoom, vw = el.clientWidth / vp.zoom, vh = el.clientHeight / vp.zoom;
-          const inside = box.x >= vx && box.y >= vy && box.x + box.width <= vx + vw && box.y + box.height <= vy + vh;
-          if (!inside) window.setTimeout(() => void rf.fitView({ padding: 0.15, duration: 450, maxZoom: 1 }), 80);
-        }
-      }
+      // When the agent has finished (its edits come in bursts), fit the content; the person's own pan stays theirs.
+      if (d.origin === 'agent') fitWhenReady(700, 350);
       bump();
     } else if (ev.event === 'cursor' && d.actor) {
       const actor = d.actor as SurfaceActor;
@@ -387,7 +397,7 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
     } else if (ev.event === 'meta' && d.title) {
       setTitleText(String(d.title)); onTitle(String(d.title));
     }
-  }), [boardId, rebuild, onTitle]);
+  }), [boardId, rebuild, onTitle, fitWhenReady]);
   useEffect(() => {
     const timer = window.setInterval(() => setCursors((c) => {
       const now = Date.now();
@@ -820,7 +830,7 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
               onEdgeDoubleClick={(_, e) => setEditingEdge(e.id)}
               onEdgeClick={(_, e) => setEdges((prev) => prev.map((x) => ({ ...x, selected: x.id === e.id })))}
               onPaneClick={() => { setEdges((prev) => (prev.some((x) => x.selected) ? prev.map((x) => ({ ...x, selected: false })) : prev)); wrapRef.current?.focus(); }}
-              onMoveEnd={reportState}
+              onMoveStart={(e) => { if (e) userMoved.current = true; }} onMoveEnd={reportState}
               minZoom={0.05} maxZoom={4} onlyRenderVisibleElements
               panOnScroll panOnDrag={tool === 'hand' ? true : [1, 2]} panActivationKeyCode="Space" zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false}
               selectionOnDrag={tool === 'select'} selectionMode={SelectionMode.Partial} multiSelectionKeyCode="Shift" deleteKeyCode={null}

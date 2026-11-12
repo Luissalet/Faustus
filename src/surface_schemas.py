@@ -4,9 +4,10 @@ from __future__ import annotations
 
 _OPS_BOARD = (
     "ops: list of {op: ...}. add {kind: sticky|text|rect|ellipse|diamond|frame|link, text, color (red orange yellow green "
-    "blue purple pink gray or #hex), id?, x?, y?, w?, h?, near?: id} (without x,y it is placed in free space); update {id|ids, text, color, "
+    "blue purple pink gray or #hex), id?, x?, y?, w?, h?, near?: id, frame?: frame id (lays the item out inside that frame; "
+    "a frame takes layout? for its contents)} (without x,y it is placed in free space); update {id|ids, text, color, "
     "kind, w, h}; move {id|ids, x,y or dx,dy}; delete {id|ids}; connect {from, to, label?, arrow?: end|both|none}; "
-    "group {ids, title} (a frame around them); layout {ids|frame, layout: grid|tree|flow|timeline|mindmap, cols?, root?}; "
+    "group {ids, title} (a frame around them); layout {ids|frame|nothing = the whole board, frames included, layout: grid|tree|flow|timeline|mindmap, cols?, root?}; "
     "align {ids, how: left|center|right|top|middle|bottom|distribute-h|distribute-v}; order {ids, to: front|back}; "
     "outline {items: [{text, kind?, color?, label?, children?: [...]}], layout, frame_title?, near?} builds nested items with "
     "connectors and lays them out in one op."
