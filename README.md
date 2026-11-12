@@ -1764,3 +1764,12 @@ completion is not acceptance. Captures omit overlay HUD and fixed-step runs do
 not measure real-time FPS. Initial real-editor validation passed seven journeys
 and retained a straight-flight rocking failure (Blood Arrows #3132). This feature
 is a review candidate until its commits are integrated and Faustus is deployed.
+
+
+Final task 3123 verification also ran the Windows player (compiled source
+`2a6d199`): eight journeys, 1,920 effective/requested input samples, 320 PNGs
+and eight MP4 clips. Seven automatic cases pass; straight rocking remains red
+(Blood Arrows #3132). Tunnel movement passes, but frame review flags camera
+occlusion at its exit (#3140). The cached build succeeded with zero errors and
+527 warnings; the original cold shader timeout remains recorded (#3137).
+Evidence: `E:/Development/IA/Research/juegos3123/player-final/index.html`.

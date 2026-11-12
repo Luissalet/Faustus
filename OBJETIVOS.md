@@ -2618,3 +2618,12 @@ balanceo del tronco (Blood Arrows3132); siete casos pasan. El incidente inicial
 de cierre3133 no se ha repetido en dos suites posteriores. Ampliar recorridos
 al cambiar mecánicas y revisar siempre los vídeos; no afirmar que completar
 la simulación o compilar equivale a aceptación visual.
+
+
+Verificación final 3123 también en ejecutable Windows, fuente compilada
+`2a6d199`: ocho recorridos, 1.920 muestras con entradas efectivas y solicitadas,
+320 PNG y ocho MP4. Siete casos automáticos pasan y la recta conserva balanceo
+excesivo (Blood Arrows #3132). El túnel pasa movimiento pero la revisión visual
+marca oclusión de cámara en salida (#3140). Build con caché correcto, cero
+errores y 527 advertencias; primer timeout frío HDRP conservado (#3137).
+Evidencia: `E:/Development/IA/Research/juegos3123/player-final/index.html`.

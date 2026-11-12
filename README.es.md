@@ -1041,3 +1041,12 @@ grabado y mirado. Completar la ejecución no acredita aceptación. Las capturas
 no incluyen overlay HUD y el paso fijo no mide FPS reales. La primera validación
 en Unity pasa siete recorridos y conserva el balanceo de vuelo recto en rojo
 (Blood Arrows #3132). Capacidad candidata pendiente de integrar y desplegar.
+
+
+Verificación final 3123 también en ejecutable Windows, fuente compilada
+`2a6d199`: ocho recorridos, 1.920 muestras con entradas efectivas y solicitadas,
+320 PNG y ocho MP4. Siete casos automáticos pasan y la recta conserva balanceo
+excesivo (Blood Arrows #3132). El túnel pasa movimiento pero la revisión visual
+marca oclusión de cámara en salida (#3140). Build con caché correcto, cero
+errores y 527 advertencias; primer timeout frío HDRP conservado (#3137).
+Evidencia: `E:/Development/IA/Research/juegos3123/player-final/index.html`.

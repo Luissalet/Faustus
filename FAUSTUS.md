@@ -18297,3 +18297,99 @@ casos verdes y balanceo residual4,8785° frente2° en recta (Blood Arrows3132).
 El primer cierre produjo un EventSystem pendiente3133, sin reproducción en dos
 suites posteriores. Se conserva el rojo, sin rehacer el juego ni relajar umbral.
 Contrato docs/api/unity.md y evidencia Research/juegos3123.
+
+## Family connectors with Faustus on a Spark
+
+Family app connectors resolve their MCP transport through the PC Hub when
+`FAUSTUS_HUB_LINK` points to that machine. The Hub launches the installed
+manifest's bridge on the PC and Faustus uses its existing Streamable HTTP client
+with the link credential. Tool refresh, app skills and structured tool results
+use that session. Connector health is checked on the PC, and the connector's
+explicit Launch action starts the app through the Hub.
+
+Saved commands and values stay intact, including Windows paths and PC browser
+URLs. Disabled connector preferences remain effective. Local connections and
+non-family MCP servers retain their configured transport. Family connector
+migration follows the PC Hub while the link is remote.
+
+
+## Agora worker runtimes on the PC
+
+`integrations/harbor/serve_headless.py --hub-url <url>` starts a separate
+single-user runtime with the owning Hub's real address and an Agora MCP
+connector. The connector uses the existing Hub token file and Hub Python/module
+path supplied by the console. The model endpoint is supplied explicitly from
+the placed Faustus configuration. User application data stays in its main
+runtime. The Hub console starts this PC runtime on an explicit worker request
+when the Agora workspace is on Windows and the main Faustus is on a Spark.
+Each worker receives its own project, chat, coordination actor and native run.
+The console monitors the runner and cancels its exact native run before
+reporting it stopped. The worker runtime and connector processes close after
+the runner ends.
+
+## MCP según placement y conectores huérfanos
+
+Los conectores familiares por el Hub siguen la ubicación de la app.
+Prometheus y Hermes en la Spark ejecutan allí el puente declarado mediante el
+SSH existente del Hub, con su venv y token propios. La comprobación de salud
+espera la consulta SSH. Refrescar herramientas, skills y llamadas utilizan la
+misma sesión MCP. La configuración guardada queda disponible para reconectar.
+
+Cuando falta la fila del servidor MCP, el conector guardado muestra `orphaned`
+en listado, comprobar, conectar, desconectar y refrescar herramientas. Su lista
+de herramientas queda vacía y sus valores se conservan. Studio explica el motivo.
+El antiguo conector de audio Scribe remite a Talos, que contiene el audio de
+Funes. El manifiesto antiguo de Funes conserva la identidad de citas Scribe
+y el manifiesto de compatibilidad de Talos identifica Funes como absorbido.
+
+
+## 12-11-2026 · Bandeja de aprobaciones y decisiones por mensaje (#3120)
+
+Candidato para revisión: Studio `/approvals` y campana lateral muestran las
+tarjetas nativas pendientes con código estable, nivel derivado de efectos,
+antigüedad, origen, aprobar y denegar. «Siempre» recuerda la misma herramienta,
+entrada completa, documento y carpeta; se puede editar o retirar el recuerdo.
+WhatsApp envía solo al chat de la propia cuenta ya conectada y lee respuestas
+literales propias: código sí/no/siempre sí/siempre no o sí a todo lo recibido.
+El análisis de la respuesta no llama a ningún modelo. El turno aprobado continúa
+por `chat_stream` con la acción sellada y el alcance de una sola acción; puede
+consultar al modelo configurado al seguir trabajando. Telegram admite el mismo
+análisis en chats privados ya autorizados, dentro de su conversación.
+
+Las automatizaciones y asistentes ya podían producir estas tarjetas, pero el
+planificador las descartaba. Ahora las conserva y etiqueta su origen; la
+continuación pertenece a su chat y no repite la misión programada. Los contratos
+conservan su concesión nativa para el consumidor del plan. No se convierten
+preguntas libres en aprobaciones ni se añaden puertas o modos nuevos.
+HTTP y MCP de lectura exponen la misma bandeja. Entrega, límites y pruebas en
+`docs/api/approval-inbox.md`; reinicio, integración y despliegue corresponden a
+Claude. No se afirma activación en la instancia habitual por tener el código.
+
+
+## Banco Unity de recorridos grabados — mejoras #3123
+
+Candidato para revisión; no integrado ni desplegado. `unity` conserva sus
+operaciones y añade `build_playtest`, `run_playtest` y `playtest_status` por
+chat, HTTP y MCP. Blood Arrows aporta el banco dentro del proyecto: compilar
+y ejecutar en batchmode, escenas/prefabs desde receta JSON, entrada real,
+contactos CC, clips/pesos/tiempo/huesos Animator y medición tras estabilizador.
+Ocho casos: recta, giros35/90, choques paralelo/perpendicular, andar/correr y
+túnel Course. PNG, MP4, HTML/JSON y manifiesto SHA-256; cámara sin overlay HUD,
+paso fijo sin atribuir rendimiento FPS. Hay que mirar cada grabación.
+
+Biblioteca: unity-animation, unity-collision, unity-speed-feel,
+unity-hdrp-lighting, unity-model-import y unity-recorded-playtest; procedimientos
+en castellano con flujo y comprobación. La suite real del editor registra siete
+casos verdes y balanceo residual4,8785° frente2° en recta (Blood Arrows3132).
+El primer cierre produjo un EventSystem pendiente3133, sin reproducción en dos
+suites posteriores. Se conserva el rojo, sin rehacer el juego ni relajar umbral.
+Contrato docs/api/unity.md y evidencia Research/juegos3123.
+
+
+Verificación final 3123 también en ejecutable Windows, fuente compilada
+`2a6d199`: ocho recorridos, 1.920 muestras con entradas efectivas y solicitadas,
+320 PNG y ocho MP4. Siete casos automáticos pasan y la recta conserva balanceo
+excesivo (Blood Arrows #3132). El túnel pasa movimiento pero la revisión visual
+marca oclusión de cámara en salida (#3140). Build con caché correcto, cero
+errores y 527 advertencias; primer timeout frío HDRP conservado (#3137).
+Evidencia: `E:/Development/IA/Research/juegos3123/player-final/index.html`.
