@@ -112,6 +112,9 @@ async def test_explicit_start_runs_through_pc_hub(linked, monkeypatch):
     monkeypatch.setattr(hub_link, "post", post)
     assert (await connector_relay.start(linked))["ready"] is True
     assert seen == [("/api/apps/links/start", {"wait": True})]
+    monkeypatch.setattr(connector_relay, "describe", AsyncMock(return_value={"id": "hoardhub"}))
+    assert (await connector_relay.start({"preset_id": "hoardhub"}))["already"] is True
+    assert len(seen) == 1
 
 
 @pytest.mark.asyncio

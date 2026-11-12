@@ -46,6 +46,8 @@ async def start(entry):
     app = await describe(entry.get("preset_id"))
     if app is None:
         return None
+    if app["id"] == "hoardhub":
+        return {"ok": True, "app": app["id"], "already": True}
     code, result = await asyncio.to_thread(hub_link.post, "/api/apps/" + quote(app["id"], safe="") + "/start", {"wait": True}, timeout=120)
     if code != 200 or not isinstance(result, dict) or not result.get("ok"):
         raise RuntimeError(str((result or {}).get("error") or "PC Hub could not start the app"))
