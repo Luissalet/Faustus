@@ -166,6 +166,35 @@ class FakeRequest:
         return self._body
 
 
+@pytest.mark.parametrize("preset_id", ["scribe", "jobhunter", "retired-app"])
+async def test_orphaned_connector_is_visible_and_kept_without_probing(routes, db, manager, monkeypatch, preset_id):
+    entry = connector_sidecar.create_connector(preset_id=preset_id, server_id="missing-server", owner=None,
+        values={"APP_URL": "http://127.0.0.1:1"}, app_url="http://127.0.0.1:1", ui_url=None)
+    before = connector_sidecar.list_connectors(redact=False)
+    async def no_follow(*args, **kwargs):
+        pytest.fail("an orphan must not probe or discover an app")
+    monkeypatch.setattr(connector_status, "get_health", no_follow)
+    rows = await routes[("GET", "/api/app-connectors")](request=FakeRequest())
+    assert rows[0]["status"]["state"] == "orphaned"
+    assert "missing-server" in rows[0]["status"]["adapter"]["last_error"]
+    if preset_id == "scribe":
+        assert "Talos" in rows[0]["status"]["reasons"][1]
+    for action in ("check", "connect", "disconnect", "refresh-tools"):
+        result = await routes[("POST", "/api/app-connectors/{connector_id}/" + action)](
+            connector_id=entry["id"], request=FakeRequest())
+        status = result.get("status", result)
+        assert status["state"] == "orphaned"
+        if action == "connect":
+            assert result["connected"] is False
+        if action == "refresh-tools":
+            assert result["ok"] is False
+            assert result["error"]
+    tools = routes[("GET", "/api/app-connectors/{connector_id}/tools")](connector_id=entry["id"], request=FakeRequest())
+    assert tools == []
+    assert connector_sidecar.list_connectors(redact=False) == before
+    assert manager.calls == {"connect": [], "disconnect": []}
+
+
 def _call(fn, request=None, **kwargs):
     result = fn(request=request or FakeRequest(), **kwargs)
     if asyncio.iscoroutine(result):

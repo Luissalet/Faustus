@@ -19,7 +19,7 @@ async def describe(preset_id, *, check=False):
     path = "/api/mcp/apps/" + quote(str(preset_id), safe="")
     if check:
         path += "?check=1"
-    code, body, _ = await asyncio.to_thread(hoard_hub._call, "GET", path, timeout=5, where=linked)
+    code, body, _ = await asyncio.to_thread(hoard_hub._call, "GET", path, timeout=20 if check else 5, where=linked)
     if code == 404:
         return None
     if code != 200 or not isinstance(body, dict) or not body.get("mcp_path"):
@@ -36,6 +36,8 @@ async def for_server(server_id, command=None, args=None):
     linked = hub_link.link()
     code, body, _ = await asyncio.to_thread(hoard_hub._call, "POST", "/api/mcp/resolve",
         {"command": command, "args": args or []}, timeout=5, where=linked)
+    if code == 422:
+        raise RuntimeError("PC Hub MCP relay unavailable" + (": " + str(body.get("error")) if isinstance(body, dict) and body.get("error") else ""))
     if code == 200 and isinstance(body, dict) and isinstance(body.get("app"), dict):
         app = body["app"]
         return {**app, "url": linked["url"] + app["mcp_path"], "token": hub_link.token(linked)}

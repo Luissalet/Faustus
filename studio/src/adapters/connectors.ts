@@ -67,7 +67,7 @@ export async function listPresets(): Promise<ConnectorPreset[]> {
 
 /* ── Connectors (F1.3/F1.5) ── */
 
-export type ConnectorState = 'unconfigured' | 'app_off' | 'connecting' | 'available' | 'error' | 'disabled' | 'unknown';
+export type ConnectorState = 'unconfigured' | 'app_off' | 'connecting' | 'available' | 'error' | 'disabled' | 'unknown' | 'orphaned';
 
 export interface ConnectorAppStatus {
   reachable: boolean | null;
@@ -121,6 +121,7 @@ export interface Connector {
 }
 
 const STATE_LABEL: Record<ConnectorState, string> = {
+  orphaned: 'Orphaned',
   unconfigured: 'Not set up',
   app_off: 'App not running',
   connecting: 'Connecting…',
@@ -133,6 +134,7 @@ const STATE_LABEL: Record<ConnectorState, string> = {
 /** Icon-independent tone for the status chip; the icon itself is picked in
  *  the component (this file stays free of lucide-react/JSX). */
 const STATE_TONE: Record<ConnectorState, 'ok' | 'warn' | 'bad' | 'muted'> = {
+  orphaned: 'warn',
   unconfigured: 'muted',
   app_off: 'warn',
   connecting: 'warn',
@@ -153,6 +155,7 @@ export function stateTone(state: ConnectorState): 'ok' | 'warn' | 'bad' | 'muted
 /** "App: responds · Adapter: 12 tools" — the two health signals the contract
  *  requires to stay visually separate (F1.3: app health ≠ adapter handshake). */
 export function statusLine(status: ConnectorStatus): string {
+  if (status.state === 'orphaned') return status.reasons.map((reason) => t(reason)).join(' ');
   const app = status.app.reachable == null ? t('not checked') : status.app.reachable ? t('responds') : t('no response');
   const adapter = status.adapter.tool_count != null ? tCount(status.adapter.tool_count) : t(status.adapter.mcp_status || 'unknown');
   return t('App: {app} · Adapter: {adapter}', { app, adapter });

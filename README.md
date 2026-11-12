@@ -1716,3 +1716,18 @@ Each worker receives its own project, chat, coordination actor and native run.
 The console monitors the runner and cancels its exact native run before
 reporting it stopped. The worker runtime and connector processes close after
 the runner ends.
+
+## Placement-aware family MCP and orphaned connectors
+
+Family connectors reached through the Hub use the app's current placement.
+Prometheus and Hermes on a Spark run their declared MCP bridge there through
+the Hub's existing SSH connection, using their own native runtime and token.
+Health checks allow the SSH probe to finish. Tool refresh, skills and calls use
+the same MCP session. Saved connector values remain available for later connections.
+
+A saved connector whose MCP server row is missing reports `orphaned` in the
+connector list, check, connect, disconnect and refresh-tools responses. Its
+tools list is empty and its settings are retained. Studio shows an explanation.
+The old Scribe audio connector points to Talos, which contains Funes's audio
+features. The old Funes manifest retains the Scribe citation identity and the
+Talos compatibility manifest identifies Funes as absorbed.

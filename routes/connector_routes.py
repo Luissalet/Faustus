@@ -65,6 +65,15 @@ def _preset_dict(preset_id: Optional[str]) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _orphan_status(entry: Dict[str, Any]) -> Dict[str, Any]:
+    reasons = ["The saved MCP server is missing. Connector settings are kept."]
+    if entry.get("preset_id") == "scribe":
+        reasons.append("Scribe audio features moved to Funes and are now part of Talos. Use the Talos connector for audio.")
+    return {"state": "orphaned", "app": {"reachable": None, "checked_at": None, "latency_ms": None, "detail": ""},
+            "adapter": {"mcp_status": "missing", "tool_count": 0,
+                        "last_error": "Missing MCP server: " + str(entry.get("server_id") or "")}, "reasons": reasons}
+
+
 async def _plain_server_status(server: McpServer, manager: McpManager) -> Dict[str, Any]:
     """A `ConnectorStatus`-shaped summary for an `McpServer` with no sidecar
     entry — no preset means no app health to check, so `app` stays unknown
@@ -121,6 +130,8 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
 
     async def _connector_status_for(entry: Dict[str, Any], server: Optional[McpServer],
                                      *, force_check: bool) -> Dict[str, Any]:
+        if server is None:
+            return _orphan_status(entry)
         preset = connectors.get_preset(entry["preset_id"])
         manager_status = mcp_manager.get_server_status(entry["server_id"]) if server else {"status": "disconnected"}
         return await connector_status.compute_status(
@@ -502,12 +513,14 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         entry = connector_sidecar.get_connector(connector_id, redact=False)
         if entry is None:
             raise HTTPException(404, "Connector not found")
-        entry = await _follow_app(entry)
         db = SessionLocal()
         try:
             server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
         finally:
             db.close()
+        if server is None:
+            return _orphan_status(entry)
+        entry = await _follow_app(entry)
         status = await _connector_status_for(entry, server, force_check=True)
         if entry.get("relocated_from"):
             status = {**status, "relocated_from": entry["relocated_from"], "app_url": entry.get("app_url")}
@@ -525,7 +538,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         finally:
             db.close()
         if server is None:
-            raise HTTPException(404, "Underlying MCP server not found")
+            return {"connected": False, "status": _orphan_status(entry)}
         entry = await _follow_app(entry)
         if entry.get("relocated_from"):
             db = SessionLocal()
@@ -570,6 +583,13 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         entry = connector_sidecar.get_connector(connector_id, redact=False)
         if entry is None:
             raise HTTPException(404, "Connector not found")
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+        finally:
+            db.close()
+        if server is None:
+            return []
         return _mcp_list_server_tools(server_id=entry["server_id"], request=request)
 
     @router.post("/api/app-connectors/{connector_id}/refresh-tools")
@@ -594,7 +614,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         finally:
             db.close()
         if server is None:
-            raise HTTPException(404, "Underlying MCP server not found")
+            status = _orphan_status(entry)
+            return {"ok": False, "reconnected": False, "tool_count": 0,
+                    "error": status["reasons"][0], "status": status}
         before = mcp_manager.get_server_status(server.id).get("tool_count", 0)
         if reconnect:
             await mcp_manager.disconnect_server(server.id)

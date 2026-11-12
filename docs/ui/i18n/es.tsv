@@ -11612,3 +11612,6 @@ No written flows:	Sin flujos escritos:
 The Hub flow catalogue is unavailable. Check the Hub connection and retry.	El catálogo de flujos del Hub no está disponible. Comprueba la conexión con el Hub y vuelve a intentarlo.
 The skill could not be read. Check the Hub connection and retry.	No se pudo leer la skill. Comprueba la conexión con el Hub y vuelve a intentarlo.
 Written procedures from each app’s current skill shelf. Expected outputs come from Outputs or Verification in the skill. Reading a flow does not run it.	Procedimientos escritos de la estantería actual de cada app. Las salidas proceden de Outputs o Verification en la skill. Leer un flujo no lo ejecuta.
+Orphaned	Huérfano
+The saved MCP server is missing. Connector settings are kept.	Falta el servidor MCP guardado. Se conserva la configuración del conector.
+Scribe audio features moved to Funes and are now part of Talos. Use the Talos connector for audio.	Las funciones de audio de Scribe pasaron a Funes y ahora forman parte de Talos. Usa el conector de Talos para el audio.

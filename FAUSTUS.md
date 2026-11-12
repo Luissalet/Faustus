@@ -18226,3 +18226,18 @@ Each worker receives its own project, chat, coordination actor and native run.
 The console monitors the runner and cancels its exact native run before
 reporting it stopped. The worker runtime and connector processes close after
 the runner ends.
+
+## MCP según placement y conectores huérfanos
+
+Los conectores familiares por el Hub siguen la ubicación de la app.
+Prometheus y Hermes en la Spark ejecutan allí el puente declarado mediante el
+SSH existente del Hub, con su venv y token propios. La comprobación de salud
+espera la consulta SSH. Refrescar herramientas, skills y llamadas utilizan la
+misma sesión MCP. La configuración guardada queda disponible para reconectar.
+
+Cuando falta la fila del servidor MCP, el conector guardado muestra `orphaned`
+en listado, comprobar, conectar, desconectar y refrescar herramientas. Su lista
+de herramientas queda vacía y sus valores se conservan. Studio explica el motivo.
+El antiguo conector de audio Scribe remite a Talos, que contiene el audio de
+Funes. El manifiesto antiguo de Funes conserva la identidad de citas Scribe
+y el manifiesto de compatibilidad de Talos identifica Funes como absorbido.

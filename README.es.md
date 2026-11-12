@@ -995,3 +995,18 @@ Faustus puede usar Browser con la extensión instalada en las pestañas existent
 Con el código aprobado 536848fe activo y el modelo global configurado, el ensayo nativo R7 leyó el contador literal «36 visibles de 36 · Todos los documentos», volvió a Inicio con seis proyectos, conservó las diez pestañas y su activa y liberó sólo la pestaña de QA. La CLI normal terminó con 12 llamadas Browser correctas, 13 rondas y 71,7 segundos, sin otras herramientas ni llamadas después de release.
 
 Queda completada la comprobación nativa acotada que antes figuraba pendiente. Acredita ese recorrido real, sin certificar autonomía general, paridad de Writer ni mejora controlada de rendimiento. La migración de la extensión a su carpeta canónica y la aceptación portable siguen como trabajos separados. [Instalación y límites](src/browser_relay/README.md).
+
+## MCP según placement y conectores huérfanos
+
+Los conectores familiares por el Hub siguen la ubicación de la app.
+Prometheus y Hermes en la Spark ejecutan allí el puente declarado mediante el
+SSH existente del Hub, con su venv y token propios. La comprobación de salud
+espera la consulta SSH. Refrescar herramientas, skills y llamadas utilizan la
+misma sesión MCP. La configuración guardada queda disponible para reconectar.
+
+Cuando falta la fila del servidor MCP, el conector guardado muestra `orphaned`
+en listado, comprobar, conectar, desconectar y refrescar herramientas. Su lista
+de herramientas queda vacía y sus valores se conservan. Studio explica el motivo.
+El antiguo conector de audio Scribe remite a Talos, que contiene el audio de
+Funes. El manifiesto antiguo de Funes conserva la identidad de citas Scribe
+y el manifiesto de compatibilidad de Talos identifica Funes como absorbido.

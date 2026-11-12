@@ -143,6 +143,40 @@ async def test_legacy_server_uses_exact_manifest_match_without_sidecar(linked, m
 
 
 @pytest.mark.asyncio
+async def test_legacy_placed_family_resolution_failure_reports_relay_error(linked, monkeypatch):
+    monkeypatch.setattr(connector_relay.hoard_hub, "_call", lambda *a, **k: (422, {"error": "placement is moving"}, None))
+    manager = mcp_manager.McpManager()
+    local = AsyncMock()
+    monkeypatch.setattr(manager, "_connect_stdio", local)
+    assert not await manager.connect_server("legacy-server", "Legacy", "stdio", command="E:/python.exe")
+    assert "placement is moving" in manager.get_server_status("legacy-server")["error"]
+    local.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [None, 404, 503])
+async def test_unresolved_generic_server_keeps_ordinary_connection_path(linked, monkeypatch, code):
+    monkeypatch.setattr(connector_relay.hoard_hub, "_call", lambda *a, **k: (code, {}, None))
+    manager = mcp_manager.McpManager()
+    local = AsyncMock(return_value=True)
+    monkeypatch.setattr(manager, "_connect_stdio", local)
+    assert await manager.connect_server("generic-server", "Generic", "stdio", command="generic-program")
+    local.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_placed_health_allows_remote_ssh_probe_budget(linked, monkeypatch):
+    seen = []
+    def call(*args, **kwargs):
+        seen.append(kwargs["timeout"])
+        return 200, {"id": "prometheus", "mcp_path": "/api/mcp/apps/prometheus/mcp"}, None
+    monkeypatch.setattr(connector_relay.hoard_hub, "_call", call)
+    await connector_relay.describe("prometheus", check=True)
+    await connector_relay.describe("prometheus")
+    assert seen == [20, 5]
+
+
+@pytest.mark.asyncio
 async def test_requested_tool_starts_closed_remote_app_through_link(linked, monkeypatch):
     manager = mcp_manager.McpManager()
     manager._connections["fixture-server"] = {"name": "Links Hoard", "hub_app": "links"}

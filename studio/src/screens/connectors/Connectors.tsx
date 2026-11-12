@@ -49,6 +49,7 @@ import './connectors.css';
  */
 
 const STATE_ICON: Record<ConnectorState, typeof CheckCircle2> = {
+  orphaned: AlertCircle,
   unconfigured: HelpCircle,
   app_off: PowerOff,
   connecting: Loader2,
@@ -121,7 +122,7 @@ function ConnectorRow({
     <li className="fs-conn__row" data-testid="connector-row" data-state={c.status.state}>
       <div className="fs-conn__row-main">
         <span className="fs-conn__identity">
-          <strong>{c.server?.name || c.preset?.name || c.id}</strong>
+          <strong>{connectorName(c)}</strong>
           {c.preset?.purpose && <span className="fs-set__help">{t(c.preset.purpose)}</span>}
         </span>
         <StateChip state={c.status.state} />
