@@ -6698,6 +6698,11 @@ Tres cambios, mismos ficheros de siempre:
 
 **Verificado.** `node --check`, `tests/test_desktop_shell.py`, `test_adp08_desktop_semantics.py`, `test_sec_lote16_sec07_electron.py`, `test_desktop_second_instance.py` (este último actualizado: comprobaba el `isMinimized()` dentro del handler de segunda instancia, que desde la bandeja vive en `showMainWindow`; fallaba ya antes de este cambio).
 
+### Pregunta rápida en Windows — Ágora #3127
+
+**Ctrl+Mayús+Espacio** abre una ventana flotante con el compositor y la conversación de Studio. El mismo compositor admite pegar texto e imágenes. **Esc** oculta la ventana y el turno sigue en curso. **Seguir en Studio** abre la misma conversación en la ventana principal y conserva su borrador y sus adjuntos. En **Ajustes → Este dispositivo → Pregunta rápida** se puede cambiar el atajo, desactivarlo o abrir la ventana a mano.
+
+`desktop/quick-question.cjs` registra el atajo en Windows y sigue el origen activo de la app de escritorio, tanto en el PC como en una Spark. La herramienta MCP incorporada `quick_question` permite consultar los ajustes, cambiarlos o solicitar que se abra la ventana con una conversación accesible. La respuesta de MCP confirma que se registró la solicitud.
 
 ## 112. Renombrado interno completo y limpieza del repo (18-09-2026)
 

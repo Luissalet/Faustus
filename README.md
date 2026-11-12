@@ -561,6 +561,8 @@ Launchers live in this repository and resolve paths relative to the checkout:
 
 Python and Node.js are required for first-time setup. The launchers prepare missing dependencies, rebuild stale Studio assets and install the pinned desktop runtime when needed. `Start-Faustus.ps1 -NoBrowser` starts web mode without opening a tab; `-Port 7001` selects another port.
 
+On Windows, press **Ctrl+Shift+Space** to open a floating Studio chat from any app. Paste text or an image into the composer, press **Esc** to hide the window while the answer continues, or choose **Continue in Studio** to open the same conversation and draft in the main window. Change or disable the shortcut under **Settings → This device → Quick question**. The window uses the same Faustus server as the desktop app, including a Spark. The built-in `quick_question` MCP tool reads and configures the shortcut and can request that the desktop open a conversation.
+
 Closing the desktop window stops the backend **only if that window started it**. An already-running web server is reused and remains running when the window closes. Process ownership is verified; unrelated Python processes and external model servers are not stopped.
 
 The managed local launchers bind to localhost and default to `AUTH_ENABLED=false`: open the app and use its models and settings directly. Account and user-management pages are hidden in this mode, and no credential store is created. Profiles organize your work and setup; they do not require a login. Existing data is preserved. An installation explicitly configured with `AUTH_ENABLED=true` uses separate desktop and browser sign-in sessions.
