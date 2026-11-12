@@ -16,8 +16,12 @@ assert.deepEqual(calls.at(-1).body, { query: 'Pregunta real', max_rounds: 2, dat
 await research.startResearch('Web stays available', { maxRounds: 1, category: '', searchProvider: '', endpointId: '', model: '' });
 assert.equal(calls.at(-1).body.data_scope, undefined);
 response = { plan: ['Read notes'], clarification: 'Which project?' };
-await research.connectedPlan('Pregunta', ['notes'], { endpointId: 'chosen', model: 'chosen-model' });
+await research.connectedPlan('Pregunta', ['notes'], {
+  endpointId: 'chosen', model: 'chosen-model', sourceFilters: { notes: { tag: 'project' } }, clarification: 'Este mes',
+});
 assert.equal(calls.at(-1).body.endpoint_id, 'chosen');
+assert.deepEqual(calls.at(-1).body.source_filters, { notes: { tag: 'project' } });
+assert.equal(calls.at(-1).body.clarification, 'Este mes');
 const timeline = [{ id: 1, source: 'notes', source_name: 'Notes', at: 1, query: 'project', lane: 'text', status: 'done', count: 1, message: '', tool: '' }];
 response = { result: 'Cited report', sources: [{ title: 'Original', url: 'http://app.test/?open=12', app_id: 'darwin', source_id: 'mcp:darwin', excerpt: true }], connected_progress: { plan: 'Read records', timeline }, raw_findings: [] };
 const result = await research.researchResult('rp-connected');

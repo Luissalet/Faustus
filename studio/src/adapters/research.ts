@@ -492,7 +492,7 @@ export async function connectedSources(): Promise<ConnectedSource[]> {
   return raw.sources;
 }
 export async function connectedPlan(query: string, sourceIds: string[], settings?: ResearchSettings): Promise<{ plan: string[]; clarification: string }> {
-  return await postJson('/api/research/connected-plan', { query, source_ids: sourceIds, endpoint_id: settings?.endpointId || undefined, model: settings?.model || undefined }) as unknown as { plan: string[]; clarification: string };
+  return await postJson('/api/research/connected-plan', { query, source_ids: sourceIds, source_filters: settings?.sourceFilters ?? {}, clarification: settings?.clarification ?? '', endpoint_id: settings?.endpointId || undefined, model: settings?.model || undefined }) as unknown as { plan: string[]; clarification: string };
 }
 export async function openResearchSource(id: string, url: string): Promise<string> {
   const out = await postJson(`/api/research/${encodeURIComponent(id)}/open-source`, { url });

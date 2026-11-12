@@ -740,7 +740,8 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         else:
             endpoint, model, headers = _resolve_default_endpoint(user, body.model)
         return await prepare_brief(body.query, endpoint=endpoint, model=model, headers=headers,
-                                   owner=user, source_ids=body.source_ids)
+                                   owner=user, source_ids=body.source_ids,
+                                   source_filters=body.source_filters, clarification=body.clarification)
 
     @router.post("/api/research/start")
     async def research_start(body: ResearchStartRequest, request: Request):

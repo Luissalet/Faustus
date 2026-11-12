@@ -194,3 +194,31 @@ def test_linked_original_opens_at_a_late_cited_line(tmp_path, monkeypatch):
     assert "needle-Friday" in cr.read_project_source("alice", project["id"], link["id"], line=30001)
     with pytest.raises(FileNotFoundError):
         cr.read_project_source("bob", project["id"], link["id"], line=30001)
+
+
+def test_kafka_reader_extracts_document_pages():
+    r = researcher()
+    search = tool()
+    search["server_id"] = "kafka"
+    search["connector"]["preset_id"] = "kafka"
+    reader = {"server_id": "kafka", "name": "doc_get", "qualified_name": "mcp__kafka__doc_get",
+              "annotations": {"readOnlyHint": True}}
+    r.manager = SimpleNamespace(get_all_tools=lambda: [reader], call_tool=AsyncMock(side_effect=[
+        {"stdout": json.dumps({"items": [{"doc_id": "12", "title": "Invoice", "snippet": "Search excerpt"}]})},
+        {"stdout": json.dumps({"pages": [{"text": "Page one."}, {"text": "Page two."}], "metadata": "not evidence"})},
+    ]))
+    rows = asyncio.run(r._connector(search, "invoice", "text"))
+    assert rows[0]["evidence"] == "Page one.\n\nPage two."
+
+
+def test_connected_brief_includes_filters_and_clarification(monkeypatch):
+    monkeypatch.setattr(cr, "source_catalog", lambda owner: [{"id": "notes"}])
+    llm = AsyncMock(return_value='{"plan": ["Read notes"], "clarification": ""}')
+    monkeypatch.setattr(cr.DeepResearcher, "_llm", llm)
+    brief = asyncio.run(cr.prepare_brief("question", endpoint="http://example.test", model="configured",
+                                        source_ids=["notes"], source_filters={"notes": {"tag": "project"}},
+                                        clarification="this month"))
+    assert brief["plan"] == ["Read notes"]
+    prompt = llm.call_args.args[0][0]["content"]
+    assert '{"notes": {"tag": "project"}}' in prompt
+    assert "this month" in prompt

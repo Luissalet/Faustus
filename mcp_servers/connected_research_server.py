@@ -1,6 +1,5 @@
 """Connected-data research through the running Faustus research API."""
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path

@@ -298,7 +298,16 @@ class ConnectedResearcher(DeepResearcher):
                     self._record(tool["source"], str(item_id), "read", "running", tool=reader_name)
                     try:
                         payload = _payload(await self.manager.call_tool(reader["qualified_name"], reader_args))
-                        row["evidence"] = json.dumps(payload, ensure_ascii=False) if not isinstance(payload, str) else payload
+                        # A document reader's envelope contains metadata as well
+                        # as its pages. Cite the actual page text, not serialized
+                        # JSON with escaped line breaks and unrelated fields.
+                        pages = payload.get("pages") if app == "kafka" and isinstance(payload, dict) else None
+                        if isinstance(pages, list):
+                            text = "\n\n".join(str(p.get("text") or "") for p in pages if isinstance(p, dict)).strip()
+                            if text:
+                                row["evidence"] = text
+                        else:
+                            row["evidence"] = json.dumps(payload, ensure_ascii=False, indent=2) if not isinstance(payload, str) else payload
                         self._record(tool["source"], str(item_id), "read", "done", count=1, tool=reader_name)
                     except Exception as exc:
                         self._record(tool["source"], str(item_id), "read", "error", message=str(exc), tool=reader_name)
@@ -457,7 +466,8 @@ def hybrid_rank(findings, query):
             embedder._client.close()
 
 
-async def prepare_brief(query, *, endpoint, model, headers=None, owner="", source_ids=None):
+async def prepare_brief(query, *, endpoint, model, headers=None, owner="", source_ids=None,
+                        source_filters=None, clarification=""):
     """Optional clarification before a run, using the same configured model."""
     researcher = DeepResearcher(llm_endpoint=endpoint, llm_model=model, llm_headers=headers, owner=owner)
     catalog = source_catalog(owner)
@@ -466,7 +476,9 @@ async def prepare_brief(query, *, endpoint, model, headers=None, owner="", sourc
         "Prepare research ONLY over the person's connected data. Return JSON with plan (array of steps), "
         "and clarification (one optional question if scope, project or date is ambiguous; otherwise empty string). "
         "Use the language of the question. Do not search or invent results.\nQuestion: " + query +
-        "\nAvailable sources: " + json.dumps(selected, ensure_ascii=False)}], max_tokens=1200)
+        "\nAvailable sources: " + json.dumps(selected, ensure_ascii=False) +
+        "\nSource filters: " + json.dumps(source_filters or {}, ensure_ascii=False) +
+        "\nClarification from the person: " + clarification}], max_tokens=1200)
     parsed = researcher._parse_json_object(text)
     if not parsed or not isinstance(parsed.get("plan"), list):
         raise ValueError("Could not prepare a plan; start directly or try again")
