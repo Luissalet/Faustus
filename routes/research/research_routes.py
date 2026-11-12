@@ -822,8 +822,10 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             selected = body.source_ids or [s["id"] for s in catalog]
             if set(selected) - available:
                 raise HTTPException(400, "Selected sources are unavailable. Refresh the source list.")
+            from src.settings import get_setting
             connected_options = {"source_ids": selected, "source_filters": body.source_filters,
-                                 "clarification": body.clarification}
+                                 "clarification": body.clarification,
+                                 "source_base": get_setting("app_public_url") or str(request.base_url)}
         research_handler.start_research(
             session_id=session_id,
             query=body.query,

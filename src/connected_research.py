@@ -142,11 +142,12 @@ def _finding(row: dict, source: str, *, base="", app_id="", lane="text") -> dict
 
 
 class ConnectedResearcher(DeepResearcher):
-    def __init__(self, *, source_ids=None, source_filters=None, clarification="", prior_progress=None, **kwargs):
+    def __init__(self, *, source_ids=None, source_filters=None, clarification="", source_base="", prior_progress=None, **kwargs):
         super().__init__(**kwargs)
         self.source_ids = list(source_ids or LOCAL_SOURCES)
         self.source_filters = dict(source_filters or {})
         self.clarification = clarification
+        self.source_base = source_base or internal_api_base()
         self.timeline = list((prior_progress or {}).get("timeline") or [])
         self.connected_plan = str((prior_progress or {}).get("plan") or "")
         self.manager = get_mcp_manager()
@@ -346,7 +347,7 @@ class ConnectedResearcher(DeepResearcher):
                             await run(source, term, lane, tool, backoff=False)
                     return
                 conn = tool["connector"] if tool else {}
-                found = [f for row in rows if (f := _finding(row, source, base=conn.get("ui_url") or conn.get("app_url") or internal_api_base(),
+                found = [f for row in rows if (f := _finding(row, source, base=conn.get("ui_url") or conn.get("app_url") or self.source_base,
                         app_id=conn.get("preset_id", ""), lane=lane))]
                 rankings.append([f["url"] for f in found])
                 if found:
@@ -436,7 +437,11 @@ class ConnectedResearcher(DeepResearcher):
             if source:
                 text = str(source.get("evidence") or source.get("summary") or "").strip()
                 parts.append(f"## {source.get('title', '')}")
-                for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+                # Keep excerpts and citation checking bounded for long documents.
+                excerpt = text[:600]
+                if len(text) > len(excerpt):
+                    excerpt = excerpt.rsplit(maxsplit=1)[0] + "…"
+                for sentence in re.split(r"(?<=[.!?])\s+|\n+", excerpt):
                     if sentence.strip():
                         parts.append("> " + sentence.strip() + f" [{number}]")
         return "\n\n".join(parts)

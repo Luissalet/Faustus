@@ -23,6 +23,7 @@ timeline survives completion and checkpoint resume.
 - Calendar queries the existing owner-scoped calendar tables. Project files use
   the existing typed context-link membership, ownership checks and resolvers;
   their citations open the linked original through an owner-checked text route.
+  Internal links use the configured public Faustus URL or the request origin.
 - App sources come from enabled MCP servers and the existing connector sidecar.
   Only discovered, enabled search tools classified as read-only are selected.
   Required source arguments must be available from the query, filters or schema
@@ -45,7 +46,7 @@ Every factual sentence of a synthesized report must carry an existing numbered
 citation. The existing citation auditor checks coverage and dangling numbers.
 If synthesis omits citations, the result presents cited source excerpts instead
 of attributing unsupported prose to a source. Citation presence checks attribution,
-not the truth of every statement. Excerpts and truncated reads remain marked.
+not the truth of every statement. The fallback shows a short excerpt per original.
 
 Clicking an app original from the report opens the existing App Dock beside a
 chat carrying that report, when the citation points into the connected app.

@@ -69,9 +69,11 @@ def test_source_failure_and_unsupported_filter_are_visible(monkeypatch):
 
 def test_uncited_synthesis_is_replaced_by_cited_evidence():
     r = researcher()
-    r.citations.add({"url": "https://source.test/a", "title": "Original", "evidence": "The recorded deadline is Friday. The owner confirmed the date."})
+    evidence = "The recorded deadline is Friday. " + "The owner confirmed the date. " * 100 + "Unneeded final paragraph."
+    r.citations.add({"url": "https://source.test/a", "title": "Original", "evidence": evidence})
     report = r._finalize_citations("The deadline is Monday and the budget is 1000 euros.")
     assert "Monday" not in report and "Friday" in report
+    assert "Unneeded final paragraph" not in report
     assert audit_citations(report, r.citations).used == [1]
     assert r.citation_audit.cited_sentences == r.citation_audit.total_sentences
 
@@ -161,11 +163,11 @@ def test_source_selectors_do_not_poison_content_queries(monkeypatch):
 
 
 def test_literal_sources_back_off_to_terms_without_losing_timeline(monkeypatch):
-    r = researcher(source_ids=["notes"])
+    r = researcher(source_ids=["notes"], source_base="https://faustus.example/")
     monkeypatch.setattr(cr, "_tools", lambda *a: [])
     r._local = AsyncMock(side_effect=lambda source, query: [{"url": "/notes?n=1", "content": "The recorded invoice"}] if query == "factura" else [])
     findings = asyncio.run(r._search_and_extract(["facturas archivadas"], "question"))
-    assert len(findings) == 1
+    assert [finding["url"] for finding in findings] == ["https://faustus.example/notes?n=1"]
     assert any(e["query"] == "facturas archivadas" and e["count"] == 0 for e in r.timeline)
     assert any(e["query"] == "factura" and e["count"] == 1 for e in r.timeline)
 
