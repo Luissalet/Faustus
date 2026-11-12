@@ -84,6 +84,7 @@ import {
 import type { Suggestion } from './commands';
 import { capMentionItems, resolveSuggestionIntent } from './composer-suggest';
 import { frameBatcher } from '../../lib/frame-batch';
+import { AttachmentNotice } from './AttachmentNotice';
 import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachments';
 import { createFileDropSession, isFileDrag } from '../../lib/file-drop';
 import {REFERENCE_ROLES} from '../../lib/image-references';
@@ -159,6 +160,7 @@ export interface ComposerProps {
    *  switch (`thinkingControlsAvailable`, adapters/composer.ts) — `null` while the
    *  route has not resolved yet. */
   modelName: string | null;
+  endpointId?: string | null;
   /** Lot T: this chat's reasoning mode and what Auto chose on the last
    *  turn (null before any). The chip shows only when the API (or name list) says so. */
   thinkMode?: ThinkMode;
@@ -323,6 +325,7 @@ export function Composer({
   onClearGen,
   onSetGen,
   modelName,
+  endpointId,
   thinkMode = 'auto',
   thinkChosen = null,
   onSetThinkMode,
@@ -894,6 +897,10 @@ export function Composer({
           onSetReferenceRole={(id, role) => setAttachments((list) => list.map((item) => (item.id === id ? { ...item, referenceRole: role } : item)))}
           onRemoveAttachment={(id) => setAttachments((list) => list.filter((x) => x.id !== id))}
         />
+      )}
+
+      {endpointId !== undefined && (attachments.length > 0 || pendingFiles.length > 0) && (
+        <AttachmentNotice endpointId={endpointId} sessionId={sessionId} modelName={modelName} />
       )}
 
       {docContext.length > 0 && (

@@ -95,6 +95,7 @@ import { ModelHedgeSection } from './settings/ModelHedge';
 import { ProbeBackoffSection } from './settings/ProbeBackoff';
 import { EndpointCapabilities } from './settings/EndpointCapabilities';
 import { t, tn } from '../i18n';
+import { DataBoundarySection } from './settings/DataBoundary';
 import { SettingsNavigation } from './settings/SettingsNavigation';
 
 /**
@@ -110,7 +111,7 @@ import { SettingsNavigation } from './settings/SettingsNavigation';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'device' | 'models' | 'sparks' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'modes' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
+type SectionKey = 'general' | 'device' | 'models' | 'sparks' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'modes' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security' | 'data_destinations';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
@@ -157,6 +158,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
   // (with immediate revocation) and the command-guard allowlist — three
   // authority surfaces that had no screen at all before this lote.
   { key: 'security', label: 'Security', icon: Lock, admin: true },
+  { key: 'data_destinations', label: 'Data destinations', icon: Route, admin: true },
 ];
 
 
@@ -1781,6 +1783,7 @@ export function SettingsScreen() {
           {section === 'users' && localInstallation === false && <UsersSection say={say} />}
           {section === 'system' && <SystemSection settings={settings} onSave={onSave} say={say} admin={admin} />}
           {section === 'health' && <HealthSection say={say} onJump={setSection} />}
+          {section === 'data_destinations' && admin && <DataBoundarySection />}
           {section === 'security' && <SecuritySection settings={settings} onSave={onSave} say={say} />}
         </div>
       </div>

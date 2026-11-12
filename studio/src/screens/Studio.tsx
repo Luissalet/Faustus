@@ -4292,6 +4292,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           onClearGen={() => setGen({})}
           onSetGen={setGen}
           modelName={groupMode ? null : route?.model ?? null}
+          endpointId={groupMode ? null : route?.endpointId ?? null}
           thinkMode={thinkMode}
           thinkChosen={thinkChosen}
           onSetThinkMode={pickThinkMode}

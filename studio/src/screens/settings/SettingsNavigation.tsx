@@ -8,7 +8,7 @@ export const SETTINGS_GROUPS = [
   { id: 'ai', label: 'AI and models', sections: ['models', 'defaults', 'sparks', 'local', 'openrouter', 'model_router'] },
   { id: 'connections', label: 'Connections', sections: ['integrations', 'search'] },
   { id: 'behavior', label: 'Agent behaviour', sections: ['agent', 'modes', 'repositories', 'tools'] },
-  { id: 'system', label: 'System and diagnostics', sections: ['system', 'health', 'security', 'effective_config'] },
+  { id: 'system', label: 'System and diagnostics', sections: ['system', 'health', 'security', 'data_destinations', 'effective_config'] },
 ] as const;
 
 const TERMS: Record<string, string> = {
@@ -27,6 +27,7 @@ const TERMS: Record<string, string> = {
   repositories: 'git commit branch push repositorio rama',
   tools: 'hooks lifecycle functions permissions herramientas funciones',
   effective_config: 'overrides sources configuration configuracion efectiva origen',
+  data_destinations: 'privacy external sync red privacidad destinos datos sincronización',
   shortcuts: 'keyboard keys atajos teclado', security: 'privacy approvals commands privacidad aprobaciones comandos',
   health: 'doctor errors services diagnostics errores servicios diagnostico', system: 'storage backup logs updates cache almacenamiento copias registros actualizaciones',
 };

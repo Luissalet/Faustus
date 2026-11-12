@@ -11673,3 +11673,61 @@ Shows activity at the top of the window: a glow for this conversation and a trav
 Consulted sources ({n})	Fuentes consultadas ({n})
 Line {n}	Línea {n}
 Excerpt {n}	Fragmento {n}
+Data destinations	Destinos de los datos
+Another machine on the network	Otro equipo de la red
+External service	Servicio externo
+Destination not fully known	Destino sin confirmar
+Models and conversations	Modelos y conversaciones
+Voice and retrieval	Voz y recuperación de contexto
+Connectors and APIs	Conectores y API
+Messaging and mail	Mensajería y correo
+Web search and browsing	Búsqueda y navegación web
+Synchronizations	Sincronizaciones
+Local only	Solo local
+Local preferred	Preferencia local
+Cloud allowed	Nube permitida
+Utility model	Modelo auxiliar
+Task model	Modelo de tareas
+Research model	Modelo de investigación
+Research review	Revisión de la investigación
+Reranking	Reordenación de resultados
+Configured use	Uso configurado
+User overrides	Ajustes por usuario
+Conversations using this destination	Conversaciones que usan este destino
+See what can leave the machine running Faustus under its current configuration.	Consulta qué puede salir del equipo donde se ejecuta Faustus con su configuración actual.
+Refresh report	Actualizar informe
+Download report	Descargar informe
+The report could not be refreshed. Retry to read the current configuration.	No se ha podido actualizar el informe. Vuelve a intentarlo para consultar la configuración actual.
+Previous report	Informe anterior
+Computed at	Generado el
+Include disabled configuration	Incluir destinos desactivados
+Some configuration could not be read. This report is incomplete.	No se ha podido leer parte de la configuración. El informe está incompleto.
+No enabled destinations in this category.	No hay destinos activos en esta categoría.
+Local storage and report limits	Almacenamiento local y alcance del informe
+Project privacy profiles	Perfiles de privacidad por proyecto
+Sending can share these attachments or their extracted content with {destination}.	Al enviar, los adjuntos o su contenido extraído pueden llegar a {destination}.
+The attachment destination is not fully known. Sending may share files or extracted content outside this machine.	El destino de los adjuntos está sin confirmar. Al enviar, los archivos o su contenido extraído pueden salir de este equipo.
+Conversation context, attachments and tool results used by this model.	Contexto de la conversación, adjuntos y resultados de herramientas que usa este modelo.
+Tool arguments and results; a local process or service may contact other services.	Argumentos y resultados de herramientas. Un proceso o servicio local puede contactar con otros servicios.
+API requests and data explicitly sent through this integration.	Peticiones de API y datos enviados a través de esta integración.
+Mail requests; outgoing messages and attachments when sending mail.	Peticiones de correo. Al enviar, también mensajes y adjuntos.
+Messages and agent replies for the configured chats.	Mensajes y respuestas del agente en los chats configurados.
+Messages and attachments sent through the linked messaging session.	Mensajes y adjuntos enviados a través de la sesión de mensajería vinculada.
+Calendar events and changes exchanged with the calendar service.	Eventos y cambios intercambiados con el servicio de calendario.
+Web search: {provider}	Búsqueda web: {provider}
+Search queries; a self-hosted search engine still queries external engines.	Consultas de búsqueda. Un buscador alojado localmente también puede consultar motores externos.
+Web pages	Páginas web
+Requested URLs and queries sent to the sites visited by web and browser tools.	URL solicitadas y consultas enviadas a los sitios que visitan las herramientas web y de navegador.
+Source lookup	Búsqueda de fuentes
+Search terms and source lookup requests.	Términos de búsqueda y peticiones de consulta de fuentes.
+Text to speak.	Texto para convertir en voz.
+Audio to transcribe.	Audio para transcribir.
+Embeddings	Representaciones vectoriales
+Text fragments used for retrieval; local embedding fallback stays on this machine.	Fragmentos de texto para recuperar contexto. El motor local alternativo procesa los fragmentos en este equipo.
+Vectors, text fragments and metadata used for retrieval.	Vectores, fragmentos de texto y metadatos para recuperar contexto.
+This report is built locally from configuration and metadata, without contacting the listed destinations.	El informe se genera en este equipo a partir de la configuración y sus metadatos, sin contactar con los destinos enumerados.
+Conversation history, uploads, project files and memory are stored locally; selected context can be sent to models or tools.	El historial de chat, los adjuntos, los archivos de proyecto y la memoria se guardan en local. El contexto seleccionado puede llegar a modelos o herramientas.
+Local scorecards do not export telemetry. Local processing does not itself upload source files.	Las evaluaciones locales guardan sus resultados en este equipo. El procesamiento local mantiene aquí los archivos de origen.
+Configured destinations show what can leave, not evidence that data has been sent. Enabled does not mean connected or healthy.	Los destinos configurados indican por dónde podrían salir los datos. Un destino activo puede estar desconectado o no responder.
+Local proxies, connectors and command tools can forward data elsewhere; their downstream destinations cannot be inferred from configuration.	Los proxies locales, los conectores y las herramientas de comandos pueden reenviar datos. Su destino final puede quedar fuera de la configuración disponible.
+Per-turn routing, model fallback, tools, user overrides and external folder synchronizers can add destinations. This is not a packet capture or a guarantee of local-only operation.	El enrutamiento por turno, los modelos alternativos, las herramientas, los ajustes por usuario y la sincronización externa de carpetas pueden añadir destinos. El informe describe la configuración disponible.
