@@ -23,7 +23,7 @@
 
 /* header, tools, formula bar */
 .fs-hj-head { display: flex; align-items: center; gap: 4px; padding: 6px var(--fs-space-3); border-block-end: 1px solid var(--fs-border); min-inline-size: 0; }
-.fs-hj-title { flex: 0 1 220px; min-inline-size: 60px; font: inherit; font-size: 13px; font-weight: 600; color: var(--fs-text-1); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; }
+.fs-hj-title { flex: 0 1 auto; min-inline-size: 60px; text-overflow: ellipsis; font: inherit; font-size: 13px; font-weight: 600; color: var(--fs-text-1); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; }
 .fs-hj-title:hover { border-color: var(--fs-border); }
 .fs-hj-title:focus { outline: none; border-color: var(--hj-ring); background: var(--fs-surface-1); }
 .fs-hj-status { font-size: 11px; color: var(--fs-text-3); white-space: nowrap; padding-inline: 6px; }

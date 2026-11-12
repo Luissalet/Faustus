@@ -4,7 +4,7 @@
 .fs-pz [hidden], .fs-pz[hidden] { display: none !important; }
 
 .fs-pz-head { display: flex; align-items: center; gap: 4px; padding: 6px var(--fs-space-3); border-block-end: 1px solid var(--fs-border); min-inline-size: 0; }
-.fs-pz-title { flex: 0 1 220px; min-inline-size: 60px; font: inherit; font-size: 13px; font-weight: 600; color: var(--fs-text-1); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; }
+.fs-pz-title { flex: 0 1 auto; min-inline-size: 60px; text-overflow: ellipsis; font: inherit; font-size: 13px; font-weight: 600; color: var(--fs-text-1); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; }
 .fs-pz-title:hover { border-color: var(--fs-border); }
 .fs-pz-title:focus { outline: none; border-color: var(--fs-accent, var(--fs-brand)); background: var(--fs-surface-1); }
 .fs-pz-status { font-size: 11px; color: var(--fs-text-3); white-space: nowrap; padding-inline: 6px; }

@@ -790,7 +790,7 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
       <div className="fs-pz" hidden={hidden} data-testid="pizarra" data-tool={tool} data-theme-mode={theme} data-load={load}>
         <div className="fs-pz-head">
           <input
-            className="fs-pz-title" value={titleText} aria-label={t('Whiteboard title')} onChange={(e) => setTitleText(e.target.value)}
+            className="fs-pz-title" style={{ inlineSize: `${Math.max(10, titleText.length + 3)}ch` }} value={titleText} aria-label={t('Whiteboard title')} onChange={(e) => setTitleText(e.target.value)}
             onBlur={() => { const v = titleText.trim(); if (v && v !== title) void renameBoard(boardId, v).then((m) => onTitle(m.title)).catch(() => onNotice(t('Could not rename.'), 'danger')); }}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
           />

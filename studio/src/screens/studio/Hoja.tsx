@@ -48,6 +48,27 @@ function Tb({ pressed, ...rest }: { pressed?: boolean } & React.ComponentProps<t
   return <span className="fs-hj-tb" data-on={pressed || undefined}><IconButton {...rest} /></span>;
 }
 
+const inkCache = new Map<string, string | null>();
+/** Readable text colour for a fill: dark on light, white on dark; null when the fill cannot be read. */
+function inkFor(fill: string): string | null {
+  if (inkCache.has(fill)) return inkCache.get(fill) ?? null;
+  let rgb: number[] | null = null;
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(fill.trim());
+  if (hex) {
+    const h = hex[1].length === 3 ? hex[1].split('').map((x) => x + x).join('') : hex[1];
+    rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  } else {
+    try {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (ctx) { ctx.fillStyle = '#000'; ctx.fillStyle = fill; ctx.fillRect(0, 0, 1, 1); const d = ctx.getImageData(0, 0, 1, 1).data; if (d[3] > 0) rgb = [d[0], d[1], d[2]]; }
+    } catch { /* no canvas: leave the theme colour */ }
+  }
+  const out = rgb ? ((0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])) > 0.4 ? '#1a1a1a' : '#ffffff') : null;
+  inkCache.set(fill, out);
+  return out;
+}
+const lin = (v: number): number => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+
 function cssFor(st: Style | undefined, ov: Record<string, unknown> | null): React.CSSProperties {
   const o: React.CSSProperties = {};
   if (st?.b || ov?.b) o.fontWeight = 700;
@@ -55,7 +76,7 @@ function cssFor(st: Style | undefined, ov: Record<string, unknown> | null): Reac
   const color = (ov?.c as string | undefined) ?? st?.c;
   if (color) o.color = color;
   const bg = (ov?.bg as string | undefined) ?? st?.bg;
-  if (bg) o.background = bg;
+  if (bg) { o.background = bg; if (!color) { const ink = inkFor(bg); if (ink) o.color = ink; } }   // a fill without its own text colour: pick the ink by contrast
   if (st?.wrap) o.whiteSpace = 'normal';
   return o;
 }
@@ -726,7 +747,7 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
     <div className="fs-hj" hidden={hidden} data-testid="hoja" data-load={load} onClick={() => setCtx(null)}>
       <div className="fs-hj-head">
         <input
-          className="fs-hj-title" value={titleText} aria-label={t('Spreadsheet title')} onChange={(e) => setTitleText(e.target.value)}
+          className="fs-hj-title" style={{ inlineSize: `${Math.max(10, titleText.length + 3)}ch` }} value={titleText} aria-label={t('Spreadsheet title')} onChange={(e) => setTitleText(e.target.value)}
           onBlur={() => { const v = titleText.trim(); if (v && v !== title) void renameSheet(sheetId, v).then((m) => onTitle(m.title)).catch(() => onNotice(t('Could not rename.'), 'danger')); }}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         />
