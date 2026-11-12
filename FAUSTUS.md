@@ -18442,3 +18442,14 @@ y ejecutor permiten medir modelos. Las referencias sintetizadas necesitan
 validación de dominio. El enmascarado es heurístico y admite entidades
 adicionales. La batería acredita respuestas textuales con su cobertura guardada.
 Contrato en `docs/api/improvement_cycles.md`.
+
+Validación de 3125 con una instancia QA aislada y modelo simulado. HTTP y
+MCPstdio reales completaron una batería de cuatro casos desde dos conversaciones
+sintéticas, dos mediciones de modelos, exportación con suite_create del módulo
+nativo de Galton, optimización de prompt y skill y reversión de ambas. El SHA
+del fichero original de skill se conservó y la configuración lateral final quedó
+vacía. La QA y su puerto 59698 quedaron cerrados. Build y tipos pasan, junto
+con 123 pruebas del área y ocho de README. Pyflakes conserva cinco diagnósticos
+previos y añade cero. La revisión visual quedó bloqueada cuando Computer Use
+no pudo verificar con suficiente confianza la URL de Brave. Las capturas en
+claro y oscuro siguen pendientes. Evidencia en `Research/trazas3125/`.
