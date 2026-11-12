@@ -18279,3 +18279,21 @@ Se amplía harness_evolution y se reutilizan las señales de harness_refinement 
 Studio → Skills → Ciclos de mejora muestra historial, resultados por grupo, casos antes/después y reversión; permite lanzar o crear una automatización diaria con el planificador existente. MCP del arnés: improvement_cycle_start/status/revert. Galton se reutiliza en el módulo de evaluación nativo de Pygmalion: importar suites/fallos y answer_check opcional, sin activar ni arrancar aplicaciones. Contrato y límites en docs/api/improvement_cycles.md.
 
 Verificación del autor: ciclo sintético real mediante MCP con deepseek-v4.1-flash en las Sparks; tres propuestas del modelo, una aplicada (aritmética 0/2 a 2/2, geografía 2/2 conservada) y dos rechazadas por no aportar mejora adicional. Es una prueba pequeña del mecanismo, no evidencia de mejora general del arnés. Las pruebas deterministas cubren rechazo por regresión y reversión de una edición sin borrar cambios posteriores.
+## Banco Unity de recorridos grabados — mejoras #3123
+
+Candidato para revisión; no integrado ni desplegado. `unity` conserva sus
+operaciones y añade `build_playtest`, `run_playtest` y `playtest_status` por
+chat, HTTP y MCP. Blood Arrows aporta el banco dentro del proyecto: compilar
+y ejecutar en batchmode, escenas/prefabs desde receta JSON, entrada real,
+contactos CC, clips/pesos/tiempo/huesos Animator y medición tras estabilizador.
+Ocho casos: recta, giros35/90, choques paralelo/perpendicular, andar/correr y
+túnel Course. PNG, MP4, HTML/JSON y manifiesto SHA-256; cámara sin overlay HUD,
+paso fijo sin atribuir rendimiento FPS. Hay que mirar cada grabación.
+
+Biblioteca: unity-animation, unity-collision, unity-speed-feel,
+unity-hdrp-lighting, unity-model-import y unity-recorded-playtest; procedimientos
+en castellano con flujo y comprobación. La suite real del editor registra siete
+casos verdes y balanceo residual4,8785° frente2° en recta (Blood Arrows3132).
+El primer cierre produjo un EventSystem pendiente3133, sin reproducción en dos
+suites posteriores. Se conserva el rojo, sin rehacer el juego ni relajar umbral.
+Contrato docs/api/unity.md y evidencia Research/juegos3123.

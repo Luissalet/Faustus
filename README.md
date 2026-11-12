@@ -1749,3 +1749,18 @@ activation on the Spark follows reviewer integration and deployment.
 ### Configuration improvement cycles
 
 Studio Skills includes owner/project-scoped configuration experiments with typed sidecars, target and per-group regression checks (1% default), real-model proposals, complete before/after evidence, individual undo, optional native Galton judging and the existing scheduler. The harness MCP exposes start/status/revert. High-risk edits wait for the person. See [the API and limits](docs/api/improvement_cycles.md).
+## Recorded Unity journeys
+
+The existing native `unity` tool now exposes `build_playtest`, `run_playtest`
+and `playtest_status` for Blood Arrows' recorded design suite. It reuses the
+game's real player, input, Animator and HDRP camera, with reproducible lab
+fixtures and the authored Course tunnel. Frame telemetry, collision callbacks,
+actual clips/bones, PNGs, MP4 and an HTML/JSON report make failures reproducible.
+See [the Unity operation contract](docs/api/unity.md).
+
+The library adds six procedures: animation, collision, speed feel, HDRP lighting,
+model import and recorded playtest delivery. Reports require watching the clips;
+completion is not acceptance. Captures omit overlay HUD and fixed-step runs do
+not measure real-time FPS. Initial real-editor validation passed seven journeys
+and retained a straight-flight rocking failure (Blood Arrows #3132). This feature
+is a review candidate until its commits are integrated and Faustus is deployed.

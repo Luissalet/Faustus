@@ -1024,3 +1024,20 @@ Asistentes y automatizaciones conservan su acción exacta para reanudarla.
 No se añaden puntos de aprobación ni se cambia el modo global. Véase el
 [contrato, la gramática y los límites](docs/api/approval-inbox.md). Candidato
 #3120: la activación en la Spark sigue a la integración y despliegue del revisor.
+
+
+## Recorridos Unity grabados
+
+La herramienta nativa `unity` amplía el puente existente con `build_playtest`,
+`run_playtest` y `playtest_status` para el banco de Blood Arrows. Reutiliza
+jugador, entrada, Animator y cámara HDRP reales; genera laboratorio y prefab
+desde JSON y juega el túnel de Course existente. Telemetría por frame,
+contactos físicos, clips/huesos activos, PNG, MP4 e informe HTML/JSON permiten
+reproducir los fallos. Véase [el contrato Unity](docs/api/unity.md).
+
+La estantería añade seis procedimientos: animación, colisión, sensación de
+velocidad, iluminación HDRP, importación de modelos y entrega con recorrido
+grabado y mirado. Completar la ejecución no acredita aceptación. Las capturas
+no incluyen overlay HUD y el paso fijo no mide FPS reales. La primera validación
+en Unity pasa siete recorridos y conserva el balanceo de vuelo recto en rojo
+(Blood Arrows #3132). Capacidad candidata pendiente de integrar y desplegar.

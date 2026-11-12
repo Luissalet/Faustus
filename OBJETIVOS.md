@@ -2608,3 +2608,13 @@ el seguimiento del TaskRun conserva la pausa y la continuación vive en su chat.
 ### Mejora medible de configuración (mejoras 3121, 12-11-2026)
 
 Implementados los ciclos de propuestas tipadas y acotadas sobre las revisiones existentes, comparación por grupo con umbral configurable, sidecars efectivos en turnos normales, historial/casos/reversión individual en Studio, herramientas MCP y programación con el planificador existente. Los casos completion certifican solo el prompt; los agent reutilizan la repetición de solo lectura. El ciclo pequeño real verifica aceptación/rechazo; no establece una ganancia general ni significación estadística. Galton conserva su evaluador nativo dentro de Pygmalion.
+## Unity: banco y procedimientos — mejoras #3123
+
+Candidato implementado: banco Blood Arrows con ocho recorridos grabados,
+fixtures reproducibles y operaciones nativas/MCP; seis skills de animación,
+colisión, velocidad, HDRP, importación y verificación. Integración y despliegue
+corresponden a la revisión. La validación real del editor conserva un fallo de
+balanceo del tronco (Blood Arrows3132); siete casos pasan. El incidente inicial
+de cierre3133 no se ha repetido en dos suites posteriores. Ampliar recorridos
+al cambiar mecánicas y revisar siempre los vídeos; no afirmar que completar
+la simulación o compilar equivale a aceptación visual.
