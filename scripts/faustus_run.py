@@ -29,6 +29,10 @@ and the summary carries the card, so a script can decide and resume it with
 --session S --resume-approval ID. With --approve every card of the run is
 approved for the task (the app's "allow for this task"), up to --max-legs.
 
+Use --no-timeout to disable the total deadline, --idle-timeout SECONDS to stop
+only after inactivity (heartbeat/ping events do not count as progress), and
+--max-legs 0 for unlimited approval continuations. Existing defaults remain.
+
 Deadline: --timeout is the whole run's wall clock, not an idle limit between
 reads — a stream that keeps sending progress or heartbeats still ends at it.
 On expiry the CLI asks the app to cancel exactly the run it was reading, by
@@ -50,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import http.cookiejar
+import itertools
 import json
 import math
 import os
@@ -99,7 +104,7 @@ def _within_deadline(call: Callable[[], Any], deadline: float,
 
     threading.Thread(target=read, name="faustus-run-http", daemon=True).start()
     try:
-        ok, value = results.get(timeout=max(0, deadline - time.monotonic()))
+        ok, value = results.get(timeout=max(0, deadline - time.monotonic()) if math.isfinite(deadline) else None)
     except queue.Empty:
         if close_late:
             def discard() -> None:
@@ -113,6 +118,10 @@ def _within_deadline(call: Callable[[], Any], deadline: float,
     return value
 
 
+class InactivityExceeded(TimeoutError):
+    """No turn event arrived within the configured inactivity allowance."""
+
+
 class TurnStream:
     """One open `/api/chat_stream` response of a leg.
 
@@ -122,9 +131,11 @@ class TurnStream:
     run's own absolute deadline instead, which an alive stream cannot extend.
     """
 
-    def __init__(self, response: Any, deadline: float):
+    def __init__(self, response: Any, deadline: float, idle_timeout: float = 0):
         self._response = response
         self._deadline = deadline
+        self._idle_timeout = idle_timeout
+        self._last_event = time.monotonic()
         self._events: "queue.Queue" = queue.Queue()
         self._closed = threading.Event()
         #: the run this response streams, as the app named it; the fencing
@@ -148,6 +159,8 @@ class TurnStream:
                 except ValueError:
                     continue
                 if isinstance(ev, dict):
+                    if ev.get("type") not in ("heartbeat", "ping", "keepalive") and not ev.get("heartbeat"):
+                        self._last_event = time.monotonic()
                     self._events.put(("event", ev))
             self._events.put(("end", None))
         except BaseException as exc:  # noqa: BLE001 - the caller decides what it means
@@ -160,10 +173,14 @@ class TurnStream:
             left = self._deadline - time.monotonic()
             if left <= 0:
                 raise DeadlineExceeded("the run deadline expired with its stream still open")
+            idle_left = self._idle_timeout - (time.monotonic() - self._last_event) if self._idle_timeout else math.inf
+            wait = min(left, idle_left)
+            if idle_left <= 0:
+                raise InactivityExceeded(f"no turn events for {self._idle_timeout:g} seconds")
             try:
-                kind, payload = self._events.get(timeout=left)
+                kind, payload = self._events.get(timeout=wait if math.isfinite(wait) else None)
             except queue.Empty:
-                raise DeadlineExceeded("the run deadline expired with its stream still open") from None
+                continue
             if kind == "event":
                 yield payload
             elif kind == "end":
@@ -246,14 +263,21 @@ class Client:
                                      headers={"Content-Type": "application/json"})
         return self._request_json(req, timeout)
 
-    def open_stream(self, form: Dict[str, Any], timeout: float, deadline: float) -> TurnStream:
+    def open_stream(self, form: Dict[str, Any], timeout: Optional[float], deadline: float,
+                    idle_timeout: float = 0) -> TurnStream:
         """Start one leg; `timeout` bounds opening it, `deadline` (monotonic)
         bounds reading it."""
         body = urllib.parse.urlencode({k: v for k, v in form.items() if v is not None}).encode()
         req = urllib.request.Request(self.base + "/api/chat_stream", data=body, method="POST")
-        response = _within_deadline(lambda: self._opener.open(req, timeout=timeout), deadline,
-                                    close_late=lambda late: late.close())
-        return TurnStream(response, deadline)
+        idle_deadline = time.monotonic() + idle_timeout if idle_timeout else math.inf
+        try:
+            response = _within_deadline(lambda: self._opener.open(req, timeout=timeout),
+                                        min(deadline, idle_deadline), close_late=lambda late: late.close())
+        except DeadlineExceeded as exc:
+            if idle_deadline < deadline:
+                raise InactivityExceeded(f"no turn events for {idle_timeout:g} seconds") from exc
+            raise
+        return TurnStream(response, deadline, idle_timeout)
 
 
 def _json_or_raw(raw: bytes) -> Any:
@@ -497,7 +521,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "[{name, transport: stdio|sse|http, url?, command?, args?}]; '@file' reads a file")
     ap.add_argument("--approve", action="store_true", help="approve every tool card of the run for the task")
     ap.add_argument("--resume-approval", default="", help="resume a stopped run by approving this card id")
-    ap.add_argument("--max-legs", type=int, default=12, help="approval resumes allowed with --approve")
+    ap.add_argument("--max-legs", type=int, default=12, help="approval legs allowed with --approve; zero means unlimited")
+    ap.add_argument("--no-timeout", action="store_true", help="disable the total wall-clock deadline")
+    ap.add_argument("--idle-timeout", type=float, default=0, help="seconds without turn events; zero disables the inactivity limit")
     ap.add_argument("--timeout", type=float, default=3600.0, help="seconds for the whole run")
     ap.add_argument("--json", action="store_true", help="NDJSON events and a final summary record")
     ap.add_argument("--events", choices=("all", "tools", "none"), default="all",
@@ -505,6 +531,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
     if not math.isfinite(args.timeout) or args.timeout < 0:
         ap.error("--timeout must be a finite, non-negative number")
+    if not math.isfinite(args.idle_timeout) or args.idle_timeout < 0:
+        ap.error("--idle-timeout must be a finite, non-negative number")
+    if args.max_legs < 0:
+        ap.error("--max-legs must be non-negative")
     args.project_warnings = []
     args.resolved_project = None
 
@@ -517,7 +547,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # The budget is the whole run's wall clock (setup included); monotonic so a
     # clock change cannot stretch it.
     started_monotonic = time.monotonic()
-    deadline = started_monotonic + max(0.0, args.timeout)
+    deadline = math.inf if args.no_timeout else started_monotonic + max(0.0, args.timeout)
     session = args.session
     try:
         client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
@@ -583,6 +613,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                      "workspace": args.workspace, "plan": args.plan, "approve": args.approve,
                      "project_id": (args.resolved_project or {}).get("id"), "agent_id": args.agent_id,
                      "project_warnings": args.project_warnings,
+                     "timeout": None if args.no_timeout else args.timeout, "idle_timeout": args.idle_timeout,
                      "input_token_budget": args.input_token_budget,
                      "started": round(started, 3)})
     form = base_form()
@@ -597,14 +628,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     cancel: Optional[Dict[str, Any]] = None
     observed_run_id: Optional[str] = None
     try:
-        for _leg in range(max(1, args.max_legs)):
+        for _leg in (itertools.count() if args.max_legs == 0 else range(args.max_legs)):
             turn.approval = None
             left = deadline - time.monotonic()
             if left <= 0:
                 stop = "timeout"
                 break
             observed_run_id = None
-            streamed = client.open_stream(form, timeout=left, deadline=deadline)
+            streamed = client.open_stream(form, timeout=left if math.isfinite(left) and not args.idle_timeout else None,
+                                          deadline=deadline, idle_timeout=args.idle_timeout)
             try:
                 observed_run_id = streamed.run_id
                 for ev in streamed.events():
@@ -629,6 +661,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             break
         else:
             stop = "max_legs"
+    except InactivityExceeded as exc:
+        stop = "inactivity"
+        turn.error = str(exc)
     except (socket.timeout, TimeoutError):
         stop = "timeout"
     except (urllib.error.URLError, OSError) as exc:
@@ -637,12 +672,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         stop = "error"
     if turn.cancelled and stop == "answered":
         stop = "cancelled"
-    if stop == "timeout":
+    if stop in ("timeout", "inactivity"):
         # Letting go of the stream stops nothing server-side: the run is only
         # stopped if the app confirms this exact one.
         cancel = cancel_run(client, session, observed_run_id)
     _emit_summary(out, args, session, turn, started, stop, turn.error, cancel)
-    return {"answered": EXIT_OK, "approval_required": EXIT_APPROVAL, "timeout": EXIT_TIMEOUT}.get(stop, EXIT_ERROR)
+    return {"answered": EXIT_OK, "approval_required": EXIT_APPROVAL, "timeout": EXIT_TIMEOUT, "inactivity": EXIT_TIMEOUT}.get(stop, EXIT_ERROR)
 
 
 def cancel_run(client: "Client", session: str, run_id: Optional[str]) -> Dict[str, Any]:
@@ -717,6 +752,7 @@ def _emit_summary(out, args, session, turn: Turn, started: float, stop: str, err
         "cancel": cancel,
         "project_id": (args.resolved_project or {}).get("id"), "agent_id": args.agent_id,
         "project_warnings": args.project_warnings,
+        "timeout": None if args.no_timeout else args.timeout, "idle_timeout": args.idle_timeout,
     }
     if args.json:
         _write(out, summary)
