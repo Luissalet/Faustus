@@ -9,7 +9,6 @@ Hecho y comprobado en vivo: motor de fórmulas (142 funciones, español e inglé
 - **Gráficos arrastrables** y con ejes y leyendas editables desde la interfaz.
 - **Validación de datos, celdas combinadas y tablas dinámicas.**
 - **Cursores de varias personas** en la misma hoja.
-- **Búsqueda de herramientas sin índice semántico:** cuando el modelo de incrustaciones no está cargado, `lookup_tools` cae a coincidencia de palabras en el orden del catálogo y puede poner `manage_spreadsheet` o herramientas de MCP antes que `sheet_create`; conviene ordenar ese último recurso por número de coincidencias.
 - **Rendimiento con GPU:** medir el desplazamiento de 100 000 filas en un navegador con aceleración; sin GPU ronda 100 ms por fotograma.
 
 ## Pizarra: lo que queda — 12-11-2026 (Ágora #2792)
@@ -17,6 +16,7 @@ Hecho y comprobado en vivo: motor de fórmulas (142 funciones, español e inglé
 Hecho y comprobado en vivo: formato `.canvas`, interfaz completa, herramientas `pizarra_*`, cursor del agente, contexto por turno, SSE, Biblioteca, `/pizarra` y apertura de `.canvas` (FAUSTUS.md, sección del 12-11). Lo siguiente:
 
 - **Cursores de varias personas** en la misma pizarra (hoy hay el de la persona y el del agente de ese chat).
+- **Conectores entre elementos de marcos distintos:** el trazado automático los cruza en línea recta; falta enrutarlos por los huecos.
 - **Ver una pizarra desde otro chat** del mismo proyecto sin duplicarla.
 - **Rendimiento con GPU:** medir con cientos de elementos en un navegador con aceleración; en pruebas sin GPU el fotograma es de 100-150 ms con cualquier número de elementos.
 
