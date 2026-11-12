@@ -494,6 +494,9 @@ class _Live(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         try:
+            if frames == "disconnect":
+                self.wfile.write(b'data: {"delta":"partial"}\n\n')
+                return
             if isinstance(frames, list):
                 self.wfile.write(_sse(frames).encode())
                 self.wfile.flush()
@@ -503,7 +506,10 @@ class _Live(BaseHTTPRequestHandler):
                 if frames == "silent":
                     _Live.closed.wait(_Live.interval)
                     continue
-                self.wfile.write(b'x' if frames == "drip" else b'data: {"delta": "."}\n\n')
+                if frames == "heartbeat":
+                    self.wfile.write(b'data: {"type":"run_activity","heartbeat":1}\n\n')
+                else:
+                    self.wfile.write(b'x' if frames == "drip" else b'data: {"delta": "."}\n\n')
                 self.wfile.flush()
                 time.sleep(_Live.interval)
             self.wfile.write(b"data: [DONE]\n\n")
@@ -722,3 +728,51 @@ def test_invalid_budget_never_constructs_a_client(budget, monkeypatch):
     with pytest.raises(SystemExit) as result:
         fr.main(["-p", "work", "--timeout", budget])
     assert result.value.code == 2
+
+
+def test_worker_watchdog_ignores_keepalives_and_fences_stop(capsys):
+    srv, url = _serve_live(["heartbeat"])
+    try:
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--no-timeout", "--idle-timeout", "0.25"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_TIMEOUT
+    assert _summary(capsys)["stop"] == "inactivity"
+    assert [stop["run_id"] for stop in _Live.stops] == ["run-live"]
+
+
+def test_worker_can_outlive_wall_clock_budget_with_progress(capsys, monkeypatch):
+    monkeypatch.setattr(_Live, "busy_seconds", 0.5)
+    srv, url = _serve_live([None])
+    try:
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--timeout", "0.25", "--no-timeout", "--idle-timeout", "0.25"])
+    finally:
+        _close_live(srv)
+    summary = _summary(capsys)
+    assert code == fr.EXIT_OK and summary["stop"] == "answered"
+    assert summary["elapsed_s"] > 0.25 and _Live.stops == []
+
+
+def test_worker_unlimited_approval_legs_pass_the_old_default(capsys):
+    approval = {"type": "ask_user", "data": {"kind": "tool_approval", "approval_id": "tool"}}
+    srv, url = _serve_live([[approval]] * 13 + [[{"delta": "Finished"}]])
+    try:
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--no-timeout", "--approve", "--max-legs", "0"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_OK and _summary(capsys)["text"] == "Finished"
+    assert len(_Live.forms) == 14
+
+
+def test_worker_reports_premature_stream_eof(capsys):
+    srv, url = _serve_live(["disconnect"])
+    try:
+        code = fr.main(["-p", "work", "--url", url, "--session", "owned", "--model", "fixture",
+                        "--json", "--no-timeout", "--idle-timeout", "1"])
+    finally:
+        _close_live(srv)
+    assert code == fr.EXIT_ERROR
+    assert _summary(capsys)["stop"] == "connection_lost"

@@ -153,7 +153,8 @@ class TurnStream:
                     continue
                 payload = line[5:].strip()
                 if payload == "[DONE]":
-                    break
+                    self._events.put(("end", None))
+                    return
                 try:
                     ev = json.loads(payload)
                 except ValueError:
@@ -162,7 +163,7 @@ class TurnStream:
                     if ev.get("type") not in ("heartbeat", "ping", "keepalive") and not ev.get("heartbeat"):
                         self._last_event = time.monotonic()
                     self._events.put(("event", ev))
-            self._events.put(("end", None))
+            self._events.put(("error", ConnectionError("Faustus closed the stream before its terminal event")))
         except BaseException as exc:  # noqa: BLE001 - the caller decides what it means
             self._events.put(("error", exc))
         finally:
@@ -666,6 +667,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         turn.error = str(exc)
     except (socket.timeout, TimeoutError):
         stop = "timeout"
+    except ConnectionError as exc:
+        stop = "connection_lost"
+        turn.error = str(exc)
     except (urllib.error.URLError, OSError) as exc:
         turn.error = _error_text(exc, deadline)
     if turn.error and stop == "answered":
