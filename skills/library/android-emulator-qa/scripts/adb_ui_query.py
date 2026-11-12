@@ -50,6 +50,8 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--label", help="return one exact label")
     mode.add_argument("--list", action="store_true", help="list up to 80 labeled controls within the rectangle")
+    parser.add_argument("--require-label", action="append", default=[], metavar="LABEL",
+                        help="with --list, require this exact label in the same snapshot; repeat for multiple labels")
     parser.add_argument("--rect", type=int, nargs=4, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"), required=True)
     parser.add_argument("--class", dest="class_name")
     parser.add_argument("--min-height", type=int, default=1)
@@ -57,6 +59,8 @@ def main():
     parser.add_argument("--wait-tree-ms", type=int, default=0,
                         help="retry fresh tree reads while the expected app and IME still match")
     args = parser.parse_args()
+    if args.require_label and (not args.list or any(not label.strip() for label in args.require_label)):
+        parser.error("--require-label needs --list and a nonempty label")
     if not 0 <= args.wait_tree_ms <= 15000:
         parser.error("tree wait must be between 0 and 15000 ms")
     if not args.adb.is_absolute() or not args.adb.is_file():
@@ -108,15 +112,28 @@ def main():
             if not after["matched"] or not after.get("imeMatched", True):
                 print(json.dumps({**result, "foreground": after}))
                 return 1
-            ready = bool(nodes) if args.list else len(nodes) == 1
+            if args.require_label:
+                observed = {}
+                for node in nodes:
+                    observed.setdefault(node["label"], node)
+                    if node["text"]:
+                        observed.setdefault(node["text"], node)
+                required_nodes = {label: observed[label] for label in args.require_label if label in observed}
+                missing_labels = list(dict.fromkeys(label for label in args.require_label if label not in observed))
+                ready = bool(nodes) and not missing_labels
+            else:
+                ready = bool(nodes) if args.list else len(nodes) == 1
             if ready or not wait_for_next_tree():
                 break
     except (OSError, subprocess.SubprocessError, ET.ParseError) as error:
         print(json.dumps({**result, "error": str(error)}))
         return 2
     if args.list:
-        print(json.dumps({**result, "matched": bool(nodes), "nodes": nodes[:80], "matchCount": len(nodes)}))
-        return 0 if nodes else 1
+        result.update(matched=ready, nodes=nodes[:80], matchCount=len(nodes))
+        if args.require_label:
+            result.update(requiredNodes=required_nodes, missingLabels=missing_labels)
+        print(json.dumps(result))
+        return 0 if ready else 1
     if len(nodes) != 1:
         print(json.dumps({**result, "matchCount": len(nodes)}))
         return 1

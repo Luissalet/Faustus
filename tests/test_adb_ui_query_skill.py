@@ -125,3 +125,25 @@ def test_list_reports_full_count_and_bounds_output(monkeypatch, tmp_path, capsys
     status, result, _ = run_cli(monkeypatch, tmp_path, capsys,
         iter([tree]), iter([{"matched": True}]*2), selection=("--list",))
     assert status == 0 and result["matchCount"] == 81 and len(result["nodes"]) == 80
+
+
+def test_list_waits_for_required_labels_in_one_snapshot(monkeypatch, tmp_path, capsys):
+    first = "<hierarchy>" + element(label="Pokédex") + "</hierarchy>"
+    second = "<hierarchy>" + element(label="Pokédex") + element(label="Colección", text="1/1025") + "</hierarchy>"
+    status, result, commands = run_cli(monkeypatch, tmp_path, capsys,
+        iter([first, second]), iter([{"matched": True}]*4),
+        selection=("--list", "--require-label", "Pokédex", "--require-label", "1/1025"))
+    assert status == 0 and result["matched"] and result["missingLabels"] == []
+    assert result["requiredNodes"]["1/1025"]["label"] == "Colección"
+    assert sum(cmd[:3] == ["shell", "uiautomator", "dump"] for cmd in commands) == 2
+    assert all("input" not in cmd for cmd in commands)
+
+
+def test_list_reports_the_missing_context_without_approving_a_partial_tree(monkeypatch, tmp_path, capsys):
+    tree = "<hierarchy>" + element(label="Pokédex") + "</hierarchy>"
+    status, result, _ = run_cli(monkeypatch, tmp_path, capsys,
+        iter([tree]), iter([{"matched": True}]*2), wait=0,
+        selection=("--list", "--require-label", "Pokédex", "--require-label", "1/1025"))
+    assert status == 1 and not result["matched"]
+    assert result["missingLabels"] == ["1/1025"]
+    assert list(result["requiredNodes"]) == ["Pokédex"]

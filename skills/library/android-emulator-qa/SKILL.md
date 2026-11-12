@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.17
+version: 1.0.18
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -46,7 +46,7 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 
 7. Read the actual result, including uncertainty and source labels. In a game guide, a method labelled as a reference from another edition is not a confirmed local method. Record the selected edition and the displayed qualifier with the condition. For resized images, convert image coordinates to device pixels using the reported dimensions. Distinguish textual readback, saved images and inspected pixels. The mobile server permits its working directory and host temporary directory; a project temp folder may not qualify. Relative output paths belong to that server, not necessarily the chat workspace. Verify the real file before citing it.
 
-8. Before declaring success, get a fresh compact listing after the last navigation. Require the intended screen/modal title, requested condition and uncertainty/source note together now. A species heading on another tab, earlier output or brief is insufficient. Capture this state and inspect its actual pixels; file creation alone proves no content. If pixels are unavailable to the model, mark text-only and checkpoint for visual review. Return via observed controls; close modal/keyboard and read the required destination, game, save, filters and counters. An unchanged count does not prove unchanged filters. State any intended difference from baseline. Never silently edit saved data or settings to manufacture restoration.
+8. Before declaring success, get a fresh compact listing after the last navigation. Repeat `--require-label` with `--list` to require the intended screen/modal title, requested condition and source note in one hierarchy when all fit in the observed rectangle. Use `--wait-tree-ms` during a transition. The result includes the matched nodes and any missing labels. Capture this state and inspect its actual pixels; file creation alone proves no content. If pixels are unavailable to the model, mark text-only and checkpoint for visual review. Return via observed controls, close the modal or keyboard, and confirm the destination, game, save, filters and counters from a fresh read. State any intended difference from baseline. Never edit saved data or settings to manufacture restoration.
 
 9. After the final readback, release ownership and post one receipt with the execution host, serial, installed version and SHA if verified, route, observed condition, inputs, restored baseline and failures. Finish when the receipt meets the acceptance checks. Keep a failure receipt for follow-up. A model answer without device observations is a plan.
 
