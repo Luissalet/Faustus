@@ -18211,3 +18211,18 @@ Saved commands and values stay intact, including Windows paths and PC browser
 URLs. Disabled connector preferences remain effective. Local connections and
 non-family MCP servers retain their configured transport. Family connector
 migration follows the PC Hub while the link is remote.
+
+
+## Agora worker runtimes on the PC
+
+`integrations/harbor/serve_headless.py --hub-url <url>` starts a separate
+single-user runtime with the owning Hub's real address and an Agora MCP
+connector. The connector uses the existing Hub token file and Hub Python/module
+path supplied by the console. The model endpoint is supplied explicitly from
+the placed Faustus configuration. User application data stays in its main
+runtime. The Hub console starts this PC runtime on an explicit worker request
+when the Agora workspace is on Windows and the main Faustus is on a Spark.
+Each worker receives its own project, chat, coordination actor and native run.
+The console monitors the runner and cancels its exact native run before
+reporting it stopped. The worker runtime and connector processes close after
+the runner ends.
