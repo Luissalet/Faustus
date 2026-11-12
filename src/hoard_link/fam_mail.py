@@ -176,6 +176,39 @@ def claim(ids: list[int], kind: str, ref: str, timeout: float = 10.0) -> dict[st
     return _answer(*_post("/api/mail/claim", {"ids": [int(i) for i in ids], "kind": kind, "ref": ref}, timeout))
 
 
+def send_status(timeout: float = 10.0) -> dict[str, Any]:
+    """Connected sending accounts. Independent of inbox polling; no messages fetched."""
+    status, body = _get("/api/mail/accounts", timeout)
+    return {**_answer(status, body), "via": "hub"}
+
+
+def send(to: list[str], subject: str, body: str, *, mode: str = "draft", cc: Optional[list[str]] = None,
+         bcc: Optional[list[str]] = None, attachments: Optional[list[str]] = None, html: str = "",
+         account: str = "", from_name: str = "", timeout: float = 70.0) -> dict[str, Any]:
+    """Save a draft by default; mode='send' explicitly sends. No fallback or retry on lost replies.
+
+    Attachment paths are absolute paths on the gateway machine. Credentials stay in Faustus.
+    Success requires state='sent' to mean SMTP accepted all recipients; drafts are not sent.
+    """
+    try:
+        request = {"to": to, "subject": subject, "body": body, "mode": mode,
+                   "cc": cc or [], "bcc": bcc or [], "attachments": [os.fspath(p) for p in attachments or []],
+                   "html": html, "account": account, "from_name": from_name}
+        status, answer = _post("/api/mail/compose", request, timeout)
+        result = {**_answer(status, answer), "via": "hub"}
+        if status is None:
+            result.update(kind="hub_down", state="unknown", sent=False)
+        elif status == 404:
+            result["kind"] = "tool_missing"
+        elif status == 401:
+            result["kind"] = "auth"
+        elif not result.get("ok"):
+            result.setdefault("kind", "tool_error")
+        return result
+    except Exception as exc:  # noqa: BLE001 — never retry a mutation
+        return {"ok": False, "via": "hub", "kind": "client_error", "error": str(exc)[:200], "sent": False}
+
+
 def copy_attachment(att: dict[str, Any], dest_dir: str, timeout: float = 30.0) -> str:
     """Copy one attachment (an element of a message's ``attachments``) into ``dest_dir`` and return the new path ('' when it cannot
     be had). Uses the local file when the hub's ``path`` is readable from here, else downloads it through the hub."""

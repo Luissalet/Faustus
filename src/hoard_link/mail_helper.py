@@ -7,8 +7,8 @@ It runs with Faustus's own Python, inside the Faustus folder::
 so the mail password never leaves Faustus: the caller only receives messages. The file imports nothing from ``hoard_link``
 and uses the standard library only, because it runs under another interpreter. Callers run it through
 ``hoard_link.fam_mail.FaustusHelper`` (Python) or their own spawn (Node); the hub's mail gateway runs it for the family.
-Folders are opened read-only (EXAMINE) and every fetch uses BODY.PEEK: nothing is ever marked as read, moved, flagged or
-deleted. It started as the Kafka / Phileas / Ledger / Tantalus helpers (same author, MIT) and is their superset.
+Mail reads use read-only folders (EXAMINE) and BODY.PEEK. Sending adds the Hermes Gmail label to the sent copy via
+IMAP after SMTP succeeds; no message is marked as read, moved or deleted. It started as the Kafka / Phileas / Ledger / Tantalus helpers (same author, MIT) and is their superset.
 
 Requests (``action``); ``owner`` (optional) picks the Faustus user whose accounts are used (without it, the only owner that
 has accounts), ``account`` narrows a request to one account:
@@ -31,7 +31,8 @@ has accounts), ``account`` narrows a request to one account:
     {"action": "read", "message_id": "<...>", "account": "?", "folder": "?", "uid": 0}
         one message (found by Message-ID in any folder searched, or directly by account + folder + uid)
     {"action": "send", "subject": "...", "text": "...", "html": "...", "to": [...], "from_name": "..."}
-        a notification mail through the account's SMTP; no ``to`` = the account's own address
+        a notification mail through the account's SMTP; no ``to`` = the account's own address. Optional ``hermes_kind``
+        defaults to notification; adds [Hermes], X-Hermes and X-Hermes-Kind, plus the Gmail Hermes label best-effort.
 
 Every message (fetch, scan, read) is the record ``message_id, subject, from_name, from_address, date, ts, date_ts, to, cc,
 in_reply_to, references, text, links, attachments[{name, mime, size, sha, path}], images[{alt, src}], headers{list_unsubscribe,
@@ -59,9 +60,11 @@ import hashlib
 import html as _html
 import io
 import json
+import mimetypes
 import re
 import smtplib
 import ssl
+import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
@@ -787,7 +790,7 @@ def send_info(server, request: dict) -> dict:
     _sel, cfg = server._resolve_send_config(request.get("account") or None)
     sender = str(cfg.get("from_address") or cfg.get("smtp_user") or "")
     to = _addresses(request.get("to")) or _addresses(sender)
-    return {"cfg": cfg, "sender": sender, "to": to,
+    return {"selector": _sel, "cfg": cfg, "sender": sender, "to": to,
             "info": {"account": cfg.get("account_name") or "", "from": _mask(sender), "to": [_mask(a) for a in to],
                      "server": f"{cfg.get('smtp_host')}:{cfg.get('smtp_port')}"}}
 
@@ -802,7 +805,60 @@ def build_message(request: dict, sender: str, to: list) -> EmailMessage:
     msg.set_content(str(request.get("text") or request.get("subject") or ""))
     if request.get("html"):
         msg.add_alternative(str(request["html"]), subtype="html")
+    mark_hermes(msg, request.get("hermes_kind") or "notification")
     return msg
+
+
+def mark_hermes(msg: EmailMessage, kind: str) -> None:
+    """Identify automated Hermes mail without changing its body or recipients."""
+    subject = str(msg.get("Subject") or "")
+    if not subject.startswith("[Hermes]"):
+        msg.replace_header("Subject", "[Hermes] " + subject)
+    msg["X-Hermes"] = "1"
+    msg["X-Hermes-Kind"] = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", str(kind))[:80] or "notification"
+    if not msg.get("Message-ID"):
+        msg["Message-ID"] = make_msgid()
+
+
+def label_hermes(connect, message_id: str) -> bool:
+    """Best-effort Gmail label on the sent copy; never changes flags or other labels."""
+    conn = None
+    try:
+        conn = connect()
+        status, lines = conn.list()
+        folders = []
+        if status == "OK":
+            for line in lines or []:
+                line = line.decode("ascii", "replace") if isinstance(line, bytes) else str(line)
+                match = re.match(r'\([^)]*\\All\b[^)]*\)\s+(?:"[^"]*"|NIL)\s+(.+)$', line, re.I)
+                if match:
+                    folders.append(match.group(1))
+        folders.extend(['"[Gmail]/All Mail"', '"[Gmail]/Todos"', '"[Google Mail]/All Mail"'])
+        for folder in dict.fromkeys(folders):
+            status, _ = conn.select(folder, readonly=False)
+            if status == "OK":
+                break
+        else:
+            return False
+        # SMTP acceptance can precede the copy becoming visible through IMAP.
+        for attempt in range(3):
+            status, data = conn.uid("SEARCH", None, "HEADER", "Message-ID", '"' + message_id + '"')
+            uids = b" ".join(part for part in data or [] if isinstance(part, bytes)).split()
+            if status == "OK" and uids:
+                status, labels = conn.list('""', '"Hermes"')
+                if status == "OK" and not any(labels or []):
+                    conn.create('"Hermes"')
+                status, _ = conn.uid("STORE", b",".join(uids), "+X-GM-LABELS", '("Hermes")')
+                return status == "OK"
+            if attempt < 2:
+                time.sleep(1)
+        return False
+    except Exception:  # noqa: BLE001 — a delivered mail must remain successful
+        return False
+    finally:
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.logout()
 
 
 def send(server, request: dict) -> dict:
@@ -826,7 +882,83 @@ def send(server, request: dict) -> dict:
         if client is not None:
             with contextlib.suppress(Exception):
                 client.quit()
+    if _is_gmail(str(cfg.get("imap_host") or cfg.get("smtp_host") or "").lower()):
+        with contextlib.suppress(Exception):
+            label_hermes(lambda: server._imap_connect(meta["selector"]), str(msg["Message-ID"]))
     return {"ok": True, "error": "", **info}
+
+
+def compose(server, request: dict) -> dict:
+    """Compose a family message; draft by default, SMTP only for explicit mode=send.
+
+    This is separate from notification sending so existing callers retain their defaults.
+    Attachment paths refer to files on the mail gateway's machine.
+    """
+    mode = request.get("mode", "draft")
+    if mode not in ("draft", "send"):
+        return {"ok": False, "error": "mode must be draft or send"}
+    try:
+        recipients = {}
+        for key in ("to", "cc", "bcc"):
+            values = request.get(key) or []
+            if not isinstance(values, list) or any(not isinstance(v, str) or _addresses([v]) != [v] for v in values):
+                raise ValueError(f"{key} must contain valid email addresses")
+            recipients[key] = list(dict.fromkeys(values))
+        envelope = list(dict.fromkeys(sum(recipients.values(), [])))
+        if not envelope:
+            raise ValueError("at least one recipient is required")
+        if not isinstance(request.get("subject"), str) or not request["subject"].strip():
+            raise ValueError("subject is required")
+        paths = request.get("attachments") or []
+        if not isinstance(paths, list) or any(not isinstance(p, str) or not os.path.isabs(p) for p in paths):
+            raise ValueError("attachments must be absolute file paths on the gateway machine")
+        meta = send_info(server, request)
+        msg = build_message({**request, "text": request.get("body", ""), "hermes_kind": "mail"}, meta["sender"], recipients["to"])
+        if recipients["cc"]:
+            msg["Cc"] = ", ".join(recipients["cc"])
+        # Bcc is stored only in the draft. SMTP receives the complete envelope explicitly.
+        if mode == "draft" and recipients["bcc"]:
+            msg["Bcc"] = ", ".join(recipients["bcc"])
+        for path in paths:
+            mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+            major, minor = mime.split("/", 1)
+            with open(path, "rb") as stream:
+                msg.add_attachment(stream.read(), maintype=major, subtype=minor, filename=os.path.basename(path))
+    except (ValueError, TypeError, OSError, KeyError) as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    client = None
+    try:
+        if mode == "draft":
+            client = server._imap_connect(meta["selector"])
+            status, lines = client.list()
+            folder = None
+            if status == "OK":
+                for line in lines or []:
+                    line = line.decode("ascii", "replace") if isinstance(line, bytes) else str(line)
+                    match = re.match(r'\([^)]*\\Drafts\b[^)]*\)\s+(?:"[^"]*"|NIL)\s+(.+)$', line, re.I)
+                    if match:
+                        folder = match.group(1)
+                        break
+            if not folder:
+                raise ValueError("the account does not advertise a Drafts folder")
+            status, result = client.append(folder, "\\Draft", None, msg.as_bytes())
+            if status != "OK":
+                raise ValueError("the account refused to save the draft")
+            return {"ok": True, "state": "draft", "sent": False, "message_id": str(msg["Message-ID"]), "folder": folder}
+        client = _connect(meta["cfg"])
+        refused = client.send_message(msg, from_addr=meta["sender"], to_addrs=envelope)
+        # A partial delivery must not be retried blindly: report accepted recipients too.
+        accepted = [a for a in envelope if a not in (refused or {})]
+        return {"ok": not bool(refused), "state": "partial" if refused else "sent", "sent": not bool(refused),
+                "message_id": str(msg["Message-ID"]), "accepted": accepted, "refused": list(refused or {}),
+                "error": "some recipients were refused; do not resend to accepted recipients" if refused else ""}
+    except Exception as exc:  # noqa: BLE001 — never retry a mail mutation here
+        return {"ok": False, "state": "unknown" if mode == "send" else "draft", "sent": False,
+                "message_id": str(msg["Message-ID"]), "error": type(exc).__name__ + ": " + str(exc)[:160]}
+    finally:
+        if client is not None:
+            with contextlib.suppress(Exception):
+                client.logout() if mode == "draft" else client.quit()
 
 
 # ------------------------------------------------------------------ entry
@@ -849,11 +981,14 @@ def handle(request: dict, root: str) -> dict:
                           "user": _mask(r.get("imap_user") or ""), "server": f"{r.get('imap_host')}:{r.get('imap_port')}"} for r in rows]}
     try:
         info.update(send_info(server, request)["info"])
+        info["send_ready"] = True
     except Exception:  # noqa: BLE001 — reading may work even when sending is not configured
-        pass
+        info["send_ready"] = False
     action = request.get("action")
     if action == "send":
         return send(server, request)
+    if action == "compose":
+        return compose(server, request)
     if action == "fetch":
         return fetch(server, request)
     if action == "scan":

@@ -1,11 +1,12 @@
 {
   "schema": 1,
   "services": {
+    "mail": {"owner": "hub", "tools": ["hub_mail_accounts", "hub_mail_compose"]},
     "media": {"owner": "links", "tools": ["media_download", "media_status", "media_cancel", "media_audio_for_asr", "media_subtitles"]},
     "stt": {"owner": "funes", "tools": ["transcribe_file", "transcribe_status", "transcribe_cancel"]},
     "tts": {"owner": "prospero", "tools": ["voice_tts"]},
     "docs": {"owner": "kafka", "tools": ["doc_extract", "ocr_image", "ocr_pdf", "ocr_status"]},
     "embed": {"owner": "borges", "tools": ["embed_texts", "embed_status"]},
-    "storage": {"owner": "atlas", "tools": ["atlas_projects", "atlas_project", "atlas_location", "atlas_file_register", "atlas_file_resolve", "atlas_derived_lookup", "atlas_derived_publish", "atlas_context"]}
+    "storage": {"owner": "atlas", "tools": ["atlas_projects", "atlas_project", "atlas_location", "atlas_file_register", "atlas_file_resolve", "atlas_derived_lookup", "atlas_derived_publish", "atlas_context", "atlas_anchor_create", "atlas_anchor_get", "atlas_anchor_list", "atlas_anchor_resolve", "atlas_anchor_comment"]}
   }
 }
