@@ -21,6 +21,7 @@ import { ServerRail } from './ServerRail';
 import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, LocksView, SearchView, WelcomeView } from './Views';
 import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
 import './agora-app.css';
+import { AgoraLive } from './AgoraLive';
 
 const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon }> = {
   live: { label: 'En directo', hint: '', icon: Activity },
@@ -285,7 +286,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           )}
           {ready && view.kind === 'view' && (
             <div className="fs-agx-main__scroll">
-              {view.id === 'live' && <iframe className="fs-agx-live" title="En directo" src={'/api/hoard/agora/open?space_id=' + encodeURIComponent(spaceId) + '&embedded=1&live=1'} />}
+              {view.id === 'live' && <AgoraLive className="fs-agx-live" spaceId={spaceId} />}
               {view.id === 'board' && <BoardView guild={ready} onOpen={open} onNewTask={() => setDialog({ kind: 'new-task' })} notify={notify} />}
               {view.id === 'deliveries' && <DeliveriesView guild={ready} version={ready.version} onOpen={open} />}
               {view.id === 'reviews' && <DeliveriesView guild={ready} version={ready.version} onOpen={open} reviews />}

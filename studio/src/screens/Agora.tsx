@@ -8,6 +8,7 @@ import {t} from '../i18n';
 import {CouncilScreen} from './Council';
 import {GroupScreen} from './group/Group';
 import {AgoraApp} from './agora/AgoraApp';
+import {AgoraLive} from './agora/AgoraLive';
 import './agora.css';
 
 const modes = [
@@ -108,6 +109,6 @@ function ClassicAgora() {
         <CouncilScreen key={spaceId} embedded />
       </section>
     </div></div>}
-    {(mode === 'development' || mode === 'live') && <section className="fs-agora__body fs-agora__development"><a className="fs-chip" href={'/api/hoard/agora/open?' + scope + (mode === 'live' ? '&live=1' : '')} target="_blank" rel="noopener">{t('Open in a separate window')}</a><iframe title={mode === 'live' ? 'En directo' : t('Tasks and decisions')} src={'/api/hoard/agora/open?' + scope + '&embedded=1' + (mode === 'live' ? '&live=1' : '')} /></section>}
+    {(mode === 'development' || mode === 'live') && <section className="fs-agora__body fs-agora__development"><a className="fs-chip" href={'/api/hoard/agora/open?' + scope + (mode === 'live' ? '&live=1' : '')} target="_blank" rel="noopener">{t('Open in a separate window')}</a>{mode === 'live' ? <AgoraLive spaceId={spaceId} /> : <iframe title={t('Tasks and decisions')} src={'/api/hoard/agora/open?' + scope + '&embedded=1'} />}</section>}
   </div>;
 }
