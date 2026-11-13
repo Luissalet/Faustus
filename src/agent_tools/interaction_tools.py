@@ -166,4 +166,7 @@ class LookupToolsTool:
         """
         from src.tool_serve import execute_lookup
 
-        return execute_lookup(content, ctx or {})
+        # The catalogue ranking walks every connected tool; run it off the
+        # event loop so the rest of the app keeps answering meanwhile.
+        import asyncio
+        return await asyncio.to_thread(execute_lookup, content, ctx or {})

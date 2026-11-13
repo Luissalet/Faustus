@@ -212,3 +212,38 @@ async def test_what_was_collected_while_the_app_was_up_survives_a_later_closed_c
     monkeypatch.setattr(connector_skills, "app_is_up", closed)
     entry = await connector_skills.collect(mgr, SID)
     assert len(entry["skills"]) == 3 and entry["skipped"] is True
+
+
+async def test_a_bridge_note_after_the_json_does_not_hide_the_shelf():
+    class Noted(FakeSession):
+        async def call_tool(self, name, arguments, **_):
+            return _result(json.dumps(SHELF) + "\nnote: library refreshed")
+    entry = await connector_skills.collect(_manager(Noted()), SID)
+    assert len(entry["skills"]) == 3 and entry["error"] is None
+
+
+async def test_a_skipped_catalogue_is_collected_when_a_tool_of_the_app_answers(monkeypatch):
+    mgr = _manager()
+    state = {"up": False}
+    monkeypatch.setattr(connector_skills, "_connector_of", lambda sid: {"connector_id": "c1", "preset_id": "ledger"})
+
+    async def up(meta):
+        return state["up"]
+    monkeypatch.setattr(connector_skills, "app_is_up", up)
+    await connector_skills.collect(mgr, SID)
+    assert connector_skills.catalog(SID)["skills"] == []
+    state["up"] = True
+    connector_skills.note_call(mgr, SID)
+    await asyncio.sleep(0.3)
+    assert len(connector_skills.catalog(SID)["skills"]) == 3
+
+
+def test_safe_schema_is_computed_once_per_schema_object():
+    from src import mcp_manager
+
+    schema = {"type": "object", "properties": {"a": {"type": "array", "items": [{"type": "string"}]}}}
+    first = mcp_manager._safe_schema_cached(schema)
+    assert first["properties"]["a"]["prefixItems"] == [{"type": "string"}]
+    assert mcp_manager._safe_schema_cached(schema) is first
+    other = {"type": "object", "properties": {}}
+    assert mcp_manager._safe_schema_cached(other) is not first

@@ -571,6 +571,31 @@ def llm_safe_tool_schema(schema: Any) -> Any:
     return out
 
 
+_SAFE_SCHEMA_CACHE: Dict[int, Tuple[Any, Any]] = {}
+_SAFE_SCHEMA_CACHE_MAX = 20000
+
+
+def _safe_schema_cached(schema: Any) -> Any:
+    """`llm_safe_tool_schema` memoised per schema object.
+
+    A turn asks for the schemas of every connected tool, thousands of them
+    once the family apps are connected, and the walk used to run again on each
+    ask inside the event loop. A tool's schema object is replaced, not edited,
+    when its server is rediscovered, so the object identity is the key; the
+    entry keeps the object alive so the identity cannot be reused.
+    """
+    if not isinstance(schema, dict):
+        return llm_safe_tool_schema(schema)
+    hit = _SAFE_SCHEMA_CACHE.get(id(schema))
+    if hit is not None and hit[0] is schema:
+        return hit[1]
+    safe = llm_safe_tool_schema(schema)
+    if len(_SAFE_SCHEMA_CACHE) >= _SAFE_SCHEMA_CACHE_MAX:
+        _SAFE_SCHEMA_CACHE.clear()
+    _SAFE_SCHEMA_CACHE[id(schema)] = (schema, safe)
+    return safe
+
+
 def _format_mcp_params(input_schema: Any) -> str:
     """Render an MCP tool's JSON-Schema inputs as a compact prompt hint.
 
@@ -1968,6 +1993,12 @@ class McpManager:
         """
         result = await self._call_tool_once(qualified_name, arguments)
         if not _app_closed_result(result):
+            if isinstance(result, dict) and not result.get("exit_code"):
+                try:
+                    from src import connector_skills
+                    connector_skills.note_call(self, qualified_name.split("__", 2)[1] if qualified_name.count("__") >= 2 else "")
+                except Exception:  # noqa: BLE001
+                    pass
             return result
         parts = qualified_name.split("__", 2)
         server_id = parts[1] if len(parts) == 3 else ""
@@ -1991,6 +2022,12 @@ class McpManager:
         retried = await self._call_tool_once(qualified_name, arguments)
         if isinstance(retried, dict):
             retried.setdefault("auto_started_app", name)
+            if not retried.get("exit_code"):
+                try:
+                    from src import connector_skills
+                    connector_skills.note_call(self, server_id)
+                except Exception:  # noqa: BLE001
+                    pass
         return retried
 
     async def _call_tool_once(self, qualified_name: str, arguments: Dict) -> Dict:
@@ -2621,7 +2658,7 @@ class McpManager:
                     "function": {
                         "name": qualified,
                         "description": f"[MCP:{label}] {tool['description']}",
-                        "parameters": llm_safe_tool_schema(tool.get("input_schema", {"type": "object", "properties": {}})),
+                        "parameters": _safe_schema_cached(tool.get("input_schema", {"type": "object", "properties": {}})),
                     },
                 }
                 schemas.append(schema)

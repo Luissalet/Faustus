@@ -81,6 +81,15 @@ def _trigger(description: str) -> str:
     return extract_trigger(description or "") or ""
 
 
+def _first_json(text: Any) -> Any:
+    """The first JSON value in a tool's text: a bridge may add a note after it."""
+    text = str(text or "").strip()
+    if not text:
+        return {}
+    value, _ = json.JSONDecoder().raw_decode(text)
+    return value
+
+
 def _norm_row(row: Dict[str, Any], source: str) -> Optional[Dict[str, Any]]:
     slug = str(row.get("slug") or "").strip().lower().removeprefix("skill-")
     if not slug:
@@ -178,7 +187,7 @@ async def collect(manager: Any, server_id: str, *, timeout: float = 15.0) -> Dic
             result = await manager._do_call(session, "skills_list", {}, timeout_s=timeout)
             if result.get("exit_code"):
                 raise RuntimeError(str(result.get("stderr") or "skills_list failed")[:300])
-            data = json.loads(result.get("stdout") or "{}")
+            data = _first_json(result.get("stdout"))
             rows = data.get("skills") if isinstance(data, dict) else data
             entry["skills"] = [r for r in (_norm_row(x, "tool") for x in rows or [] if isinstance(x, dict)) if r]
             entry["source"] = "tool"
@@ -224,9 +233,17 @@ def schedule(manager: Any, server_id: str) -> None:
 
 async def ensure(manager: Any, server_id: str) -> Dict[str, Any]:
     entry = _catalogs.get(server_id)
-    if entry is None:
-        return await collect(manager, server_id)
+    if entry is None or (entry.get("skipped") and time.time() - float(entry.get("collected_at") or 0) > 30):
+        return await collect(manager, server_id)       # an app that was off when it connected may be up now
     return dict(entry)
+
+
+def note_call(manager: Any, server_id: str) -> None:
+    """A tool of the connector just answered, so its app is up: a catalogue that
+    was skipped because the app was off is collected now."""
+    entry = _catalogs.get(server_id)
+    if entry is not None and entry.get("skipped"):
+        schedule(manager, server_id)
 
 
 async def read(manager: Any, server_id: str, slug: str, file: str = "") -> Dict[str, Any]:
@@ -242,7 +259,7 @@ async def read(manager: Any, server_id: str, slug: str, file: str = "") -> Dict[
             result = await manager._do_call(session, "skill_read", args, timeout_s=20)
             if result.get("exit_code"):
                 return {"ok": False, "error": str(result.get("stderr") or "skill_read failed")[:400]}
-            data = json.loads(result.get("stdout") or "{}")
+            data = _first_json(result.get("stdout"))
             return {"ok": True, "server_id": server_id, **(data if isinstance(data, dict) else {"text": str(data)})}
         got = await asyncio.wait_for(session.get_prompt("skill-" + slug), timeout=20)
         text = "\n".join(getattr(m.content, "text", "") for m in getattr(got, "messages", []) if hasattr(m, "content"))
