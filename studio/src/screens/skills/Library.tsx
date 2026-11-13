@@ -13,6 +13,7 @@ import {
   type SelectorMode,
   type SelectorSettings,
 } from '../../adapters/skillLibrary';
+import { listAllConnectorSkills, readConnectorSkill, type ConnectorSkillCatalog } from '../../adapters/connectors';
 import { t, tn } from '../../i18n';
 import '../settings.css';
 
@@ -39,6 +40,9 @@ function LibraryCard({ skill, busy, onInstall, onUninstall }: { skill: LibrarySk
       <span className="fs-tools__text" style={{ flex: 1 }}>
         <strong>{skill.name || skill.slug}</strong>
         {skill.category && <span className="fs-chip" data-on style={{ marginInlineStart: 6 }}>{skill.category}</span>}
+        {(skill.served_by ?? []).map((c) => (
+          <span key={c.server_id} className="fs-chip" style={{ marginInlineStart: 6 }} data-testid={`library-served-by-${skill.slug}`}>{t('Also from {name}', { name: c.server_name })}</span>
+        ))}
         <span className="fs-set__help">
           {skill.description}
           {skill.words ? ` · ${t('{n} words', { n: skill.words })}` : ''}
@@ -184,6 +188,55 @@ function SelectorPanel() {
   );
 }
 
+/** The skills the connected apps carry: one list, each tagged with the app it comes from. */
+function ConnectorSkillsPanel() {
+  const [catalogs, setCatalogs] = useState<ConnectorSkillCatalog[] | null>(null);
+  const [opened, setOpened] = useState<{ key: string; text: string } | null>(null);
+  const [busy, setBusy] = useState('');
+
+  useEffect(() => {
+    listAllConnectorSkills().then((d) => setCatalogs((d.connectors ?? []).filter((c) => c.skills.length > 0))).catch(() => setCatalogs([]));
+  }, []);
+
+  const read = async (serverId: string, slug: string) => {
+    const key = `${serverId}:${slug}`;
+    if (opened?.key === key) { setOpened(null); return; }
+    setBusy(key);
+    try {
+      setOpened({ key, text: (await readConnectorSkill(serverId, slug)).text });
+    } catch (e) {
+      setOpened({ key, text: (e as Error).message });
+    } finally {
+      setBusy('');
+    }
+  };
+
+  if (!catalogs || catalogs.length === 0) return null;
+  const total = catalogs.reduce((n, c) => n + c.skills.length, 0);
+  return (
+    <div className="fs-set__card" data-testid="connector-skills-panel">
+      <h3 className="fs-set__help"><strong>{t('From connectors')}</strong> · {tn(total, '{n} skill', '{n} skills')}</h3>
+      <ul className="fs-set__list">
+        {catalogs.flatMap((c) => c.skills.map((s) => {
+          const key = `${c.server_id}:${s.slug}`;
+          return (
+            <li key={key} className="fs-set__row" data-testid={`connector-skill-row-${s.slug}`} style={{ flexWrap: 'wrap' }}>
+              <span className="fs-tools__text" style={{ flex: 1 }}>
+                <strong>{s.name || s.slug}</strong>
+                <span className="fs-chip" data-on style={{ marginInlineStart: 6 }}>{c.server_name}</span>
+                {s.in_library && <span className="fs-chip" style={{ marginInlineStart: 6 }}>{t('Also in the library')}</span>}
+                <span className="fs-set__help">{s.when_to_use || s.description}</span>
+              </span>
+              <Button variant="ghost" size="sm" label={opened?.key === key ? t('Hide') : t('Read')} loading={busy === key} onClick={() => void read(c.server_id, s.slug)} />
+              {opened?.key === key && <pre className="fs-set__help" style={{ flexBasis: '100%', whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>{opened.text}</pre>}
+            </li>
+          );
+        }))}
+      </ul>
+    </div>
+  );
+}
+
 export function SkillLibraryPanel({ say }: { say: (t: string) => void }) {
   const [skills, setSkills] = useState<LibrarySkill[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +339,8 @@ export function SkillLibraryPanel({ say }: { say: (t: string) => void }) {
           </ul>
         )}
       </div>
+
+      <ConnectorSkillsPanel />
 
       <SelectorPanel />
     </div>

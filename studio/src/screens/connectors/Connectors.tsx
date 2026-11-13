@@ -135,7 +135,10 @@ function ConnectorRow({
       )}
 
       <div className="fs-conn__row-detail">
-        <span className="fs-set__help">{statusLine(c.status)}</span>
+        <span className="fs-set__help">
+          {statusLine(c.status)}
+          {!!c.server?.skill_count && <span data-testid="connector-skill-count"> · {tn(c.server.skill_count, '{n} skill', '{n} skills')}</span>}
+        </span>
         {c.status.reasons.length > 0 && (
           <button type="button" className="fs-link" onClick={() => setExpanded((v) => !v)} data-testid="connector-reasons-toggle">
             <ChevronDown size={12} aria-hidden="true" style={{ rotate: expanded ? '180deg' : '0deg' }} /> {tn(c.status.reasons.length, '{n} reason', '{n} reasons')}

@@ -171,6 +171,8 @@ _BUILTIN_SERVERS = {
     "delivery": ("mcp_servers/delivery_server.py", "Built-in: Delivery, scope changes and commissions"),
     # App Dock (src/app_dock.py): the same three tools as the chat, over the running Faustus.
     "app_dock": ("mcp_servers/app_dock_server.py", "Built-in: App Dock"),
+    # Skills the connected apps carry (src/connector_skills.py): which each connector brings and the text of one.
+    "connector_skills": ("mcp_servers/connector_skills_server.py", "Built-in: Connector skills"),
     "data_boundary": ("mcp_servers/data_boundary_server.py", "Built-in: Data destinations"),
     "approval_inbox": ("mcp_servers/approval_inbox_server.py", "Built-in: Approval inbox"),
     "quick_question": ("mcp_servers/quick_question_server.py", "Built-in: Quick question"),
@@ -214,6 +216,9 @@ NATIVE_TWIN_SESSION_PARAMS: dict[str, frozenset[str]] = {
 }
 
 
+_SKILL_SHELF_TOOLS = frozenset({"skills_list", "skill_read", "skills_refresh", "skills_library", "skills_assign"})
+
+
 def is_native_twin(qualified_name: str) -> bool:
     """True for `mcp__<server>__<tool>` that only mirrors a native tool: every tool of a NATIVE_TWIN_SERVERS server,
     or one listed in NATIVE_TWIN_TOOLS. The agent's tool index skips these and the footprint counts them as hidden."""
@@ -221,6 +226,11 @@ def is_native_twin(qualified_name: str) -> bool:
     if not name.startswith("mcp__"):
         return False
     server, _, tool = name[5:].partition("__")
+    # The five shelf tools every family app carries (skills_list, skill_read, ...) are not retrieved
+    # by meaning: forty near-identical copies would fill the top-k. A turn with an app in play gets
+    # that app's skill_read (src/connector_skills.py).
+    if tool in _SKILL_SHELF_TOOLS:
+        return True
     return server in NATIVE_TWIN_SERVERS or tool in NATIVE_TWIN_TOOLS.get(server, frozenset())
 
 # NPX-based built-in servers (run via npx, not Python).

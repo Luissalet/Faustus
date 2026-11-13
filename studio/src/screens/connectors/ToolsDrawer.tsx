@@ -3,7 +3,10 @@ import { Link } from 'react-router';
 import { Button, Dialog, Skeleton } from '../../components';
 import { Toggle } from '../settings/fields';
 import { setMcpDisabledTools } from '../../adapters/integrations';
-import { connectorName, listToolsFor, refreshToolsFor, type Connector, type ConnectorTool } from '../../adapters/connectors';
+import {
+  connectorName, listConnectorSkills, listToolsFor, readConnectorSkill, refreshToolsFor,
+  type Connector, type ConnectorSkill, type ConnectorTool,
+} from '../../adapters/connectors';
 import { t } from '../../i18n';
 
 /**
@@ -18,6 +21,32 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [skills, setSkills] = useState<ConnectorSkill[] | null>(null);
+  const [skillErr, setSkillErr] = useState<string | null>(null);
+  const [opened, setOpened] = useState<{ slug: string; text: string } | null>(null);
+  const [reading, setReading] = useState<string | null>(null);
+  const serverId = connector.server?.id;
+
+  const reloadSkills = (refresh = false) =>
+    serverId
+      ? listConnectorSkills(serverId, refresh)
+          .then((c) => { setSkills(c.skills ?? []); setSkillErr(c.error ?? null); })
+          .catch((e: Error) => { setSkills([]); setSkillErr(e.message); })
+      : Promise.resolve();
+
+  const readSkill = async (slug: string) => {
+    if (!serverId) return;
+    if (opened?.slug === slug) { setOpened(null); return; }
+    setReading(slug);
+    try {
+      const r = await readConnectorSkill(serverId, slug);
+      setOpened({ slug, text: r.text });
+    } catch (e) {
+      setOpened({ slug, text: (e as Error).message });
+    } finally {
+      setReading(null);
+    }
+  };
 
   const reload = () =>
     listToolsFor(connector)
@@ -31,6 +60,7 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
       });
   useEffect(() => {
     void reload();
+    void reloadSkills();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connector.id, connector.server?.id]);
 
@@ -40,6 +70,8 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
     try {
       const r = await refreshToolsFor(connector, reconnect);
       await reload();
+      // The skills are collected in the background after a refresh; ask again once it had time to.
+      window.setTimeout(() => void reloadSkills(true), 1200);
       if (!r.ok) setErr(r.error ?? t('Refresh failed'));
       else if (r.reconnected) setNote(t('Restarted: {n} tools', { n: r.tool_count }));
       else if (r.changed) setNote(t('Updated: {n} tools ({added} added, {removed} removed, {modified} changed)', { n: r.tool_count, added: (r.added ?? []).length, removed: (r.removed ?? []).length, modified: (r.modified ?? []).length }));
@@ -93,6 +125,31 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
             ))}
           </ul>
         </>
+      )}
+      {serverId && skills !== null && (skills.length > 0 || skillErr) && (
+        <section data-testid="connector-skills">
+          <h3 className="fs-set__help" style={{ marginTop: 12 }}>
+            <strong>{t('Skills')}</strong> · {skills.length}
+          </h3>
+          {skills.length === 0 ? (
+            <p className="fs-set__help" data-tone="bad">{skillErr}</p>
+          ) : (
+            <ul className="fs-tools">
+              {skills.map((s) => (
+                <li key={s.slug} className="fs-tools__row" data-testid={`connector-skill-${s.slug}`} style={{ flexWrap: 'wrap' }}>
+                  <span className="fs-tools__text">
+                    <strong>{s.name || s.slug}</strong>
+                    {s.version && <span className="fs-chip" style={{ marginInlineStart: 6 }}>v{s.version}</span>}
+                    {s.in_library && <span className="fs-chip" data-on style={{ marginInlineStart: 6 }}>{t('Also in the library')}</span>}
+                    <span className="fs-set__help">{s.when_to_use || s.description}</span>
+                  </span>
+                  <Button size="sm" variant="ghost" label={opened?.slug === s.slug ? t('Hide') : t('Read')} loading={reading === s.slug} onClick={() => void readSkill(s.slug)} testId={`connector-skill-read-${s.slug}`} />
+                  {opened?.slug === s.slug && <pre className="fs-set__help" style={{ flexBasis: '100%', whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }} data-testid="connector-skill-text">{opened.text}</pre>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </Dialog>
   );

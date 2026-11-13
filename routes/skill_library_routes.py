@@ -65,6 +65,13 @@ def setup_skill_library_routes() -> APIRouter:
     async def list_library(request: Request) -> Dict[str, Any]:
         owner = _owner(request)
         rows = skill_library.list_library(owner=owner)
+        try:
+            from src import connector_skills
+            shelf = connector_skills.served_by()
+            if shelf:
+                rows = [({**r, "served_by": shelf[r["slug"]]} if r.get("slug") in shelf else r) for r in rows]
+        except Exception:
+            pass
         return {"skills": rows, "count": len(rows)}
 
     @router.post("/install")

@@ -1615,6 +1615,11 @@ class McpManager:
         self._tools.pop(server_id, None)
         self._connections.pop(server_id, None)
         self._oauth_providers.pop(server_id, None)
+        try:
+            from src import connector_skills
+            connector_skills.drop(server_id)
+        except Exception:  # noqa: BLE001
+            pass
         self._generation += 1
         logger.info(f"MCP server disconnected: {server_id}")
 
@@ -1758,6 +1763,14 @@ class McpManager:
 
         version_key = compute_version_key(server_version, tools)
         _cache_put(server_id, version_key, tools)
+        # The skills the server carries are collected after every discovery
+        # (connect, manual refresh, tools/list_changed), never per turn.
+        try:
+            from src import connector_skills
+            if any(t.get("name") == "skills_list" for t in tools) or server_id in self._connections:
+                connector_skills.schedule(self, server_id)
+        except Exception as e:  # noqa: BLE001 - skills are an extra; discovery stands without them
+            logger.debug(f"connector skills not scheduled for {server_id}: {e}")
         return tools, truncated
 
     async def refresh_server_tools(self, server_id: str, timeout: float = 30.0) -> Dict[str, Any]:

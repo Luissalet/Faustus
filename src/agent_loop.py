@@ -6371,18 +6371,31 @@ def _build_system_prompt(
                     _skill_engines = _detect_engines(workspace)
                 except Exception:
                     _skill_engines = []
+                # Skills the connected apps carry (src/connector_skills.py): for the
+                # apps in play this turn, a one-line catalogue (the procedure is read
+                # on demand with the app's own skill_read) and a rank-up for library
+                # skills the app also serves.
+                _connector_plan = None
+                _local_skills = sm.load(owner=owner)
+                try:
+                    from src import connector_skills as _connector_skills
+                    _connector_plan = _connector_skills.plan_turn(
+                        last_user, relevant_tools, owner=owner, local_skills=_local_skills, sm=sm)
+                except Exception:
+                    logger.debug("[skills] connector skills unavailable", exc_info=True)
                 relevant_skills = _skill_selector.select(
                     sm, owner, last_user,
-                    skills=sm.load(owner=owner),
+                    skills=_local_skills,
                     # `skill_selector_threshold` (Settings → System) decides.
                     threshold=None,
                     max_items=_skill_max_injected,
                     min_confidence=_skill_min_conf,
                     engines=_skill_engines,
+                    boost=(_connector_plan.boost if _connector_plan else None),
                 ) if _skill_max_injected > 0 else []
                 _excluded_skills = {e["key"] for e in configuration_edits or ()
                                     if e["kind"] == "skill_text" or (e["kind"] == "skill" and not e["value"])}
-                relevant_skills = [s for s in relevant_skills if s.name not in _excluded_skills]
+                relevant_skills = [s for s in relevant_skills if str(s.get("name") or "") not in _excluded_skills]
                 lines = [""]
                 level1 = None
                 if relevant_skills:
@@ -6406,6 +6419,9 @@ def _build_system_prompt(
                                  "steps), call `manage_skills` with action='view' and the "
                                  "skill name.")
                     lines.append(level1.text)
+                _connector_text = _connector_plan.text if _connector_plan else ""
+                if _connector_text:
+                    lines.append(_connector_text)
                 # SECURITY: do NOT concatenate the skills block into the
                 # trusted system role. Skill content (name, description,
                 # when_to_use, procedure, pitfalls) is user-editable via
@@ -6421,7 +6437,7 @@ def _build_system_prompt(
                 # Also include the skill INDEX (one-line-per-skill catalogue
                 # from _build_base_prompt) — its name + description fields
                 # are equally user-editable.
-                if relevant_skills or _skill_index_block:
+                if relevant_skills or _skill_index_block or _connector_text:
                     _skills_text = "\n".join(lines)
                     if _skill_index_block:
                         _skills_text = _skill_index_block + "\n\n" + _skills_text
@@ -10582,6 +10598,21 @@ async def _stream_agent_loop_body(
         _relevant_tools = _expand_browser_mcp_tools(_relevant_tools, mcp_mgr)
         if _hot_seed is not None:
             _hot_seed |= _relevant_tools - _before_browser
+
+    # An app in play (one of its tools retrieved, or named in the request) brings
+    # its own `skill_read` with it, so the skills it carries can be read on demand
+    # (src/connector_skills.py). The shelf tools are kept out of retrieval itself.
+    if not guide_only and _relevant_tools is not None and not _hopts.get("no_skills") and not _lean:
+        try:
+            from src import connector_skills as _connector_skills
+            _shelf_tools = _connector_skills.plan_turn(
+                _retrieval_query or _last_user or "", _relevant_tools).skill_tools - set(disabled_tools or ())
+            if _shelf_tools:
+                _relevant_tools |= _shelf_tools
+                if _hot_seed is not None:
+                    _hot_seed |= _shelf_tools
+        except Exception as _e:
+            logger.debug(f"[connector-skills] shelf tools skipped: {_e}")
 
     # The skill index injected by _build_system_prompt tells the model to
     # call `manage_skills action=view`, and Jaccard-matched skills are pasted

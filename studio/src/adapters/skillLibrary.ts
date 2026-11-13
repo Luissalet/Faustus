@@ -18,6 +18,8 @@ export interface LibrarySkill {
   when_to_use?: string;
   words?: number;
   installed?: boolean;
+  /** Connectors that also carry this skill (one entry, served by both). */
+  served_by?: { server_id: string; server_name: string; connector_id?: string | null }[];
   error?: string;
 }
 
@@ -55,6 +57,7 @@ function librarySkillFrom(raw: Record<string, unknown>): LibrarySkill {
     when_to_use: typeof raw.when_to_use === 'string' ? raw.when_to_use : undefined,
     words: typeof raw.words === 'number' ? raw.words : undefined,
     installed: Boolean(raw.installed_for),
+    served_by: Array.isArray(raw.served_by) ? (raw.served_by as NonNullable<LibrarySkill['served_by']>) : undefined,
     error: typeof raw.error === 'string' ? raw.error : undefined,
   };
 }

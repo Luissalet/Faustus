@@ -11747,4 +11747,7 @@ export const es: Record<string, string> = {
   "…or upload a file": "…o sube un archivo",
   "≥ {lower} GB (incomplete: {reason})": "≥ {lower} GB (incompleto: {reason})",
   "⟨insert⟩": "⟨insertar⟩",
+  "Also in the library": "También en la biblioteca",
+  "Also from {name}": "También de {name}",
+  "From connectors": "De los conectores",
 };

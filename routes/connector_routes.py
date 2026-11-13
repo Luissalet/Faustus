@@ -46,12 +46,15 @@ def _current_owner(request: Request) -> Optional[str]:
 
 def _server_summary(server: McpServer, manager: McpManager) -> Dict[str, Any]:
     status = manager.get_server_status(server.id)
+    from src import connector_skills
+    shelf = connector_skills.catalog(server.id)
     return {
         "id": server.id,
         "name": server.name,
         "is_enabled": bool(server.is_enabled),
         "status": status.get("status", "disconnected"),
         "tool_count": status.get("tool_count"),
+        "skill_count": len(shelf["skills"]) if shelf else None,
     }
 
 
@@ -636,6 +639,46 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         if not result.get("ok"):
             raise HTTPException(409, result.get("error") or "Refresh failed")
         return {**result, "reconnected": False}
+
+    # ── Skills the connectors carry (src/connector_skills.py) ──────────────
+    # Collected when a connector connects or its tools are refreshed; reading
+    # one goes to the connector's own `skill_read`. Keyed by MCP server id.
+    @router.get("/api/connector-skills")
+    async def connector_skills_all_route(request: Request, refresh: int = 0):
+        require_admin(request)
+        from src import connector_skills
+        if refresh:
+            ids = [sid for sid, st in mcp_manager.get_all_statuses().items() if st.get("status") == "connected"]
+            await asyncio.gather(*(connector_skills.collect(mcp_manager, sid) for sid in ids
+                                   if any(t.get("name") == "skills_list" for t in mcp_manager._tools.get(sid, []))))
+        rows = connector_skills.listing(mcp_manager)
+        return {"connectors": rows, "count": sum(r["count"] for r in rows)}
+
+    @router.get("/api/connector-skills/{server_id}")
+    async def connector_skills_route(server_id: str, request: Request, refresh: int = 0):
+        require_admin(request)
+        from src import connector_skills
+        if mcp_manager.get_server_status(server_id).get("status") != "connected":
+            raise HTTPException(409, "The connector is not connected")
+        entry = (await connector_skills.collect(mcp_manager, server_id)) if refresh else (await connector_skills.ensure(mcp_manager, server_id))
+        return entry
+
+    @router.get("/api/connector-skills/{server_id}/{slug}")
+    async def connector_skill_read_route(server_id: str, slug: str, request: Request, file: str = ""):
+        require_admin(request)
+        from src import connector_skills
+        result = await connector_skills.read(mcp_manager, server_id, slug, file)
+        if not result.get("ok"):
+            raise HTTPException(404, result.get("error") or "Skill not found")
+        return result
+
+    @router.get("/api/app-connectors/{connector_id}/skills")
+    async def connector_skills_of_route(connector_id: str, request: Request, refresh: int = 0):
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        return await connector_skills_route(entry["server_id"], request, refresh)
 
     @router.post("/api/app-connectors/{connector_id}/launch")
     async def launch_connector_route(connector_id: str, request: Request):

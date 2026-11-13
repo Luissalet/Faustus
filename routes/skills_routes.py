@@ -1361,6 +1361,21 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
     async def list_skills(request: Request):
         user = _owner(request)
         skills = skills_manager.load(owner=user)
+        # A library skill a connector also carries stays one entry, marked with
+        # the connectors that serve it too (src/connector_skills.py).
+        try:
+            from src import connector_skills
+            shelf = connector_skills.served_by()
+            if shelf:
+                marked = []
+                for sk in skills:
+                    slugs = [str(t)[len("library:"):] for t in sk.get("tags") or [] if str(t).startswith("library:")]
+                    slugs.append(str(sk.get("name") or "").lower())
+                    served = [c for slug in dict.fromkeys(slugs) for c in shelf.get(slug, [])]
+                    marked.append({**sk, "served_by": served} if served else sk)
+                skills = marked
+        except Exception:
+            logger.debug("connector skills not marked on the skill list", exc_info=True)
         return {"skills": skills, "count": len(skills)}
 
     @router.get("/index")

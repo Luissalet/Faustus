@@ -95,6 +95,8 @@ export interface ConnectorServerInfo {
   is_enabled: boolean;
   status: string;
   tool_count: number;
+  /** Skills the app carries, as collected when it connected; null before that. */
+  skill_count?: number | null;
 }
 
 export interface Connector {
@@ -246,6 +248,53 @@ export async function refreshToolsFor(c: Connector, reconnect = false): Promise<
   const r = await post<RefreshToolsResult>(`/api/mcp/servers/${sid}/refresh-tools`, {}, 'connectors/refresh-tools');
   return { ...r, reconnected: false };
 }
+
+/* ── Skills a connector carries (src/connector_skills.py) ── */
+
+export interface ConnectorSkill {
+  slug: string;
+  name: string;
+  description: string;
+  /** The "Use when…" line (falls back to the description). */
+  when_to_use: string;
+  version?: string | null;
+  category?: string;
+  tags?: string[];
+  files?: string[];
+  source: 'tool' | 'prompt';
+  /** The skill is also in Faustus's own library: one entry, served by both. */
+  in_library?: boolean;
+}
+
+export interface ConnectorSkillCatalog {
+  server_id: string;
+  server_name: string;
+  connector_id?: string | null;
+  preset_id?: string | null;
+  source: string;
+  error?: string | null;
+  collected_at?: number;
+  count?: number;
+  skills: ConnectorSkill[];
+}
+
+export const listConnectorSkills = (serverId: string, refresh = false) =>
+  getJson<ConnectorSkillCatalog>(`/api/connector-skills/${encodeURIComponent(serverId)}${refresh ? '?refresh=1' : ''}`);
+
+export const listAllConnectorSkills = (refresh = false) =>
+  getJson<{ connectors: ConnectorSkillCatalog[]; count: number }>(`/api/connector-skills${refresh ? '?refresh=1' : ''}`);
+
+export interface ConnectorSkillText {
+  ok: boolean;
+  slug: string;
+  name?: string;
+  version?: string | null;
+  file?: string;
+  files?: string[];
+  text: string;
+}
+export const readConnectorSkill = (serverId: string, slug: string, file = '') =>
+  getJson<ConnectorSkillText>(`/api/connector-skills/${encodeURIComponent(serverId)}/${encodeURIComponent(slug)}${file ? `?file=${encodeURIComponent(file)}` : ''}`);
 
 export interface LaunchResult {
   launched: boolean;

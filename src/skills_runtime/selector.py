@@ -384,7 +384,8 @@ def record_outcome_from_reaction(owner: Optional[str], skill_ids: Sequence[str],
 def _select_hybrid(sm, owner: Optional[str], query: str, skills: List[Dict],
                    threshold: Optional[float], max_items: int,
                    min_confidence: float,
-                   engines: Optional[Sequence[str]] = None) -> List[Dict]:
+                   engines: Optional[Sequence[str]] = None,
+                   boost: Optional[Mapping[str, float]] = None) -> List[Dict]:
     from services.memory.skills import _tokenize
     from src.skills_runtime.engine_context import engine_factor
 
@@ -440,6 +441,10 @@ def _select_hybrid(sm, owner: Optional[str], query: str, skills: List[Dict],
         # project are untouched (factor 1.0).
         engine = engine_factor(sk, engines)
         score = base * prior * engine
+        # A skill a connector in play also carries ranks up (src/connector_skills.py).
+        factor = float((boost or {}).get(str(sk.get("name") or ""), 1.0))
+        if factor != 1.0:
+            score *= factor
         if score >= thr:
             out = dict(sk)
             out["_selector"] = {
@@ -464,6 +469,7 @@ def select(
     max_items: int = 5,
     min_confidence: float = 0.0,
     engines: Optional[Sequence[str]] = None,
+    boost: Optional[Mapping[str, float]] = None,
 ) -> List[Dict]:
     """Drop-in replacement for `SkillsManager.get_relevant_skills(query,
     skills, threshold, max_items, min_confidence)` returning the same
@@ -504,7 +510,7 @@ def select(
             max_items=max_items, min_confidence=min_confidence,
         )
     return _select_hybrid(sm, owner, query, skills, threshold, max_items, min_confidence,
-                          engines=engines)
+                          engines=engines, boost=boost)
 
 
 def explain(query: str, owner: Optional[str] = None, *, max_items: int = 20,
