@@ -253,6 +253,7 @@ def test_refresh_recovers_when_the_connector_session_ended():
     from routes.connector_routes import _session_is_gone
 
     assert _session_is_gone("Session terminated")
+    assert _session_is_gone("ClosedResourceError")
     assert not _session_is_gone("not connected")
     assert not _session_is_gone("timed out waiting for tools")
     assert not _session_is_gone(None)

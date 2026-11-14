@@ -42,9 +42,9 @@ logger = logging.getLogger(__name__)
 
 def _session_is_gone(error: object) -> bool:
     """True when a refresh failed because the connector's MCP session ended."""
-    text = str(error or "").lower()
-    return any(mark in text for mark in ("session terminated", "connection closed",
-                                          "closed resource", "broken resource"))
+    text = "".join(str(error or "").lower().split())
+    return any(mark in text for mark in ("sessionterminated", "connectionclosed",
+                                          "closedresource", "brokenresource"))
 
 
 def _current_owner(request: Request) -> Optional[str]:
