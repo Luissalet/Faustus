@@ -112,7 +112,7 @@ Los proyectos tienen un espacio compartido donde varios agentes y modelos toman 
 
 ### Aplicaciones Hoard
 
-Faustus se conecta mediante plugins y MCP a una familia de aplicaciones locales independientes (los Hoards): finanzas, enlaces, personas, análisis de datos, diseño, comparación de modelos, gestión del clúster de GPU y otras. Cada una vive en su propio repositorio y se documenta allí. En Conectores, descarga un Hoard con un botón o enlaza una carpeta existente; el Hoard Hub arranca las aplicaciones cuando hacen falta y comparte entre ellas un único modelo local cargado. Los procedimientos de agente de cada aplicación están en el [catálogo de flujos de agente](docs/AGENT-FLOWS.md).
+Faustus se conecta mediante plugins y MCP a una familia de aplicaciones locales independientes (los Hoards): finanzas, enlaces, personas, análisis de datos, diseño, comparación de modelos, gestión del clúster de GPU y otras. Cada una vive en su propio repositorio y se documenta allí. En Conectores, descarga un Hoard con un botón o enlaza una carpeta existente; el Hoard Hub arranca las aplicaciones cuando hacen falta y comparte entre ellas un único modelo local cargado. Los procedimientos de agente de cada aplicación están en el [catálogo de flujos de agente](docs/AGENT-FLOWS.md). Las skills que trae cada app se recogen al conectarla y se ofrecen al agente cuando esa app interviene; Conectores y Skills las muestran junto a la biblioteca.
 
 ### Ejecución en otras máquinas
 

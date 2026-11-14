@@ -1,5 +1,16 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Skills que traen las apps conectadas
+
+Cada app de la familia lleva sus propios procedimientos (`skills_list` y `skill_read` en su MCP). Faustus los recoge solos:
+
+- **Recogida.** Al conectar un conector, al refrescar sus herramientas y al arrancar, `src/connector_skills.py` lee el catálogo (nombre, «Use when…», slug, versión) y lo guarda por conector. No hay llamadas extra por turno. Una app cerrada nunca se despierta para pedirle el catálogo: se anota «app not running» y se vuelve a pedir en cuanto una llamada llega a ella.
+- **Selección.** Cuando las herramientas de un conector entran en el turno, o el mensaje nombra la app, el turno añade un catálogo corto («Skills carried by the apps in play») con las dos skills que mejor encajan por conector (cuatro como máximo) y deja ejecutable el `skill_read` de esa app; el cuerpo se lee bajo demanda. Una skill con el mismo slug que otra de la biblioteca local es una sola entrada, la local, que sube de rango y se marca «también la sirve el conector».
+- **Studio.** La fila de cada conector muestra `N skills` junto al número de herramientas; su cajón lista las skills con descripción, botón Leer y la marca «Also in the library». En Skills > Library, el panel «From connectors» las junta todas con el conector de origen, y las tarjetas de la biblioteca marcan «Also from {app}».
+- **API y MCP.** `GET /api/connector-skills[?refresh=1]`, `GET /api/connector-skills/{server_id}[/{slug}?file=]`, `GET /api/app-connectors/{id}/skills`; herramientas `connector_skills_list` y `connector_skill_read` del servidor integrado «Connector skills».
+- **Catálogo de herramientas.** Las herramientas `skill_*` de las apps no entran en la recuperación de herramientas (`is_native_twin`). Los esquemas saneados de las herramientas MCP se calculan una vez por esquema y la búsqueda del catálogo (`lookup_tools`) corre en un hilo, de modo que miles de herramientas conectadas no paran el servidor.
+- **Refrescar herramientas** de un conector cuya sesión terminó (la app reinició su puente, el relé se movió) abre una sesión nueva en vez de dar error.
+
 ## Android image-sharing procedure1.0.7 — 11-11-2026
 
 Faustus2610 source f564449b1451df377f79cd85c961f70d78acf1e4, CAS1 approved, full report read. android-emulator-qa1.0.7 has1487words, preserves old modeled fields except version and adds image-sharing guidance retained by parser/render. Distinguishes preview, generated PNG, share sheet and recipient delivery; a thumbnail does not certify original file bytes/dimensions. Named fixtures/cancel/busy-state recovery/restoration are explicit.408author and400reviewer tests pass. Source-only procedure update: no new runtime installation, actor-binding changes, local inference or autonomous efficiency claim. Faustus local has no provider quota.

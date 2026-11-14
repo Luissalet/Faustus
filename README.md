@@ -111,7 +111,7 @@ Projects have a shared space where several agents and models take tasks, discuss
 
 ### Hoard apps
 
-Faustus connects to a family of separate local apps (the Hoards) through plugins and MCP: finance, links, people, data analysis, design, model benchmarking, GPU cluster management and others. Each one lives in its own repository and documents itself there. In Connectors, download a Hoard with one button or link an existing folder; the Hoard Hub starts apps on demand and shares one loaded local model among them. Per-app agent procedures are listed in the [agent flows catalogue](docs/AGENT-FLOWS.md).
+Faustus connects to a family of separate local apps (the Hoards) through plugins and MCP: finance, links, people, data analysis, design, model benchmarking, GPU cluster management and others. Each one lives in its own repository and documents itself there. In Connectors, download a Hoard with one button or link an existing folder; the Hoard Hub starts apps on demand and shares one loaded local model among them. Per-app agent procedures are listed in the [agent flows catalogue](docs/AGENT-FLOWS.md). Each app's own skills are collected when it connects and offered to the agent when that app is in play; Connectors and Skills show them next to the library.
 
 ### Running on other machines
 

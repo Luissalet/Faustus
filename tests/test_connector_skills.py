@@ -256,3 +256,25 @@ def test_refresh_recovers_when_the_connector_session_ended():
     assert not _session_is_gone("not connected")
     assert not _session_is_gone("timed out waiting for tools")
     assert not _session_is_gone(None)
+
+
+@pytest.mark.asyncio
+async def test_startup_retries_a_connector_whose_hub_relay_was_not_up(monkeypatch):
+    from types import SimpleNamespace
+    from src import mcp_manager
+
+    monkeypatch.setattr(mcp_manager, "_RELAY_STARTUP_RETRY_S", 0.0)
+    manager = mcp_manager.McpManager.__new__(mcp_manager.McpManager)
+    manager._connections = {}
+    attempts = []
+
+    async def fake_connect(srv, **_kw):
+        attempts.append(1)
+        manager._connections[srv.id] = (
+            {"status": "error", "error": "PC Hub MCP relay unavailable"} if len(attempts) < 3
+            else {"status": "connected"})
+
+    monkeypatch.setattr(manager, "_connect_with_timeout", fake_connect, raising=False)
+    await manager._connect_at_startup(SimpleNamespace(id="s1", name="Ledger", transport="streamable_http"))
+    assert len(attempts) == 3
+    assert manager._connections["s1"]["status"] == "connected"

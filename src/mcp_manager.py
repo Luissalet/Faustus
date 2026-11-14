@@ -85,6 +85,8 @@ def _tool_timeout_s(tool: Optional[Dict]) -> Optional[float]:
 # How long disconnect waits for the owner task to tear a server down.
 _MCP_CLOSE_TIMEOUT_S = 15.0
 #: Second, longer attempt at a local server that timed out when Faustus started.
+_RELAY_STARTUP_RETRIES = 8
+_RELAY_STARTUP_RETRY_S = 10.0
 _STARTUP_RETRY_TIMEOUT_S = 60.0
 
 # Browser tool results that carry the page's accessibility snapshot. Their
@@ -1686,6 +1688,17 @@ class McpManager:
         if srv.transport == "stdio" and isinstance(conn, dict) and conn.get("status") == "timeout":
             logger.info("Retrying %s after a slow start (%ss)", srv.name, _STARTUP_RETRY_TIMEOUT_S)
             await self._connect_with_timeout(srv, timeout=_STARTUP_RETRY_TIMEOUT_S)
+        # A Spark that restarts starts connecting before the link to the PC's
+        # Hub is up again: the family connectors then fail with "relay
+        # unavailable" and used to stay failed until somebody reconnected them.
+        for _attempt in range(_RELAY_STARTUP_RETRIES):
+            conn = self._connections.get(srv.id)
+            if not (isinstance(conn, dict) and conn.get("status") == "error"
+                    and "relay unavailable" in str(conn.get("error") or "")):
+                break
+            await asyncio.sleep(_RELAY_STARTUP_RETRY_S)
+            logger.info("Retrying %s: the PC Hub relay was not up yet", srv.name)
+            await self._connect_with_timeout(srv)
 
     async def _connect_with_timeout(self, srv, *, _oauth_provider: Any = None, timeout: float = 20):
         args = json.loads(srv.args) if srv.args else []
