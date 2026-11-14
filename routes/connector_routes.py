@@ -40,6 +40,13 @@ from routes.mcp.mcp_routes import setup_mcp_routes
 logger = logging.getLogger(__name__)
 
 
+def _session_is_gone(error: object) -> bool:
+    """True when a refresh failed because the connector's MCP session ended."""
+    text = str(error or "").lower()
+    return any(mark in text for mark in ("session terminated", "connection closed",
+                                          "closed resource", "broken resource"))
+
+
 def _current_owner(request: Request) -> Optional[str]:
     return getattr(request.state, "current_user", None) or None
 
@@ -621,7 +628,8 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             return {"ok": False, "reconnected": False, "tool_count": 0,
                     "error": status["reasons"][0], "status": status}
         before = mcp_manager.get_server_status(server.id).get("tool_count", 0)
-        if reconnect:
+
+        async def _reconnect(recovered: bool = False):
             await mcp_manager.disconnect_server(server.id)
             args = json.loads(server.args) if server.args else []
             env = json.loads(server.env) if server.env else {}
@@ -633,9 +641,17 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             return {
                 "ok": bool(connected), "reconnected": True, "server_id": server.id,
                 "previous_count": before, "tool_count": status.get("tool_count", 0),
-                "error": status.get("error"),
+                "error": status.get("error"), "recovered": recovered,
             }
+
+        if reconnect:
+            return await _reconnect()
         result = await mcp_manager.refresh_server_tools(server.id)
+        if not result.get("ok") and _session_is_gone(result.get("error")):
+            # The session behind the connector ended (the app's bridge was
+            # restarted, the relay moved): asking it again can only fail the
+            # same way. Open a new one, which is what a call does on its own.
+            return await _reconnect(recovered=True)
         if not result.get("ok"):
             raise HTTPException(409, result.get("error") or "Refresh failed")
         return {**result, "reconnected": False}

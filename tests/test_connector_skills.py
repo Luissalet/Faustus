@@ -247,3 +247,12 @@ def test_safe_schema_is_computed_once_per_schema_object():
     assert mcp_manager._safe_schema_cached(schema) is first
     other = {"type": "object", "properties": {}}
     assert mcp_manager._safe_schema_cached(other) is not first
+
+
+def test_refresh_recovers_when_the_connector_session_ended():
+    from routes.connector_routes import _session_is_gone
+
+    assert _session_is_gone("Session terminated")
+    assert not _session_is_gone("not connected")
+    assert not _session_is_gone("timed out waiting for tools")
+    assert not _session_is_gone(None)
