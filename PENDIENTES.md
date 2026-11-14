@@ -33,6 +33,10 @@ Repaso del 04-11 (Ágora, espacio faustus): se comprobaron las 87 entradas del 2
 
 ## B. Código: vigilar
 
+- `tests/test_skill_library.py` tiene fallos que no vienen de las skills de conectores: la skill `board-work` de la biblioteca declara la categoría `productivity` y la prueba solo admite seis categorías; otros fallos de la misma prueba (secciones, tope de palabras) sin revisar uno a uno. Es contenido de la biblioteca, no del código que las lee.
+
+- Las apps cerradas (Links, Darwin al conectar, etc.) no ofrecen su catálogo de skills hasta que una llamada las arranca; se recoge entonces solo. El Hub podría no arrancar por sí mismo apps que declaran `auto_start: false` cuando un puente pide su catálogo; es cambio del Hub.
+
 - 10-11-2026: el Hub mantiene un túnel hacia la Spark mientras Faustus corre allí (para el Ágora, las salas y la deliberación). Su estado sale en `GET /api/placement` → `hub_link` (`up`, `error`). Si las salas o el Ágora dejan de verse en la Spark con el PC encendido, mirar ahí primero; se reabre solo cada minuto.
 
 - 09-11-2026: cinco ficheros de `data/push` (claves VAPID, suscripciones y temporales de `retry.json`) tenían una DACL vacía: ni tu usuario podía leerlos, así que el push web del PC no podía usar sus claves. Reparados con `restrict_to_owner` (hoy produce la DACL correcta, comprobado con un fichero de prueba); el origen fue una versión anterior del endurecimiento. Si vuelve a aparecer un fichero ilegible en `data/`, `Get-Acl <fichero>` que acabe en `D:AI` sin entradas es la firma.

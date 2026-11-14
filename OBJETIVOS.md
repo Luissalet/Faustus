@@ -2652,3 +2652,7 @@ Implementado sobre Deep Research: fuentes y filtros, aclaración opcional, plan,
 ### Esquema estricto en las llamadas a herramientas
 
 Evaluado y no implementado. El campo `strict` en la definición de cada herramienta exige que todas las propiedades sean obligatorias y `additionalProperties: false`; los esquemas de conectores y MCP de terceros no lo cumplen (una sola herramienta con `items` en tupla ya dejó sin respuesta todos los turnos en un endpoint estricto), y el servidor de las Sparks que atiende al modelo por defecto acepta el campo sin forzar nada fuera de `tool_choice` con nombre. Lo que da la garantía ya existe: validación de argumentos en `strict` antes de ejecutar, reparación (`repair_tool_arguments`), esquema forzado en las salidas estructuradas (`response_format`) y `llm_safe_tool_schema` para los esquemas que un endpoint estricto rechazaría. Reabrir solo si un proveedor concreto lo exige o si una medición con el modelo por defecto muestra llamadas inválidas que la reparación no cubre.
+
+## Skills de las apps conectadas — Ágora #2727
+
+Faustus recoge el catálogo de skills de cada conector al conectarlo y lo ofrece al agente cuando las herramientas de esa app entran en el turno o el mensaje la nombra; el cuerpo se lee con el `skill_read` de la app. Studio las muestra en la ficha del conector y en Skills; hay API (`/api/connector-skills`) y herramientas MCP (`connector_skills_list`, `connector_skill_read`). Los conectores de la familia se reconectan solos si el Hub tarda en estar listo al arrancar Faustus en la Spark.
