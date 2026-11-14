@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "id": "nikias",
+  "name": "Nikias's Hoard",
+  "purpose": "Colouring studio for multi-material 3D printing: takes a finished single-colour print figure (STL) and gives every triangle one of a few filament colours (3-4 by default). Colour comes from a textured model of the same figure (OBJ, GLB, DAE, FBX, .blend), laid over the figure by itself and passed face by face when the shapes agree; or from reference pictures and textures read by the family's vision model, which chooses the palette, assigns a colour to each region of the figure (regions follow the folds where parts meet and the engraved lines), cuts finer the regions it finds mixed and corrects its own result after looking at it. Palettes are reduced in CIELAB and matched to the filaments on the shelf; borders are straightened and patches too small to print are absorbed; regions, patches and brush spots can be repainted by hand. Writes painted 3MF for Bambu Studio / OrcaSlicer and for PrusaSlicer, standard-colour 3MF, OBJ with one material per colour and the list of filaments, also for the figure's flat and pivot variants. Assistants can browse the library, open figures, add and look at references, colour, look at the result from any side, repaint and export.",
+  "capabilities": [
+    "figure-library",
+    "region-segmentation",
+    "texture-model-color-transfer",
+    "model-registration",
+    "vision-directed-coloring",
+    "palette-reduction",
+    "filament-matching",
+    "region-and-brush-painting",
+    "printable-color-cleanup",
+    "painted-3mf-export",
+    "standard-color-3mf-export",
+    "obj-color-export",
+    "variant-color-transfer",
+    "figure-look"
+  ],
+  "x-family": {
+    "copilot": true
+  },
+  "placeholders": [
+    "NIKIAS_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5252",
+    "TOKEN_FILE": "{NIKIAS_DIR}/data/mcp-token",
+    "PYTHON": "{NIKIAS_DIR}/.venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5252",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "nikias-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "nikias-hoard"
+      ],
+      "title": [
+        "nikias's hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "nikias_hoard",
+        "--no-browser"
+      ],
+      "cwd": "{NIKIAS_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "NIKIAS_PORT": "5252"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 40
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{NIKIAS_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "NIKIAS_URL": "{APP_URL}",
+      "NIKIAS_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "NIKIAS_BRIDGE_AUTOSTART",
+      "NIKIAS_DATA_DIR"
+    ]
+  },
+  "notes": "library_scan lists the figures (query, group); project_create opens one and cuts it into regions. source_find proposes references by the figure's name; source_add takes a textured model, a picture or a folder and, for a model, says how well it fits the figure (fit under about 0.012 = same pose, colours pass directly; otherwise it is only a reference for the vision model). color_start mode auto|model|ai colours in the background (job_status); colors sets how many print colours; wish is free text for the vision model. figure_look what=clay|regions|color|filament|compare|model|sources returns a picture from a named view, several views, a yaw/pitch or a close-up region [x, y, z, radius] in millimetres; regions are numbered in the picture and those numbers are what paint regions takes. palette_set edits colours by position, count, merge [keep, remove], base (filament 1) and snap (nearest filaments); paint fills regions, patches around faces or brush spots; clean absorbs patches narrower than min_detail_mm; paint_undo takes back the last change. result_export writes into a Multicolor folder next to the figure. Palette indexes are 0-based, filaments 1-based (index 0 = filament 1). Z is up.",
+  "skills": {"slugs": ["blender-asset-production", "web-3d-asset-pipeline", "verification-loop"], "tags": ["3d", "print"], "limit": 4}
+}
