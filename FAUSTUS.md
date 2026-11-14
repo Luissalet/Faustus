@@ -18149,6 +18149,12 @@ Una pizarra se abre en una pestaña del panel lateral, junto al chat, y es el mi
 - **Límites conocidos:** en un navegador sin GPU el fotograma ronda 100-150 ms con 5 o con 600 elementos (lo limita el entorno, no el número); el agente no ve trazos a mano alzada más que como nodos `stroke`; no hay cursores de varias personas a la vez.
 # Ágora en directo
 
+La ficha de cada agente muestra su modelo y esfuerzo: prioriza los datos de su
+sesión arrancada desde el Ágora; en su defecto muestra lo declarado por el agente
+con la fecha del latido, o «sin declarar». La lista de miembros muestra el modelo
+bajo el nombre y conserva el estado y las tareas. Los datos declarados son
+opcionales y la interfaz sigue funcionando con un Hub que todavía no los envía.
+
 Cada servidor del Ágora dispone de En directo, también dentro de su proyecto.
 Comparte la vista del Hub con pizarra por estado, ficheros bloqueados y extractos
 observados de herramientas, y un canal seleccionable. Cada agente activo tiene

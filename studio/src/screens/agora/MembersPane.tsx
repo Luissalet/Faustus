@@ -6,7 +6,7 @@ import {
 } from '../../adapters/agora';
 import { Button, IconButton, Menu, Popover } from '../../components';
 import { t, tn } from '../../i18n';
-import { AddAgentDialog, AgentModelsDialog, failureWhy, modelLine, PruneAgentsDialog, RankOptions, RemoveAgentDialog } from './MemberDialogs';
+import { AddAgentDialog, AgentModelsDialog, effortLabel, failureWhy, modelLine, PruneAgentsDialog, RankOptions, RemoveAgentDialog } from './MemberDialogs';
 import {
   ago, agentColor, agentInitials, composerBus, DEFAULT_RANK, findTask, isOnline, PRESENCE_LABEL, RANK_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER,
   STATUS_LABEL, type View,
@@ -25,7 +25,16 @@ function quotaOf(providers: QuotaProvider[], role: string): { free: number | nul
 const OBSERVED_LABEL: Record<string, string> = { working: 'At work', tool: 'Using a tool', waiting: 'Waiting', idle: 'Idle', stale: 'Gone quiet' };
 
 /** A session the hub started from here, with the model it runs on as the person reads it. */
-interface Started { worker: ConsoleWorker; line: string }
+interface Started { worker: ConsoleWorker; name: string }
+/** Keep each source together: a declaration must not fill gaps in a verified session. */
+function memberModel(member: AgoraMember, started?: Started) {
+  const verified = !!(started?.worker.model || started?.worker.effort);
+  const model = verified ? started?.worker.model : member.declared_model;
+  const effort = verified ? started?.worker.effort : member.declared_effort;
+  const name = verified && model ? started?.name || model : modelLine(undefined, model, undefined);
+  return { name, line: model || effort ? (name || t('not declared')) + ' · ' + (effort ? effortLabel(effort) : t('not declared')) : t('not declared'),
+    declared: !verified && !!(model || effort) };
+}
 interface CardProps {
   member: AgoraMember; guild: AgoraGuild; onOpen: (view: View) => void; onRemove: (member: AgoraMember) => void;
   started?: Started; onStop: (worker: ConsoleWorker) => void; onRank: (member: AgoraMember, rank: string) => void;
@@ -45,6 +54,8 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop, onRank }
   };
   const seen = member.observed;
   const seenTool = seen?.tool && typeof seen.tool === 'object' ? seen.tool.name : '';
+  const model = memberModel(member, started);
+  const declaredAt = member.declared_at ? new Date(member.declared_at) : null;
   return (
     <div className="fs-agx-profile" style={{ '--agx-c': agentColor(member.id) } as CSSProperties} data-testid="agora-profile">
       <header>
@@ -57,10 +68,16 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop, onRank }
           <select className="fs-field" value={member.rank ?? DEFAULT_RANK} onChange={(e) => onRank(member, e.target.value)} data-testid="agora-member-rank"><RankOptions /></select>
         </label>
       )}
+      {member.role !== 'person' && <p className="fs-agx-profile__model" data-testid="agora-profile-model">
+        <strong>{t('Model · effort')}</strong><span>{model.line}</span>
+        {model.declared && <small className="fs-muted">{t('declared by the agent')}
+          {declaredAt && !Number.isNaN(declaredAt.getTime()) && <> · <time dateTime={member.declared_at!}>{declaredAt.toLocaleString()}</time></>}
+        </small>}
+      </p>}
       {member.doing && <p className="fs-agx-profile__doing">{member.doing}</p>}
       {!member.doing && member.note && <p className="fs-agx-profile__doing">{member.note}</p>}
       {seen?.state && <p className="fs-muted">{t('Its session: {state}', { state: t(OBSERVED_LABEL[seen.state] ?? seen.state) })}{seenTool ? ' · ' + seenTool : ''}{seen.title ? ' · ' + seen.title : ''}</p>}
-      {started && <p className="fs-muted" data-testid="agora-profile-model">{started.line ? t('Started from here on {model}', { model: started.line }) : t('Started from here')}</p>}
+      {started && <p className="fs-muted">{t('Started from here')}</p>}
       {started && (started.worker.state === 'failed' || started.worker.state === 'unavailable') && (
         <p className="fs-agx-profile__failed" data-testid="agora-profile-failed">{t('Its session failed: {why}', { why: failureWhy(started.worker) || t('no reason given') })}</p>
       )}
@@ -92,6 +109,7 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop, onRank }
 
 function MemberRow({ member, guild, onOpen, onRemove, started, onStop, onRank }: CardProps) {
   const line = member.doing || member.tasks[0]?.title || (member.presence === 'offline' ? t('seen {when}', { when: ago(member.last_seen) }) : t(PRESENCE_LABEL[member.presence]));
+  const model = memberModel(member, started);
   return (
     <li>
       <Popover side="left" align="start" className="fs-agx-profile-pop" testId="agora-member-pop" trigger={
@@ -100,6 +118,7 @@ function MemberRow({ member, guild, onOpen, onRemove, started, onStop, onRank }:
           <span className="fs-agx-avatar" data-presence={member.presence} aria-hidden="true">{agentInitials(member.id)}</span>
           {/* The role goes under the name, so a long name is not cut short to make room for it. */}
           <span className="fs-agx-member__text"><strong>{member.id}</strong>
+            {member.role !== 'person' && model.name && <span title={model.line} data-testid="agora-member-model">{model.name}</span>}
             <span className="fs-agx-member__line"><RankMark member={member} /><span>{line}</span></span></span>
           {member.tasks.length > 0 && <span className="fs-agx-row__count">{member.tasks.length}</span>}
         </button>}>
@@ -147,7 +166,7 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
     const map = new Map<string, Started>();
     for (const worker of consoleData?.workers ?? []) {
       if (map.has(worker.agent_id)) continue;      // newest first: the first row of an agent is its latest session
-      map.set(worker.agent_id, { worker, line: modelLine(consoleData?.leaders.find((l) => l.id === worker.parent_id)?.catalog, worker.model, worker.effort) });
+      map.set(worker.agent_id, { worker, name: modelLine(consoleData?.leaders.find((l) => l.id === worker.parent_id)?.catalog, worker.model, undefined) });
     }
     return map;
   }, [consoleData]);

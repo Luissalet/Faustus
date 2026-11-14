@@ -291,6 +291,8 @@
 .fs-agx-member[data-presence='offline'] { opacity: 0.5; }
 .fs-agx-member__text { display: grid; min-inline-size: 0; flex: 1; }
 .fs-agx-member__text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 600; color: color-mix(in srgb, var(--agx-c) 50%, var(--fs-text-1)); }
+.fs-agx-profile__model { display: grid; gap: var(--fs-space-1); overflow-wrap: anywhere; }
+.fs-agx-profile__model strong { font-weight: 600; }
 .fs-agx-member__text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fs-text-3); font-size: 11px; }
 .fs-agx-member__text .fs-agx-member__line { display: flex; align-items: center; gap: 6px; }
 .fs-agx-member__line > span:last-child { min-inline-size: 0; }

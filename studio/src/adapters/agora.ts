@@ -40,6 +40,8 @@ export interface AgoraMember {
   id: string; name: string; kind: string; role: string; presence: Presence; state: string; doing: string; note: string;
   /** Its rank on this server (`role` is its provider): director, lead, agent or support; `person` for the person. */
   rank?: string; rank_level?: number;
+  /** Self-reported by its session's heartbeat, never a verified console setting. */
+  declared_model?: string | null; declared_effort?: string | null; declared_at?: string | null;
   last_seen: number | null; locks: number; tasks: { id: number; title: string; status: string }[]; quota: MemberQuota;
   observed?: { state?: string; tool?: { name?: string; input?: string; since?: number } | null; title?: string; engine?: string; last_activity?: number; questions?: unknown[] } | null;
 }
