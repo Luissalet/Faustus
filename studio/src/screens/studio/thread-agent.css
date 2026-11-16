@@ -1,0 +1,114 @@
+.fs-thread-agent__popover {
+  inline-size: min(460px, calc(100vw - 24px));
+  max-inline-size: calc(100vw - 24px);
+  max-block-size: min(78vh, 640px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--fs-space-3);
+}
+
+.fs-thread-agent {
+  display: grid;
+  gap: var(--fs-space-3);
+  font-size: 0.85rem;
+}
+
+.fs-thread-agent section {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-thread-agent h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.fs-thread-agent__hint,
+.fs-thread-agent__tree-head {
+  margin: 0;
+  color: var(--fs-text-muted, inherit);
+  overflow-wrap: anywhere;
+}
+
+.fs-thread-agent__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+}
+
+.fs-thread-agent select,
+.fs-thread-agent input,
+.fs-thread-agent textarea {
+  flex: 1 1 140px;
+  min-inline-size: 0;
+  font: inherit;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--fs-border, #8884);
+  background: var(--fs-surface, transparent);
+  color: inherit;
+}
+
+.fs-thread-agent textarea {
+  resize: vertical;
+}
+
+.fs-thread-agent__jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.fs-thread-agent__jobs li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+}
+
+.fs-thread-agent__job-agent {
+  font-weight: 600;
+}
+
+.fs-thread-agent__jobs li[data-status='failed'] .fs-thread-agent__job-status {
+  color: var(--fs-danger, #c0392b);
+}
+
+.fs-thread-agent__job-error {
+  flex-basis: 100%;
+  color: var(--fs-danger, #c0392b);
+  overflow-wrap: anywhere;
+}
+
+.fs-thread-agent__diff {
+  margin: 0;
+  max-block-size: 260px;
+  overflow: auto;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  padding: var(--fs-space-2);
+  border-radius: 6px;
+  background: var(--fs-surface-sunken, #0001);
+  white-space: pre;
+}
+
+.fs-thread-agent__chip {
+  max-inline-size: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .fs-thread-agent select,
+  .fs-thread-agent input,
+  .fs-thread-agent textarea {
+    flex-basis: 100%;
+    font-size: 16px;
+  }
+}

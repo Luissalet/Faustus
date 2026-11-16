@@ -126,7 +126,8 @@ import { isWideTab } from './studio/panel';
 import { createBoard, createSheet, listBoards, listSheets, onSurfaceEvent, useSurfaceEvents } from '../adapters/surfaces';
 import { openReview as openAnnotationReview, openTarget as openAnnotationTarget, planTitle, type AnnotateTarget } from '../adapters/annotations';
 import { openApp as openDockApp, setSel as setDockSel, useAppDockEvents } from '../adapters/appDock';
-import { AppWindow, PenTool } from 'lucide-react';
+import { AppWindow, PenTool, Bot } from 'lucide-react';
+import { ThreadAgentPanel, useThreadAgent } from './studio/ThreadAgent';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
 import { AskCard, Transcript, type Decision } from './studio/Transcript';
@@ -3456,6 +3457,8 @@ export function StudioScreen({ groupContext }: { groupContext?: {
     if (!sessionId) return;
     turnsFromHistory(sessionId).then((fresh) => setTurns(fresh.turns)).catch(() => undefined);
   }, [sessionId]);
+  // #3257: the agent that works this thread (Faustus or a CLI runner) and its runs.
+  const threadAgent = useThreadAgent(sessionId && !groupMode ? sessionId : null, reloadAfterAgentMail);
 
   const literalShellInFlight = useRef(false);
   const showShellResult = useCallback(async (result: ShellResult): Promise<void> => {
@@ -3597,6 +3600,12 @@ export function StudioScreen({ groupContext }: { groupContext?: {
           setChatModeState(pendingChatMode);
           await setChatMode(sid, pendingChatMode).then((view) => setChatModeState(view.mode)).catch(() => undefined);
         }
+        // #3257: a thread worked by another agent (Claude Code, Codex…) sends
+        // the message to it; its answer is written into the thread.
+        if (!isNewSession && threadAgent.usesRunner) {
+          await threadAgent.sendTurn(sid, withImageReferences(message, sent));
+          return;
+        }
         void run(sid, withImageReferences(message, sent), { research: researchRequest || undefined, attachments: sent, behaviorMode: isNewSession ? pendingModeId ?? undefined : undefined, execution: { sid, value: execution } });
       } catch {
         // The resolution failure is shown next to the composer; the draft and
@@ -3607,7 +3616,7 @@ export function StudioScreen({ groupContext }: { groupContext?: {
       }
     },
     [attachments, busy, runCommand, ensureSession, executionForSend, run, sessionId, pendingModeId, pendingChatMode, steerLive,
-      workspace, project, effectiveAutonomy, showShellResult, say, knobs.incognito, groupId, groupMode, sendToGroup, startNewGroup],
+      workspace, project, effectiveAutonomy, showShellResult, say, knobs.incognito, groupId, groupMode, sendToGroup, startNewGroup, threadAgent],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and
@@ -4120,6 +4129,21 @@ export function StudioScreen({ groupContext }: { groupContext?: {
                 trigger={<IconButton icon={Waypoints} label={t('Context wires')} size="sm" testId="studio-open-side-threads" />}
               >
                 <SideThreadsPanel sessionId={sessionId} onNotice={say} onRegenerateTurn={onRegenerateTurn} />
+              </Popover>
+            )}
+            {sessionId && !groupMode && (
+              <Popover
+                testId="thread-agent-popover"
+                align="end"
+                className="fs-thread-agent__popover"
+                trigger={threadAgent.usesRunner && threadAgent.state
+                  ? <button type="button" className="fs-studio__chip" title={t('Agent working this thread')} data-testid="studio-open-thread-agent">
+                      <Bot size={13} aria-hidden="true" /><span className="fs-thread-agent__chip">{threadAgent.state.agent_label}</span>
+                    </button>
+                  : <IconButton icon={Bot} label={t('Agent working this thread')} size="sm" testId="studio-open-thread-agent" />}
+              >
+                <ThreadAgentPanel sessionId={sessionId} state={threadAgent.state} workspace={workspace}
+                  refresh={threadAgent.refresh} onChanged={reloadAfterAgentMail} onNotice={say} />
               </Popover>
             )}
             <IconButton
