@@ -32,8 +32,18 @@ require.
 | `elephant-goldfish-design`, `docs-drift-check` | https://github.com/google/elephant-goldfish-model @ `bdcfe8cdaee99699c4b2cb7ad4e3b2c1a6b56a31` (skills egm-brainstorm, egm-draft, egm-review, egm-review-loop, egm-resolve and egm-drift-report; persona files and scripts not bundled) | Apache-2.0 | © Google LLC |
 | `measured-improvement`, `steer-once`, `unattended-brief`, `cross-model-review` | https://github.com/github/lever @ `a0acf31d730d90248c30237225442bdd991f17b2` (skills find-the-loop, experiment-arms, steer-once, prompt-mirror, brief, progress-contract and cross-model-review; automations and templates not bundled) | MIT | © GitHub, Inc. |
 | `obsidian-bases`, `obsidian-cli`, `notes-from-templates`, `web-to-clean-markdown` | https://github.com/kepano/obsidian-skills @ `3ccff5338ea700537839b21900aa5358a0402c98` (skills obsidian-bases, obsidian-cli, knap and defuddle; reference pages not bundled) | MIT | © 2026 Steph Ango (@kepano) |
+| `modern-web-guidance` (the skill, and the guides vendored in `skills/guidance/modern-web-guidance/` with their own `LICENSE` and `SOURCE.json`) | https://github.com/GoogleChrome/modern-web-guidance, npm package `modern-web-guidance` 1.0.1 (skill version `2026_11_10-47b4c80e`; guide Markdown and the publisher's search index kept as published, the vector search not bundled) | Apache-2.0 | GoogleChrome/modern-web-guidance contributors |
+| `answer-first-replies` | https://github.com/ayghri/i-have-adhd @ `1ecea1993b7fce257ffbd686c070948b5e07eda6` (skills/i-have-adhd/SKILL.md; hooks, evals and per-host files not bundled) | MIT | © 2026 Ayoub Ghriss |
+| `codebase-deepening`, `ticket-slicing`, `issue-triage`, `session-retro` | https://github.com/mattpocock/skills @ `5863806dd4e15c63174bee4e7515a4256792ecfa` (skills improve-codebase-architecture and codebase-design; to-tickets; triage and its agent-brief reference; retro; setup, report templates and per-host files not bundled) | MIT | © 2026 Matt Pocock |
+| `page-copywriting`, `seo-audit`, `conversion-page-review` | https://github.com/coreyhaines31/marketingskills @ `1f837447b20bb6f0e72d87b80ece1c221c362c7d` (skills copywriting, seo-audit and cro; reference pages and per-host files not bundled) | MIT | © 2025 Corey Haines |
+| `last-30-days-research` | https://github.com/mvanhorn/last30days-skill @ `5705e22647b1da8b61120afd10de7bb8a5fe5ead` (skills/last30days/SKILL.md; the method only, rewritten for Faustus's own search and page tools; engine scripts, vendored clients and setup flows not bundled) | MIT | © 2026 Matt Van Horn |
 
-The last three rows were added on 2026-11-10. The two note-format skills are
+The tier-list additions are rewritten into this library's four-section dialect with Faustus tool names. The
+guides of `modern-web-guidance` are the one vendored copy: they are served by the `web_guidance` tool and
+refreshed with `scripts/update_web_guidance.py`; the Apache-2.0 text is carried in
+`skills/guidance/modern-web-guidance/LICENSE` and below.
+
+Of the rows above these additions, the last three were added on 2026-11-10. The two note-format skills are
 rewritten around the Cerebro's own rules and the `brain_canvas_export` /
 `brain_canvas_import` tools; `fresh-context-review` maps the drafting/review
 split onto `delegate_agents` read-only workers started without shared context.

@@ -106,6 +106,24 @@ Added 2026-11-10 (sources and licences in `THIRD_PARTY_NOTICES.md`):
   finding; repeated with new workers until no blocker or major finding is
   left.
 
+## Web platform guidance, planning, marketing and recent research
+
+Sources and licences are in `THIRD_PARTY_NOTICES.md`.
+
+- `modern-web-guidance` — before writing web UI, search the vendored Chrome-team guides by capability
+  (`web_guidance` tool, the built-in `web_guidance` MCP server, `/api/web-guidance`), read the guide and its
+  discipline guide, apply the fallbacks, cross-check, and say which guides were used. The guides live outside
+  the skill, in `skills/guidance/modern-web-guidance/` (Markdown, a local index, the licence and `SOURCE.json`);
+  `scripts/update_web_guidance.py` refreshes them from the published package and rewrites the skill's
+  `references/guide-index.md`, the id list an exported copy of the skill uses where there is no tool.
+- `codebase-deepening`, `ticket-slicing`, `issue-triage`, `session-retro` — architecture review in a fixed
+  vocabulary, vertical-slice tickets with blocking edges filed on the project board, issue triage with agent
+  briefs, and a retrospective that targets the agent's environment rather than the code.
+- `answer-first-replies` — replies shaped for a reader with ADHD, kept on until the reader turns it off.
+- `page-copywriting`, `seo-audit`, `conversion-page-review` — page copy, search audits and conversion reviews.
+- `last-30-days-research` — what people are saying now, from dated evidence inside a fixed window, with an
+  honest account of which sources answered.
+
 ## Format
 
 Every skill here uses the exact dialect `services/memory/skill_format.py`
