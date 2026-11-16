@@ -68,6 +68,7 @@ On Windows without Docker, `Start-Faustus-Desktop.bat` opens the native desktop 
 - Delegate to child conversations with file ownership, progress, cancellation and steering.
 - Use Council for blind first rounds, critique and synthesis across several models, with a designated executor for actions.
 - Use skills, MCP servers, filesystem tools, shell execution, browser control and desktop control under the configured permissions.
+- Install procedures from a bundled skill library (engineering habits, research, planning, writing, marketing) with their licences credited. For web UI, the agent reads a local copy of the Chrome team's modern web guidance before writing HTML, CSS or client-side JS: the `web_guidance` tool, the built-in MCP server and `/api/web-guidance` search it by capability, and `scripts/update_web_guidance.py` refreshes it.
 - Build a personal text benchmark from rated conversations, compare models on frozen cases, and optimize prompt sections or skills with reversible, measured edits. See [improvement cycles](docs/api/improvement_cycles.md).
 - Connect official command-line coding agents as workers through the runner and dispatch system, with an explicit subscription or API choice for each.
 - Inspect tool evidence, syntax checks, project tests and review results. Shadow-git checkpoints give diffs and restoration without touching the project's own repository.

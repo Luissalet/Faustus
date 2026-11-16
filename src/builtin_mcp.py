@@ -176,6 +176,9 @@ _BUILTIN_SERVERS = {
     "app_dock": ("mcp_servers/app_dock_server.py", "Built-in: App Dock"),
     # Skills the connected apps carry (src/connector_skills.py): which each connector brings and the text of one.
     "connector_skills": ("mcp_servers/connector_skills_server.py", "Built-in: Connector skills"),
+    # Modern web guidance (src/web_guidance.py): the vendored Chrome-team guides, searched and read from disk.
+    # The chat has the same operations as the native `web_guidance` tool. Read-only, not owner-scoped.
+    "web_guidance": ("mcp_servers/web_guidance_server.py", "Built-in: Modern web guidance"),
     "data_boundary": ("mcp_servers/data_boundary_server.py", "Built-in: Data destinations"),
     "approval_inbox": ("mcp_servers/approval_inbox_server.py", "Built-in: Approval inbox"),
     "quick_question": ("mcp_servers/quick_question_server.py", "Built-in: Quick question"),
@@ -198,7 +201,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"app_dock", "pizarra", "sheet", "panels", "loop_cards", "goldfish", "delivery", "derivations", "code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "godot", "github"})
+NATIVE_TWIN_SERVERS = frozenset({"app_dock", "web_guidance","pizarra", "sheet", "panels", "loop_cards", "goldfish", "delivery", "derivations", "code_graph", "prior_art", "research_prune", "execution", "blender_scene", "unity", "godot", "github"})
 
 # Single tools of other built-in servers that copy a native tool of the same name and accept nothing the native one
 # does not (checked against the live schemas by tests/test_native_twin_tools.py). Same treatment as the servers above:

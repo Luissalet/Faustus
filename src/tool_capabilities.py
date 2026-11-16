@@ -698,6 +698,8 @@ _register({"app_act"}, ToolEffect.WRITE_PRIVATE)
 _register({"annotate_open"}, ToolEffect.WRITE_PRIVATE)
 _register({"annotations_list"}, ToolEffect.READ_PRIVATE)
 _register({"review_open", "review_guide"}, ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_PRIVATE)
+# Modern web guidance (src/web_guidance.py): reads guides shipped with the app; no network, no writes.
+_register({"web_guidance"}, ToolEffect.READ_PUBLIC)
 # Pizarra / Hoja (src/pizarra.py, src/hoja.py): files under DATA_DIR/surfaces; the window shows the change as it lands.
 _register({"pizarra_read"}, ToolEffect.READ_PRIVATE)
 _register({"pizarra_create", "pizarra_edit", "pizarra_arrange"}, ToolEffect.WRITE_PRIVATE)

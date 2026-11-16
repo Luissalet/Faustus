@@ -3402,6 +3402,25 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "web_guidance",
+            "description": "Current web platform guidance, read from guides shipped with the app. action=search takes a 2-5 word English query naming ONE capability ('light dismiss dialog', 'responsive data table', 'passkey sign in') and returns guide ids with a one-line description; action=retrieve reads one or more guides by id (add the discipline guide that applies: html, css, forms, accessibility, performance, security); action=list shows every guide or one category's. Use BEFORE writing or changing HTML, CSS or client-side JS: dialogs and popovers, anchor positioning, view transitions, scroll effects, forms and validation, accessibility, performance (LCP, INP, CLS), security, passkeys, web components. Guía de la plataforma web actual.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["search", "retrieve", "list"], "description": "search (default without ids), retrieve (with ids), list"},
+                    "query": {"type": "string", "description": "search: 2-5 words, one capability, no framework or product names"},
+                    "ids": {"type": "string", "description": "retrieve: guide id, or several separated by commas"},
+                    "category": {"type": "string", "description": "search/list: only this category (css, forms, ui-components, ui-behaviors, performance, security...)"},
+                    "limit": {"type": "integer", "description": "search: how many guides (default 8)"},
+                    "offset": {"type": "integer", "description": "retrieve: character to continue from when a guide came back truncated"},
+                    "max_chars": {"type": "integer", "description": "retrieve: slice size (default 24000)"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "panel_create",
             "description": "Create a user panel: a self-contained HTML page (inline CSS and JS, no build step) that Faustus mounts in the Studio sidebar under Panels. Use when the user asks for their own mini-app inside Faustus. Call panel_sources first to see what data exists; never guess paths. In the page include <script src=\"/api/panels/faustus-panel.js\"></script> for faustus.api(path) (Faustus' /api routes), faustus.hub(path) (the Hoard Hub, e.g. faustus.hub('/api/agora/tasks?space_id=faustus&status=active')), faustus.tool(name, args, app?) (agent or Hoard tool), faustus.db (own SQLite), faustus.storage and the --fs-* theme variables. Run panel_check afterwards and fix what it reports. Crear un panel propio en la barra lateral.",
             "parameters": {

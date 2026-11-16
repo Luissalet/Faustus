@@ -1295,6 +1295,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "señálame dónde se cambia el idioma en esa app",
         "fill the search box of the docked app with 'whisper' and press enter",
     ],
+    "web_guidance": [
+        "hazme un diálogo modal animado para confirmar el borrado",
+        "make this data table responsive on small screens",
+        "búscame cómo se hace hoy un tooltip anclado a un botón",
+    ],
     "pizarra_create": [
         "monta el plan del lanzamiento en una pizarra",
         "hazme un mapa mental de las ideas para el TFM",

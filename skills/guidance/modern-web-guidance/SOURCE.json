@@ -1,0 +1,9 @@
+{
+ "package": "modern-web-guidance",
+ "version": "1.0.1",
+ "skill_version": "2026_11_10-47b4c80e",
+ "repository": "https://github.com/GoogleChrome/modern-web-guidance",
+ "license": "Apache-2.0",
+ "guides": 210,
+ "tarball_sha256": "713d3d344d6fad5c9267fb1ed8daff5dd72df4634e9ad6b2bd3b0ca17f8438a3"
+}

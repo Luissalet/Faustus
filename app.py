@@ -1359,6 +1359,9 @@ app.include_router(setup_delivery_routes())
 # App Dock (src/app_dock.py): a Hoard open beside the chat, the agent acting in it.
 from routes.app_dock_routes import setup_app_dock_routes
 app.include_router(setup_app_dock_routes())
+# Modern web guidance (src/web_guidance.py): the vendored guides, searched and read.
+from routes.web_guidance_routes import setup_web_guidance_routes
+app.include_router(setup_web_guidance_routes())
 # Pizarra (src/pizarra.py) and Hoja (src/hoja.py): work surfaces the person and the agent edit together.
 from routes.pizarra_routes import setup_pizarra_routes
 app.include_router(setup_pizarra_routes())
