@@ -55,6 +55,7 @@ On Windows without Docker, `Start-Faustus-Desktop.bat` opens the native desktop 
 - Paste screenshots, upload attachments and reference workspace files with `@`.
 - Read generated documents beside the chat, edit them and save with conflict detection.
 - Keep files, outputs, sources, project context, agent activity and browser captures in a resizable side panel.
+- Annotate the agent's plan, a Markdown or HTML file, a document or a local web page served live from `localhost` (hot reload included): select text or pick an element, leave comments, suggested changes, deletions and questions, and send them all back to the agent as one message (`/anotar`). Review uncommitted changes or a branch diff with notes per line and a guided reading order in chapters (`/revisar`).
 - Leave a conversation while the server keeps its turn running; see queue position, current activity, tool use and approval requests, and reconnect to the same work.
 - Branch a side thread from any passage and wire references, documents and notes into a turn explicitly.
 - Search and navigate with **Ctrl+K**. English and Spanish, themes, density, adjustable text and reduced motion.

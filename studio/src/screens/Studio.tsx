@@ -123,7 +123,8 @@ import { CoordinationStatus } from './studio/CoordinationStatus';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, restoreTerminalStatus, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
 import { isWideTab } from './studio/panel';
-import { createBoard, createSheet, listBoards, listSheets, useSurfaceEvents } from '../adapters/surfaces';
+import { createBoard, createSheet, listBoards, listSheets, onSurfaceEvent, useSurfaceEvents } from '../adapters/surfaces';
+import { openReview as openAnnotationReview, openTarget as openAnnotationTarget, planTitle, type AnnotateTarget } from '../adapters/annotations';
 import { openApp as openDockApp, setSel as setDockSel, useAppDockEvents } from '../adapters/appDock';
 import { AppWindow, PenTool } from 'lucide-react';
 import ChatTeam from './studio/ChatTeam';
@@ -701,6 +702,10 @@ export function StudioScreen({ groupContext }: { groupContext?: {
   useAppDockEvents(sessionId, () => panelDispatch({ type: 'open', tab: 'app' }));
   // Whiteboard and spreadsheet: a surface the agent opens or creates shows up in its tab.
   useSurfaceEvents(sessionId, (kind, id, title, focus) => panelDispatch({ type: 'surface', kind, id, title, focus }));
+  // Annotate: what the agent opens with annotate_open / review_open shows up in the Annotate tab.
+  useEffect(() => onSurfaceEvent(e => {
+    if (e.event === 'open' && (e.data as { kind?: string })?.kind === 'anotar') panelDispatch({ type: 'open', tab: 'anotar' });
+  }), [panelDispatch]);
   // `?dock=<app>`: the Hoards screen (or a link) asks for an app beside this chat.
   const [paneKeep, setPaneKeep] = useState(false);
   useEffect(() => { if (!(panel.open && isWideTab(panel.tab))) setPaneKeep(false); }, [panel.open, panel.tab]);
@@ -2323,6 +2328,42 @@ export function StudioScreen({ groupContext }: { groupContext?: {
             panelDispatch({ type: 'surface', kind: 'pizarra', id: board.id, title: board.title, focus: true });
           } catch (error) {
             say(t('Could not open the whiteboard.') + ' ' + (error as Error).message, 'danger');
+          }
+          return true;
+        }
+        case 'anotar': {
+          // /anotar: the agent's last answer (its plan); /anotar <url|port>: a local page; /anotar <path>: a file.
+          const sid = await ensureSession(args || t('Annotate'));
+          if (!sid) return true;
+          const arg = args.trim();
+          const web = /^(https?:\/\/(localhost|127\.0\.0\.1|\[::1\])|localhost:|127\.0\.0\.1:|:?\d{2,5}$)/i.test(arg);
+          const last = [...(turns || [])].reverse().find(tn => tn.role === 'assistant' && tn.text.trim());
+          const target: AnnotateTarget = !arg
+            ? { kind: 'plan', ref: last ? (last.dbId || last.id) : 'last', title: (last && planTitle(last.text)) || t('Plan') }
+            : web
+              ? { kind: 'web', ref: arg, title: '' }
+              : { kind: 'file', ref: /^([a-z]:[\\/]|\/)/i.test(arg) || !workspace ? arg : `${workspace.replace(/[\\/]+$/, '')}/${arg}`, title: arg.split(/[\\/]/).pop() || arg, workspace };
+          try {
+            await openAnnotationTarget(sid, target);
+            panelDispatch({ type: 'open', tab: 'anotar' });
+          } catch (error) {
+            say(t('Could not open it to annotate.') + ' ' + (error as Error).message, 'danger');
+          }
+          return true;
+        }
+        case 'revisar': {
+          // /revisar [base]: the working folder's changes (HEAD = uncommitted, or against a branch) with per-line notes.
+          if (!workspace) {
+            say(t('Pick a working folder first: the review looks at its changes.'), 'warning');
+            return true;
+          }
+          const sid = await ensureSession(t('Review'));
+          if (!sid) return true;
+          try {
+            await openAnnotationReview(sid, workspace, args.trim() || 'HEAD');
+            panelDispatch({ type: 'open', tab: 'anotar' });
+          } catch (error) {
+            say(t('Could not open the review.') + ' ' + (error as Error).message, 'danger');
           }
           return true;
         }

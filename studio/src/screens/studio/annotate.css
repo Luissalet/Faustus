@@ -1,0 +1,93 @@
+/* The Annotate tab (Annotate.tsx): a viewer on the left, the notes on the right. */
+.fs-annot { display: flex; flex-direction: column; flex: 1 1 auto; min-block-size: 0; }
+.fs-annot[hidden] { display: none; }
+.fs-annot__bar { display: flex; align-items: center; gap: var(--fs-space-2); padding: 6px var(--fs-space-3); border-block-end: 1px solid var(--fs-border); min-inline-size: 0; flex-wrap: wrap; }
+.fs-annot__title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 40%; }
+.fs-annot__sources { display: flex; align-items: center; gap: 2px; margin-inline-start: auto; flex-wrap: wrap; }
+.fs-annot__sources select { font: inherit; font-size: 12px; padding: 3px 6px; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 6px; }
+.fs-annot__source { display: flex; align-items: flex-end; gap: var(--fs-space-2); padding: var(--fs-space-2) var(--fs-space-3); border-block-end: 1px solid var(--fs-border); background: var(--fs-surface-1); }
+.fs-annot__source label { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; font-size: 11.5px; color: var(--fs-text-2); }
+.fs-annot__source input { font: inherit; font-size: 13px; padding: 5px 8px; color: var(--fs-text-1); background: var(--fs-surface-2); border: 1px solid var(--fs-border); border-radius: 6px; }
+.fs-annot__main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); flex: 1 1 auto; min-block-size: 0; }
+.fs-annot__viewer { position: relative; overflow: auto; min-block-size: 0; display: flex; flex-direction: column; border-inline-end: 1px solid var(--fs-border); }
+.fs-annot__doc { padding: var(--fs-space-3) var(--fs-space-4); }
+.fs-annot__pre { margin: 0; padding: var(--fs-space-3); font-family: var(--fs-mono, ui-monospace, monospace); font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+.fs-annot__frame { flex: 1 1 auto; inline-size: 100%; min-block-size: 360px; border: 0; background: #fff; }
+.fs-annot__empty { display: flex; gap: var(--fs-space-2); align-items: flex-start; margin: var(--fs-space-4); color: var(--fs-text-2); font-size: 13px; max-inline-size: 52ch; }
+.fs-annot__empty p { margin: 0; }
+::highlight(faustus-annotation) { background-color: color-mix(in srgb, #e5c07b 42%, transparent); }
+
+.fs-annot__side { display: flex; flex-direction: column; gap: var(--fs-space-2); padding: var(--fs-space-3); overflow: auto; min-block-size: 0; background: var(--fs-surface-1); }
+.fs-annot__side > .fs-btn:last-child, .fs-annot__side > button:last-child { margin-block-start: auto; }
+.fs-annot__hint { margin: 0; font-size: 12px; color: var(--fs-text-3); }
+.fs-annot__form { display: flex; flex-direction: column; gap: 6px; padding: var(--fs-space-2); border: 1px solid var(--fs-border); border-radius: 8px; background: var(--fs-surface-2); }
+.fs-annot__quote { margin: 0; padding: 4px 8px; border-inline-start: 3px solid #e5c07b; font-size: 12.5px; color: var(--fs-text-2); max-block-size: 7.5em; overflow: auto; white-space: pre-wrap; }
+.fs-annot__where { font-size: 11px; color: var(--fs-text-3); font-family: var(--fs-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.fs-annot__types { display: flex; flex-wrap: wrap; gap: 4px; }
+.fs-annot__types button { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--fs-border); background: var(--fs-surface-1); color: var(--fs-text-2); cursor: pointer; }
+.fs-annot__types button[aria-checked="true"] { color: var(--fs-text-1); border-color: currentColor; font-weight: 600; }
+.fs-annot__types button[data-type="comment"][aria-checked="true"] { color: #61afef; }
+.fs-annot__types button[data-type="suggestion"][aria-checked="true"] { color: #98c379; }
+.fs-annot__types button[data-type="delete"][aria-checked="true"] { color: #e06c75; }
+.fs-annot__types button[data-type="question"][aria-checked="true"] { color: #c678dd; }
+.fs-annot__form textarea { font: inherit; font-size: 13px; padding: 6px 8px; resize: vertical; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 6px; }
+.fs-annot__formbar { display: flex; justify-content: flex-end; gap: 6px; }
+
+.fs-annot__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fs-annot__note { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: start; padding: 6px; border: 1px solid var(--fs-border); border-radius: 8px; background: var(--fs-surface-2); font-size: 12.5px; }
+.fs-annot__note[data-sent] { opacity: .62; }
+.fs-annot__num { display: inline-grid; place-items: center; min-inline-size: 18px; block-size: 18px; border-radius: 9px; background: #e5c07b; color: #1e1e1e; font-size: 11px; font-weight: 600; }
+.fs-annot__body { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.fs-annot__body p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fs-annot__q { color: var(--fs-text-2); font-style: italic; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.fs-annot__loc { font-size: 11px; color: var(--fs-text-3); overflow-wrap: anywhere; }
+.fs-annot__sent { color: var(--fs-text-3); font-size: 11px; }
+.fs-annot__badge { align-self: flex-start; font-size: 10.5px; font-weight: 600; letter-spacing: .02em; padding: 0 6px; border-radius: 8px; border: 1px solid currentColor; }
+.fs-annot__badge[data-type="comment"] { color: #61afef; }
+.fs-annot__badge[data-type="suggestion"] { color: #98c379; }
+.fs-annot__badge[data-type="delete"] { color: #e06c75; }
+.fs-annot__badge[data-type="question"] { color: #c678dd; }
+
+/* the review */
+.fs-annot__review { display: flex; flex-direction: column; gap: var(--fs-space-2); padding: var(--fs-space-2) var(--fs-space-3) var(--fs-space-4); }
+.fs-annot__reviewbar { display: flex; align-items: center; gap: var(--fs-space-2); flex-wrap: wrap; position: sticky; inset-block-start: 0; z-index: 1; padding-block: 4px; background: var(--fs-canvas, var(--fs-surface-1)); }
+.fs-annot__chip { font-size: 12px; color: var(--fs-text-2); }
+.fs-annot__review ins, .fs-annot__file ins { color: #98c379; text-decoration: none; }
+.fs-annot__review del, .fs-annot__file del { color: #e06c75; text-decoration: none; }
+.fs-annot__seg { display: inline-flex; border: 1px solid var(--fs-border); border-radius: 6px; overflow: hidden; margin-inline-start: auto; }
+.fs-annot__seg button { font: inherit; font-size: 12px; padding: 3px 9px; border: 0; background: transparent; color: var(--fs-text-2); cursor: pointer; }
+.fs-annot__seg button[aria-selected="true"] { background: var(--fs-surface-2); color: var(--fs-text-1); font-weight: 600; }
+.fs-annot__seg button:disabled { opacity: .45; cursor: default; }
+.fs-annot__note-line { margin: 0; font-size: 12px; color: var(--fs-warning); }
+.fs-annot__file { border: 1px solid var(--fs-border); border-radius: 8px; overflow: hidden; }
+.fs-annot__file > summary { cursor: pointer; padding: 6px 10px; font-size: 12.5px; background: var(--fs-surface-1); display: flex; gap: 8px; align-items: baseline; }
+.fs-annot__file > summary small { color: var(--fs-text-3); }
+.fs-annot__hunk { border-block-start: 1px solid var(--fs-border); }
+.fs-annot__hunkhead { padding: 3px 10px; font-size: 11.5px; color: var(--fs-text-3); background: var(--fs-surface-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-annot__diff { border-collapse: collapse; inline-size: 100%; font-family: var(--fs-mono, ui-monospace, monospace); font-size: 12px; line-height: 1.5; }
+.fs-annot__diff td { padding: 0 6px; vertical-align: top; }
+.fs-annot__ln { inline-size: 1%; white-space: nowrap; text-align: end; color: var(--fs-text-3); user-select: none; }
+.fs-annot__code { white-space: pre-wrap; word-break: break-word; inline-size: 100%; }
+.fs-annot__sign { user-select: none; color: var(--fs-text-3); margin-inline-end: 4px; }
+.fs-annot__diff tr[data-k="add"] { background: color-mix(in srgb, #98c379 14%, transparent); }
+.fs-annot__diff tr[data-k="del"] { background: color-mix(in srgb, #e06c75 14%, transparent); }
+.fs-annot__add { inline-size: 1%; padding: 0 !important; }
+.fs-annot__add button { inline-size: 18px; block-size: 18px; padding: 0; font: 600 12px/16px system-ui, sans-serif; border-radius: 4px; border: 1px solid transparent; background: transparent; color: transparent; cursor: pointer; }
+.fs-annot__diff tr:hover .fs-annot__add button, .fs-annot__add button:focus-visible { color: #fff; background: var(--fs-brand, #e06c75); }
+.fs-annot__inline td { padding: 4px 10px 6px 48px !important; background: var(--fs-surface-1); font-family: inherit; font-size: 12.5px; }
+.fs-annot__inline div { display: flex; gap: 6px; align-items: baseline; }
+.fs-annot__chapters { display: flex; flex-direction: column; gap: var(--fs-space-3); }
+.fs-annot__overview { margin: 0; font-size: 13px; color: var(--fs-text-2); }
+.fs-annot__chapter { border: 1px solid var(--fs-border); border-radius: 8px; overflow: hidden; }
+.fs-annot__chapter > header { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px 0; }
+.fs-annot__chapter h4 { margin: 0; font-size: 13.5px; }
+.fs-annot__chapter > p { margin: 4px 10px 8px; font-size: 12.5px; color: var(--fs-text-2); }
+.fs-annot__kind { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 0 6px; border-radius: 8px; }
+.fs-annot__kind[data-kind="core"] { color: #1e1e1e; background: #e5c07b; }
+.fs-annot__kind[data-kind="effects"] { color: #1e1e1e; background: #61afef; }
+.fs-annot__kind[data-kind="glue"] { color: var(--fs-text-2); background: var(--fs-surface-2); border: 1px solid var(--fs-border); }
+
+@media (max-width: 760px) {
+  .fs-annot__main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .fs-annot__viewer { border-inline-end: 0; border-block-end: 1px solid var(--fs-border); }
+}

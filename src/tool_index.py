@@ -558,6 +558,9 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "context_drop": "Drop tool results from context to overflow (restorable). Free context, forget that output, liberar contexto, quitar resultado.",
     "context_note": "Replace tool results with a short note; originals to overflow. Summarize and free context, resumir resultados, nota de contexto.",
 }
+# Annotations and guided review (src/annotation_schemas.py).
+from src.annotation_schemas import INDEX_DESCRIPTIONS as _ANNOTATION_DESCRIPTIONS  # noqa: E402
+BUILTIN_TOOL_DESCRIPTIONS.update(_ANNOTATION_DESCRIPTIONS)
 
 
 # OBJ-7 (lote 91): natural-language examples appended to each tool's indexed

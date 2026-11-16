@@ -1,5 +1,16 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+## Anotar y revisión de código guiada
+
+La pestaña **Anotar** del panel lateral sirve para comentar lo que el agente ha producido y devolvérselo en un solo mensaje.
+
+- **Qué se anota.** El plan que propone el agente (su última respuesta, o un mensaje concreto), un fichero Markdown o HTML del workspace, un documento de Studio, una web local servida en `localhost` y un diff de revisión. Las webs locales pasan por un proxy propio en `127.0.0.1` (uno por origen), con las rutas de la página intactas y el socket de recarga en caliente reenviado, así que un servidor de desarrollo sigue recargando dentro de la pestaña. Los ficheros HTML se sirven con sus CSS, scripts e imágenes relativos.
+- **Cómo.** Se selecciona texto, o en una página se elige un elemento, y se deja una nota de cuatro clases: comentario, cambio propuesto (con el texto nuevo), borrar o pregunta. Las notas se resaltan sobre el texto (o con un número sobre el elemento de la página) y se listan al lado. **Enviar al agente** compone todas las pendientes como el siguiente mensaje del usuario, agrupadas por lo que anotan y citando cada trozo (con fichero y línea en un diff y el selector en una web); si el agente está trabajando, el mensaje queda en el compositor. Las notas se guardan con el chat en `DATA_DIR/annotations/` y quedan marcadas como enviadas.
+- **Revisión de código.** Los cambios sin commitear del workspace, o su diff frente a una rama o referencia, se ven fichero a fichero con números de línea; el `+` de cada línea (o seleccionar código) abre una nota por línea que vuelve al agente igual que las demás. **Guiar** pide al modelo del chat (el servicio configurado, las Sparks) que ordene los hunks en capítulos — núcleo, efectos y pegamento — con un resumen corto cada uno, y la vista por capítulos muestra cada resumen encima del diff real. La guía se guarda con la revisión.
+- **Comandos.** `/anotar` abre el plan; `/anotar <ruta>` un fichero; `/anotar http://localhost:PUERTO` (o solo el puerto) una web local. `/revisar [base]` abre la revisión (HEAD por defecto: cambios sin commitear).
+- **Herramientas del agente.** `annotate_open` (abre la pestaña sobre un plan, fichero, documento o web), `annotations_list` (lee las notas, pendientes primero, sin marcarlas como enviadas), `review_open` (abre la revisión y devuelve los ficheros cambiados) y `review_guide` (los capítulos con sus hunks). Las cuatro funcionan también en modo plan.
+- **API y MCP.** `/api/annotations` (listar, añadir, editar, borrar, `clear`, `compose`, `open`, `web`, `review`, `review/guide`); servidor MCP integrado «Annotations and code review» con las cuatro herramientas y además `annotation_add` y `annotations_compose`, para que un agente de fuera deje notas o lea el mensaje compuesto.
+
 ## Skills que traen las apps conectadas
 
 Cada app de la familia lleva sus propios procedimientos (`skills_list` y `skill_read` en su MCP). Faustus los recoge solos:

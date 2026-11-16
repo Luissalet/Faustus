@@ -131,6 +131,7 @@ from .prior_art_tools import PriorArtTool
 from .uncertainty_tool import UncertaintyNextObservationTool
 from .delivery_tool import DeliveryPackageTool, ScopeCompareTool, CommissionOfficeTool, ReviewDeskTool
 from .app_dock_tools import AppOpenTool, AppViewTool, AppActTool
+from .annotation_tools import AnnotateOpenTool, AnnotationsListTool, ReviewOpenTool, ReviewGuideTool
 from .pizarra_tools import PizarraCreateTool, PizarraReadTool, PizarraEditTool, PizarraArrangeTool
 from .sheet_tools import SheetCreateTool, SheetReadTool, SheetWriteTool, SheetQueryTool
 from .panel_tools import (
@@ -427,6 +428,11 @@ TOOL_HANDLERS = {
     "app_open": AppOpenTool().execute,
     "app_view": AppViewTool().execute,
     "app_act": AppActTool().execute,
+    # Annotations and guided review beside the chat (src/annotations.py).
+    "annotate_open": AnnotateOpenTool().execute,
+    "annotations_list": AnnotationsListTool().execute,
+    "review_open": ReviewOpenTool().execute,
+    "review_guide": ReviewGuideTool().execute,
     # Pizarra / Hoja: work surfaces (src/pizarra.py, src/hoja.py).
     "pizarra_create": PizarraCreateTool().execute,
     "pizarra_read": PizarraReadTool().execute,
@@ -702,6 +708,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "app_open",
              "app_view",
              "app_act",
+             # Annotations and guided review -- src/agent_tools/annotation_tools.py.
+             "annotate_open", "annotations_list", "review_open", "review_guide",
              "pizarra_create",
              "pizarra_read",
              "pizarra_edit",

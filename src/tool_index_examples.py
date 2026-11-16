@@ -1884,3 +1884,6 @@ EXAMPLES: Dict[str, List[str]] = {
         "convierte el informe en un audio con dos voces",
     ],
 }
+# Annotations and guided review (src/annotation_schemas.py).
+from src.annotation_schemas import INDEX_EXAMPLES as _ANNOTATION_EXAMPLES  # noqa: E402
+EXAMPLES.update(_ANNOTATION_EXAMPLES)

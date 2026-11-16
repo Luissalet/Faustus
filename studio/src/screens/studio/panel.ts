@@ -11,10 +11,10 @@ import { t } from '../../i18n';
  * State and reducer only; SidePanel.tsx paints it.
  */
 
-export type PanelTab = 'outputs' | 'files' | 'sources' | 'progress' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board' | 'app' | 'pizarra' | 'hoja';
+export type PanelTab = 'outputs' | 'files' | 'sources' | 'progress' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board' | 'app' | 'pizarra' | 'hoja' | 'anotar';
 export interface SurfaceRef { id: string; title: string }
-/** Tabs that open wide and can take the whole work area: the App tab, the whiteboard and the spreadsheet. */
-export const isWideTab = (tab: PanelTab): boolean => tab === 'app' || tab === 'pizarra' || tab === 'hoja';
+/** Tabs that open wide and can take the whole work area: the App tab, the whiteboard, the spreadsheet and Annotate. */
+export const isWideTab = (tab: PanelTab): boolean => tab === 'app' || tab === 'pizarra' || tab === 'hoja' || tab === 'anotar';
 export interface PanelDraft {text:string; base:string; revision?:string}
 
 export interface DocState {

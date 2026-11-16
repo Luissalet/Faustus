@@ -1,4 +1,4 @@
-import { PenTool, AppWindow, Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree, Table2 } from 'lucide-react';
+import { Highlighter, PenTool, AppWindow, Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, MoreHorizontal, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Menu, Popover, Skeleton } from '../../components';
@@ -19,6 +19,7 @@ import {
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
 import AppDock from './AppDock';
+import Annotate from './Annotate';
 import Pizarra from './Pizarra';
 import SurfaceHome from './SurfaceHome';
 import Hoja from './Hoja';
@@ -81,6 +82,8 @@ const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   // Native work surfaces the person and the agent edit together (src/pizarra.py).
   { id: 'pizarra', label: 'Whiteboard', icon: PenTool },
   { id: 'hoja', label: 'Spreadsheet', icon: Table2 },
+  // Annotate the plan, a file, a document, a local page or a review diff, and send the notes to the agent (src/annotations.py).
+  { id: 'anotar', label: 'Annotate', icon: Highlighter },
 ];
 
 /* ── Browser ── */
@@ -770,6 +773,9 @@ function OpenDocChip({ doc, active, dispatch }: { doc: DocState; active: boolean
 
 export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun,onVisualSelection,sessionId=null,onDockMessage }: SidePanelProps) {
   const dockSel=useDockSel(sessionId);
+  // Annotate keeps its framed page and its open review while another tab is shown.
+  const [anotarSeen,setAnotarSeen]=useState(false);
+  useEffect(()=>{if(state.tab==='anotar')setAnotarSeen(true);},[state.tab]);
   const tabStrip=useRef<HTMLDivElement>(null);
   useEffect(()=>{tabStrip.current?.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest',inline:'nearest'});},[state.tab]);
   const availableTabs=TABS.filter(tab=>
@@ -780,7 +786,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
     (tab.id!=='board'||Boolean(project)),
   );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
-  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'app' && Boolean(dockSel)) || (tab.id === 'pizarra' && Boolean(state.pizarra)) || (tab.id === 'hoja' && Boolean(state.hoja)) || (tab.id === 'agents' && workers.length > 0));
+  const tabs = availableTabs.filter(tab => ['outputs', 'files', 'sources'].includes(tab.id) || tab.id === state.tab || (tab.id === 'progress' && state.todos.length > 0) || (tab.id === 'app' && Boolean(dockSel)) || (tab.id === 'pizarra' && Boolean(state.pizarra)) || (tab.id === 'hoja' && Boolean(state.hoja)) || (tab.id === 'agents' && workers.length > 0) || (tab.id === 'anotar' && anotarSeen));
   const otherTabs = availableTabs.filter(tab => !tabs.includes(tab));
   // #247: what the current turn has read / written, for the Files tab.
   const fileMarks=useMemo(()=>turnFileMarks(turns,workspace),[turns,workspace]);
@@ -905,6 +911,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
         }
         dispatch({type:'file',workspace,path});
       }}/></div>}
+      {anotarSeen&&<Annotate sessionId={sessionId} turns={turns} workspace={workspace} documents={state.documents} hidden={state.tab!=='anotar'} maximized={state.maximized} busy={busy} onToggleMaximize={()=>dispatch({type:'maximize'})} onSend={(text,sendNow)=>onDockMessage?.(text,sendNow)} onNotice={onNotice}/>}
       {appSeen&&<AppDock sessionId={sessionId} hidden={state.tab!=='app'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onMessage={(text,send)=>onDockMessage?.(text,send)}/>}
       {state.pizarra&&<Pizarra key={pizarraKey??''} boardId={state.pizarra.id} title={state.pizarra.title} sessionId={sessionId} hidden={state.tab!=='pizarra'} maximized={state.maximized} onToggleMaximize={()=>dispatch({type:'maximize'})} onNotice={onNotice} onTitle={title=>state.pizarra&&dispatch({type:'surface-title',kind:'pizarra',id:state.pizarra.id,title})}/>}
       {state.tab==='pizarra'&&!state.pizarra&&<SurfaceHome kind="pizarra" sessionId={sessionId} onOpen={(id,title)=>dispatch({type:'surface',kind:'pizarra',id,title})}/>}

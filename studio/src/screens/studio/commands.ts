@@ -215,6 +215,8 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'git', category: 'Tools', usage: '/git', help: 'Open this project’s repositories.' },
   { name: 'pizarra', aliases: ['whiteboard'], category: 'Tools', usage: '/pizarra [title]', help: 'Open a whiteboard beside the chat (a new one, or this chat\'s latest).' },
   { name: 'hoja', aliases: ['spreadsheet', 'sheet'], category: 'Tools', usage: '/hoja [title]', help: 'Open a spreadsheet beside the chat (a new one, or this chat\'s latest).' },
+  { name: 'anotar', aliases: ['annotate'], category: 'Tools', usage: '/anotar [path | http://localhost:PORT]', help: 'Annotate beside the chat: the agent\'s last answer (its plan), a file or a local web page; the notes go back to the agent as one message.' },
+  { name: 'revisar', aliases: ['code-review-lines'], category: 'Tools', usage: '/revisar [base]', help: 'Review the working folder\'s changes (uncommitted, or against a branch) with notes per line and a guided reading order.' },
   { name: 'context', category: 'Tools', usage: '/context', help: 'Inspect context for this project and conversation.' },
   { name: 'hoards', aliases: ['connectors'], category: 'Tools', usage: '/hoards', help: 'Open connected Hoards.', route: '/connectors' },
   { name: 'group', category: 'Tools', usage: '/group', help: 'Group chat: several models (with personas) in one conversation.', route: '/group' },

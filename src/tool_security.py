@@ -250,6 +250,11 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "app_open",
     "app_view",
     "app_act",
+    # Annotations and guided review (src/annotations.py).
+    "annotate_open",
+    "annotations_list",
+    "review_open",
+    "review_guide",
     "pizarra_create",
     "pizarra_read",
     "pizarra_edit",
@@ -382,6 +387,12 @@ PLAN_MODE_READONLY_TOOLS = {
     # CI failure analyzer (lot C): a read-only GitHub REST/`gh` CLI call,
     # same class as prior_art/web_fetch.
     "ci_failures",
+    # Annotations (src/annotations.py): a plan is what the person annotates in plan mode, and a review only
+    # reads the diff; none of these changes the workspace.
+    "annotate_open",
+    "annotations_list",
+    "review_open",
+    "review_guide",
 }
 
 

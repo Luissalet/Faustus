@@ -4963,6 +4963,10 @@ FUNCTION_TOOL_SCHEMAS = [
 from src.surface_schemas import SURFACE_TOOL_SCHEMAS as _SURFACE_TOOL_SCHEMAS
 FUNCTION_TOOL_SCHEMAS.extend(_SURFACE_TOOL_SCHEMAS)
 
+# Annotations and guided review (src/annotation_schemas.py).
+from src.annotation_schemas import ANNOTATION_TOOL_SCHEMAS as _ANNOTATION_TOOL_SCHEMAS
+FUNCTION_TOOL_SCHEMAS.extend(_ANNOTATION_TOOL_SCHEMAS)
+
 # PDF navigation schemas are generated from the same contract its handlers parse.
 from src.pdf_tool_contracts import function_schemas as _pdf_function_schemas
 FUNCTION_TOOL_SCHEMAS.extend(_pdf_function_schemas())

@@ -1360,6 +1360,9 @@ from routes.pizarra_routes import setup_pizarra_routes
 app.include_router(setup_pizarra_routes())
 from routes.sheet_routes import setup_sheet_routes
 app.include_router(setup_sheet_routes())
+# Annotations and guided review (src/annotations.py): notes on plans, files, local pages and diffs, back to the agent.
+from routes.annotation_routes import setup_annotation_routes
+app.include_router(setup_annotation_routes())
 # User panels (src/panels.py) and Loop Cards (src/loop_card.py).
 from routes.panel_routes import setup_panel_routes
 app.include_router(setup_panel_routes())

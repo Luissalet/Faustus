@@ -179,6 +179,8 @@ _BUILTIN_SERVERS = {
     # Pizarra / Hoja (src/pizarra.py, src/hoja.py): the same tools as the chat, over the running Faustus.
     "pizarra": ("mcp_servers/pizarra_server.py", "Built-in: Pizarra whiteboard"),
     "sheet": ("mcp_servers/sheet_server.py", "Built-in: Hoja spreadsheet"),
+    # Annotations and guided review (src/annotations.py): the chat's four tools plus adding and composing notes.
+    "annotations": ("mcp_servers/annotations_server.py", "Built-in: Annotations and code review"),
     # User panels (src/panels.py) and Loop Cards (src/loop_card.py): the same tools as the chat.
     "panels": ("mcp_servers/panels_server.py", "Built-in: User panels"),
     "loop_cards": ("mcp_servers/loop_cards_server.py", "Built-in: Loop cards"),
@@ -207,12 +209,14 @@ NATIVE_TWIN_TOOLS: dict[str, frozenset[str]] = {
     "context": frozenset({"context_recall"}),
     "harness": frozenset({"doc_lint"}),
     "image_gen": frozenset({"generate_image"}),
+    "annotations": frozenset({"annotate_open", "annotations_list", "review_open", "review_guide"}),
 }
 
 # Parameters a listed copy needs only because it runs outside a chat session: the native tool takes the same value
 # from the session (the active project), so they do not make the copy do more.
 NATIVE_TWIN_SESSION_PARAMS: dict[str, frozenset[str]] = {
     "project_workspace": frozenset({"project_id"}),
+    "annotations": frozenset({"session"}),
 }
 
 
