@@ -250,6 +250,72 @@ def setup_brain_routes() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    # ── ratified facts, contradictions, expiry, galaxy ───────────────────
+
+    @router.get("/review")
+    async def get_review(request: Request, soon_days: int = 14,
+                         _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """What needs the owner's eye: contradictions (a one-value-at-a-time
+        relation open with two values) and expired or soon-to-expire facts
+        and notes, with counts."""
+        from src.brain import review
+        return await asyncio.to_thread(review.overview, _owner(request),
+                                       soon_days=_limit(soon_days, 14, 3650))
+
+    @router.post("/review/resolve")
+    async def post_review_resolve(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Quick action on a review item. Body: `action` (keep | archive |
+        update | renew), `ref` (`rel:<id>` or `note:<path>`), `value` (update),
+        `until` (renew; "" clears), `note`."""
+        from src.brain import review
+
+        owner = _owner(request)
+        payload = await _json_body(request)
+        try:
+            out = await asyncio.to_thread(
+                review.resolve, owner, str(payload.get("action") or ""), str(payload.get("ref") or ""),
+                value=str(payload.get("value") or ""),
+                until=payload.get("until") if "until" in payload else None,
+                note=str(payload.get("note") or ""))
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        _mirror_entities_later(owner, out.get("entities") or [])
+        return out
+
+    @router.get("/ratified")
+    async def get_ratified(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        from src.brain import ratified
+        marks = await asyncio.to_thread(ratified.refs, _owner(request))
+        return {"ratified": list(marks.values()), "count": len(marks)}
+
+    @router.post("/ratify")
+    async def post_ratify(request: Request, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Ratify a fact, entity or note: `{ref: "rel:<id>" | "ent:<id>" |
+        "note:<path>", note?}`. `{ref, off: true}` removes the mark."""
+        from src.brain import ratified
+
+        owner = _owner(request)
+        payload = await _json_body(request)
+        try:
+            if payload.get("off"):
+                return {"ref": str(payload.get("ref") or ""), "ratified": False,
+                        "removed": await asyncio.to_thread(ratified.unratify, owner, payload.get("ref"))}
+            mark = await asyncio.to_thread(ratified.ratify, owner, payload.get("ref"),
+                                           str(payload.get("note") or ""))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {**mark, "ratified": True}
+
+    @router.get("/galaxy")
+    async def get_galaxy(request: Request, limit: int = 300, kinds: str = "",
+                         _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Projects, sessions, agents, outputs and entities as five point
+        clouds with 3D positions and the links between them."""
+        from src.brain import galaxy
+        return await asyncio.to_thread(
+            galaxy.build, _owner(request), limit=_limit(limit, 300, galaxy.MAX_LIMIT),
+            kinds=[k.strip() for k in kinds.split(",") if k.strip()] or None)
+
     @router.post("/temporal-graph")
     async def post_temporal_graph(request: Request, body: GraphQuery, _u: str = Depends(require_user)):
         from src.brain.temporal_graph import retrieve
@@ -627,46 +693,15 @@ def setup_brain_routes() -> APIRouter:
             raise HTTPException(status_code=400, detail="relations and mentions must be lists")
 
         def _apply() -> Dict[str, Any]:
-            known = entities.list_entities(owner, q=name, limit=200, include_hidden=True)
-            before = {e["id"] for e in known}
-            entity = entities.upsert_entity(
-                owner, name, type=str(payload.get("type") or "other"),
-                aliases=[str(a) for a in (payload.get("aliases") or []) if str(a).strip()])
-            created = entity["id"] not in before and entity.get("created_at") == entity.get("updated_at")
-            summary = str(payload.get("summary") or "").strip()
-            if summary and not entity.get("summary_locked") and summary != (entity.get("summary") or ""):
-                entity = entities.update_entity(entity["id"], summary=summary) or entity
-            for ref in mentions_in:
-                entities.add_mention(owner, entity["id"], str(ref or "").strip())
-            touched = [entity["id"]]
-            relations_out = []
-            for item in relations_in:
-                if not isinstance(item, dict):
-                    raise entities.BrainEntityError("each relation must be an object")
-                rel = entities.canonical_relation(item.get("rel")) or str(item.get("rel") or "")
-                dst_id = str(item.get("to_id") or "")
-                if dst_id:
-                    target = entities.get_entity(dst_id)
-                    if not target or (target.get("owner") or "") != owner:
-                        raise entities.BrainEntityError("relation target not found")
-                elif str(item.get("to") or "").strip():
-                    target = entities.upsert_entity(owner, item["to"], type=str(item.get("to_type") or "other"))
-                    dst_id = target["id"]
-                if dst_id and dst_id == entity["id"]:
-                    continue
-                evidence = [str(r) for r in (item.get("evidence") or mentions_in) if str(r or "").strip()]
-                relations_out.append(entities.add_relation(
-                    owner, entity["id"], rel, dst_id=dst_id or None, dst_value=str(item.get("value") or ""),
-                    valid_from=item.get("valid_from") or None, evidence=evidence,
-                    confidence=0.9, method="rule"))
-                if dst_id:
-                    for ref in evidence:
-                        entities.add_mention(owner, dst_id, ref)
-                    touched.append(dst_id)
-            _mirror_entities_later(owner, touched)
-            fresh = entities.get_entity(entity["id"]) or entity
-            return {"entity": _enriched_entity(fresh), "created": created, "relations": relations_out,
-                    "path": _note_path_for_source(owner, f"ent:{entity['id']}")}
+            from src.brain.remember import remember
+
+            done = remember(
+                owner, name, type=str(payload.get("type") or "other"), aliases=payload.get("aliases") or [],
+                summary=str(payload.get("summary") or ""), mentions=mentions_in, relations=relations_in)
+            _mirror_entities_later(owner, done["touched"])
+            return {"entity": _enriched_entity(done["entity"]), "created": done["created"],
+                    "relations": done["relations"],
+                    "path": _note_path_for_source(owner, f"ent:{done['entity']['id']}")}
 
         try:
             return await asyncio.to_thread(_apply)

@@ -30,6 +30,7 @@ TOOL_NAMES = {
     "brain_entity", "brain_timeline", "brain_graph_neighbors", "brain_sync",
     "brain_facts_as_of", "brain_fact_history", "brain_graph_ask",
     "brain_canvas_export", "brain_canvas_import", "brain_base",
+    "brain_remember", "brain_ratify", "brain_review", "brain_galaxy",
 }
 
 OWNER = "ada"
@@ -87,6 +88,9 @@ def test_writes_without_an_owner_are_refused_and_say_which_variable():
         ("brain_write_note", {"title": "x", "content": "hello"}),
         ("brain_append_note", {"path": "Notes/x.md", "content": "more"}),
         ("brain_sync", {}),
+        ("brain_remember", {"name": "Ada"}),
+        ("brain_ratify", {"ref": "ent:x"}),
+        ("brain_review", {"action": "archive", "ref": "rel:x"}),
     ):
         out = _call(name, arguments)
         assert "ODYSSEUS_MCP_BRAIN_OWNER" in out[0].text, name
@@ -262,3 +266,55 @@ def test_brain_canvas_export_and_import_through_mcp(monkeypatch):
     assert out["created"] == 1 and out["linked_existing"] == 1 and out["edges_written"] == 1
     monkeypatch.delenv("ODYSSEUS_MCP_BRAIN_OWNER")
     assert "ODYSSEUS_MCP_BRAIN_OWNER" in _call("brain_canvas_import", {"canvas": doc, "name": "X"})[0].text
+
+
+# ── shared memory from outside: remember, ratify, review, galaxy ────────────
+
+def _json(out):
+    return json.loads(out[0].text)
+
+
+def test_an_outside_agent_can_file_ratify_and_resolve_a_fact(owned, monkeypatch):
+    first = _json(_call("brain_remember", {
+        "name": "Ada Lovelace", "type": "person", "summary": "Analyst.",
+        "relations": [{"rel": "works_at", "value": "Cordera Labs", "valid_from": "2024-01-01"}]}))
+    assert first["ok"] and first["created"] is True
+    ada_id = first["entity"]["id"]
+    again = _json(_call("brain_remember", {
+        "name": "ada lovelace",
+        "relations": [{"rel": "works_at", "value": "Bluehaven", "valid_from": "2024-01-01"}]}))
+    assert again["created"] is False and again["entity"]["id"] == ada_id
+
+    review = _json(_call("brain_review", {}))
+    assert review["counts"]["contradictions"] == 1
+    options = review["contradictions"][0]["options"]
+    keep = next(o for o in options if o["value"] == "Cordera Labs")
+
+    marked = _json(_call("brain_ratify", {"ref": keep["ref"], "note": "from Claude"}))
+    assert marked["ratified"] is True
+    listed = _json(_call("brain_ratify", {}))
+    assert listed["count"] == 1 and listed["ratified"][0]["note"] == "from Claude"
+
+    done = _json(_call("brain_review", {"action": "keep", "ref": keep["ref"]}))
+    assert done["ok"] and len(done["changed"]) == 2
+    assert _json(_call("brain_review", {}))["counts"]["contradictions"] == 0
+
+    profile = _json(_call("brain_entity", {"entity_id": ada_id}))["profile"]
+    flags = {r["dst_value"]: r["ratified"] for r in profile["relations"] if r["status"] == "active"}
+    assert flags == {"Cordera Labs": True}
+
+    off = _json(_call("brain_ratify", {"ref": keep["ref"], "off": True}))
+    assert off["removed"] is True
+
+
+def test_galaxy_tool_reports_every_cloud(owned, monkeypatch):
+    from src.brain import galaxy
+
+    monkeypatch.setattr(galaxy, "_projects", lambda owner: [{"id": "p1", "name": "Alpha"}])
+    monkeypatch.setattr(galaxy, "_agents", lambda owner, limit: [])
+    monkeypatch.setattr(galaxy, "_sessions", lambda owner, limit: [])
+    monkeypatch.setattr(galaxy, "_outputs", lambda owner, limit: [])
+    _call("brain_remember", {"name": "Bluehaven", "type": "organization"})
+    body = _json(_call("brain_galaxy", {"kinds": ["project", "entity"], "limit": 50}))
+    assert body["counts"]["project"] == 1 and body["counts"]["entity"] == 1
+    assert {n["kind"] for n in body["nodes"]} == {"project", "entity"}

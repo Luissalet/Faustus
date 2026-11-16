@@ -14,6 +14,11 @@ hands for the second brain: a markdown vault of notes plus typed entities
     brain  daily     {date?}                         -> today's daily note
     brain  facts     {entity_id? | name?, rel?, as_of?, known_at?, include_closed?}
                                                      -> bitemporal relations
+    brain  remember  {name, type?, aliases?, summary?, mentions?, relations?}
+                                                     -> file an entity and its facts
+    brain  ratify    {ref?, off?, note?}             -> mark rel:/ent:/note: as ratified
+    brain  review    {soon_days?}                    -> contradictions + expired content
+    brain  resolve   {how, ref, value?, until?}      -> keep | archive | update | renew
 
 The owner comes from the tool context (the runtime), never from the
 arguments — same discipline as `context_recall` and `manage_memory`: a model
@@ -36,7 +41,7 @@ from src.tool_utils import _parse_tool_args
 logger = logging.getLogger(__name__)
 
 _ACTIONS = ("search", "read", "write", "append", "entity", "timeline",
-           "neighbors", "daily", "facts")
+           "neighbors", "daily", "facts", "remember", "ratify", "review", "resolve")
 
 
 def _limit(value: Any, default: int, ceiling: int) -> int:
@@ -192,6 +197,55 @@ class BrainTool:
                     limit=_limit(args.get("limit"), 200, 500))
                 return {"output": f"{view['count']} fact(s) [{view['mode']}]",
                         **view, "exit_code": 0}
+
+            if action == "remember":
+                from src.brain.remember import remember
+                done = remember(owner, args.get("name"), type=str(args.get("type") or "other"),
+                                aliases=args.get("aliases") or [], summary=str(args.get("summary") or ""),
+                                mentions=args.get("mentions") or [], relations=args.get("relations") or [])
+                for entity_id in done["touched"]:
+                    try:
+                        vault._export_single(owner, f"ent:{entity_id}")
+                    except Exception:  # noqa: BLE001 - the next sync rebuilds the page
+                        pass
+                return {"output": f"{'created' if done['created'] else 'updated'} "
+                                  f"{done['entity']['name']} with {len(done['relations'])} fact(s)",
+                        "entity": done["entity"], "relations": done["relations"], "exit_code": 0}
+
+            if action == "ratify":
+                from src.brain import ratified
+                if not str(args.get("ref") or "").strip():
+                    marks = ratified.refs(owner)
+                    return {"output": f"{len(marks)} ratified item(s)",
+                            "ratified": list(marks.values()), "exit_code": 0}
+                if args.get("off"):
+                    removed = ratified.unratify(owner, args.get("ref"))
+                    return {"output": "ratification removed" if removed else "it was not ratified",
+                            "ratified": False, "exit_code": 0}
+                mark = ratified.ratify(owner, args.get("ref"), str(args.get("note") or ""))
+                return {"output": f"ratified {mark['ref']}", "ratified": True, **mark, "exit_code": 0}
+
+            if action == "review":
+                from src.brain import review
+                view = review.overview(owner, soon_days=_limit(args.get("soon_days"), 14, 3650))
+                counts = view["counts"]
+                return {"output": f"{counts['contradictions']} contradiction(s), "
+                                  f"{counts['expired']} expired, {counts['soon']} expiring soon",
+                        **view, "exit_code": 0}
+
+            if action == "resolve":
+                from src.brain import review
+                done = review.resolve(owner, str(args.get("how") or ""), str(args.get("ref") or ""),
+                                      value=str(args.get("value") or ""),
+                                      until=args.get("until") if "until" in args else None,
+                                      note=str(args.get("note") or ""))
+                for entity_id in done.get("entities") or []:
+                    try:
+                        vault._export_single(owner, f"ent:{entity_id}")
+                    except Exception:  # noqa: BLE001
+                        pass
+                return {"output": f"{done['action']} {done['ref']}: {len(done['changed'])} item(s) changed",
+                        **done, "exit_code": 0}
 
             if action == "neighbors":
                 path = str(args.get("path") or "").strip()

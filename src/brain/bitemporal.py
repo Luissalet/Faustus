@@ -103,9 +103,12 @@ def facts(owner: Any, *, entity_id: Any = None, rel: Any = None, as_of: Any = No
     truncated = len(items) > limit
     items = items[:limit]
     sup = _superseded_at(str(owner or ""), [r["id"] for r in items], horizon)
+    from src.brain import ratified
+    marks = ratified.refs(owner, "rel:")
     rows = []
     for r in items:
         row = dict(r)
+        row["ratified"] = f"rel:{r['id']}" in marks
         row["recorded_at"] = r.get("asserted_at") or r.get("created_at") or ""
         row["superseded_at"] = sup.get(r["id"], "")
         rows.append(row)

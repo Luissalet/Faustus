@@ -47,7 +47,8 @@ _OWNER_SCOPE_ERROR = (
 #: Tools whose actions write. Reads degrade to install-wide without a
 #: configured owner; every write here is refused instead, same policy as
 #: the context engine and memory servers.
-_WRITE_ACTIONS = {"brain_write_note", "brain_append_note", "brain_sync", "brain_canvas_import"}
+_WRITE_ACTIONS = {"brain_write_note", "brain_append_note", "brain_sync", "brain_canvas_import",
+                  "brain_remember", "brain_ratify"}
 
 
 def _configured_owner() -> str:
@@ -434,6 +435,91 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="brain_remember",
+            description=(
+                "File a fact in the shared memory: create-or-find an entity by name or alias, "
+                "optionally set its `summary`, cite `mentions` (source refs such as note:<path>) "
+                "and assert `relations` from it ([{rel, to | to_id | value, to_type?, valid_from?, "
+                "valid_until?, evidence?}]). A one-value-at-a-time relation (works_at, lives_in, "
+                "located_in) closes the outdated value by date; when the order cannot be known "
+                "both stay open and show up in brain_review. Idempotent. Writing is refused "
+                "without a configured owner."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "type": {"type": "string", "description": "person, project, organization, "
+                             "place, tool, concept, event or other."},
+                    "aliases": {"type": "array", "items": {"type": "string"}},
+                    "summary": {"type": "string"},
+                    "mentions": {"type": "array", "items": {"type": "string"}},
+                    "relations": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["name"],
+            },
+        ),
+        Tool(
+            name="brain_ratify",
+            description=(
+                "Mark a fact, entity or note as ratified by its owner, or remove the mark. A "
+                "ratified item wins over what agents filed: a ratified fact is not closed by a "
+                "newer unratified value, and the context engine treats a ratified entity or note "
+                "as the owner's own statement. `ref` is rel:<fact id>, ent:<entity id> or "
+                "note:<vault path>; `off: true` removes the mark; with no `ref` it lists every "
+                "ratified item. Marking is refused without a configured owner."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string"},
+                    "note": {"type": "string"},
+                    "off": {"type": "boolean"},
+                },
+            },
+        ),
+        Tool(
+            name="brain_review",
+            description=(
+                "What needs the owner's eye. With no `action`: contradictions (a one-value-at-a-time "
+                "relation open with two values, ratified side first) and expired or soon-to-expire "
+                "facts and notes (`soon_days`, default 14), with counts. With `action` + `ref` it "
+                "resolves one item: keep (ratify this fact, archive the other values), archive "
+                "(a fact is retracted, a note goes to the trash; nothing is deleted), update "
+                "(`value` replaces a fact's value) or renew (`until` is the new expiry date, \"\" "
+                "clears it; works on notes through their caduca / expires frontmatter). Resolving "
+                "is refused without a configured owner."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["keep", "archive", "update", "renew"]},
+                    "ref": {"type": "string"},
+                    "value": {"type": "string"},
+                    "until": {"type": "string"},
+                    "note": {"type": "string"},
+                    "soon_days": {"type": "integer", "minimum": 0, "maximum": 3650},
+                },
+            },
+        ),
+        Tool(
+            name="brain_galaxy",
+            description=(
+                "The brain as a galaxy: projects, sessions, agents, outputs and entities as five "
+                "point clouds with 3D positions (`pos`), sizes and the links between them (a session "
+                "to its project and agent, an output to its session, entities by relation), plus "
+                "counts per kind. `kinds` filters the clouds; `limit` caps each one. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "kinds": {"type": "array", "items": {"type": "string",
+                              "enum": ["project", "agent", "session", "output", "entity"]}},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+                },
+            },
+        ),
     ]
 
 
@@ -643,6 +729,60 @@ def _tool_sync(owner: str, args: dict) -> list[TextContent]:
     return _json_result({"ok": True, "report": report})
 
 
+def _tool_remember(owner: str, args: dict) -> list[TextContent]:
+    from src.brain.remember import remember
+    done = remember(owner, args.get("name"), type=str(args.get("type") or "other"),
+                    aliases=args.get("aliases") or [], summary=str(args.get("summary") or ""),
+                    mentions=args.get("mentions") or [], relations=args.get("relations") or [])
+    _mirror_after_write(owner, done["touched"])
+    return _json_result({"ok": True, "created": done["created"], "entity": done["entity"],
+                         "relations": done["relations"]})
+
+
+def _mirror_after_write(owner: str, entity_ids) -> None:
+    """Write the vault pages of the touched entities; a mirror that fails costs
+    the page, never the write (the next sync rebuilds it)."""
+    for entity_id in entity_ids:
+        try:
+            _engine["vault"]._export_single(owner, f"ent:{entity_id}")
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _tool_ratify(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import ratified
+    if not str(args.get("ref") or "").strip():
+        marks = ratified.refs(owner)
+        return _json_result({"ok": True, "count": len(marks), "ratified": list(marks.values())})
+    if args.get("off"):
+        return _json_result({"ok": True, "ratified": False,
+                             "removed": ratified.unratify(owner, args.get("ref"))})
+    return _json_result({"ok": True, "ratified": True,
+                         **ratified.ratify(owner, args.get("ref"), str(args.get("note") or ""))})
+
+
+def _tool_review(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import review
+    if not args.get("action"):
+        return _json_result({"ok": True, **review.overview(
+            owner, soon_days=_limit(args.get("soon_days"), 14, 3650))})
+    if not owner:
+        return _text_result(f"{_OWNER_SCOPE_ERROR}\n(refused: brain_review {args.get('action')})")
+    done = review.resolve(owner, str(args.get("action")), str(args.get("ref") or ""),
+                          value=str(args.get("value") or ""),
+                          until=args.get("until") if "until" in args else None,
+                          note=str(args.get("note") or ""))
+    _mirror_after_write(owner, done.get("entities") or [])
+    return _json_result({"ok": True, **done})
+
+
+def _tool_galaxy(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import galaxy
+    return _json_result({"ok": True, **galaxy.build(
+        owner, limit=_limit(args.get("limit"), galaxy.DEFAULT_LIMIT, galaxy.MAX_LIMIT),
+        kinds=_str_list(args.get("kinds")))})
+
+
 _HANDLERS = {
     "brain_search": _tool_search,
     "brain_read_note": _tool_read_note,
@@ -658,6 +798,10 @@ _HANDLERS = {
     "brain_canvas_import": _tool_canvas_import,
     "brain_base": _tool_base,
     "brain_sync": _tool_sync,
+    "brain_remember": _tool_remember,
+    "brain_ratify": _tool_ratify,
+    "brain_review": _tool_review,
+    "brain_galaxy": _tool_galaxy,
 }
 
 

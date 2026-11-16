@@ -134,6 +134,7 @@ class BrainSource(ThreadedSource):
         except Exception as exc:  # noqa: BLE001
             logger.debug("brain adapter: profile(%s) failed: %s", entity_id, exc)
             return None
+        vouched = bool((profile.get("entity") or {}).get("ratified"))
         return make_candidate(
             source_type="memory",
             source_ref=f"ent:{entity_id}",
@@ -142,14 +143,16 @@ class BrainSource(ThreadedSource):
             body=_entity_body(entity, profile, _history_lines(owner, entity_id, req)),
             lanes=("exact",),
             scores={"mention": 1.0},
-            trust_class="agent_assertion",
-            authority="agent_claim",
+            # What the owner ratified is the owner's own statement, not an
+            # agent's reading, and wins a conflict against one.
+            trust_class="human_explicit" if vouched else "agent_assertion",
+            authority="user_instruction" if vouched else "agent_claim",
             source_revision=str(entity.get("updated_at") or ""),
             observed_at=entity.get("updated_at") or entity.get("created_at") or "",
             owner=str(entity.get("owner") or owner),
             project_id=req.project_id,
             meta={"entity_type": str(entity.get("type") or ""),
-                 "aliases": list(entity.get("aliases") or [])},
+                 "aliases": list(entity.get("aliases") or []), "ratified": vouched},
         )
 
     def _note_candidates(self, owner: str, query: str,
@@ -174,6 +177,7 @@ class BrainSource(ThreadedSource):
         if not path:
             return None
         score = float(hit.get("score") or 0.0)
+        vouched = _note_ratified(owner, path)
         return make_candidate(
             source_type="memory",
             source_ref=f"note:{path}",
@@ -182,11 +186,11 @@ class BrainSource(ThreadedSource):
             body=str(hit.get("snippet") or ""),
             lanes=("lexical",),
             scores={"relevance": score},
-            trust_class="observed",
-            authority="observed_state",
+            trust_class="human_explicit" if vouched else "observed",
+            authority="user_instruction" if vouched else "observed_state",
             owner=owner,
             project_id=req.project_id,
-            meta={"kind": str(hit.get("kind") or ""), "path": path},
+            meta={"kind": str(hit.get("kind") or ""), "path": path, "ratified": vouched},
         )
 
     # ── fetch ──────────────────────────────────────────────────────────────
@@ -214,6 +218,7 @@ class BrainSource(ThreadedSource):
                 note = notes.read_note(owner, path)
             except (FileNotFoundError, ValueError):
                 return None
+            vouched = _note_ratified(owner, path)
             return make_candidate(
                 source_type="memory",
                 source_ref=ref,
@@ -222,13 +227,23 @@ class BrainSource(ThreadedSource):
                 body=str(note.get("user_zone") or note.get("content") or ""),
                 lanes=("exact",),
                 scores={},
-                trust_class="observed",
-                authority="observed_state",
+                trust_class="human_explicit" if vouched else "observed",
+                authority="user_instruction" if vouched else "observed_state",
                 owner=owner,
                 project_id=req.project_id,
-                meta={"kind": str(note.get("kind") or ""), "path": path},
+                meta={"kind": str(note.get("kind") or ""), "path": path, "ratified": vouched},
             )
         return None
+
+
+def _note_ratified(owner: str, path: str) -> bool:
+    try:
+        from src.brain import ratified
+
+        return ratified.is_ratified(owner, f"note:{path}")
+    except Exception as exc:  # noqa: BLE001 - an unreadable mark means "not ratified"
+        logger.debug("brain adapter: ratified lookup failed: %s", exc)
+        return False
 
 
 def _history_lines(owner: str, entity_id: str, req: RetrievalRequest) -> List[str]:
@@ -252,11 +267,21 @@ def _entity_body(entity: Dict[str, Any], profile: Dict[str, Any],
     if summary:
         lines.append(summary)
 
-    active = [r for r in (profile.get("relations") or [])
-             if r.get("status") == "active"][:MAX_RELATIONS]
+    active = [r for r in (profile.get("relations") or []) if r.get("status") == "active"]
+    # A fact the owner ratified outranks an unratified value of the same
+    # one-value-at-a-time relation: the unratified one is left out of the card.
+    from src.brain.entities import FUNCTIONAL_RELATIONS
+
+    vouched = {(r.get("src"), r.get("rel")) for r in active
+               if r.get("ratified") and r.get("rel") in FUNCTIONAL_RELATIONS}
+    active = [r for r in active
+              if r.get("ratified") or (r.get("src"), r.get("rel")) not in vouched]
+    active.sort(key=lambda r: not r.get("ratified"))
+    active = active[:MAX_RELATIONS]
     if active:
         rel_text = "; ".join(
-            f"{r.get('rel')} {r.get('dst_name') or r.get('dst') or ''}".strip()
+            f"{r.get('rel')} {r.get('dst_name') or r.get('dst') or r.get('dst_value') or ''}".strip()
+            + (" (ratified)" if r.get("ratified") else "")
             for r in active
         )
         lines.append(f"Relations: {rel_text}")

@@ -169,3 +169,22 @@ def test_owner_isolation_search_does_not_cross_owners():
     out = _run({"action": "search", "query": "secret"}, owner="mallory")
     assert out["exit_code"] == 0
     assert out["notes"] == []
+
+
+def test_remember_ratify_review_resolve_through_the_agent_tool():
+    made = _run({"action": "remember", "name": "Ada", "type": "person", "relations": [
+        {"rel": "works_at", "value": "Cordera Labs", "valid_from": "2024-01-01"},
+        {"rel": "works_at", "value": "Bluehaven", "valid_from": "2024-01-01"}]})
+    assert made["exit_code"] == 0 and len(made["relations"]) == 2
+    view = _run({"action": "review"})
+    assert view["counts"]["contradictions"] == 1 and "1 contradiction" in view["output"]
+    keep = next(o for o in view["contradictions"][0]["options"] if o["value"] == "Bluehaven")
+    mark = _run({"action": "ratify", "ref": keep["ref"], "note": "confirmed"})
+    assert mark["exit_code"] == 0 and mark["ratified"] is True
+    assert _run({"action": "ratify"})["ratified"][0]["ref"] == keep["ref"]
+    done = _run({"action": "resolve", "how": "keep", "ref": keep["ref"]})
+    assert done["exit_code"] == 0 and len(done["changed"]) == 2
+    assert _run({"action": "review"})["counts"]["contradictions"] == 0
+    bad = _run({"action": "resolve", "how": "renew", "ref": keep["ref"]})
+    assert bad["exit_code"] == 1 and "until" in bad["error"]
+    assert _run({"action": "ratify", "ref": keep["ref"], "off": True})["ratified"] is False

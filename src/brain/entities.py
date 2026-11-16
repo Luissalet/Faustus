@@ -766,6 +766,9 @@ def _supersede_functional(new_rel: Dict[str, Any], current: Dict[str, Any],
         return None
     if str(target.get("method") or "rule") == "rule" and str(other.get("method") or "") == "llm":
         return None  # a model's claim never ends a fact read deterministically from the text
+    if (ratified.is_ratified(target.get("owner"), f"rel:{target['id']}")
+            and not ratified.is_ratified(other.get("owner"), f"rel:{other['id']}")):
+        return None  # what the owner ratified is not closed by an unratified newcomer
     at = str(other.get("valid_from") or "")
     at_dt = parse_iso(at)
     target_start, _ = _relation_start(target)
@@ -838,8 +841,8 @@ def add_relation(owner: Any, src_id: Any, rel: Any, *, dst_id: Any = None,
         )
 
     if rel_key in FUNCTIONAL_RELATIONS:
-        new_rel = {"id": relation_id, "valid_from": valid_from_iso, "valid_until": valid_until_iso,
-                   "asserted_at": now, "method": str(method or "rule")}
+        new_rel = {"id": relation_id, "owner": owner, "valid_from": valid_from_iso,
+                   "valid_until": valid_until_iso, "asserted_at": now, "method": str(method or "rule")}
         for current in list_relations(owner, entity_id=src_id, include_closed=False):
             if current["id"] == relation_id or current["src"] != src_id or current["rel"] != rel_key:
                 continue
@@ -1565,8 +1568,10 @@ def profile(entity_id: Any, *, as_of: Any = None) -> Dict[str, Any]:
     all_rels = list_relations(owner, entity_id=entity["id"], include_closed=True)
     relations: List[Dict[str, Any]] = []
     history: List[Dict[str, Any]] = []
+    marks = ratified.refs(owner, "rel:")
     for rel in all_rels:
         enriched = dict(rel)
+        enriched["ratified"] = f"rel:{rel['id']}" in marks
         enriched["src_name"] = _entity_name(rel["src"])
         enriched["dst_name"] = _entity_name(rel["dst"]) if rel["dst"] else ""
         enriched["valid_at"] = _relation_window_covers(rel, instant)
@@ -1574,6 +1579,8 @@ def profile(entity_id: Any, *, as_of: Any = None) -> Dict[str, Any]:
         if rel["status"] != "active":
             history.append(enriched)
 
+    entity = dict(entity)
+    entity["ratified"] = ratified.is_ratified(owner, f"ent:{entity['id']}")
     return {
         "entity": entity,
         "facts": facts,
@@ -1646,3 +1653,6 @@ __all__ = [
     "mentions_for", "sources_for", "repoint_source", "forget_source",
     "entities_in_text", "profile", "graph", "stats",
 ]
+
+
+from src.brain import ratified  # noqa: E402  (registers its table; the hooks above use it)
