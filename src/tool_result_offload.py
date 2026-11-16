@@ -212,7 +212,10 @@ def offload_if_oversized(result: Dict[str, Any], *, owner: str, session_id: str 
                 f"in one call with read_artifact(artifact_id=\"{artifact_id}\", query=\"term\", "
                 f"context_chars=1500{source_hint}); occurrence=2 skips an earlier match. "
                 "Character ranges (start/end) and JSON selections remain available. "
-                "Use artifact_search to discover an artifact when its id is unknown.")
+                "Use artifact_search to discover an artifact when its id is unknown. "
+                f"To read it by level of detail instead of whole, call fold_read(artifact_id=\"{artifact_id}\", "
+                "level=2) (1 full, 2 literal key sentences, 3 idea and reason, 4 one line per section, "
+                "5 topics; section=\"s1\" or paragraph=\"p3\" narrows it).")
     else:
         note = (f"Result truncated ({len(full_text)} chars total) and NOT durably "
                 f"stored ({storage_error}); the omitted text cannot be recovered.")

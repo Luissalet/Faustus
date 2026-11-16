@@ -1341,6 +1341,10 @@ app.include_router(setup_behavior_mode_routes(session_manager))
 from routes.condense_routes import setup_condense_routes
 app.include_router(setup_condense_routes(session_manager))
 
+# Fold a long answer or tool output into five levels of detail (src/text_fold.py).
+from routes.text_fold_routes import setup_text_fold_routes
+app.include_router(setup_text_fold_routes())
+
 # Observable strategy + recipes (CMP-09/CMP-12): GET/PUT /api/strategy/profile,
 # POST /api/strategy/preview, GET /api/recipes, POST /api/recipes/from-run/{run_id}
 # (src/strategy_policy.py, src/recipes.py).

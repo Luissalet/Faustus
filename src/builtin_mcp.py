@@ -155,6 +155,9 @@ _BUILTIN_SERVERS = {
     # through ODYSSEUS_MCP_SEARCH_OWNER or the call's `owner`.
     "unified_search": ("mcp_servers/unified_search_server.py", "Built-in: Search everything"),
     "connected_research": ("mcp_servers/connected_research_server.py", "Built-in: Connected-data research"),
+    # A long text or stored tool result in five levels of detail (src/text_fold.py, the same as /api/fold): read it
+    # level by level, section by section, instead of whole. Levels 3-5 use the global language model on demand.
+    "text_fold": ("mcp_servers/text_fold_server.py", "Built-in: Fold long text by detail level"),
     # Streaming voice sessions over a chat (services/voice_stream.py through /api/voice): capabilities without
     # loading models, utterance replay or text into the ordinary turn, transcripts and spoken audio as events,
     # interrupt (speech only) and an explicit cancel of the turn. Not owner-scoped: the chat's owner runs the turn.

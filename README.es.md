@@ -58,6 +58,7 @@ En Windows sin Docker, `Start-Faustus-Desktop.bat` abre la ventana de escritorio
 - Anota el plan del agente, un fichero Markdown o HTML, un documento o una web local servida en vivo desde `localhost` (con recarga en caliente): selecciona texto o elige un elemento, deja comentarios, cambios propuestos, borrados y preguntas, y envíalos todos al agente en un solo mensaje (`/anotar`). Revisa los cambios sin commitear o el diff de una rama con notas por línea y un orden de lectura guiado por capítulos (`/revisar`).
 - Sal de una conversación mientras el servidor sigue con su turno; consulta la posición en la cola, la actividad, el uso de herramientas y las aprobaciones pendientes, y vuelve al mismo trabajo.
 - Abre un hilo lateral desde cualquier pasaje y conecta referencias, documentos y notas a un turno de forma explícita.
+- Lee una respuesta o una salida de herramienta largas en cinco niveles de detalle (completo, frases clave, idea clave, una línea por sección y temas) con un deslizador o las teclas 1-5, y abre el original de cualquier fragmento; los mismos niveles están disponibles para los agentes por MCP.
 - Busca y navega con **Ctrl+K**. Inglés y español, temas, densidad, tamaño de texto y movimiento reducido.
 - Instala Studio en el móvil como PWA con notificaciones, o abre una ventana flotante de pregunta rápida desde cualquier aplicación de Windows.
 

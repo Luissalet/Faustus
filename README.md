@@ -58,6 +58,7 @@ On Windows without Docker, `Start-Faustus-Desktop.bat` opens the native desktop 
 - Annotate the agent's plan, a Markdown or HTML file, a document or a local web page served live from `localhost` (hot reload included): select text or pick an element, leave comments, suggested changes, deletions and questions, and send them all back to the agent as one message (`/anotar`). Review uncommitted changes or a branch diff with notes per line and a guided reading order in chapters (`/revisar`).
 - Leave a conversation while the server keeps its turn running; see queue position, current activity, tool use and approval requests, and reconnect to the same work.
 - Branch a side thread from any passage and wire references, documents and notes into a turn explicitly.
+- Read a long answer or tool output at five levels of detail (full, key sentences, key idea, one line per section, topics) with a slider or the keys 1-5, and open the original of any fragment; the same levels are available to agents through MCP.
 - Search and navigate with **Ctrl+K**. English and Spanish, themes, density, adjustable text and reduced motion.
 - Install Studio on a phone as a PWA with push notifications, or open a floating quick-question window from any Windows app.
 
