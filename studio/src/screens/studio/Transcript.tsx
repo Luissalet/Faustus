@@ -16,6 +16,7 @@ import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { ResponseSources } from '../../components/ResponseSources';
+import { Foldable } from './FoldView';
 import { issueIdRegex } from '../../adapters/board';
 import { IssueChip, renderIssueSegments } from '../board/IssueChips';
 import { splitMentions } from '../../lib/mentions';
@@ -569,7 +570,9 @@ function ToolOutput({ text }: { text: string }) {
   const fmt = new Intl.NumberFormat(locale(), { useGrouping: 'always' } as unknown as Intl.NumberFormatOptions);
   return (
     <>
-      <pre className="fs-studio__out" data-testid="tool-output">{view.shown}</pre>
+      <Foldable text={text} plain>
+        <pre className="fs-studio__out" data-testid="tool-output">{view.shown}</pre>
+      </Foldable>
       {view.long && (
         <p className="fs-studio__out-more" data-testid="tool-output-truncated">
           <span>
@@ -2250,7 +2253,7 @@ function AssistantTurn({
         )}
         <TurnActivity turn={turn} />
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
-        {body && <Rich text={body} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} sources={turn.sources} />}
+        {body && <Foldable text={body} active={!turn.streaming}><Rich text={body} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} sources={turn.sources} /></Foldable>}
         {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}
         {turn.streaming && <span className="fs-sr-only" aria-live="polite" data-testid="stream-announcement">{streamAnnouncement}</span>}
         {turn.images.map((url) => (

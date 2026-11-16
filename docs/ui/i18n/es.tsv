@@ -11798,6 +11798,20 @@ New file	Fichero nuevo
 Deleted file	Fichero borrado
 Renamed file	Fichero renombrado
 Modified file	Fichero modificado
+Key sentences	Frases clave
+Key idea	Idea clave
+One line per section	Una línea por sección
+Topics	Temas
+The original could not be opened.	No se pudo abrir el original.
+Open the original paragraph	Abrir el párrafo original
+Open the original section	Abrir la sección original
+Hide the original	Ocultar el original
+Long text. Press 1 to 5 to change the level of detail.	Texto largo. Pulsa de 1 a 5 para cambiar el nivel de detalle.
+Level of detail	Nivel de detalle
+{shown} of {total} characters	{shown} de {total} caracteres
+Writing this level…	Escribiendo este nivel…
+Folding…	Plegando…
+The model is not answering, so this level cannot be written now. Levels 1 and 2 still work.	El modelo no responde, así que este nivel no se puede escribir ahora. Los niveles 1 y 2 siguen funcionando.
 Model · effort	Modelo · esfuerzo
 not declared	sin declarar
 declared by the agent	declarado por el agente
