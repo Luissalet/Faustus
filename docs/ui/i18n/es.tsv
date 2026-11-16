@@ -11818,3 +11818,39 @@ declared by the agent	declarado por el agente
 Also in the library	También en la biblioteca
 Also from {name}	También de {name}
 From connectors	De los conectores
+Galaxy	Galaxia
+Outputs	Salidas
+Open entity	Abrir entidad
+note	nota
+fact	hecho
+Ratified	Ratificado
+Ratify	Ratificar
+Ratify entity	Ratificar entidad
+Ratify this note	Ratificar esta nota
+Ratified by you: it wins over what agents filed. Click to remove.	Ratificado por ti: manda sobre lo que archivan los agentes. Pulsa para quitarlo.
+Mark as confirmed by you: it will win over what agents filed.	Márcalo como confirmado por ti: mandará sobre lo que archivan los agentes.
+Reading the review	Leyendo la revisión
+The review could not be read	No se ha podido leer la revisión
+Contradictions	Contradicciones
+No fact contradicts another.	Ningún hecho contradice a otro.
+Settled by a ratified fact	Resuelta por un hecho ratificado
+Expired and expiring content	Contenido caducado y a punto de caducar
+Nothing has expired. Put caduca: 2027-01-31 in a note, or give a fact an end date, and it shows up here.	Nada ha caducado. Pon caduca: 2027-01-31 en una nota, o dale fecha de fin a un hecho, y aparecerá aquí.
+{a} contradictions · {b} expired · {c} expiring soon · {d} ratified	{a} contradicciones · {b} caducados · {c} a punto de caducar · {d} ratificados
+Ratify this and archive the other	Ratificar este y archivar el otro
+New value	Valor nuevo
+filed by an agent	archivado por un agente
+read from the text	leído del texto
+Expired {date}	Caducó el {date}
+Expires {date}	Caduca el {date}
+Renew 90 days	Renovar 90 días
+No expiry	Sin caducidad
+Reading the galaxy	Leyendo la galaxia
+The galaxy could not be read	No se ha podido leer la galaxia
+Clouds	Nubes
+Light up by name	Iluminar por nombre
+Galaxy of {n} points. Drag to orbit, scroll to zoom, arrow keys to rotate.	Galaxia de {n} puntos. Arrastra para orbitar, usa la rueda para acercar y las flechas para girar.
+WebGL is not available here, so the points cannot be drawn.	WebGL no está disponible aquí, así que no se pueden dibujar los puntos.
+Nothing to show yet	Aún no hay nada que mostrar
+Projects, chats, agents, outputs and entities appear here as soon as they exist.	Los proyectos, chats, agentes, salidas y entidades aparecen aquí en cuanto existen.
+{n} links	{n} enlaces
