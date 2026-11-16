@@ -274,6 +274,8 @@ export interface ReadNote {
   tags: string[];
   updatedAt: string;
   editable: boolean;
+  /** The owner has confirmed this note: it outranks what agents filed. */
+  ratified: boolean;
 }
 
 function noteLinkFrom(raw: unknown): NoteLink {
@@ -303,6 +305,7 @@ export function readNoteFrom(raw: unknown): ReadNote {
     tags: strArray(r.tags),
     updatedAt: str(r.updated_at),
     editable: bool(r.editable, true),
+    ratified: bool(r.ratified),
   };
 }
 
@@ -548,6 +551,7 @@ export interface EntitySummary {
   mentions: number;
   relations: number;
   updatedAt: string;
+  ratified: boolean;
 }
 
 export function entitySummaryFrom(raw: unknown): EntitySummary {
@@ -562,6 +566,7 @@ export function entitySummaryFrom(raw: unknown): EntitySummary {
     mentions: Array.isArray(r.mentions) ? r.mentions.length : num(r.mentions),
     relations: Array.isArray(r.relations) ? r.relations.length : num(r.relations),
     updatedAt: str(r.updated_at),
+    ratified: bool(r.ratified),
   };
 }
 
@@ -591,6 +596,7 @@ export interface EntityRelation {
   validUntil: string | null;
   validAt: boolean;
   confidence: number;
+  ratified: boolean;
 }
 
 export interface TimelineEvent {
@@ -620,6 +626,7 @@ function relationFrom(raw: unknown): EntityRelation {
     validUntil: strOrNull(r.valid_until),
     validAt: bool(r.valid_at, true),
     confidence: num(r.confidence, 1),
+    ratified: bool(r.ratified),
   };
 }
 

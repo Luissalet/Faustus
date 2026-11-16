@@ -22,7 +22,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from . import db, frontmatter as fm, render, vault, wikilinks
+from . import db, frontmatter as fm, ratified, render, vault, wikilinks
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +197,7 @@ def read_note(owner: str, path: str) -> Dict[str, Any]:
         "tags": wikilinks.tags(body, fm_data),
         "updated_at": str(fm_data.get("updated") or fm_data.get("created") or ""),
         "editable": True,
+        "ratified": ratified.is_ratified(owner, f"note:{rel_path}"),
     }
 
 
@@ -477,6 +478,8 @@ def rename_note(owner: str, path: str, new_title: str, *, update_links: bool = T
                 vault._atomic_write(src_full, header + rewritten)
                 updated_links += 1
 
+    if new_path != rel_path:
+        ratified.move(owner, f"note:{rel_path}", f"note:{new_path}")
     reindex(owner)
     return {"note": read_note(owner, new_path), "updated_links": updated_links}
 

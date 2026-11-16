@@ -142,6 +142,16 @@ def annotate(owner: Any, rows: Iterable[Dict[str, Any]], kind: str = "rel",
     return items
 
 
+def move(owner: Any, old_ref: str, new_ref: str) -> None:
+    """Carry a mark to a renamed note; never raises."""
+    try:
+        with db() as conn:
+            conn.execute("UPDATE OR REPLACE brain_ratified SET ref = ? WHERE owner = ? AND ref = ?",
+                         (new_ref, str(owner or ""), old_ref))
+    except Exception:  # noqa: BLE001
+        logger.debug("brain.ratified: move failed", exc_info=True)
+
+
 def forget(owner: Any, ref: Any) -> None:
     """Drop the mark of a deleted item; never raises."""
     try:
@@ -150,5 +160,5 @@ def forget(owner: Any, ref: Any) -> None:
         logger.debug("brain.ratified: forget failed", exc_info=True)
 
 
-__all__ = ["RatifyError", "ratify", "unratify", "refs", "is_ratified", "annotate", "forget",
+__all__ = ["RatifyError", "ratify", "unratify", "refs", "is_ratified", "annotate", "forget", "move",
            "split_ref", "KINDS"]

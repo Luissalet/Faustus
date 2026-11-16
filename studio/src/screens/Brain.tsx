@@ -1,4 +1,4 @@
-import { Database, Files, Network, Info } from 'lucide-react';
+import { BadgeCheck, Database, Files, Network, Info, Orbit } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { createPortal } from 'react-dom';
@@ -35,6 +35,9 @@ import { QuickSwitcher } from './brain/QuickSwitcher';
 import { SettingsDrawer } from './brain/SettingsDrawer';
 import { TrashPanel } from './brain/TrashPanel';
 import { AskPanel } from './brain/AskPanel';
+import { GalaxyView } from './brain/GalaxyView';
+import { ReviewPanel } from './brain/ReviewPanel';
+import { loadReview } from '../adapters/brainReview';
 import { SyncBar } from './brain/SyncBar';
 import { t } from '../i18n';
 import './projects.css';
@@ -52,7 +55,9 @@ export function BrainScreen() {
   const platform = usePlatform();
   const [params, setParams] = useSearchParams();
   const activePath = params.get('note') ?? '';
-  const view = params.get('view') === 'graph' ? 'graph' : params.get('view') === 'bases' ? 'bases' : 'note';
+  const viewParam = params.get('view');
+  const view = viewParam === 'graph' || viewParam === 'bases' || viewParam === 'galaxy' || viewParam === 'review' ? viewParam : 'note';
+  const [reviewCount, setReviewCount] = useState(0);
   const [mobilePane, setMobilePane] = useState<'files' | 'note' | 'graph' | 'info'>('files');
 
   const [status, setStatus] = useState<BrainStatus | null>(null);
@@ -93,6 +98,10 @@ export function BrainScreen() {
       .finally(() => setTreeLoading(false));
   }, []);
   const reloadTags = useCallback(() => void loadTags().then(setTags).catch(() => undefined), []);
+  const refreshReviewCount = useCallback(
+    () => void loadReview().then((r) => setReviewCount(r.counts.unsettled + r.counts.expired)).catch(() => undefined),
+    [],
+  );
   const reloadTrashCount = useCallback(() => void loadTrash().then((items) => setTrashCount(items.length)).catch(() => undefined), []);
 
   useEffect(() => {
@@ -100,6 +109,7 @@ export function BrainScreen() {
     void reloadTree();
     reloadTags();
     reloadTrashCount();
+    refreshReviewCount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -235,7 +245,7 @@ export function BrainScreen() {
         </div>
       )}
 
-      <div className="fs-brain__body">
+      <div className="fs-brain__body" data-wide={platform !== 'mobile' && (view === 'galaxy' || view === 'review') ? 'true' : undefined}>
         {(platform !== 'mobile' || mobilePane === 'files') && (
           <Explorer
             tree={tree}
@@ -271,9 +281,19 @@ export function BrainScreen() {
                 <button type="button" role="radio" aria-checked={view === 'bases'} onClick={() => setParams((p) => { const next = new URLSearchParams(p); next.set('view', 'bases'); return next; })} data-testid="brain-view-bases">
                   <Database size={13} aria-hidden="true" /> {t('Bases')}
                 </button>
+                <button type="button" role="radio" aria-checked={view === 'galaxy'} onClick={() => setParams((p) => { const next = new URLSearchParams(p); next.set('view', 'galaxy'); return next; })} data-testid="brain-view-galaxy">
+                  <Orbit size={13} aria-hidden="true" /> {t('Galaxy')}
+                </button>
+                <button type="button" role="radio" aria-checked={view === 'review'} onClick={() => setParams((p) => { const next = new URLSearchParams(p); next.set('view', 'review'); return next; })} data-testid="brain-view-review">
+                  <BadgeCheck size={13} aria-hidden="true" /> {t('Review')}{reviewCount > 0 ? <span className="fs-brain__review-count" data-testid="brain-review-badge"> {reviewCount}</span> : null}
+                </button>
               </div>
             )}
-            {platform !== 'mobile' && view === 'bases' ? (
+            {platform !== 'mobile' && view === 'review' ? (
+              <ReviewPanel onOpenNote={openNote} onOpenEntity={onEntityOpen} onChanged={() => { void reloadTree(); refreshReviewCount(); }} />
+            ) : platform !== 'mobile' && view === 'galaxy' ? (
+              <GalaxyView onOpenEntity={onEntityOpen} />
+            ) : platform !== 'mobile' && view === 'bases' ? (
               <BasesView onOpenNote={openNote} />
             ) : (platform === 'mobile' ? mobilePane === 'graph' : view === 'graph') ? (
               <GraphView center={activePath || undefined} onOpenNote={openNote} onOpenEntity={onEntityOpen} onVaultChanged={() => { void reloadTree(); reloadTags(); }} />
@@ -324,7 +344,7 @@ export function BrainScreen() {
           </div>
         )}
 
-        {note && (platform !== 'mobile' || mobilePane === 'info') && (
+        {note && (platform !== 'mobile' || mobilePane === 'info') && !(platform !== 'mobile' && (view === 'galaxy' || view === 'review')) && (
           <RightPanel note={note} onOpenNote={openNote} onEntityChanged={() => setNote((n) => (n ? { ...n } : n))} />
         )}
       </div>

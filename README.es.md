@@ -79,7 +79,7 @@ En Windows sin Docker, `Start-Faustus-Desktop.bat` abre la ventana de escritorio
 
 - Los proyectos guardan archivos, documentos, fuentes, objetivos e instrucciones con independencia del nombre de la carpeta en la barra lateral.
 - El motor de contexto recupera, ordena y presupuesta material de las fuentes del proyecto, el historial y la memoria, y enseña con qué se construyó cada turno. El almacenamiento persistente amplía lo que se puede recuperar, no la ventana de contexto nativa del modelo.
-- El segundo cerebro es una bóveda markdown de notas y entidades tipadas con enlaces wiki, retroenlaces, relaciones con fechas y una vista de grafo, sincronizada en los dos sentidos con el sistema de archivos. Consulta la [API del cerebro](docs/api/brain.md).
+- El segundo cerebro es una bóveda markdown de notas y entidades tipadas con enlaces wiki, retroenlaces, relaciones con fechas y una vista de grafo, sincronizada en los dos sentidos con el sistema de archivos. Los hechos, entidades y notas se pueden ratificar, y lo ratificado manda sobre lo que archivan los agentes; una revisión lista contradicciones y contenido caducado con acciones rápidas; y una vista de galaxia muestra proyectos, chats, agentes, salidas y entidades como nubes de puntos navegables. Otros agentes leen y escriben el mismo almacén por el servidor MCP `brain`. Consulta la [API del cerebro](docs/api/brain.md).
 - Busca en el historial importado de otros asistentes junto al conocimiento local.
 
 ### Investigación, documentos y trabajo diario

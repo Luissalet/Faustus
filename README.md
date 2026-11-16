@@ -78,7 +78,7 @@ On Windows without Docker, `Start-Faustus-Desktop.bat` opens the native desktop 
 
 - Projects hold files, documents, sources, objectives and instructions independently of the sidebar folder name.
 - The context engine retrieves, ranks and budgets material from project sources, history and memory, and shows what a turn was built from. Persistent storage extends what can be retrieved, not the model's native context window.
-- The second brain is a markdown vault of notes and typed entities with wiki links, backlinks, time-windowed relations and a graph view, synced both ways with the filesystem. See the [brain API](docs/api/brain.md).
+- The second brain is a markdown vault of notes and typed entities with wiki links, backlinks, time-windowed relations and a graph view, synced both ways with the filesystem. Facts, entities and notes can be ratified by their owner, which makes them win over what agents filed; a review lists contradictions and expired content with one-click actions; and a galaxy view shows projects, chats, agents, outputs and entities as navigable point clouds. The same store is readable and writable from other agents through the `brain` MCP server. See the [brain API](docs/api/brain.md).
 - Search imported history from other assistants alongside local knowledge.
 
 ### Research, documents and everyday work

@@ -67,9 +67,10 @@ def _projects(owner: str) -> List[Dict[str, Any]]:
 
 def _sessions(owner: str, limit: int) -> List[Dict[str, Any]]:
     from core.database import Session as DbSession, SessionLocal
+    from src.auth_helpers import owner_filter
 
     with SessionLocal() as db:
-        query = db.query(DbSession).filter(DbSession.owner == owner)
+        query = owner_filter(db.query(DbSession), DbSession, owner)
         query = query.filter((DbSession.archived == False) | (DbSession.archived.is_(None)))  # noqa: E712
         rows = query.order_by(DbSession.last_message_at.desc().nullslast()).limit(limit).all()
         return [{
@@ -82,9 +83,10 @@ def _sessions(owner: str, limit: int) -> List[Dict[str, Any]]:
 
 def _agents(owner: str, limit: int) -> List[Dict[str, Any]]:
     from core.database import CrewMember, SessionLocal
+    from src.auth_helpers import owner_filter
 
     with SessionLocal() as db:
-        rows = (db.query(CrewMember).filter(CrewMember.owner == owner)
+        rows = (owner_filter(db.query(CrewMember), CrewMember, owner)
                 .order_by(CrewMember.sort_order).limit(limit).all())
         return [{"id": r.id, "name": r.name or r.id, "model": r.model or ""} for r in rows]
 

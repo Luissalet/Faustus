@@ -1,7 +1,9 @@
 import { Link2, Tag } from 'lucide-react';
 import type { ReadNote } from '../../adapters/brain';
 import { plainText } from '../../lib/wikilinks';
+import { useEffect, useState } from 'react';
 import { EntityPanel } from './EntityPanel';
+import { RatifyButton } from './ReviewPanel';
 import { t, tn } from '../../i18n';
 
 /**
@@ -11,10 +13,16 @@ import { t, tn } from '../../i18n';
  */
 export function RightPanel({ note, onOpenNote, onEntityChanged }: { note: ReadNote; onOpenNote: (path: string) => void; onEntityChanged?: () => void }) {
   const entityId = note.kind === 'entity' && note.source.startsWith('ent:') ? note.source.slice(4) : null;
+  const [ratified, setRatified] = useState(note.ratified);
+  useEffect(() => setRatified(note.ratified), [note.path, note.ratified]);
 
   return (
     <aside className="fs-brain__right" aria-label={t('Note details')} data-testid="brain-right-panel">
       {entityId && <EntityPanel entityId={entityId} onChanged={onEntityChanged} />}
+
+      <section className="fs-brain__right-section" data-testid="brain-note-ratify">
+        <RatifyButton refId={`note:${note.path}`} ratified={ratified} onChange={setRatified} label={t('Ratify this note')} />
+      </section>
 
       <section className="fs-brain__right-section">
         <h4>

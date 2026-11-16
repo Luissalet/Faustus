@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import { Button, Skeleton } from '../../components';
 import { loadEntityProfile, runWikiRefresh, updateEntity, type EntityProfile } from '../../adapters/brain';
 import { loadFactHistory, sourceHref, type FactHistory } from '../../adapters/brainFactHistory';
+import { RatifyButton } from './ReviewPanel';
 import { locale, t } from '../../i18n';
 
 /**
@@ -134,6 +135,12 @@ export function EntityPanel({ entityId, onChanged }: { entityId: string; onChang
         <span className="fs-badge">{profile.entity.type}</span>
         {profile.entity.aliases.length > 0 && <span className="fs-muted">{profile.entity.aliases.join(', ')}</span>}
         <Button variant="ghost" size="sm" label={profile.entity.hidden ? t('Unhide') : t('Hide')} onClick={() => void toggleHidden()} />
+        <RatifyButton
+          refId={`ent:${entityId}`}
+          ratified={profile.entity.ratified}
+          onChange={(next) => setProfile({ ...profile, entity: { ...profile.entity, ratified: next } })}
+          label={t('Ratify entity')}
+        />
       </header>
 
       <label className="fs-brain__asof">
@@ -167,8 +174,14 @@ export function EntityPanel({ entityId, onChanged }: { entityId: string; onChang
       {profile.relations.length === 0 && <p className="fs-muted">{t('No relation is valid at this date.')}</p>}
       <ul className="fs-brain__relations">
         {profile.relations.map((rel) => (
-          <li key={rel.id}>
+          <li key={rel.id} data-ratified={rel.ratified || undefined} data-testid="brain-entity-relation">
             <span className="fs-brain__rel-verb">{rel.rel}</span> {rel.dstName}
+            <RatifyButton
+              refId={`rel:${rel.id}`}
+              ratified={rel.ratified}
+              label={t('Ratify')}
+              onChange={(next) => setProfile({ ...profile, relations: profile.relations.map((r) => (r.id === rel.id ? { ...r, ratified: next } : r)) })}
+            />
           </li>
         ))}
       </ul>

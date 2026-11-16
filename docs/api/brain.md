@@ -253,12 +253,67 @@ escribe en `Canvas/<name>/` y es idempotente por id de nodo (frontmatter
 `%% canvas:<name> %%` de la nota de origen, salvo cuando el origen es una nota
 que genera el Cerebro: entonces van a la nota índice del lienzo.
 
+### Hechos ratificados
+
+Una marca «ratificado» dice que el propietario ha confirmado un hecho, una
+entidad o una nota; lo ratificado manda sobre lo que archivan los agentes. La
+marca vive en su propia tabla (`src/brain/ratified.py`), clave `(owner, ref)`,
+con `ref` = `rel:<id>` (un hecho), `ent:<id>` (una entidad) o `note:<ruta>`.
+
+| Método | Ruta | Cuerpo | Respuesta |
+| --- | --- | --- | --- |
+| `POST` | `/ratify` | `{ref, note?}` | `{ref, ratified: true, ratified_at, note}`; `{ref, off: true}` quita la marca y devuelve `{ref, ratified: false, removed}` |
+| `GET` | `/ratified` | — | `{ratified: [{ref, ratified_at, note}], count}` |
+
+Qué cambia al ratificar: un hecho funcional (`works_at`, `lives_in`,
+`located_in`) ratificado no lo cierra un valor posterior sin ratificar —los dos
+quedan abiertos y aparecen como contradicción—; la fuente de Context Engine
+trata una entidad o nota ratificada como palabra del propietario
+(`human_explicit` / `user_instruction`) y, en la tarjeta de una entidad, deja
+fuera el valor sin ratificar que contradice a uno ratificado; `/facts`, los
+perfiles de entidad (`relations[].ratified`, `entity.ratified`) y
+`GET /note` (`ratified`) llevan la marca. Renombrar una nota conserva su marca.
+
+### Revisión: contradicciones y caducidad
+
+| Método | Ruta | Parámetros | Respuesta |
+| --- | --- | --- | --- |
+| `GET` | `/review` | `soon_days?` (por defecto 14) | `{contradictions, expired, counts: {contradictions, unsettled, expired, soon, ratified}}` |
+| `POST` | `/review/resolve` | `{action, ref, value?, until?, note?}` | `{action, ref, changed: [ref], entities, new_ref?, expires_at?}` |
+
+*Contradicción*: una relación funcional con dos valores abiertos a la vez
+(`add_relation` cierra el desfasado cuando la cronología lo decide; si no, los
+deja abiertos). Cada una trae `entity`, `rel`, `options[]` (`ref`, `value`,
+ventana, `evidence`, `method`, `ratified`; el ratificado primero) y
+`settled_by_ratification`. *Caducado*: un hecho con `valid_until` ya pasado que
+sigue `active`, o una nota con `caduca`, `expires` o `valid_until` en su
+frontmatter; `state` es `expired` o `soon` (caduca dentro de `soon_days`).
+
+Acciones de `resolve`: `keep` (ratifica ese hecho y archiva los otros valores de
+la misma entidad y relación), `archive` (un hecho pasa a `retracted`, una nota a
+la papelera; nada se borra), `update` (`value` sustituye al valor, el anterior
+queda cerrado como `superseded` y el nuevo ratificado) y `renew` (`until` es la
+nueva fecha de caducidad; cadena vacía la quita). Un dato mal formado es 400.
+
+### Galaxia
+
+`GET /galaxy` con `limit?` (por nube, hasta 1000) y `kinds?` (lista separada por
+comas de `project`, `agent`, `session`, `output`, `entity`). Devuelve
+`{nodes, links, counts, warnings, radius, kinds}`: cada nodo trae `id`
+(`<tipo>:<id>`), `kind`, `label`, `pos` (x, y, z), `size` y, en las entidades,
+`ratified` y `ref`; cada enlace es un par de ids (sesión → proyecto y agente,
+salida → sesión o proyecto, entidades entre sí por sus relaciones). La
+disposición la calcula el servidor y es determinista: proyectos sobre una
+esfera, agentes en una interior, cada sesión o salida orbitando a su padre, las
+entidades en una cáscara exterior. Una fuente que no se puede leer vacía su
+nube y se dice en `warnings`. `src/brain/galaxy.py`.
+
 ## Servidor MCP `brain`
 
 `mcp_servers/brain_server.py`. La bóveda sobre la que trabaja la fija la
 variable de entorno `ODYSSEUS_MCP_BRAIN_OWNER` (o `ODYSSEUS_BRAIN_OWNER`);
 sin ella, las herramientas de lectura caen a nivel de instalación pero
-`brain_write_note`, `brain_append_note` y `brain_sync` se rechazan en vez de
+`brain_write_note`, `brain_append_note`, `brain_sync`, `brain_remember` y `brain_ratify` se rechazan en vez de
 escribir en la bóveda de nadie en particular.
 
 | Herramienta | Argumentos | Qué hace |
@@ -275,12 +330,47 @@ escribir en la bóveda de nadie en particular.
 | `brain_canvas_export` | `scope?`, `center?`, `depth?`, `kinds?`, `tags?`, `group_by?`, `layout?`, `mode?`, `limit?`, `name?`, `save?`, `include_canvas?` | El grafo (o un subgrafo) como JSON Canvas 1.0; con más de 40 nodos el documento sólo va en línea con `include_canvas`. |
 | `brain_canvas_import` | `canvas?` \| `path?`, `name?`, `folder?`, `dry_run?`, `prune?`, `undo?`, `purge?` | Importa un `.canvas` como notas y enlaces (o lo deshace con `undo`). Se rechaza sin propietario configurado. |
 | `brain_sync` | — | Sincroniza la bóveda ahora mismo (importa ediciones manuales, reexporta, reindexa). |
+| `brain_remember` | `name`, `type?`, `aliases?`, `summary?`, `mentions?`, `relations?` | Archiva una entidad y sus hechos: crea o encuentra la entidad por nombre o alias y afirma `relations` (`[{rel, to \| to_id \| value, valid_from?, valid_until?, evidence?}]`). Idempotente. Se rechaza sin propietario configurado. |
+| `brain_ratify` | `ref?`, `note?`, `off?` | Marca `rel:`/`ent:`/`note:` como ratificado, o quita la marca con `off`; sin `ref` lista lo ratificado. Se rechaza sin propietario configurado. |
+| `brain_review` | `action?`, `ref?`, `value?`, `until?`, `note?`, `soon_days?` | Sin `action`: contradicciones y contenido caducado o a punto de caducar. Con `action` (`keep`, `archive`, `update`, `renew`) y `ref`: resuelve un elemento. Resolver se rechaza sin propietario configurado. |
+| `brain_galaxy` | `kinds?`, `limit?` | La galaxia: nubes de proyectos, sesiones, agentes, salidas y entidades con posiciones 3D y enlaces. Sólo lectura. |
 
 `brain_entity`/`brain_timeline` aceptan `name` como alternativa a
 `entity_id`: se resuelve con la primera coincidencia de
 `entities.list_entities(owner, q=name, limit=1)`, y si no hay ninguna la
 herramienta devuelve un mensaje de error nombrado (`no entity matches
 '<name>'`) en vez de un perfil vacío.
+
+### Memoria compartida desde Claude o Codex
+
+El servidor MCP `brain` basta para leer y escribir el Cerebro desde fuera de
+Faustus: `brain_search`, `brain_read_note`, `brain_write_note`,
+`brain_append_note`, `brain_entity`, `brain_facts_as_of` y `brain_timeline`
+leen; `brain_write_note`, `brain_append_note` y `brain_remember` escriben notas
+y hechos; `brain_ratify` y `brain_review` los confirman y resuelven. Es el mismo
+almacén que ve la pantalla Cerebro, así que lo que un agente externo archiva
+aparece en la revisión y en la galaxia, y lo que el propietario ratifica allí lo
+respeta el agente externo al leerlo.
+
+Se conecta como cualquier servidor MCP por stdio. `ODYSSEUS_MCP_BRAIN_OWNER` dice
+de quién es la bóveda (sin él las herramientas de escritura se rechazan por su
+nombre) y `ODYSSEUS_DATA_DIR`, si Faustus usa una carpeta de datos distinta de la
+predeterminada, apunta a ella.
+
+Claude Code:
+
+```
+claude mcp add faustus-brain -e ODYSSEUS_MCP_BRAIN_OWNER=<usuario> -- <python de Faustus> <carpeta de Faustus>/mcp_servers/brain_server.py
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.faustus-brain]
+command = "<python de Faustus>"
+args = ["<carpeta de Faustus>/mcp_servers/brain_server.py"]
+env = { ODYSSEUS_MCP_BRAIN_OWNER = "<usuario>" }
+```
 
 ## Herramienta de agente `brain`
 
@@ -300,9 +390,13 @@ nunca de un argumento del modelo (misma disciplina que `context_recall` y
 | `neighbors` | `path?`, `scope?`, `depth?` | el grafo local de notas o el de entidades |
 | `daily` | `date?` | la nota diaria de hoy o de `date` |
 | `facts` | `entity_id?` \| `name?`, `rel?`, `as_of?`, `known_at?`, `include_closed?` | relaciones bitemporales (ver Hechos bitemporales) |
+| `remember` | `name`, `type?`, `aliases?`, `summary?`, `mentions?`, `relations?` | archiva una entidad y sus hechos |
+| `ratify` | `ref?`, `off?`, `note?` | marca o desmarca `rel:`/`ent:`/`note:` como ratificado; sin `ref` lista lo ratificado |
+| `review` | `soon_days?` | contradicciones y contenido caducado |
+| `resolve` | `how` (`keep`, `archive`, `update`, `renew`), `ref`, `value?`, `until?` | resuelve un elemento de la revisión |
 
 Las acciones de sólo lectura (`search`, `read`, `entity`, `timeline`,
-`neighbors`) pasan la puerta de contexto externo (`src/context_tool_gate.py`,
+`neighbors`, `facts`, `review`) pasan la puerta de contexto externo (`src/context_tool_gate.py`,
 tabla de reglas de §175) sin pedir tarjeta de aprobación; `write`, `append` y
 `daily` sí la piden, con el mismo trato que `manage_memory`. Editar una nota
 espejada por `write`/`append` sólo toca su zona editable — la sección
@@ -324,4 +418,6 @@ entidad mencionada por nombre o alias en el mensaje
 (`notes.search`). Apagada del todo bajo `allow_personal_memory=False`
 (Incógnito) y, además, tras su propio ajuste `brain_context_source`
 (independiente de `brain_enabled`). `source_ref`: `ent:<entity_id>` o
-`note:<ruta>`.
+`note:<ruta>`. Una entidad o nota ratificada se gradúa como palabra del
+propietario (`human_explicit` / `user_instruction`) y gana a una archivada por
+un agente cuando las dos chocan.

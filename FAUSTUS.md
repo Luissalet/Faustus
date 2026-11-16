@@ -18481,3 +18481,92 @@ con 123 pruebas del área y ocho de README. Pyflakes conserva cinco diagnóstico
 previos y añade cero. La revisión visual quedó bloqueada cuando Computer Use
 no pudo verificar con suficiente confianza la URL de Brave. Las capturas en
 claro y oscuro siguen pendientes. Evidencia en `Research/trazas3125/`.
+Evidencia: `E:/Development/IA/Research/juegos3123/player-final/index.html`.
+
+## Investigación sobre datos propios — mejoras 3122 (12-11-2026)
+
+Deep Research incorpora «Mis datos conectados» junto al modo web. Reutiliza DeepResearcher, su registro de citas, la biblioteca de informes, cancelación, checkpoints y selección del modelo configurado. Consulta las apps mediante sus herramientas MCP descubiertas; también reutiliza la búsqueda unificada, el transporte IMAP (selección readonly y BODY.PEEK), el calendario y los resolutores de contexto del proyecto. No crea otro almacén de ingesta ni arranca apps desconectadas.
+
+Fuentes y filtros seleccionables, plan visible y aclaración opcional antes de empezar. La cronología distingue consultas textuales/semánticas, lectura del original, ordenación y fallos por fuente; queda con el resultado y se conserva al reanudar. RRF fusiona las listas; BM25/hash y el endpoint de embeddings ya configurado ordenan candidatos. La ordenación de candidatos no equivale a búsqueda semántica sobre toda la colección; si faltan embeddings se indica degradación. No carga modelos como alternativa.
+
+Cada frase factual de la síntesis necesita cita numerada existente. Una pasada puede completar las citas; si persisten afirmaciones sin cita se entregan extractos citados, sin atribuciones inventadas. Darwin, Links y Kafka usan sus lectores y enlaces al registro guardado (Kafka conserva página). Los demás conectores deben devolver texto y enlace original utilizable; la ausencia de esos datos es un hueco visible. Una fuente fallida no borra las otras y el modo privado nunca cae a la web. Desde el informe, un original de app puede abrirse en App Dock junto a un chat con ese informe; sigue disponible abrirlo en su propia ventana.
+
+MCP `connected_research`: sources, plan, start, status y result sobre la misma API en ejecución; ámbito de propietario en los accesos y en los informes. Contrato: `docs/api/connected_research.md`. Pruebas: `tests/test_connected_research.py` y `studio/checks/connected-research.check.mjs`, además del área de investigación existente. Integración y despliegue quedan a cargo de la revisión de la entrega; no se afirma actualización de la Spark.
+
+## Destinos de los datos — Ágora #3126
+
+Ajustes → Destinos de los datos muestra los modelos y destinos configurados, las
+conversaciones y proyectos que los usan, los conectores, la mensajería, la
+búsqueda, las sincronizaciones y el almacenamiento local. Se genera a partir de
+la configuración y sus metadatos. Studio avisa junto a los adjuntos cuando el
+modelo puede recibirlos fuera del equipo. El informe también se consulta con
+`data_boundary_report` por MCP y con `python -m src.data_boundary_report` en
+terminal. [Contrato y alcance](docs/api/data_boundary.md).
+
+## Benchmark personal y optimización de texto — mejoras 3125
+
+Skills → Ciclos de mejora reutiliza las trayectorias y la clasificación de
+reacciones para extraer ejemplos propios positivos, corregidos y con fallos.
+Aplica en local el enmascarado de identificadores reconocidos, secretos, URL,
+rutas y entidades indicadas antes de sintetizar con el modelo configurado.
+Guarda casos textuales fijos, referencias, comprobaciones y SHA-256 en el
+almacén de harness existente. La separación por conversación reserva casos
+para medir y limita las propuestas a los ejemplos de desarrollo.
+
+Cada medida conserva modelo, revisión activa, respuestas, errores y puntuación
+por grupo. Los ciclos optimizan una sección de prompt o el cuerpo de una skill
+existente mediante los sidecars, comparación y reversión individual de 3121.
+La comparación de skills incluye su texto original en el control. El turno
+normal incorpora el texto evaluado por el contexto de skills existente.
+
+`personal_benchmark` por MCP y `POST /api/harness/personal` comparten
+build/list/get/measure/export. La exportación crea una suite custom con sus
+comprobaciones y digest en el módulo nativo de Galton ya activado, cuya vista
+y ejecutor permiten medir modelos. Las referencias sintetizadas necesitan
+validación de dominio. El enmascarado es heurístico y admite entidades
+adicionales. La batería acredita respuestas textuales con su cobertura guardada.
+Contrato en `docs/api/improvement_cycles.md`.
+
+Validación de 3125 con una instancia QA aislada y modelo simulado. HTTP y
+MCPstdio reales completaron una batería de cuatro casos desde dos conversaciones
+sintéticas, dos mediciones de modelos, exportación con suite_create del módulo
+nativo de Galton, optimización de prompt y skill y reversión de ambas. El SHA
+del fichero original de skill se conservó y la configuración lateral final quedó
+vacía. La QA y su puerto 59698 quedaron cerrados. Build y tipos pasan, junto
+con 123 pruebas del área y ocho de README. Pyflakes conserva cinco diagnósticos
+previos y añade cero. La revisión visual quedó bloqueada cuando Computer Use
+no pudo verificar con suficiente confianza la URL de Brave. Las capturas en
+claro y oscuro siguen pendientes. Evidencia en `Research/trazas3125/`.
+
+
+## Cerebro: hechos ratificados, revisión y galaxia
+
+Qué puede hacer el Cerebro además de guardar y buscar:
+
+- **Ratificar.** Un hecho (`rel:<id>`), una entidad (`ent:<id>`) o una nota
+  (`note:<ruta>`) se marca como confirmado por su propietario. Lo ratificado manda
+  sobre lo que archivan los agentes: un hecho funcional ratificado no lo cierra un
+  valor posterior sin ratificar, y la fuente `brain` del Context Engine entrega una
+  entidad o nota ratificada como palabra del propietario (`human_explicit` /
+  `user_instruction`), de modo que gana en un conflicto, y deja fuera de la
+  tarjeta de entidad el valor sin ratificar que contradice a uno ratificado. En la
+  pantalla Cerebro hay un botón Ratificar en cada nota, entidad y hecho.
+- **Revisión.** La pestaña Revisión de `/brain` (con el número de pendientes en
+  la pestaña) lista las contradicciones —una relación de un solo valor abierta con
+  dos— y el contenido caducado o a punto de caducar (hechos con fecha de fin
+  pasada y notas con `caduca`, `expires` o `valid_until` en el frontmatter). Cada
+  fila trae acciones rápidas: ratificar uno y archivar el otro, archivar,
+  actualizar el valor, renovar o quitar la caducidad. Archivar nunca borra: un
+  hecho pasa a `retracted` y una nota va a la papelera.
+- **Galaxia.** La pestaña Galaxia dibuja con WebGL proyectos, sesiones, agentes,
+  salidas y entidades como cinco nubes de puntos con sus enlaces: se orbita
+  arrastrando, se acerca con la rueda o con las flechas y +/-, se ilumina por
+  nombre, se oculta cada nube desde la leyenda y un clic abre la ficha del punto
+  (en una entidad, su página).
+- **Memoria compartida por MCP.** El servidor MCP `brain` expone también
+  `brain_remember` (archivar entidad y hechos), `brain_ratify`, `brain_review` y
+  `brain_galaxy`; la herramienta de agente `brain` suma las acciones `remember`,
+  `ratify`, `review` y `resolve`. Claude, Codex u otro cliente MCP leen y escriben
+  el mismo Cerebro que ve la pantalla; cómo conectarlo está en
+  `docs/api/brain.md`. Rutas: `/api/brain/review`, `/review/resolve`, `/ratify`,
+  `/ratified` y `/galaxy`.
