@@ -65,6 +65,10 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "model_server_heal_timeout_s",
                                "telegram_bridge_enabled", "telegram_bot_token", "telegram_allowed_chat_ids",
                                "telegram_agent_mode", "telegram_model", "telegram_owner", "telegram_api_base",
+                               "xchat_bridge_enabled", "xchat_access_token", "xchat_refresh_token",
+                               "xchat_client_id", "xchat_user_id", "xchat_private_keys", "xchat_key_version",
+                               "xchat_poll_seconds", "xchat_agent_mode", "xchat_model", "xchat_owner",
+                               "xchat_api_base", "spotify_client_id", "spotify_redirect_uri",
                                "paid_spend_cap_enabled", "paid_spend_cap_daily_usd", "paid_spend_cap_daily_tokens",
                                "llm_trace_retention_days")
 
@@ -692,6 +696,14 @@ GROUPS: list[dict[str, Any]] = [
                   "Comma-separated list. When set, a worker that names any other model (directly or through a "
                   "tier) is refused before it starts, and the coordinator is told why. Empty = any model. A worker "
                   "that inherits the coordinator's model is always allowed."),
+            _list("agent_subagent_routes", "Rutas de delegación",
+                  "Rutas con nombre que el coordinador elige para cada sub-agente ({\"name\",\"description\","
+                  "\"model\"?,\"endpoint_id\"?,\"effort\"?,\"agent\"?,\"category\"?,\"skills\"?}). Solo el nombre y "
+                  "la descripción llegan al modelo. Se editan en Agentes › Rutas de delegación o con "
+                  "GET/PUT /api/delegation-routes, que validan cada ruta."),
+            _text("agent_subagent_route_default", "Ruta por defecto",
+                  "Nombre de la ruta que toma una tarea que no elige ninguna (ni modelo, tier, agente o "
+                  "miembro del equipo). Vacío = el modelo del coordinador."),
             _int("agent_subagent_depth", "Delegation depth ceiling",
                  "How many generations of workers one turn may produce. 1 (the default) means the "
                  "workers you start may not start workers of their own; 0 refuses delegation "
@@ -1514,6 +1526,54 @@ GROUPS: list[dict[str, Any]] = [
             _text("telegram_api_base", "API base URL",
                   "Where the bot API lives. Leave the default unless you run a local test server.",
                   placeholder="https://api.telegram.org"),
+        ],
+    ),
+    _group(
+        "xchat", "Chat de X: tu chat contigo mismo",
+        "Habla con Faustus en tu chat contigo mismo de los mensajes directos de X, como en el chat propio de "
+        "WhatsApp (src/chat_bridges/xchat_bridge.py). Los mensajes de X van cifrados de extremo a extremo y se "
+        "cifran y descifran aquí con la Chat XDK de X (paquete chat_xdk). Hace falta una app de desarrollador "
+        "de X con OAuth 2.0 de usuario y acceso a la API de X Chat, un token de usuario con dm.read, dm.write, "
+        "users.read y tweet.read (y offline.access para renovarlo), y registrar la identidad de cifrado una "
+        "vez con POST /api/chat-bridges/xchat/setup. Solo se lee el chat contigo mismo.",
+        [
+            _bool("xchat_bridge_enabled", "Activar el chat de X",
+                  "Apagado por defecto. Encendido y configurado, Faustus lee tu chat contigo mismo cada pocos "
+                  "segundos y contesta en él."),
+            _field("xchat_access_token", "Token de usuario",
+                   "Token OAuth 2.0 de usuario de tu cuenta de X. Se guarda cifrado.", "secret"),
+            _field("xchat_refresh_token", "Token de renovación",
+                   "Con offline.access, X da un token de renovación; con él y el client id el token se renueva solo.",
+                   "secret"),
+            _text("xchat_client_id", "Client id de la app de X", "Necesario para renovar el token."),
+            _text("xchat_user_id", "Id de la cuenta",
+                  "Lo rellena el registro de la identidad de cifrado (GET /2/users/me)."),
+            _field("xchat_private_keys", "Identidad de cifrado",
+                   "Las claves privadas de Faustus para X Chat, generadas por el registro. Se guardan cifradas.",
+                   "secret"),
+            _text("xchat_key_version", "Versión de la clave", "La escribe el registro."),
+            _int("xchat_poll_seconds", "Cada cuántos segundos leer", "Mínimo 2.", 2, 3600),
+            _select("xchat_agent_mode", "Modo",
+                    "\"agent\" ejecuta un turno completo con herramientas (las aprobaciones esperan en Studio). "
+                    "\"chat\" contesta solo con el modelo.", ["agent", "chat"]),
+            _text("xchat_model", "Modelo", "Vacío = el modelo de chat por defecto."),
+            _text("xchat_owner", "Cuenta de Faustus", "Vacío = el primer administrador."),
+            _text("xchat_api_base", "URL base de la API", "Vacío = https://api.x.com.",
+                  placeholder="https://api.x.com"),
+        ],
+    ),
+    _group(
+        "spotify", "Spotify",
+        "Reproducción, dispositivos, cola, búsqueda, listas, álbumes y biblioteca de tu cuenta de Spotify "
+        "(src/spotify.py), como herramientas del agente y del servidor MCP Spotify. Spotify exige una app de "
+        "desarrollador propia: créala en developer.spotify.com/dashboard con Web API y como Redirect URI la "
+        "que da GET /api/spotify/status (por defecto http://127.0.0.1:<puerto>/api/spotify/callback), pega su "
+        "Client ID aquí y abre /api/spotify/login para autorizar. Controlar la reproducción requiere Premium.",
+        [
+            _text("spotify_client_id", "Client ID", "El de tu app de Spotify. No hace falta el secreto (PKCE)."),
+            _text("spotify_redirect_uri", "Redirect URI",
+                  "Vacío = http://127.0.0.1:<puerto de Faustus>/api/spotify/callback. Debe coincidir con la "
+                  "registrada en la app."),
         ],
     ),
     _group(

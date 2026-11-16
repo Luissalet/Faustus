@@ -78,6 +78,7 @@ import { LocalModelsSection } from './settings/LocalModels';
 import { AppearanceSection } from './settings/Appearance';
 import { ThisDeviceSection } from './settings/ThisDevice';
 import { ChatBridgeStatus } from './settings/ChatBridgeStatus';
+import { AgentImportSection, DelegationRoutesPanel, SpotifyStatusCard, XChatStatusCard } from './settings/AgentSetup';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { PiperVoices } from './settings/PiperVoices';
 import { ProsperoVoice } from './settings/ProsperoVoice';
@@ -1475,6 +1476,10 @@ function SchemaControl({ field, value, onChange }: { field: SchemaField; value: 
       />
     );
   }
+  // A list of objects (handoff lanes, delegation routes) has its own editor: never flatten it to text.
+  if (field.type === 'list' && Array.isArray(value) && value.some((v) => v !== null && typeof v === 'object')) {
+    return <p className="fs-set__help">{t('{n} entries, edited in their own panel.', { n: value.length })}</p>;
+  }
   if (field.type === 'list') return <Text id={id} value={list(value)} onChange={(v) => onChange(fromList(v))} />;
   if (field.type === 'secret') return <Text id={id} value={str(value)} onChange={onChange} secret />;
   return <Text id={id} value={str(value)} onChange={onChange} />;
@@ -1544,6 +1549,9 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
               {t(g.title)} <span className="fs-set__count">{fields.length}</span>
             </summary>
             {g.help && <p className="fs-set__help">{t(g.help)}</p>}
+            {g.id === 'subagents' && <DelegationRoutesPanel />}
+            {g.id === 'spotify' && <SpotifyStatusCard savedKey={JSON.stringify([settings.spotify_client_id, settings.spotify_redirect_uri])} />}
+            {g.id === 'xchat' && <XChatStatusCard savedKey={JSON.stringify([settings.xchat_bridge_enabled, settings.xchat_access_token, settings.xchat_user_id])} />}
             {g.id === 'chat_bridges' && <ChatBridgeStatus savedKey={JSON.stringify([settings.telegram_bridge_enabled, settings.telegram_bot_token, settings.telegram_allowed_chat_ids])} />}
             <div className="fs-set__group-body">
               {fields.map((f) => (
@@ -1771,6 +1779,7 @@ export function SettingsScreen() {
               <AgentSection settings={settings} onSave={onSave} say={say} />
               {admin && <SpendCapSection />}
               {admin && <ApprovalAutonomySection say={say} />}
+              {admin && <AgentImportSection />}
             </>
           )}
           {section === 'modes' && <BehaviorModesSection say={say} admin={admin} />}

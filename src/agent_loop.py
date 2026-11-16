@@ -12286,6 +12286,13 @@ async def _stream_agent_loop_body(
                 schema for schema in schemas
                 if (schema.get("function", {}) or {}).get("name", schema.get("name")) not in _off
             ]
+        # Named delegation routes: delegate_agents' tasks get a `route` enum
+        # (names + descriptions only) when the owner configured any.
+        try:
+            from src.delegation_routes import decorate_schemas as _decorate_routes
+            schemas = _decorate_routes(schemas)
+        except Exception:  # noqa: BLE001 - a bad setting never costs the turn its tools
+            logger.debug("[delegation-routes] schema decoration skipped", exc_info=True)
         return schemas
 
     def _tool_schemas_for_route(route_state):

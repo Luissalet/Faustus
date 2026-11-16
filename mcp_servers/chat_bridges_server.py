@@ -1,7 +1,7 @@
 """chat_bridges_server.py
 
-MCP server for the chat bridges (src/chat_bridges/). One read-only tool,
-`telegram_status`: whether the Telegram bridge is enabled and running, the bot
+MCP server for the chat bridges (src/chat_bridges/). `xchat_status` reports
+the X self-chat bridge; `telegram_status`: whether the Telegram bridge is enabled and running, the bot
 it found, its last error, the chats allowed to talk to the agent, the
 conversations they map to and the chats that were refused.
 
@@ -54,12 +54,32 @@ async def list_tools() -> list[Tool]:
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
+        Tool(
+            name="xchat_status",
+            description=(
+                "Report the state of the X self-chat bridge (talk to Faustus in your X direct-message "
+                "chat with yourself): whether it is enabled, configured and running, what is still "
+                "missing (user token, encryption identity, the chat_xdk package), the account id, the "
+                "last error and how many messages it answered. Estado del chat de X. Read-only; this "
+                "process is not the app, so `running` is the app's own answer only through "
+                "GET /api/chat-bridges/xchat/status."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Dispatch, and never raise -- an exception here would kill the server."""
+    if name == "xchat_status":
+        try:
+            from src.chat_bridges.xchat_bridge import XChatBridge
+
+            status = await asyncio.to_thread(XChatBridge().status)
+        except Exception as exc:  # noqa: BLE001
+            return _text_result(f"Error in xchat_status: {type(exc).__name__}: {exc}")
+        return _text_result(json.dumps({"ok": True, **status}, indent=2, ensure_ascii=False, default=str))
     if name != "telegram_status":
         return _text_result(f"Unknown tool: {name}")
     try:

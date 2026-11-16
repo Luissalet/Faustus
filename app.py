@@ -366,6 +366,9 @@ if AUTH_ENABLED:
         "/api/auth/integrations/presets",
         "/api/health",
         "/api/version",
+        # Spotify's OAuth redirect: the handler only exchanges a code together
+        # with the single-use state + PKCE verifier of a login the owner started.
+        "/api/spotify/callback",
         "/login",
         # PWA install/update surface (routes/pwa_routes.py): a service
         # worker registration and the manifest fetch both happen before any
@@ -860,6 +863,16 @@ from routes.skills_routes import setup_skills_routes
 app.include_router(setup_skills_routes(skills_manager))
 from routes.instruction_portability_routes import setup_instruction_portability_routes
 app.include_router(setup_instruction_portability_routes(skills_manager, session_manager))
+# Bring Claude Code / Codex / Cursor setups in; named delegation routes; the
+# conversations MCP server's client config.
+from routes.agent_import_routes import setup_agent_import_routes
+from routes.delegation_routes_api import setup_delegation_routes_routes
+from routes.conversations_mcp_routes import setup_conversations_mcp_routes
+app.include_router(setup_agent_import_routes(memory_manager, memory_vector, skills_manager))
+app.include_router(setup_delegation_routes_routes())
+app.include_router(setup_conversations_mcp_routes())
+from routes.spotify_routes import setup_spotify_routes
+app.include_router(setup_spotify_routes())
 # Harness refinement proposals (src/harness_refinement/): pending edits to the
 # project instructions, a skill, a memory or a sub-agent spec. Approve/reject/undo
 # are human-only (require_human).
@@ -2647,6 +2660,13 @@ async def _startup_event():
         start_telegram_bridge(_supervisor)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Telegram bridge not started (non-critical): {e}")
+    # X self-chat bridge (src/chat_bridges/xchat_bridge.py): only when enabled,
+    # configured and the Chat XDK is installed.
+    try:
+        from src.chat_bridges.xchat_bridge import start_xchat_bridge
+        start_xchat_bridge(_supervisor)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"X chat bridge not started (non-critical): {e}")
 
     # Shared model lease (src/model_lease.py): register this instance so
     # sibling instances sharing the same local model server can see it
@@ -3114,6 +3134,8 @@ async def _shutdown_event():
         try:
             from src.chat_bridges import stop_telegram_bridge
             await stop_telegram_bridge()
+            from src.chat_bridges.xchat_bridge import stop_xchat_bridge
+            await stop_xchat_bridge()
         except Exception:  # noqa: BLE001
             pass
     except Exception:

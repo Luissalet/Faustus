@@ -65,7 +65,8 @@ On Windows without Docker, `Start-Faustus-Desktop.bat` opens the native desktop 
 ### Coding, tools and agent teams
 
 - Define an orchestrator and its workers from the chat, choosing models, roles and tool restrictions.
-- Delegate to child conversations with file ownership, progress, cancellation and steering.
+- Delegate to child conversations with file ownership, progress, cancellation and steering. Named delegation routes (a name and a one-line description over a model, endpoint, effort, agent profile, tool category and skills) let the coordinator pick how each worker runs without seeing model ids.
+- Import instructions, memories, MCP servers, skills and agent definitions from Claude Code, Codex CLI and Cursor, with a per-item preview and a re-sync that brings in what changed there.
 - Use Council for blind first rounds, critique and synthesis across several models, with a designated executor for actions.
 - Use skills, MCP servers, filesystem tools, shell execution, browser control and desktop control under the configured permissions.
 - Install procedures from a bundled skill library (engineering habits, research, planning, writing, marketing) with their licences credited. For web UI, the agent reads a local copy of the Chrome team's modern web guidance before writing HTML, CSS or client-side JS: the `web_guidance` tool, the built-in MCP server and `/api/web-guidance` search it by capability, and `scripts/update_web_guidance.py` refreshes it.
@@ -88,6 +89,9 @@ On Windows without Docker, `Start-Faustus-Desktop.bat` opens the native desktop 
 - Write and edit documents and export to Markdown, text, HTML, PDF, DOCX or JSON.
 - Notes, tasks and calendars; email through IMAP/SMTP and calendars through CalDAV.
 - Messaging connections for reading and sending in team chat services. See [channel connections](docs/api/channel_connections.md).
+- Talk to Faustus from Telegram, or from your own direct-message chat with yourself on X (end-to-end encrypted with X's Chat XDK).
+- Faustus chats and WhatsApp chats are available to other coding agents as an MCP server: list, read, wait for new messages and send.
+- Spotify playback, devices, queue, search, playlists, albums and library through your own Spotify developer app.
 - Meeting notes from a recording: summary, decisions, action items and the timestamped transcript.
 - Scheduled tasks with time zones, run windows and a history of every run. See [scheduled tasks](docs/api/scheduled_tasks.md).
 

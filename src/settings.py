@@ -596,6 +596,23 @@ DEFAULT_SETTINGS = {
     "telegram_agent_mode": "agent",
     "telegram_model": "",
     "telegram_owner": "",
+    # X self-chat bridge (src/chat_bridges/xchat_bridge.py): opt-in. Tokens and the
+    # encryption key blob are credentials, stored `enc:` encrypted.
+    "xchat_bridge_enabled": False,
+    "xchat_access_token": "",
+    "xchat_refresh_token": "",
+    "xchat_client_id": "",
+    "xchat_user_id": "",
+    "xchat_private_keys": "",
+    "xchat_key_version": "1",
+    "xchat_poll_seconds": 10,
+    "xchat_agent_mode": "agent",
+    "xchat_model": "",
+    "xchat_owner": "",
+    "xchat_api_base": "",
+    # Spotify (src/spotify.py): the owner's own developer app (PKCE, no secret).
+    "spotify_client_id": "",
+    "spotify_redirect_uri": "",
     "telegram_api_base": "https://api.telegram.org",
     # Measured stop (src/research_saturation.py): end the run, without asking
     # the model, after `research_saturation_patience` rounds in a row that
@@ -1419,6 +1436,10 @@ DEFAULT_SETTINGS = {
     "agent_subagent_tier_mid": "",
     "agent_subagent_tier_frontier": "",
     "agent_subagent_allowed_models": "",
+    # Named delegation routes (src/delegation_routes.py): the coordinator picks one
+    # per worker by name; only names and descriptions reach the model.
+    "agent_subagent_routes": [],
+    "agent_subagent_route_default": "",
     # Keyed dispatch: file writes on disjoint paths run side by side with the
     # round's other independent calls (src/agent_loop.py).
     "agent_parallel_writes": True,

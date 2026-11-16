@@ -1102,6 +1102,12 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
                 except (TypeError, ValueError):
                     _nf = REVIEWER_MAX_FINDINGS
                 row["instruction"] = (row["instruction"] + REVIEWER_CONTRACT.format(n=max(1, min(_nf, 20))))[:8600]
+        # A named route (src/delegation_routes.py): fills what the task left
+        # unsaid. A task that names none, with no routes or no default, is the
+        # dict it always was.
+        if isinstance(t, dict):
+            from src import delegation_routes
+            agent = delegation_routes.apply(t, row, agent)
         # `agent` and `resume` are carried ONLY when the caller named one —
         # the discipline `runner` already keeps in src/dispatch.py. A task with
         # neither key must produce the dict this parser produced before they
@@ -1246,6 +1252,8 @@ class SubagentRun:
         #: caller stated any (see `parse_delegation_args`). Checked against
         #: this run's OWN evidence in `report()`, never against its prose.
         self.criteria: List[str] = list(task.get("criteria") or [])
+        #: The named delegation route this worker ran on (src/delegation_routes.py).
+        self.route = str(task.get("route") or "")
         self.role = role
         #: The folder this worker's package caches live in (Darwin #999),
         #: set when it starts; see `src/worker_caches.py`.
@@ -1470,6 +1478,7 @@ class SubagentRun:
             # reports the dict it has always reported.
             **({"agent": self.agent} if self.agent else {}),
             **({"effort": self.effort} if self.effort else {}),
+            **({"route": self.route} if self.route else {}),
             **({"tool_category": list(self.tool_categories)} if self.tool_categories else {}),
             **({"agent_def": self.agent_def} if self.agent_def else {}),
             **({"permissions": self.permissions.to_dict()} if self.permissions is not None else {}),

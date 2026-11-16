@@ -135,6 +135,14 @@ _BUILTIN_SERVERS = {
     # poller's snapshot, the settings and the chat mapping; never the token,
     # never writes, never talks to Telegram. Not owner-scoped.
     "chat_bridges": ("mcp_servers/chat_bridges_server.py", "Built-in: Chat bridges"),
+    # Spotify (src/spotify.py): playback, devices, queue, search, playlists,
+    # albums and the saved library with the owner's own PKCE login; without a
+    # login every tool says how to connect the account.
+    "spotify": ("mcp_servers/spotify_server.py", "Built-in: Spotify"),
+    # How agents are set up here: named delegation routes, importing Claude
+    # Code / Codex CLI / Cursor setups, and the conversations MCP client config.
+    # A thin client of the app's own routes.
+    "agent_setup": ("mcp_servers/agent_setup_server.py", "Built-in: Agent setup"),
     # GitHub (src/github_ops.py): labels (list / dry-run sync plan), release
     # notes and the release-ready checklist, on gh + local git. Read-only: the
     # label sync is a remote write behind policy + approval, which lives in the

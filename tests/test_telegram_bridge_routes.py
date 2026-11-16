@@ -132,7 +132,7 @@ def test_mcp_server_identity_and_tool_surface():
     import mcp_servers.chat_bridges_server as srv
     assert srv.server.name == "chat_bridges"
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["telegram_status"]
+    assert [t.name for t in tools] == ["telegram_status", "xchat_status"]
     assert tools[0].inputSchema["type"] == "object" and len(tools[0].description) > 60
     assert "Read-only" in tools[0].description
 
