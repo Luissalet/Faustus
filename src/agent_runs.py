@@ -1720,13 +1720,14 @@ def _dock_presence(session_id: str, state: str) -> None:
 
 
 def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] = None, label: str = "",
-          model: str = "", endpoint_url: str = "", initial_wait_s: Optional[float] = None) -> _Run:
+          model: str = "", endpoint_url: str = "", initial_wait_s: Optional[float] = None, prompt: str = "") -> _Run:
     """Start a detached run draining `agen` for a session. If a run is already in
     flight for this session (e.g. a rapid double-send), it's cancelled first.
 
     `lane` puts the run in a FIFO queue shared by every run of that lane
     (see _Lane); None runs immediately. `label` is what other queued chats see
-    as "ahead of you"."""
+    as "ahead of you". `prompt` is the person's message, which the agent loop
+    reads to judge the answer's language and any format asked for."""
     prev = _RUNS.get(session_id)
     prev_task: Optional[asyncio.Task] = None
     if prev:
@@ -1766,7 +1767,7 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
     run = _Run(lane=lane, label=label)
     run.model = str(model or "")
     run.endpoint_url = str(endpoint_url or "")
-    run.loop = agent_loop_state.begin(session_id, run.run_id, run.started_at)
+    run.loop = agent_loop_state.begin(session_id, run.run_id, run.started_at, prompt=str(prompt or ""))
     _RUNS[session_id] = run
     _dock_presence(session_id, "thinking")
     if persistence_enabled():

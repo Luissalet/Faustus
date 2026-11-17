@@ -2091,8 +2091,11 @@ function AssistantTurn({
   boardKey,
   projectId,
   modeName,
+  prompt = '',
 }: {
   turn: Turn;
+  /** The person's message this turn answers; the agent loop judges language and format against it. */
+  prompt?: string;
   /** Last row of the transcript: the one place a session-wide panel shows. */
   last?: boolean;
   busy: boolean;
@@ -2252,7 +2255,7 @@ function AssistantTurn({
             <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />
           </Suspense>
         )}
-        <TurnLoop turn={turn} />
+        <TurnLoop turn={turn} prompt={prompt} />
         <TurnActivity turn={turn} />
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
         {body && <Foldable text={body} active={!turn.streaming}><Rich text={body} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} sources={turn.sources} /></Foldable>}
@@ -2849,9 +2852,14 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
         if (!turn) return null;
         const index = virtualItem.index;
         const enter = !seenIds.current.has(turn.id);
+        const promptBefore = (at: number) => {
+          for (let i = at - 1; i >= 0; i--) if (turns[i]?.role === 'user') return turns[i].text;
+          return '';
+        };
         const drawAssistant = (turn: Turn, lastReply: boolean) => (
               <AssistantTurn
                 turn={turn}
+                prompt={promptBefore(index)}
                 last={lastReply}
                 busy={busy}
                 enter={enter}

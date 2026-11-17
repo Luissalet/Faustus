@@ -763,6 +763,9 @@ const TOOL_WORDS: Record<string, string> = {
   lookup_tools: 'Look up tools',
 };
 
+/** The English words for a tool (translate with `t`), or its name with spaces. */
+export const toolWord = (tool: string): string => TOOL_WORDS[tool] ?? tool.replace(/_/g, ' ');
+
 export function stepLabel(tool: string, command: string): string {
   const word = TOOL_WORDS[tool] ? t(TOOL_WORDS[tool]) : tool.replace(/_/g, ' ');
   const brief = command.trim().split('\n')[0].slice(0, 96);
@@ -1475,6 +1478,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       command: ev.command,
       output: parked ? '' : ev.output,
       round: ev.round,
+      durationMs: typeof rawEvents[idx]?.duration_ms === 'number' ? (rawEvents[idx].duration_ms as number) : undefined,
       diff: ev.diff,
       screenshot: ev.screenshot,
       docId: ev.docId,

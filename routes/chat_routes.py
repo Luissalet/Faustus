@@ -5130,6 +5130,7 @@ def setup_chat_routes(
                 _lane = None
             _run_label = (getattr(sess, "name", "") or "").strip() or " ".join(str(message or "").split())[:60]
             _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80],
+                                             prompt=str(message or "")[:4000],
                                              model=str(getattr(sess, "model", "") or ""),
                                              endpoint_url=str(getattr(sess, "endpoint_url", "") or ""),
                                              initial_wait_s=(max(0.001, _context_wait - (time.monotonic() - _initial_request_started))

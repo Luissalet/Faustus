@@ -12004,7 +12004,7 @@ No evidence files committed	Sin ficheros de evidencias en el commit
 Delivered in the Agora (submit / done)	Entregado en el Ágora (submit / done)
 {ok} met · {fail} failing · {open} missing	{ok} cumplidas · {fail} incumplidas · {open} faltan
 Plan#loop	Planear
-Done#loop	Terminado
+Done#loop	Hecho
 Reasoning#loop	Razona
 Answered by	Lo atiende
 Nobody has to answer	Nadie tiene que contestar
@@ -12079,3 +12079,24 @@ under a minute	menos de un minuto
 Steps finished	Pasos terminados
 1 step	1 paso
 {n} steps	{n} pasos
+Code#work	Código
+Research#work	Investigación
+Files and documents	Ficheros y documentos
+Operations#work	Operaciones
+Conversation#work	Conversación
+Lap#loop	Vuelta
+Sources opened, not only searched	Fuentes abiertas, no solo buscadas
+Sources cited in the answer	Fuentes citadas en la respuesta
+Facts carry a checked date	Datos con fecha comprobada
+Nothing claimed from an unseen source	Nada afirmado sin haberlo visto en una fuente
+Answer in the user's language	Respuesta en el idioma de quien pregunta
+Output opened and checked	Salida abierta y comprobada
+In the requested format	En el formato pedido
+Commands finished without errors	Comandos terminados sin error
+Result checked after running	Resultado comprobado tras ejecutarlo
+Asked for {want}; wrote {got}	Se pidió {want}; se escribió {got}
+Cited but never opened or returned: {urls}	Citado sin abrirlo ni aparecer en los resultados: {urls}
+No links in the answer to compare with the results	La respuesta no tiene enlaces que contrastar con los resultados
+Only commands that read	Solo comandos de consulta
+after {n} failed	tras {n} fallidos
+{n} cited links seen in the tool results	{n} enlaces citados vistos en los resultados

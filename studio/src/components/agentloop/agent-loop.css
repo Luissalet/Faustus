@@ -1,47 +1,76 @@
-.fs-agent-loop-ring { display: inline-grid; place-items: center; flex: none; }
-.fs-agent-loop-ring[data-size='md'] { width: 168px; height: 124px; }
+.fs-agent-loop-ring { --fs-loop-lit: var(--fs-brand); position: relative; display: inline-block; flex: none; }
+.fs-agent-loop-ring[data-phase='act'] { --fs-loop-lit: var(--fs-info); }
+.fs-agent-loop-ring[data-phase='observe'], .fs-agent-loop-ring[data-phase='done'] { --fs-loop-lit: var(--fs-success); }
+.fs-agent-loop-ring > svg { display: block; overflow: visible; }
 .fs-agent-loop-ring[data-size='sm'] { width: 22px; height: 22px; }
-.fs-agent-loop-ring svg { width: 100%; height: 100%; overflow: visible; }
-.fs-agent-loop-ring__track { fill: none; stroke: var(--fs-border-strong); stroke-width: 8; stroke-linecap: round; }
-.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__track { stroke-width: 16; }
-.fs-agent-loop-ring__segment[data-active='true'] .fs-agent-loop-ring__track {
-  stroke: color-mix(in srgb, var(--fs-brand) 55%, var(--fs-border-strong));
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--fs-brand) 70%, transparent));
+.fs-agent-loop-ring[data-size='sm'] > svg { width: 100%; height: 100%; }
+/* The large ring: a 150px drawing centred under the plan pill, act and observe pills beside its lower half. */
+.fs-agent-loop-ring[data-size='md'] { width: 272px; height: 178px; }
+.fs-agent-loop-ring[data-size='md'] > svg { position: absolute; left: 61px; top: 26px; width: 150px; height: 150px; }
+.fs-agent-loop-ring__track { fill: color-mix(in srgb, var(--fs-surface-2) 60%, transparent); stroke: color-mix(in srgb, var(--fs-border-strong) 70%, transparent); stroke-width: 7; }
+.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__track { stroke-width: 14; }
+.fs-agent-loop-ring__full { fill: none; stroke: var(--fs-loop-lit); stroke-width: 7; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--fs-loop-lit) 60%, transparent)); }
+.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__full { stroke-width: 14; }
+.fs-agent-loop-ring__comet { transform-box: view-box; transform-origin: 60px 60px; transition: transform calc(var(--fs-duration-enter) * 2) var(--fs-ease-out); }
+.fs-agent-loop-ring__tail { fill: none; stroke-width: 7; stroke-linecap: round; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--fs-loop-lit) 75%, transparent)); }
+.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__tail { stroke-width: 14; }
+.fs-agent-loop-ring__stop-from { stop-color: var(--fs-loop-lit); stop-opacity: 0; }
+.fs-agent-loop-ring__stop-to { stop-color: var(--fs-loop-lit); stop-opacity: 1; }
+.fs-agent-loop-ring__head { fill: var(--fs-loop-lit); stroke: var(--fs-surface-1); stroke-width: 1.4; }
+.fs-agent-loop-ring__halo { fill: var(--fs-loop-lit); opacity: 0.28; transform-box: fill-box; transform-origin: center; }
+.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__head, .fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__halo { display: none; }
+.fs-agent-loop-ring[data-live='true'] .fs-agent-loop-ring__halo { animation: fs-loop-halo 1.6s var(--fs-ease) infinite; }
+.fs-agent-loop-ring[data-live='false'] .fs-agent-loop-ring__halo { display: none; }
+.fs-agent-loop-ring__node { fill: var(--fs-surface-1); stroke: var(--fs-border-strong); stroke-width: 1.4; }
+.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__node { display: none; }
+.fs-agent-loop-ring__node[data-state='passed'] { fill: color-mix(in srgb, var(--fs-loop-lit) 45%, var(--fs-surface-1)); stroke: color-mix(in srgb, var(--fs-loop-lit) 70%, var(--fs-border-strong)); }
+.fs-agent-loop-ring__node[data-state='active'] { fill: var(--fs-loop-lit); stroke: var(--fs-surface-1); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--fs-loop-lit) 80%, transparent)); }
+.fs-agent-loop-ring__pill {
+  position: absolute;
+  padding: 2px 10px;
+  border: 1px solid var(--fs-border);
+  border-radius: 999px;
+  background: var(--fs-surface-1);
+  color: var(--fs-text-2);
+  font: 600 11px/16px var(--fs-font-ui);
+  white-space: nowrap;
+  transition: background-color var(--fs-duration-normal) var(--fs-ease), border-color var(--fs-duration-normal) var(--fs-ease), color var(--fs-duration-normal) var(--fs-ease);
 }
-.fs-agent-loop-ring[data-phase='act'] .fs-agent-loop-ring__segment[data-active='true'] .fs-agent-loop-ring__track {
-  stroke: color-mix(in srgb, var(--fs-info) 60%, var(--fs-border-strong));
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--fs-info) 70%, transparent));
+/* Anchored 10px outside the ring, on the side away from it, so no label sits on the stroke. */
+.fs-agent-loop-ring__pill[data-at='plan'] { left: 136px; top: 7px; transform: translateX(-50%); }
+.fs-agent-loop-ring__pill[data-at='act'] { left: 199px; top: 137px; transform: translateY(-50%); }
+.fs-agent-loop-ring__pill[data-at='observe'] { right: 199px; top: 137px; transform: translateY(-50%); }
+.fs-agent-loop-ring__pill[data-active='true'] {
+  border-color: var(--fs-loop-lit);
+  background: color-mix(in srgb, var(--fs-loop-lit) 18%, var(--fs-surface-1));
+  color: var(--fs-text-1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fs-loop-lit) 16%, transparent);
 }
-.fs-agent-loop-ring[data-phase='observe'] .fs-agent-loop-ring__segment[data-active='true'] .fs-agent-loop-ring__track {
-  stroke: color-mix(in srgb, var(--fs-success) 60%, var(--fs-border-strong));
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--fs-success) 70%, transparent));
+.fs-agent-loop-ring__centre {
+  position: absolute;
+  left: 136px;
+  top: 101px;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  width: 84px;
+  text-align: center;
+  line-height: 1.1;
 }
-.fs-agent-loop-ring__sweep {
-  fill: none;
-  stroke: var(--fs-text-1);
-  stroke-width: 8;
-  stroke-linecap: round;
-  stroke-dasharray: 16 100;
-  stroke-dashoffset: 16;
-  opacity: 0.85;
-}
-.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__sweep { stroke-width: 16; }
-.fs-agent-loop-ring[data-live='true'] .fs-agent-loop-ring__sweep { animation: fs-loop-sweep 1.6s linear infinite; }
-.fs-agent-loop-ring[data-live='false'] .fs-agent-loop-ring__sweep { display: none; }
-.fs-agent-loop-ring[data-phase='done'] .fs-agent-loop-ring__track { stroke: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border-strong)); }
-.fs-agent-loop-ring__core { fill: var(--fs-surface-2); stroke: var(--fs-border-strong); stroke-width: 1.5; }
-.fs-agent-loop-ring__lap { fill: var(--fs-text-1); font: 600 18px var(--fs-font-ui); }
-.fs-agent-loop-ring[data-size='sm'] .fs-agent-loop-ring__lap { font-size: 34px; }
-.fs-agent-loop-ring__label { fill: var(--fs-text-2); font: 600 11px var(--fs-font-ui); }
-.fs-agent-loop-ring__segment[data-active='true'] .fs-agent-loop-ring__label { fill: var(--fs-text-1); }
+.fs-agent-loop-ring__agent { display: inline-flex; align-items: center; gap: 4px; max-width: 84px; color: var(--fs-text-2); font: 600 10px var(--fs-font-ui); }
+.fs-agent-loop-ring__agent span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-agent-loop-ring__lap { color: var(--fs-text-1); font: 700 28px/1.1 var(--fs-font-ui); font-variant-numeric: tabular-nums; }
+.fs-agent-loop-ring[data-phase='done'] .fs-agent-loop-ring__lap { color: var(--fs-success); }
+.fs-agent-loop-ring__centre small { color: var(--fs-text-3); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
 
-@keyframes fs-loop-sweep {
-  from { stroke-dashoffset: 16; }
-  to { stroke-dashoffset: -100; }
+@keyframes fs-loop-halo {
+  0%, 100% { transform: scale(0.75); opacity: 0.42; }
+  50% { transform: scale(1.55); opacity: 0.1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fs-agent-loop-ring[data-live='true'] .fs-agent-loop-ring__sweep { animation: none; stroke-dasharray: none; opacity: 0.35; }
+  .fs-agent-loop-ring__comet, .fs-agent-loop-ring__pill { transition: none; }
+  .fs-agent-loop-ring[data-live='true'] .fs-agent-loop-ring__halo { animation: none; opacity: 0.3; }
 }
 
 .fs-agent-loop {
@@ -93,3 +122,10 @@
 .fs-agent-loop__practices li[data-state='ok'] .fs-agent-loop__mark { color: var(--fs-success); }
 .fs-agent-loop__practices li[data-state='fail'] .fs-agent-loop__mark { color: var(--fs-danger); }
 .fs-agent-loop__practices li[data-state='unknown'] .fs-agent-loop__mark { color: var(--fs-warning); }
+.fs-agent-loop__chip { padding: 0 8px; border: 1px solid var(--fs-border); border-radius: 999px; color: var(--fs-text-2); font-size: 11px; font-weight: 600; line-height: 18px; }
+.fs-agent-loop__body[data-judged='false'] { grid-template-columns: auto minmax(0, 1fr); }
+.fs-agent-loop__what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; }
+.fs-agent-loop__what strong { color: var(--fs-text-1); font-weight: 600; }
+.fs-agent-loop__detail { color: var(--fs-text-2); overflow-wrap: anywhere; }
+.fs-agent-loop__verdict { font-weight: 600; color: var(--fs-success); }
+.fs-agent-loop__verdict[data-ok='false'] { color: var(--fs-danger); }
