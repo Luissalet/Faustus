@@ -24,6 +24,7 @@ import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, Lock
 import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, ROLE_COLORS, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
 import './agora-app.css';
 import { AgoraLive } from './AgoraLive';
+import { AgentPageLayer } from '../agent-page/AgentPageLayer';
 
 const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon }> = {
   live: { label: 'En directo', hint: '', icon: Activity },
@@ -348,6 +349,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
         </div>
       </main>
       {ready && membersOpen && <MembersPane guild={ready} onOpen={open} notify={notify} onChanged={refresh} />}
+      <AgentPageLayer space={spaceId} onOpenDm={(slug) => open({ kind: 'channel', id: slug })} />
       {channelsOpen && <button type="button" className="fs-agx-scrim" aria-label={t('Close the channel list')} onClick={() => setChannelsOpen(false)} />}
 
       <AddServerDialog open={dialog?.kind === 'add-server'} servers={servers ?? []} onClose={() => setDialog(null)} notify={notify}

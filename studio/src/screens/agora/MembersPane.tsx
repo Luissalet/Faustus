@@ -1,4 +1,4 @@
-import { AtSign, ChevronDown, ChevronRight, Lock, MoreHorizontal, Plus, SlidersHorizontal, Square, UserMinus, UserPlus } from 'lucide-react';
+import { AtSign, ChevronDown, UserRound, ChevronRight, Lock, MoreHorizontal, Plus, SlidersHorizontal, Square, UserMinus, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   getConsole, getMembers, setMemberRank, stopWorker,
@@ -6,6 +6,7 @@ import {
 } from '../../adapters/agora';
 import { Button, IconButton, Menu, Popover } from '../../components';
 import { t, tn } from '../../i18n';
+import { openAgentPage } from '../agent-page/AgentPageLayer';
 import { AddAgentDialog, AgentModelsDialog, effortLabel, failureWhy, modelLine, PruneAgentsDialog, RankOptions, RemoveAgentDialog } from './MemberDialogs';
 import {
   ago, agentColor, composerBus, DEFAULT_RANK, findTask, isOnline, PRESENCE_LABEL, RANK_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER,
@@ -99,6 +100,7 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop, onRank }
       {member.locks > 0 && <p className="fs-muted"><Lock size={12} aria-hidden="true" /> {tn(member.locks, '{n} lease held', '{n} leases held')}</p>}
       {member.role !== 'person' && (
         <div className="fs-agx-profile__actions">
+          <Button size="sm" variant="secondary" icon={UserRound} label={t('Open its page')} onClick={() => openAgentPage(member.id)} testId="agora-open-agent-page" />
           <Button size="sm" variant="secondary" icon={AtSign} label={t('Mention')} onClick={() => composerBus.insert('@' + member.id + ' ')} testId="agora-mention" />
           {started?.worker.state === 'running' && <Button size="sm" variant="ghost" icon={Square} label={t('Stop its session')} onClick={() => onStop(started.worker)} testId="agora-stop-session" />}
           <Button size="sm" variant="ghost" icon={UserMinus} label={t('Take off the server…')} onClick={() => onRemove(member)} testId="agora-remove-agent" />

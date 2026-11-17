@@ -13,6 +13,7 @@ import { Rich } from '../rich';
 import { t } from '../../i18n';
 import { usePlatform } from '../../shell/platform';
 import { AgentAvatar, AgentFace, roleLine } from './Identity';
+import { pageOf } from '../agent-page/AgentPageLayer';
 import { Carrying, EmojiButton, Files, Quoted, ReactButton, Reactions } from './MessageExtras';
 import {
   agentColor, clock, composerBus, dayLabel, findTask, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
@@ -89,7 +90,7 @@ const MessageRow = memo(function MessageRow({ message, head, tail, viewer, guild
       <div className="fs-agx-msg__main">
         {head && (
           <header className="fs-agx-msg__head">
-            <strong>{message.author}</strong>
+            <strong data-agent-id={pageOf(message.author)}>{message.author}</strong>
             <span className="fs-agx-msg__role">{roleLine(message.author, author)}</span>
             {label && <span className="fs-agx-tag" data-kind={message.kind}>{t(label)}</span>}
             <time title={new Date(message.created * 1000).toLocaleString()}>{stamp(message.created)}</time>

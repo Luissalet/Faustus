@@ -214,7 +214,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
         </Section>
 
         {categories.map(([category, channels]) => (
-          <Section key={category} id={'cat-' + category} title={category === 'chat' ? t('Channels') : category}
+          <Section key={category} id={'cat-' + category} title={category === 'chat' ? t('Channels') : category === 'dm' ? t('Direct messages') : category}
             count={channels.reduce((n, c) => n + c.unread, 0) || undefined} folded={folded.has('cat-' + category)} onFold={fold}
             onDropChannel={(slug) => onMoveChannel(slug, { place: 'end', category })}
             action={<IconButton size="sm" icon={Plus} label={t('New channel')} onClick={() => onAction('new-channel', category)} testId={'agora-new-channel-' + category} />}>
