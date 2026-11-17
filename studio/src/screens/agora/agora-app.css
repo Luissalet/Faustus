@@ -667,3 +667,24 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 /* Rich text lays out as a grid: its blocks may not grow past the bubble (a long code line scrolls inside its block). */
 .fs-agx-msg__body .fs-rich { grid-template-columns: minmax(0, 1fr); }
 .fs-agx-msg__body .fs-rich > * { min-inline-size: 0; max-inline-size: 100%; }
+
+/* The router's line under a message (who was chosen to answer and how) and its settings. */
+.fs-agx-route { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-block: 4px 0; color: var(--fs-text-3); font-size: 12px; line-height: 1.4; }
+.fs-agx-route > svg { flex-shrink: 0; }
+.fs-agx-route__pick { padding: 0 6px; border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); background: var(--fs-surface-2);
+  color: var(--fs-text-2); font: inherit; cursor: pointer; }
+.fs-agx-route__pick:hover { border-color: var(--fs-border-strong); color: var(--fs-text-1); }
+.fs-agx-route__pick[data-status='passed'] { color: var(--fs-text-3); text-decoration: line-through; opacity: 0.7; }
+.fs-agx-route__how { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.fs-agx-route__how:hover { color: var(--fs-text-1); text-decoration: underline; }
+.fs-agx-route-pop { inline-size: 320px; max-inline-size: 90vw; }
+.fs-agx-route-pop__title { margin: 0 0 var(--fs-space-2); color: var(--fs-text-1); font-weight: 600; }
+.fs-agx-route-pop__body ul { display: grid; gap: var(--fs-space-2); margin: 0; padding: 0; list-style: none; }
+.fs-agx-route-pop__body li { display: grid; gap: 2px; color: var(--fs-text-2); font-size: 13px; overflow-wrap: anywhere; }
+.fs-agx-route-pop__body li[data-status='passed'] strong { text-decoration: line-through; }
+.fs-agx-route-pop__passed { color: var(--fs-text-3); }
+.fs-agx-form__group { display: grid; gap: var(--fs-space-2); padding-block-start: var(--fs-space-3); border-block-start: 1px solid var(--fs-border); }
+.fs-agx-form__group h3 { margin: 0; }
+.fs-agx-form__hint { margin: 0; font-size: 12.5px; }
+.fs-agx-router { display: grid; gap: var(--fs-space-3); }
+.fs-agx-router select:disabled { opacity: 0.55; }

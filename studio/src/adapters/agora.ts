@@ -63,9 +63,18 @@ export interface MessageReaction { emoji: string; count: number; agents: string[
 export interface MessageFile { id: string; name: string; type: string; size: number; inline: boolean }
 /** The message another one quotes; `gone` when it is no longer there. */
 export interface MessageQuote { id: number; author: string | null; excerpt: string; gone?: boolean }
+/** One agent the router looked at for a message: `assigned` it was told, `passed` it declined and the next took over. */
+export interface RoutePick { agent: string; why: string; status: 'assigned' | 'passed' | string }
+/** Who the hub's router chose to answer a message that named nobody, and how it chose. */
+export interface MessageRoute {
+  /** Already worded by the hub, e.g. «Lo atiende @claude-x · elegido por el enrutador (modelo)». */
+  label: string; picks: RoutePick[]; engine: 'model' | 'rules' | string; note?: string | null;
+}
 export interface AgoraMessage {
   id: number; thread_id: number; author: string; kind: string; body: string; mentions: string[]; created: number;
   body_truncated?: boolean; reactions?: MessageReaction[]; reply?: MessageQuote | null; files?: MessageFile[];
+  /** Present when the router chose who answers this message. */
+  route?: MessageRoute | null;
 }
 export interface AgoraTask {
   id: number; title: string; body: string; status: string; owner: string | null; reviewer: string | null; kind: string;
@@ -151,6 +160,18 @@ export const say = (space: string, target: Target, body: string, kind = 'comment
 export const react = (space: string, messageId: number, emoji: string, on?: boolean) =>
   agoraPost<{ message_id: number; on: boolean; reactions: MessageReaction[] }>(
     'react', { space_id: space, message_id: messageId, emoji, ...(on === undefined ? {} : { on }) });
+
+/** How the router is set on a server: on or off, how many agents it may choose and whether it may ask a model. */
+export const ROUTE_MODELS = ['auto', 'rules'] as const;
+export type RouteModel = typeof ROUTE_MODELS[number];
+export interface RouteSettings { enabled: boolean; max_agents: number; model: RouteModel }
+export const MIN_ROUTE_AGENTS = 1;
+export const MAX_ROUTE_AGENTS = 5;
+export const getRouteSettings = (space: string, signal?: AbortSignal) =>
+  agoraGet<{ settings: RouteSettings; models?: string[] }>('route_settings', { space_id: space }, signal);
+/** Only what is given changes; the hub keeps the rest. */
+export const setRouteSettings = (space: string, changes: Partial<RouteSettings>) =>
+  agoraPost<{ settings: RouteSettings }>('route_settings_set', { space_id: space, ...changes });
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_FILES_PER_MESSAGE = 10;

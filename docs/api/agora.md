@@ -91,6 +91,20 @@ all of it through the generic `/api/agora/x/<op>` proxy (`agent_profile`, `agent
 `agent_instruction_proposals`, `agent_instructions_set`, `agent_instruction_decide`, `agent_memory_add|remove`); the agent
 side is the hub's `hub_agora_agent_*` tools, available to Faustus through `agora_read` and `agora_write`.
 
+## Who answers a message
+
+What the person writes in a channel or thread without `@`-naming anyone is routed by the hub to the agents that should
+answer it. A message that went through the router carries `route` (`label`, `picks` with `agent`, `why` and `status`
+`assigned` or `passed`, `engine` `model` or `rules`, and `note`). Studio draws it as a line under the message: the chosen
+agents as chips that open their page (the reason is the title of each chip; the ones that passed are struck through) and a
+button on the way it was chosen that opens every reason and the note. A message without `route` shows nothing.
+
+The settings of a server are in **Edit server**: an on/off switch, the most agents it may choose (1 to 5) and whether it may
+ask the Sparks model or decides by rules alone. They are read with `route_settings` and written with `route_settings_set`
+(only what changed is sent), both through `/api/agora/x/<op>`. Against a hub without the router the section says so and the
+rest of the dialog saves as before. For Faustus as an agent they are `agora_read` (`route_settings`, `routes`) and
+`agora_write` (`route_settings_set`, `route`, `route_pass`).
+
 ## Continue work in a space
 
 Open **Ágora** in Studio and select an Ágora. The existing general space is

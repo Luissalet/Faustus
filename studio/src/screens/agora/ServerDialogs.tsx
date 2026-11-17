@@ -10,6 +10,7 @@ import { Button, Dialog, IconButton, Skeleton } from '../../components';
 import { getNotificationPrefs, putNotificationPrefs } from '../../shell/notifications';
 import WorkspaceDialog from '../studio/WorkspaceDialog';
 import { t } from '../../i18n';
+import { RouterSettingsSection, useRouterSettings } from './Router';
 import { isOnline, ROLE_COLORS } from './util';
 
 type Notify = (text: string, tone?: 'ok' | 'warn') => void;
@@ -296,6 +297,7 @@ export function EditServerDialog({ open, guild, focus, onClose, onSaved, notify 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const remote = useHubRemote(open);
+  const router = useRouterSettings(space.id, open);
   useEffect(() => {
     if (!open) return;
     setTitle(space.title); setAbout(space.description); setWorkspace(space.workspace ? [space.workspace] : []);
@@ -318,6 +320,7 @@ export function EditServerDialog({ open, guild, focus, onClose, onSaved, notify 
           try { await addContextRoot(space.project_id, folder); } catch { /* the project may already read it */ }
         }
       }
+      await router.save();
       notify(t('Server saved')); onSaved(); onClose();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
@@ -337,6 +340,7 @@ export function EditServerDialog({ open, guild, focus, onClose, onSaved, notify 
         )}
         <FolderPicker label={t('Working folder')} hint={remote ? t('Where its agents read and write, on the PC.') : t('Where its agents read and write.')} value={workspace} onChange={setWorkspace} remote={remote} />
         <FolderPicker label={t('Context folders')} hint={t('Other folders its agents should know: documents, references, a sibling repository.')} value={folders} onChange={setFolders} multiple remote={remote} />
+        {focus !== 'folders' && <RouterSettingsSection state={router} />}
         {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
       </div>
     </Dialog>

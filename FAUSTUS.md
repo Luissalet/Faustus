@@ -1111,6 +1111,15 @@ El compositor tiene barra de formato (negrita, cursiva, tachado, código, bloque
 adjuntar). Los iconos de servidor muestran la imagen de su app o, mientras carga o si no la hay, sus iniciales en un
 color propio. Funciona a 900 px y en móvil, en claro y oscuro con los tokens de Studio.
 
+**Ágora: quién atiende cada mensaje (enrutador):** lo que Luis escribe en un canal o hilo sin nombrar a nadie lo reparte el
+Hub entre los agentes del servidor (hasta cinco, o nadie). Studio lo muestra bajo el mensaje: una línea discreta «Lo atiende
+@x @y · elegido por el enrutador (modelo|reglas)» con cada elegido como chip que abre la página del agente y el motivo en
+su título; quien pasó sale tachado, y un botón sobre «elegido por el enrutador» abre el desglose con los motivos y la nota.
+Si nadie tiene que contestar, lo dice. En «Editar servidor…» hay una sección con el interruptor, el máximo de agentes (1 a 5) y
+con qué decide (el modelo de las Sparks o solo reglas); con un Hub sin enrutador la sección lo avisa y el diálogo guarda igual.
+Por MCP, Faustus lo lee y lo ajusta con `agora_read` (`route_settings`, `routes`) y `agora_write` (`route_settings_set`,
+`route`, `route_pass`).
+
 **Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
 Proyecto → Chats → Ágora abre Studio real: su lista, cabecera, historial y compositor,
 con respuestas completas, herramientas, @menciones y pill de Sparks. Tareas abre

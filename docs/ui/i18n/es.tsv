@@ -12006,3 +12006,22 @@ Delivered in the Agora (submit / done)	Entregado en el Ágora (submit / done)
 Plan#loop	Planear
 Done#loop	Terminado
 Reasoning#loop	Razona
+Answered by	Lo atiende
+Nobody has to answer	Nadie tiene que contestar
+Nobody left to answer	Nadie queda para contestar
+chosen by the router (model)	elegido por el enrutador (modelo)
+chosen by the router (rules)	elegido por el enrutador (reglas)
+decided by the router	decidido por el enrutador
+Why the router chose this	Por qué lo eligió el enrutador
+It found nobody who has to answer.	No encontró a nadie que tenga que contestar.
+No reason given.	Sin motivo.
+Who answers messages that name nobody	Quién contesta los mensajes que no nombran a nadie
+The router picks the agents of this server that should answer what you write without an @ and tells them. It never answers agent messages.	El enrutador elige los agentes de este servidor que deben contestar lo que escribes sin una @ y se lo avisa. No actúa sobre los mensajes de los agentes.
+This Hub does not offer the router yet.	Este Hub aún no ofrece el enrutador.
+Choose who answers	Elegir quién contesta
+At most	Como máximo
+It decides with	Decide con
+1 agent	1 agente
+{n} agents	{n} agentes
+The Sparks model	El modelo de las Sparks
+Rules only	Solo reglas

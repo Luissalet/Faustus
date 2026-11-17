@@ -15,6 +15,7 @@ import { usePlatform } from '../../shell/platform';
 import { AgentAvatar, AgentFace, roleLine } from './Identity';
 import { pageOf } from '../agent-page/AgentPageLayer';
 import { Carrying, EmojiButton, Files, Quoted, ReactButton, Reactions } from './MessageExtras';
+import { RouteLine } from './Router';
 import {
   agentColor, clock, composerBus, dayLabel, findTask, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
   THREAD_KIND_LABEL, type View,
@@ -101,6 +102,7 @@ const MessageRow = memo(function MessageRow({ message, head, tail, viewer, guild
         {!namesOnly && <div className="fs-agx-msg__body"><Rich text={body} /></div>}
         {long && <button type="button" className="fs-agx-link" onClick={() => setWhole(true)}>{t('Show the whole message ({n} characters)', { n: message.body.length })}</button>}
         {message.body_truncated && <p className="fs-muted">{t('This message is longer than what the page loads.')}</p>}
+        <RouteLine route={message.route} />
         {refs.length > 0 && (
           <div className="fs-agx-msg__refs">
             {refs.map((task) => (
