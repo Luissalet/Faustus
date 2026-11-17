@@ -11812,6 +11812,34 @@ Level of detail	Nivel de detalle
 Writing this level…	Escribiendo este nivel…
 Folding…	Plegando…
 The model is not answering, so this level cannot be written now. Levels 1 and 2 still work.	El modelo no responde, así que este nivel no se puede escribir ahora. Los niveles 1 y 2 siguen funcionando.
+(truncated)	(recortado)
+A branch of its own for this thread: the agents work in it and you see its diff here.	Una rama propia para este hilo: los agentes trabajan en ella y aquí ves su diff.
+Agent changed	Agente cambiado
+Agent working this thread	Agente del hilo
+Branch pushed	Rama publicada
+Committed	Commit hecho
+Create worktree	Crear worktree
+Faustus answers with the thread model. Another agent receives what you send from the composer, with the thread context, and answers here.	Faustus responde con el modelo del hilo. Otro agente recibe lo que envías desde el compositor, con el contexto del hilo, y responde aquí.
+Hand off	Pasar
+Hand off to…	Pasar a…
+No uncommitted changes	Sin cambios por confirmar
+Open PR	Abrir PR
+Pull request opened	Pull request abierta
+Pull request title	Título de la pull request
+Pull request: {url}	Pull request: {url}
+Refresh diff	Actualizar diff
+Remove worktree	Quitar worktree
+Repository folder	Carpeta del repositorio
+Task handed off; the result will appear in this thread	Tarea pasada; el resultado aparecerá en este hilo
+Thread worktree	Worktree del hilo
+Use in this thread	Usar en este hilo
+What should it do? It receives a summary of this thread.	¿Qué tiene que hacer? Recibe un resumen de este hilo.
+Worktree created	Worktree creado
+Worktree removed; the branch stays	Worktree quitado; la rama se conserva
+hand-off	pase
+turn	turno
+{n} changed files	{n} archivos cambiados
+{n} commits on the branch	{n} commits en la rama
 Model · effort	Modelo · esfuerzo
 not declared	sin declarar
 declared by the agent	declarado por el agente
@@ -11887,3 +11915,4 @@ What the model reads: {text}	Lo que lee el modelo: {text}
 X self-chat	Chat de X contigo mismo
 already exists	ya existe
 {n} entries, edited in their own panel.	{n} entradas; se editan en su propio panel.
+Runs in this thread	Ejecuciones de este hilo

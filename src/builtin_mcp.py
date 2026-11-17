@@ -83,6 +83,7 @@ _BUILTIN_SERVERS = {
     "conversation_objective": ("mcp_servers/conversation_objective_server.py", "Built-in: Conversation objective"),
     "project_workspace": ("mcp_servers/project_workspace_server.py", "Built-in: Project workspace"),
     "groups": ("mcp_servers/groups_server.py", "Built-in: Persistent working groups"),
+    "thread_agents": ("mcp_servers/thread_agents_server.py", "Built-in: Thread agents and worktrees"),
     "sparks": ("mcp_servers/sparks_server.py", "Built-in: Global Sparks models"),
     "council": ("mcp_servers/council_server.py", "Built-in: Model councils"),
     "channel_connections": ("mcp_servers/channel_connections_server.py", "Built-in: Native channels"),

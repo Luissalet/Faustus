@@ -167,7 +167,7 @@ export function ThreadAgentPanel({ sessionId, state, workspace, refresh, onChang
 
       {Boolean(state?.jobs.length) && (
         <section aria-labelledby="ta-jobs">
-          <h3 id="ta-jobs">{t('Runs')}</h3>
+          <h3 id="ta-jobs">{t('Runs in this thread')}</h3>
           <ul className="fs-thread-agent__jobs" data-testid="thread-agent-jobs">
             {[...(state?.jobs ?? [])].reverse().slice(0, 8).map((job) => (
               <li key={job.id} data-status={job.status}>

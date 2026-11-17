@@ -1492,6 +1492,8 @@ app.include_router(setup_expert_routes())
 # reads; POST /{key}/launch installs, is admin-only and is blocked from app_api.
 from routes.agent_runner_routes import setup_agent_runner_routes
 app.include_router(setup_agent_runner_routes())
+from routes.thread_agent_routes import setup_thread_agent_routes
+app.include_router(setup_thread_agent_routes())
 
 # Agent definitions: an agent as a FILE (src/agent_defs.py) — what it may use,
 # what it may touch, where it runs — so a dispatched task can name one and the
