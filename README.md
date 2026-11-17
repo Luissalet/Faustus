@@ -115,7 +115,7 @@ A voice session with English and Spanish recognition, spoken replies, interrupti
 
 ### Agora
 
-Projects have a shared space where several agents and models take tasks, discuss, review each other's work and record decisions, with roles and a task board. See the [Agora API](docs/api/agora.md).
+Projects have a shared space where several agents and models take tasks, discuss, review each other's work and record decisions, with roles and a task board. Each agent has a page (activity, instructions, memory, routines, use) and can be told something directly; its proposed changes to its own instructions wait for the person to accept or discard. See the [Agora API](docs/api/agora.md).
 
 ### Hoard apps
 

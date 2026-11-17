@@ -11918,6 +11918,7 @@ X self-chat	Chat de X contigo mismo
 already exists	ya existe
 {n} entries, edited in their own panel.	{n} entradas; se editan en su propio panel.
 Runs in this thread	Ejecuciones de este hilo
+<<<<<<< HEAD
 Person	Persona
 session	sesión
 1 commit	1 commit
@@ -11943,3 +11944,48 @@ Pinned: the decisions of this server	Fijados: las decisiones de este servidor
 Search in this channel	Buscar en este canal
 Write in #{name} · use @ to call an agent	Escribe en #{name} · usa @ para llamar a un agente
 Reply in this thread · use @ to call an agent	Responde en este hilo · usa @ para llamar a un agente
+=======
+Proposed change to its instructions	Cambio propuesto a sus instrucciones
+Because of: {source}	Por: {source}
+The instructions changed after this was proposed; the difference below is against the current text.	Las instrucciones cambiaron después de proponerlo; la diferencia de abajo es contra el texto actual.
+Instructions to accept	Instrucciones que se aceptan
+Accept with my edit	Aceptar con mi edición
+Edit and accept	Editar y aceptar
+No activity of this agent on this server yet.	Este agente aún no tiene actividad en este servidor.
+Task it opened	Tarea que abrió
+Messages per day in the last {n} days	Mensajes por día en los últimos {n} días
+{day}: {m} messages, {c} tasks closed, {r} min running	{day}: {m} mensajes, {c} tareas cerradas, {r} min en marcha
+Bars: messages per day; the second tone is the minutes its sessions ran.	Barras: mensajes por día; el segundo tono son los minutos que corrieron sus sesiones.
+Bars: messages per day.	Barras: mensajes por día.
+Tokens are not recorded.	Los tokens no se registran.
+Sent. It is in its inbox and a turn was queued for it.	Enviado. Está en su buzón y se le puso un turno en cola.
+Sent. It is in its inbox and in the mentions of its next heartbeat.	Enviado. Está en su buzón y en las menciones de su próximo latido.
+Instructions updated.	Instrucciones actualizadas.
+Proposal discarded.	Propuesta descartada.
+Agent page	Página del agente
+session started {when}	sesión iniciada {when}
+Engine not declared	Motor sin declarar
+Direct messages	Mensajes directos
+Tell {agent} something	Decirle algo a {agent}
+It reaches it even while it works: through its inbox and its next heartbeat	Le llega aunque esté trabajando: por su buzón y su próximo latido
+It is a correction: ask it to propose a change to its instructions	Es una corrección: pídele que proponga un cambio de sus instrucciones
+Its instructions	Sus instrucciones
+No instructions of its own yet. What you write here is what this agent works by.	Aún no tiene instrucciones propias. Lo que escribas aquí es lo que sigue este agente.
+Last change {when} by {who}	Último cambio {when} por {who}
+Save instructions	Guardar instrucciones
+Instructions saved.	Instrucciones guardadas.
+Earlier proposals	Propuestas anteriores
+Nothing kept yet: decisions it closed, corrections it received and notes appear here.	Aún no hay nada: aquí salen las decisiones que cerró, las correcciones que recibió y sus notas.
+Remove note	Quitar la nota
+Kind of note	Tipo de nota
+Add a note to its memory	Añadir una nota a su memoria
+No routines declared. The agent records its recurring jobs here (hub_agora_agent_routine_set).	No ha declarado rutinas. El agente anota aquí sus trabajos periódicos (hub_agora_agent_routine_set).
+no schedule given	sin horario indicado
+{n} proposed change to its instructions is waiting for you	{n} cambio propuesto a sus instrucciones te espera
+{n} proposed changes to its instructions are waiting for you	{n} cambios propuestos a sus instrucciones te esperan
+Routines	Rutinas
+{n} new	{n} nuevos
+No direct conversations yet. Open an agent and tell it something.	Aún no hay conversaciones directas. Abre un agente y dile algo.
+Correction	Corrección
+Open its page	Abrir su página
+>>>>>>> f338c6e3 (Add the agent page, the direct-message list and the instruction proposals to Studio's Agora)
