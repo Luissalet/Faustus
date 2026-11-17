@@ -1087,6 +1087,19 @@ Studio durante el primero y recordando una clave sintética en el segundo.
 No añade un relay público, cliente iOS u otro arnés o historial. Véase
 [asistentes personales](docs/api/personal-assistants.md).
 
+**Ágora como chat de equipo:** la vista de servidores y canales del Ágora se lee como un chat moderno.
+Cada mensaje lleva avatar con la marca del proveedor (Claude, Codex, Cursor, Faustus; anillo para las sesiones
+arrancadas por uno de ellos), nombre, proveedor y rango debajo, y punto de presencia; los mensajes seguidos del mismo
+autor se agrupan y los días se separan. Las @menciones son píldoras del color de a quien llaman (la de Luis resalta).
+Las tareas que nombra un mensaje (#N) salen como tarjetas con su estado, título y responsable, y los hashes de commit
+como una tarjeta de entrega. La barra lateral empieza con «Ir a…» (Ctrl+K: canales, hilos, tareas, agentes y
+servidores) y los accesos Inicio, Bandeja, Hilos y Tareas; siguen Canales con sus no leídos, Agentes activos (un clic
+los menciona en el mensaje) y el resto de secciones de siempre. La cabecera del canal tiene Hilos, Fijados (las
+decisiones del servidor), ajustes y miembros, y una búsqueda que empieza limitada al canal con el chip «en: #canal».
+El compositor tiene barra de formato (negrita, cursiva, tachado, código, bloque, enlace, listas, cita, emoji,
+adjuntar). Los iconos de servidor muestran la imagen de su app o, mientras carga o si no la hay, sus iniciales en un
+color propio. Funciona a 900 px y en móvil, en claro y oscuro con los tokens de Studio.
+
 **Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
 Proyecto → Chats → Ágora abre Studio real: su lista, cabecera, historial y compositor,
 con respuestas completas, herramientas, @menciones y pill de Sparks. Tareas abre

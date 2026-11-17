@@ -43,7 +43,7 @@ export function ServerIcon({ server, size = 44 }: { server: Pick<AgoraServer, 'i
   if (own && !own.startsWith('img:') && own.length <= 4) return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{own}</span>;
   const app = (own.startsWith('img:') ? '' : own) || server.icon_app || server.id;
   if (app === 'faustus') return <span className="fs-agx-sicon" style={style} data-kind="brand" aria-hidden="true"><BrandMark size={Math.round(size * 0.6)} /></span>;
-  if (app && !broken) return picture(iconUrl(app));
+  if (app && !broken) return picture(iconUrl(app, true));
   return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{letters}</span>;
 }
 

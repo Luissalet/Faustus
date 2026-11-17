@@ -11,7 +11,7 @@ counts as read by them.
   task_review, resolve, escalate, space_meta_set, console/message…)
 * ``GET  /api/agora/pulse``     -> the hub's change token, waiting up to 20 s for a change
 * ``GET  /api/agora/icon/<app>``-> the icon of a family app (``hub`` is the hub's own), made small: the originals weigh
-  up to 1 MB each and a server list draws thirty of them at 48 px
+  up to 1 MB each and a server list draws thirty of them at 48 px; with ``soft=1`` an app without one answers 204
 * ``GET  /api/agora/where``     -> whether the hub is on this machine or on another one, reached through its link
   (``src/hub_link.py``): folders are then chosen on the hub's machine, where the agents work
 * ``GET  /api/agora/file/<id>`` -> a file a message carries; ``GET /api/agora/space-icon/<space>`` -> a server's own
@@ -154,16 +154,18 @@ def setup_agora_routes() -> APIRouter:
         require_admin(request)
         if not _APP.match(app_id):
             return Response(status_code=404)
+        # ``soft=1``: the page has letters to show instead, so a missing icon is no content rather than an error.
+        missing = 204 if request.query_params.get("soft") == "1" else 404
         cached = _icons.get(app_id)
         if cached is None and app_id in _no_icon:
-            return Response(status_code=404)
+            return Response(status_code=missing)
         if cached is None:
             path = "/ui/hub-icon.png" if app_id == "hub" else f"/api/apps/{urllib.parse.quote(app_id, safe='')}/icon"
             status, blob, ctype = await asyncio.to_thread(hub_request, "GET", path, raw=True, timeout=10.0)
             if status != 200 or not blob:
                 if status == 404 and len(_no_icon) < 500:
                     _no_icon.add(app_id)
-                return Response(status_code=404)
+                return Response(status_code=missing if status == 404 else 404)
             cached = await asyncio.to_thread(small_icon, blob, ctype or "image/png")
             if len(_icons) < 200:
                 _icons[app_id] = cached

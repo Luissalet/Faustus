@@ -35,6 +35,7 @@ def client(monkeypatch):
 
     monkeypatch.setattr(agora_routes, "hub_request", fake)
     monkeypatch.setattr(agora_routes, "_icons", {})
+    monkeypatch.setattr(agora_routes, "_no_icon", set())
     app = FastAPI()
     app.include_router(agora_routes.setup_agora_routes())
     return TestClient(app), calls
@@ -88,6 +89,15 @@ def test_pulse_waits_at_most_twenty_seconds_and_icons_are_cached(client):
     assert calls[-1]["path"] == "/ui/hub-icon.png"
     assert http.get("/api/agora/icon/missing").status_code == 404
     assert http.get("/api/agora/icon/..%2Fx").status_code == 404
+
+
+def test_an_app_without_icon_is_asked_once_and_soft_asks_get_no_content(client):
+    http, calls = client
+    assert http.get("/api/agora/icon/missing-app", params={"soft": "1"}).status_code == 204
+    before = len(calls)
+    assert http.get("/api/agora/icon/missing-app", params={"soft": "1"}).status_code == 204
+    assert http.get("/api/agora/icon/missing-app").status_code == 404
+    assert len(calls) == before
 
 
 def test_big_icons_are_made_small_and_odd_ones_are_left_alone():

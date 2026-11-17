@@ -301,4 +301,5 @@ export const getInbox = (signal?: AbortSignal, heard = false) =>
   agoraGet<PersonInbox>('inbox', { agent: 'luis', all_spaces: 1, peek: 1, mine_only: 1, limit: 40, ...(heard ? { skip_muted: 1 } : {}) }, signal);
 
 /** `s` names the size served, so a browser never shows an older, heavier copy it kept. */
-export const iconUrl = (app: string) => '/api/agora/icon/' + encodeURIComponent(app) + '?s=128';
+/** `soft`: an app with no icon answers «no content» instead of «not found», for a picture that has letters to fall back on. */
+export const iconUrl = (app: string, soft = false) => '/api/agora/icon/' + encodeURIComponent(app) + '?s=128' + (soft ? '&soft=1' : '');

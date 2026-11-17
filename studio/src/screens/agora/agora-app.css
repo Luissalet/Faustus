@@ -563,8 +563,8 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 .fs-agx-main__head h1 { font-size: 1.125rem; font-weight: 700; }
 .fs-agx-main__topic { font-size: 13px; }
 .fs-agx-main__tools { display: inline-flex; align-items: center; gap: 2px; }
-.fs-agx-main__search { block-size: 34px; padding-inline: 10px; border-radius: var(--fs-radius-panel); min-inline-size: 0; }
-.fs-agx-main__search input { inline-size: 150px; }
+.fs-agx-main__search { flex: 0 1 auto; block-size: 34px; padding-inline: 10px; border-radius: var(--fs-radius-panel); min-inline-size: 0; overflow: hidden; }
+.fs-agx-main__search input { flex: 1 1 auto; min-inline-size: 48px; inline-size: 150px; text-overflow: ellipsis; }
 .fs-agx-main__search input:focus { inline-size: 240px; }
 .fs-agx-chip { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 1px 4px 1px 8px; border-radius: 6px; background: var(--fs-surface-3); color: var(--fs-text-1);
   font-size: 12px; white-space: nowrap; }

@@ -444,10 +444,15 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   }, [draft]);
 
   // The format bar: wraps what is selected (or a placeholder) in Markdown, or starts each selected line with a mark.
-  const edit = (make: (picked: string) => { text: string; select: [number, number] }) => {
+  const edit = (make: (picked: string) => { text: string; select: [number, number] }, wholeLines = false) => {
     const area = input.current;
-    const from = area?.selectionStart ?? draft.length;
-    const to = area?.selectionEnd ?? draft.length;
+    let from = area?.selectionStart ?? draft.length;
+    let to = area?.selectionEnd ?? draft.length;
+    if (wholeLines) {
+      from = draft.lastIndexOf('\n', from - 1) + 1;
+      const end = draft.indexOf('\n', to);
+      to = end < 0 ? draft.length : end;
+    }
     const out = make(draft.slice(from, to));
     setDraft(draft.slice(0, from) + out.text + draft.slice(to));
     window.requestAnimationFrame(() => { area?.focus(); area?.setSelectionRange(from + out.select[0], from + out.select[1]); setCaret(from + out.select[1]); });
@@ -459,7 +464,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   const lines = (mark: (n: number) => string) => edit((picked) => {
     const text = (picked || t('text')).split('\n').map((line, i) => mark(i + 1) + line).join('\n');
     return { text, select: [0, text.length] };
-  });
+  }, true);
   const FORMAT: { icon: LucideIcon; label: string; run: () => void; sep?: boolean }[] = [
     { icon: Bold, label: t('Bold'), run: () => wrap('**') },
     { icon: Italic, label: t('Italic'), run: () => wrap('*') },

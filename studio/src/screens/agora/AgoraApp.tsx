@@ -154,13 +154,16 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
       return merged;
     });
   }, [lockedSpace, setParams, spaceId]);
-  // Ctrl/Cmd + K: «Ir a…» from anywhere in the Agora.
+  // Ctrl/Cmd + K: «Ir a…» from anywhere in the Agora. Taken before the app's own search hears it (that one stays a
+  // click away in the sidebar), so one key press opens one thing.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') { event.preventDefault(); setDialog({ kind: 'jump' }); }
+      if (!((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k')) return;
+      event.preventDefault(); event.stopPropagation();
+      setDialog({ kind: 'jump' });
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
   const [searchScoped, setSearchScoped] = useState(true);
   const server = servers?.find((s) => s.id === spaceId);
