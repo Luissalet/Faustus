@@ -27,7 +27,7 @@ const KINDS = ['comment', 'proposal', 'agree', 'disagree'] as const;
 type Item =
   | { type: 'day'; key: string; label: string }
   | { type: 'new'; key: string }
-  | { type: 'msg'; key: string; message: AgoraMessage; head: boolean };
+  | { type: 'msg'; key: string; message: AgoraMessage; head: boolean; tail?: boolean };
 
 function buildItems(messages: AgoraMessage[], seenUpto: number, viewer: string): Item[] {
   const out: Item[] = [];
@@ -46,11 +46,17 @@ function buildItems(messages: AgoraMessage[], seenUpto: number, viewer: string):
     out.push({ type: 'msg', key: 'm-' + message.id, message, head: message.kind === 'system' ? false : head });
     previous = message;
   }
+  // The last message of each run of one author closes its bubble.
+  out.forEach((item, index) => {
+    if (item.type !== 'msg') return;
+    const next = out[index + 1];
+    item.tail = !next || next.type !== 'msg' || next.head || next.message.kind === 'system';
+  });
   return out;
 }
 
-const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOpen, onReply, onReact, onJump }: {
-  message: AgoraMessage; head: boolean; viewer: string; guild: AgoraGuild; onOpen: (view: View) => void; onReply: (message: AgoraMessage) => void;
+const MessageRow = memo(function MessageRow({ message, head, tail, viewer, guild, onOpen, onReply, onReact, onJump }: {
+  message: AgoraMessage; head: boolean; tail?: boolean; viewer: string; guild: AgoraGuild; onOpen: (view: View) => void; onReply: (message: AgoraMessage) => void;
   onReact: (id: number, emoji: string, on?: boolean) => void; onJump: (id: number) => void;
 }) {
   const [whole, setWhole] = useState(false);
@@ -74,7 +80,7 @@ const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOp
   const commits = [...new Set([...message.body.matchAll(/(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g)].map((m) => m[0]).filter((h) => /[a-f]/.test(h) && /\d/.test(h)))].slice(0, 6);
   const copy = () => { void navigator.clipboard?.writeText(message.body).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }).catch(() => undefined); };
   return (
-    <article className="fs-agx-msg" id={'agx-m-' + message.id} data-head={head || undefined} data-mine={mine || undefined} data-tome={toMe || undefined}
+    <article className="fs-agx-msg" id={'agx-m-' + message.id} data-head={head || undefined} data-tail={tail || undefined} data-mine={mine || undefined} data-tome={toMe || undefined}
       data-kind={message.kind} data-tools={tools || undefined} style={{ '--agx-c': agentColor(message.author) } as CSSProperties} data-testid="agora-message"
       onClick={(e) => { if (byTouch() && !(e.target as HTMLElement).closest('a,button,input,textarea')) setTools((v) => !v); }}>
       {head
@@ -525,7 +531,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
           ? <div key={item.key} className="fs-agx-day"><span>{item.label}</span></div>
           : item.type === 'new'
             ? <div key={item.key} className="fs-agx-new"><span>{t('New')}</span></div>
-            : <MessageRow key={item.key} message={item.message} head={item.head} viewer={viewer} guild={guild} onOpen={onOpen} onReply={reply} onReact={reactOn} onJump={jumpTo} />)}
+            : <MessageRow key={item.key} message={item.message} head={item.head} tail={item.tail} viewer={viewer} guild={guild} onOpen={onOpen} onReply={reply} onReact={reactOn} onJump={jumpTo} />)}
       </div>
       {below && <button type="button" className="fs-agx-chat__jump" onClick={toBottom}><ArrowDown size={14} aria-hidden="true" /> {t('Latest messages')}</button>}
       {prompt ? (
