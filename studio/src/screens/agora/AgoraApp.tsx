@@ -1,8 +1,8 @@
 import {
   Activity, Archive, ArrowDown, ArrowUp, BookOpen, Check, ExternalLink, GitPullRequest, Hash, Inbox, Kanban, Lock, MessagesSquare, PackageCheck, PanelLeft,
-  Pencil, RefreshCw, Scale, Search, SquarePen, Users, Volume2, X, type LucideIcon,
+  Pencil, Pin, RefreshCw, Scale, Search, Settings2, SquarePen, Users, Volume2, X, type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
   getGuild, getServers, markSpaceSeen, pulse, reorderChannels, setSpaceMeta, updateChannel,
@@ -14,12 +14,14 @@ import { EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components'
 import { t } from '../../i18n';
 import { ChannelList, type ChannelDrop, type ListAction } from './ChannelList';
 import { ChatPane } from './ChatPane';
+import { AddAgentDialog } from './MemberDialogs';
 import { MembersPane } from './MembersPane';
+import { QuickJump } from './QuickJump';
 import { RoomsPane } from './RoomsPane';
 import { AddServerDialog, AgoraNotifyDialog, EditServerDialog, NewChannelDialog, NewTaskDialog, NewThreadDialog } from './ServerDialogs';
 import { ServerRail } from './ServerRail';
-import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, LocksView, SearchView, WelcomeView } from './Views';
-import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
+import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, LocksView, SearchView, ThreadsView, WelcomeView } from './Views';
+import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, ROLE_COLORS, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
 import './agora-app.css';
 import { AgoraLive } from './AgoraLive';
 
@@ -33,11 +35,15 @@ const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon 
   activity: { label: 'activity', hint: 'Every message of this server, newest first', icon: Activity },
   locks: { label: 'locks', hint: 'Files, merges, models and apps taken right now', icon: Lock },
   inbox: { label: 'Your inbox', hint: 'What waits for you in every server', icon: Inbox },
+  threads: { label: 'Threads', hint: 'Every open conversation of this server, those that wait for you first', icon: MessagesSquare },
   search: { label: 'Search', hint: 'Where something was said', icon: Search },
 };
 
 type DialogState = null | { kind: 'add-server' } | { kind: 'edit-server'; focus?: 'folders' } | { kind: 'new-channel'; category: string }
-  | { kind: 'new-thread' } | { kind: 'new-task' } | { kind: 'notify' };
+  | { kind: 'new-thread' } | { kind: 'new-task' } | { kind: 'notify' } | { kind: 'add-agent' } | { kind: 'jump' };
+
+/** The colour of each provider as a variable, so a mention pill in a message takes the colour of whom it calls. */
+const ROLE_VARS = Object.fromEntries(Object.entries(ROLE_COLORS).map(([role, colour]) => ['--agx-role-' + role, colour])) as CSSProperties;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
@@ -86,7 +92,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
       if (!lockedSpace) merged.set('space_id', target);
       merged.set('c', viewKey(next));
       merged.delete('mode'); merged.delete('s');
-      if (!(next.kind === 'view' && next.id === 'search')) merged.delete('q');
+      if (!(next.kind === 'view' && next.id === 'search')) { merged.delete('q'); merged.delete('in'); }
       return merged;
     }, inPlace ? { replace: true } : undefined);
   }, [lockedSpace, navigate, setParams, spaceId]);
@@ -138,14 +144,25 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   }, [spaceId, project, roomTick]);
 
   const refresh = useCallback(() => setTick((n) => n + 1), []);
-  const setQuery = useCallback((q: string) => {
+  // `within`: a channel the search keeps to (undefined leaves it as it is, null widens it to the whole server).
+  const setQuery = useCallback((q: string, within?: string | null) => {
     setParams((old) => {
       const merged = new URLSearchParams(old);
       if (!lockedSpace) merged.set('space_id', spaceId);
       merged.set('c', 'v:search'); merged.set('q', q);
+      if (within) merged.set('in', within); else if (within === null) merged.delete('in');
       return merged;
     });
   }, [lockedSpace, setParams, spaceId]);
+  // Ctrl/Cmd + K: «Ir a…» from anywhere in the Agora.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') { event.preventDefault(); setDialog({ kind: 'jump' }); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const [searchScoped, setSearchScoped] = useState(true);
   const server = servers?.find((s) => s.id === spaceId);
   const ready = guild && guild.space.id === spaceId ? guild : null;
 
@@ -157,7 +174,8 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   }, [open, ready, view]);
 
   const onAction = useCallback((action: ListAction, arg?: string) => {
-    if (action === 'edit-server') setDialog({ kind: 'edit-server' });
+    if (action === 'add-agent') setDialog({ kind: 'add-agent' });
+    else if (action === 'edit-server') setDialog({ kind: 'edit-server' });
     else if (action === 'folders') setDialog({ kind: 'edit-server', focus: 'folders' });
     else if (action === 'new-channel') setDialog({ kind: 'new-channel', category: arg || 'chat' });
     else if (action === 'new-thread') setDialog({ kind: 'new-thread' });
@@ -227,6 +245,8 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   }, [ready, rooms, view]);
 
   const channel = ready && view.kind === 'channel' ? ready.channels.find((c) => c.slug === view.id) : undefined;
+  // A search box in a channel starts kept to that channel again each time another one opens.
+  useEffect(() => { setSearchScoped(true); }, [channel?.slug]);
   const siblings = channel && ready ? ready.channels.filter((c) => (c.category || 'chat') === (channel.category || 'chat')) : [];
   const place = channel ? siblings.findIndex((c) => c.slug === channel.slug) : -1;
   const channelMenu = channel && [
@@ -246,7 +266,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
 
   return (
     <div className="fs-agx" data-members={membersOpen || undefined} data-channels={channelsOpen || undefined} data-embedded={embedded || undefined}
-      data-rail={lockedSpace ? undefined : true} data-testid="agora-app">
+      data-rail={lockedSpace ? undefined : true} data-testid="agora-app" style={ROLE_VARS}>
       {!lockedSpace && (
         servers
           ? <ServerRail servers={servers} current={view.kind === 'view' && view.id === 'inbox' ? '' : spaceId} home={home} onSelect={(id) => (id === spaceId ? open(parseView(recall('agora:last-view:' + id) || 'ch:general')) : selectServer(id))}
@@ -255,7 +275,8 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           : <nav className="fs-agx-rail" aria-label={t('Servers')} />
       )}
       {ready
-        ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} onMoveChannel={moveChannel} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)} />
+        ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} onMoveChannel={moveChannel} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)}
+            onJump={() => setDialog({ kind: 'jump' })} />
         : <aside className="fs-agx-channels"><div className="fs-agx-channels__scroll"><Skeleton label={t('Loading channels')} count={8} height="28px" /></div></aside>}
       <main className="fs-agx-main">
         <header className="fs-agx-main__head">
@@ -264,10 +285,25 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           <h1 data-testid="agora-title">{head.title}</h1>
           {head.hint && <p className="fs-agx-main__topic">{head.hint}</p>}
           <span className="fs-spacer" />
-          <form className="fs-agx-main__search" role="search" onSubmit={(e) => { e.preventDefault(); const q = new FormData(e.currentTarget).get('q'); if (typeof q === 'string' && q.trim().length >= 2) { setQuery(q.trim()); e.currentTarget.reset(); } }}>
-            <Search size={14} aria-hidden="true" /><input name="q" placeholder={t('Search')} aria-label={t('Search the Agora')} data-testid="agora-search-box" />
+          <span className="fs-agx-main__tools">
+            <IconButton size="sm" icon={MessagesSquare} label={t('Threads')} onClick={() => open({ kind: 'view', id: 'threads' })} testId="agora-head-threads" />
+            <IconButton size="sm" icon={Pin} label={t('Pinned: the decisions of this server')} onClick={() => open({ kind: 'view', id: 'decisions' })} testId="agora-head-pinned" />
+            {channelMenu
+              ? <Menu align="end" items={channelMenu} trigger={<IconButton size="sm" icon={Settings2} label={t('Channel options')} testId="agora-head-settings" />} />
+              : <IconButton size="sm" icon={Settings2} label={t('Edit server…')} onClick={() => setDialog({ kind: 'edit-server' })} testId="agora-head-settings" />}
+          </span>
+          <form className="fs-agx-main__search" role="search" onSubmit={(e) => {
+            e.preventDefault();
+            const q = new FormData(e.currentTarget).get('q');
+            if (typeof q === 'string' && q.trim().length >= 2) { setQuery(q.trim(), channel && searchScoped ? channel.slug : null); e.currentTarget.reset(); }
+          }}>
+            <Search size={14} aria-hidden="true" />
+            {channel && searchScoped && (
+              <span className="fs-agx-chip" data-testid="agora-search-chip">{t('in:')} #{channel.title}
+                <button type="button" aria-label={t('Search the whole server')} onClick={() => setSearchScoped(false)}><X size={12} aria-hidden="true" /></button></span>
+            )}
+            <input name="q" placeholder={channel && searchScoped ? t('Search in this channel') : t('Search')} aria-label={t('Search the Agora')} data-testid="agora-search-box" />
           </form>
-          {channelMenu && <Menu align="end" items={channelMenu} trigger={<IconButton size="sm" icon={Pencil} label={t('Channel options')} />} />}
           <IconButton size="sm" icon={RefreshCw} label={t('Refresh')} onClick={refresh} />
           <a className="fs-agx-main__hub" href={'/api/hoard/agora/open?space_id=' + encodeURIComponent(spaceId)} target="_blank" rel="noopener" title={t('Open this server in the hub console')}>
             <ExternalLink size={15} aria-hidden="true" /><span className="fs-sr-only">{t('Open in the hub')}</span></a>
@@ -282,7 +318,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           {ready && error && <p className="fs-notice" data-tone="warning" role="status">{t('Connection lost: {reason}. What you see may be out of date.', { reason: error })}</p>}
           {ready && target && (
             <ChatPane guild={ready} view={view} target={target} version={ready.version} onOpen={open} notify={notify}
-              placeholder={view.kind === 'channel' ? t('Message #{name}', { name: head.title }) : t('Reply in this thread')} />
+              placeholder={view.kind === 'channel' ? t('Write in #{name} · use @ to call an agent', { name: head.title }) : t('Reply in this thread · use @ to call an agent')} />
           )}
           {ready && view.kind === 'view' && (
             <div className="fs-agx-main__scroll">
@@ -294,8 +330,10 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
               {view.id === 'decisions' && <DecisionsView guild={ready} version={ready.version} onOpen={open} />}
               {view.id === 'locks' && <LocksView version={ready.version} />}
               {view.id === 'inbox' && <InboxView servers={servers ?? []} version={ready.version} onOpen={open} />}
-              {view.id === 'search' && <SearchView guild={ready} servers={servers ?? []} query={params.get('q') || ''} onQuery={setQuery} onOpen={open} />}
-              {!['live', 'board', 'deliveries', 'reviews', 'activity', 'decisions', 'locks', 'inbox', 'search'].includes(view.id) && (
+              {view.id === 'search' && <SearchView guild={ready} servers={servers ?? []} query={params.get('q') || ''} onQuery={(q) => setQuery(q)} onOpen={open}
+                within={params.get('in')} onWithin={(slug) => setQuery(params.get('q') || '', slug)} />}
+              {view.id === 'threads' && <ThreadsView guild={ready} onOpen={open} onNew={() => setDialog({ kind: 'new-thread' })} />}
+              {!['live', 'board', 'deliveries', 'reviews', 'activity', 'decisions', 'locks', 'inbox', 'search', 'threads'].includes(view.id) && (
                 <WelcomeView guild={ready} onEdit={() => setDialog({ kind: 'edit-server' })} notify={notify} onRefresh={refresh} />
               )}
             </div>
@@ -321,6 +359,8 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
             onClose={() => setDialog(null)} notify={notify} onCreated={(slug) => { refresh(); open({ kind: 'channel', id: slug }); }} />
           <NewThreadDialog open={dialog?.kind === 'new-thread'} guild={ready} onClose={() => setDialog(null)} notify={notify}
             onCreated={(thread) => { refresh(); open({ kind: 'thread', id: String(thread.id) }); }} />
+          <AddAgentDialog open={dialog?.kind === 'add-agent'} guild={ready} onClose={() => setDialog(null)} onDone={refresh} notify={notify} />
+          <QuickJump open={dialog?.kind === 'jump'} onClose={() => setDialog(null)} guild={ready} servers={servers ?? []} onOpen={open} onServer={selectServer} />
           <NewTaskDialog open={dialog?.kind === 'new-task'} guild={ready} onClose={() => setDialog(null)} notify={notify}
             onCreated={(threadId) => { refresh(); if (threadId) open({ kind: 'thread', id: String(threadId) }); }} />
         </>

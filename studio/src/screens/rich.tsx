@@ -30,7 +30,7 @@ function plain(text: string, key: string): ReactNode[] {
     for (const match of value.matchAll(pattern)) {
       const start = match.index!;
       if (start > end) out.push(value.slice(end, start));
-      out.push(<span className="fs-rich__mention" key={`${prefix}-${start}`}>{match[0]}</span>);
+      out.push(<span className="fs-rich__mention" data-mention={match[0].slice(1).toLowerCase()} key={`${prefix}-${start}`}>{match[0]}</span>);
       end = start + match[0].length;
     }
     if (end < value.length) out.push(value.slice(end));

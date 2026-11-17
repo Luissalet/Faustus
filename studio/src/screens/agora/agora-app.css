@@ -478,3 +478,150 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 .fs-agx-form__row > .fs-icon-btn { align-self: flex-end; margin-block-end: 2px; }
 .fs-agx-form__field--role { flex: 0 0 8.5rem; }
 .fs-agx-live { display: block; width: 100%; height: 100%; min-height: 600px; border: 0; color-scheme: dark; }
+
+/* ── Team chat look: larger type, avatars with the provider's mark, mention pills, cards under messages ── */
+
+.fs-agx { --agx-msg-size: 0.9375rem; }
+.fs-agx-sicon { position: relative; }
+.fs-agx-sicon__letters { position: relative; z-index: 0; }
+.fs-agx-sicon img { position: absolute; inset: 0; z-index: 1; opacity: 0; transition: opacity var(--fs-duration-fast) var(--fs-ease); }
+.fs-agx-sicon img[data-loaded] { opacity: 1; }
+.fs-agx-sicon[data-kind='glyph'] { background: color-mix(in srgb, var(--agx-c) 30%, var(--fs-surface-2)); color: color-mix(in srgb, var(--agx-c) 35%, var(--fs-text-1)); }
+
+/* Channel list */
+.fs-agx-channels__head { block-size: 60px; }
+.fs-agx-channels__title { font-size: 1.0625rem; }
+.fs-agx-goto { display: flex; align-items: center; gap: var(--fs-space-2); inline-size: 100%; block-size: 36px; margin: var(--fs-space-1) 0 var(--fs-space-2); padding-inline: 10px;
+  border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); background: var(--fs-surface-2); color: var(--fs-text-3); cursor: pointer; text-align: start; }
+.fs-agx-goto:hover { border-color: var(--fs-border-strong); color: var(--fs-text-1); }
+.fs-agx-goto span { flex: 1; }
+.fs-agx-goto kbd { padding: 1px 6px; border: 1px solid var(--fs-border); border-radius: 4px; background: var(--fs-surface-1); color: var(--fs-text-3); font: inherit; font-size: 10.5px; }
+.fs-agx-shortcuts { margin-block-end: var(--fs-space-2); }
+.fs-agx-row { min-block-size: 34px; padding: 4px 10px; }
+.fs-agx-row__label { font-size: 0.9375rem; }
+.fs-agx-cat__toggle { font-size: 11.5px; }
+.fs-agx-agentrow { min-block-size: 44px; }
+.fs-agx-agentrow .fs-agx-avatar { margin: 0; }
+.fs-agx-agentrow__text { display: grid; flex: 1; min-inline-size: 0; line-height: 1.25; }
+.fs-agx-agentrow__text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fs-text-3); font-size: 11.5px; font-weight: 400; }
+
+/* Avatars: the provider's mark on its colour, the presence dot, a ring for a session started by a provider */
+.fs-agx-avatar { inline-size: 40px; block-size: 40px; border-radius: 12px; font-size: 13px;
+  background: color-mix(in srgb, var(--agx-c) 30%, var(--fs-surface-2)); color: color-mix(in srgb, var(--agx-c) 40%, var(--fs-text-1)); }
+.fs-agx-avatar[data-role='person'] { border-radius: 50%; }
+.fs-agx-avatar[data-size='sm'] { inline-size: 28px; block-size: 28px; border-radius: 8px; font-size: 10px; }
+.fs-agx-avatar[data-size='sm'][data-presence]::after { inline-size: 9px; block-size: 9px; box-shadow: 0 0 0 2px var(--fs-surface-1); }
+.fs-agx-avatar[data-size='lg'] { border-radius: 14px; }
+.fs-agx-avatar[data-child] { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--agx-c) 55%, transparent); }
+.fs-agx-avatar svg { flex-shrink: 0; }
+.fs-agx-member .fs-agx-avatar { inline-size: 34px; block-size: 34px; border-radius: 10px; }
+.fs-agx-member .fs-agx-avatar[data-role='person'] { border-radius: 50%; }
+.fs-agx-mini { inline-size: 20px; block-size: 20px; border-radius: 6px; }
+
+/* Messages */
+.fs-agx-msg { grid-template-columns: 68px minmax(0, 1fr); padding-block: 2px; }
+.fs-agx-msg[data-head] { margin-block-start: var(--fs-space-4); }
+.fs-agx-msg__gutter { padding-block-start: 5px; }
+.fs-agx-msg__head { gap: 6px var(--fs-space-2); margin-block-end: 2px; }
+.fs-agx-msg__head strong { font-size: var(--agx-msg-size); font-weight: 700; }
+.fs-agx-msg__role { color: var(--fs-text-3); font-size: 12px; }
+.fs-agx-msg__body { font-size: var(--agx-msg-size); line-height: 1.6; max-inline-size: 100ch; }
+.fs-agx-msg__body .fs-rich p { margin-block: 2px 6px; }
+.fs-agx-msg__body .fs-rich code { font-size: 0.875em; }
+.fs-agx-msg__body .fs-rich ul, .fs-agx-msg__body .fs-rich ol { margin-block: 4px; padding-inline-start: 1.4em; }
+.fs-agx-msg__body .fs-rich blockquote { margin: 4px 0; padding-inline-start: var(--fs-space-3); border-inline-start: 3px solid var(--fs-border-strong); color: var(--fs-text-2); }
+.fs-agx-msg--system { padding-inline-start: 68px; font-size: 12.5px; }
+.fs-agx-msg__tools { inset-block-start: -16px; }
+
+/* Mentions as pills in the colour of whom they call; one to the person stands out */
+.fs-agx .fs-rich__mention { --agx-m: var(--fs-info); display: inline-block; padding: 0 6px; border-radius: 6px; line-height: 1.45;
+  background: color-mix(in srgb, var(--agx-m) 20%, transparent); color: color-mix(in srgb, var(--agx-m) 65%, var(--fs-text-1)); font-weight: 600; }
+.fs-agx .fs-rich__mention[data-mention^='claude'] { --agx-m: var(--agx-role-claude); }
+.fs-agx .fs-rich__mention[data-mention^='codex'] { --agx-m: var(--agx-role-codex); }
+.fs-agx .fs-rich__mention[data-mention^='cursor'] { --agx-m: var(--agx-role-cursor); }
+.fs-agx .fs-rich__mention[data-mention^='faustus'] { --agx-m: var(--agx-role-faustus); }
+.fs-agx .fs-rich__mention[data-mention='luis'], .fs-agx .fs-rich__mention[data-mention='here'] { --agx-m: var(--fs-warning); }
+
+/* Day separators as a centred label on a line */
+.fs-agx-day { margin: var(--fs-space-5) var(--fs-space-4) var(--fs-space-2); font-size: 12px; font-weight: 600; }
+.fs-agx-day span { padding: 2px 12px; border: 1px solid var(--fs-border); border-radius: var(--fs-radius-pill); background: var(--fs-surface-1); color: var(--fs-text-2); }
+
+/* Cards under a message: the tasks it names, the commits it carries */
+.fs-agx-msg__refs { display: grid; gap: 6px; margin-block: 6px 2px; max-inline-size: min(100%, 720px); }
+.fs-agx-ref { display: flex; align-items: center; gap: var(--fs-space-2); max-inline-size: 100%; min-block-size: 40px; padding: 6px 12px; border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2); color: var(--fs-text-2); font-size: 13px; text-align: start; white-space: normal; }
+.fs-agx-ref__text { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-agx-ref__text strong { color: var(--fs-text-1); }
+.fs-agx-ref__owner { flex-shrink: 0; color: var(--fs-text-3); font-size: 12px; }
+.fs-agx-ref .fs-agx-status { flex-shrink: 0; }
+.fs-agx-commits { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-inline-size: min(100%, 720px); margin-block: 6px 2px; padding: 6px 12px;
+  border: 1px solid var(--fs-border); border-radius: var(--fs-radius-panel); background: var(--fs-surface-2); color: var(--fs-text-2); font-size: 12.5px; }
+.fs-agx-commits code { padding: 1px 6px; border-radius: 4px; background: var(--fs-surface-3); font-family: var(--fs-font-code); font-size: 11.5px; }
+
+/* Header of the conversation: title, topic, tools, search kept to the channel */
+.fs-agx-main__head { block-size: 60px; gap: var(--fs-space-3); }
+.fs-agx-main__head h1 { font-size: 1.125rem; font-weight: 700; }
+.fs-agx-main__topic { font-size: 13px; }
+.fs-agx-main__tools { display: inline-flex; align-items: center; gap: 2px; }
+.fs-agx-main__search { block-size: 34px; padding-inline: 10px; border-radius: var(--fs-radius-panel); min-inline-size: 0; }
+.fs-agx-main__search input { inline-size: 150px; }
+.fs-agx-main__search input:focus { inline-size: 240px; }
+.fs-agx-chip { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 1px 4px 1px 8px; border-radius: 6px; background: var(--fs-surface-3); color: var(--fs-text-1);
+  font-size: 12px; white-space: nowrap; }
+.fs-agx-chip button { display: inline-grid; place-items: center; inline-size: 18px; block-size: 18px; padding: 0; border: 0; border-radius: 4px; background: none; cursor: pointer; color: var(--fs-text-3); }
+.fs-agx-chip button:hover { background: var(--fs-surface-2); color: var(--fs-text-1); }
+
+/* Composer: the text on top, the format bar under it, send at the end */
+.fs-agx-composer { padding: 0 var(--fs-space-5) var(--fs-space-4); }
+.fs-agx-composer__box { flex-direction: column; align-items: stretch; gap: 0; padding: 4px 6px 6px; border-radius: 14px; }
+.fs-agx-composer__box textarea { padding: 10px 8px 6px; font-size: var(--agx-msg-size); }
+.fs-agx-composer__bar { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.fs-agx-composer__tool { display: inline-flex; }
+.fs-agx-composer__tool[data-sep] { margin-inline-start: 6px; padding-inline-start: 6px; border-inline-start: 1px solid var(--fs-border); }
+.fs-agx-composer [data-testid='agora-send']:not(:disabled) { background: var(--fs-brand); color: var(--fs-on-brand); }
+
+/* Members: groups with their count, the action to add someone at the end of those around */
+.fs-agx-members { padding-inline: var(--fs-space-3); }
+.fs-agx-members__add { display: flex; align-items: center; gap: var(--fs-space-2); inline-size: 100%; margin-block: 0 var(--fs-space-4); padding: 6px 8px; border: 0;
+  border-radius: var(--fs-radius-control); background: none; cursor: pointer; color: var(--fs-text-2); text-align: start; }
+.fs-agx-members__add:hover { background: var(--fs-surface-2); color: var(--fs-text-1); }
+.fs-agx-members__plus { display: inline-grid; place-items: center; inline-size: 34px; block-size: 34px; border: 1px dashed var(--fs-border-strong); border-radius: 10px; }
+.fs-agx-member { padding: 6px 8px; }
+.fs-agx-member__text strong { font-size: 0.9375rem; }
+.fs-agx-member__text span { font-size: 12px; }
+
+/* Go to… */
+.fs-agx-jump { inline-size: min(620px, 94vw); }
+.fs-agx-jump__field { display: flex; align-items: center; gap: var(--fs-space-2); padding: 0 12px; border: 1px solid var(--fs-border-strong); border-radius: var(--fs-radius-panel); background: var(--fs-surface-2); color: var(--fs-text-3); }
+.fs-agx-jump__field input { flex: 1; min-inline-size: 0; block-size: 42px; border: 0; background: none; color: var(--fs-text-1); font: inherit; font-size: 1rem; }
+.fs-agx-jump__field:focus-within { border-color: var(--fs-brand); }
+.fs-agx-jump__list { list-style: none; margin: var(--fs-space-2) 0 0; padding: 0; max-block-size: min(52vh, 440px); overflow-y: auto; }
+.fs-agx-jump__list button { display: flex; align-items: center; gap: var(--fs-space-2); inline-size: 100%; min-block-size: 40px; padding: 6px 10px; border: 0; border-radius: var(--fs-radius-control);
+  background: none; cursor: pointer; color: var(--fs-text-2); text-align: start; }
+.fs-agx-jump__list [aria-selected='true'] button { background: var(--fs-surface-3); color: var(--fs-text-1); }
+.fs-agx-jump__list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fs-text-1); font-weight: 600; max-inline-size: 60%; }
+.fs-agx-jump__list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fs-text-3); font-size: 12.5px; }
+.fs-agx-jump__list .fs-agx-avatar { margin: 0; }
+.fs-agx-jump__empty { padding: var(--fs-space-3); color: var(--fs-text-3); }
+
+@media (max-width: 1100px) {
+  .fs-agx-main__topic { display: none; }
+}
+@media (max-width: 900px) {
+  .fs-agx { --agx-channels: 240px; }
+  .fs-agx-main__search input { inline-size: 110px; }
+  .fs-agx-main__search input:focus { inline-size: 160px; }
+  .fs-agx-chip { max-inline-size: 120px; overflow: hidden; text-overflow: ellipsis; }
+}
+@media (max-width: 767px) {
+  .fs-agx { --agx-msg-size: 1rem; }
+  .fs-agx-msg { grid-template-columns: 52px minmax(0, 1fr); }
+  .fs-agx-msg--system { padding-inline-start: 52px; }
+  .fs-agx-avatar { inline-size: 36px; block-size: 36px; }
+  .fs-agx-main__tools [data-testid='agora-head-pinned'] { display: none; }
+  .fs-agx-composer { padding-inline: var(--fs-space-2); }
+  .fs-agx-composer__tool[data-sep] { margin-inline-start: 2px; padding-inline-start: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fs-agx-sicon img { transition: none; }
+}

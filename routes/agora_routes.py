@@ -45,6 +45,9 @@ _MAX_BYTES = 12_000_000
 _ICON_PX = 128
 _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 _icons: Dict[str, Tuple[bytes, str]] = {}
+# Apps the hub has no icon for (a server named after no app): asked once, so a list of servers does not ask again on
+# every visit. A hub that was not answering is not remembered.
+_no_icon: set = set()
 
 
 def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = None, body: Optional[dict] = None,
@@ -152,10 +155,14 @@ def setup_agora_routes() -> APIRouter:
         if not _APP.match(app_id):
             return Response(status_code=404)
         cached = _icons.get(app_id)
+        if cached is None and app_id in _no_icon:
+            return Response(status_code=404)
         if cached is None:
             path = "/ui/hub-icon.png" if app_id == "hub" else f"/api/apps/{urllib.parse.quote(app_id, safe='')}/icon"
             status, blob, ctype = await asyncio.to_thread(hub_request, "GET", path, raw=True, timeout=10.0)
             if status != 200 or not blob:
+                if status == 404 and len(_no_icon) < 500:
+                    _no_icon.add(app_id)
                 return Response(status_code=404)
             cached = await asyncio.to_thread(small_icon, blob, ctype or "image/png")
             if len(_icons) < 200:

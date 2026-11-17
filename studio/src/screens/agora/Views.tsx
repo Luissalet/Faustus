@@ -1,4 +1,4 @@
-import { ArrowRight, FolderOpen, FolderPlus, Inbox, Lock, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowRight, FolderOpen, FolderPlus, Inbox, Lock, MessageCircleQuestion, MessagesSquare, MoreHorizontal, Plus, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import {
   BOARD_COLUMNS, editTask, getDecisions, getFeed, getInbox, getLocks, getTask, searchAgora, setSpaceMeta,
@@ -10,7 +10,8 @@ import { Button, EmptyState, IconButton, Menu, Skeleton } from '../../components
 import { Rich } from '../rich';
 import { CountBadge } from './ChannelList';
 import { t, tn } from '../../i18n';
-import { ago, agentColor, agentInitials, COLUMN_LABEL, STATUS_LABEL, stamp, THREAD_KIND_LABEL, type View } from './util';
+import { AgentAvatar, AgentFace } from './Identity';
+import { ago, agentColor, COLUMN_LABEL, STATUS_LABEL, stamp, THREAD_KIND_LABEL, type View } from './util';
 import '../studio.css';
 
 type Open = (view: View, space?: string) => void;
@@ -18,7 +19,7 @@ type Notify = (text: string, tone?: 'ok' | 'warn') => void;
 
 function Who({ id }: { id: string | null | undefined }) {
   if (!id) return null;
-  return <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id) } as CSSProperties} title={id}>{agentInitials(id)}</span>;
+  return <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id) } as CSSProperties} title={id}><AgentFace id={id} size={11} /></span>;
 }
 
 /* ── Board ── */
@@ -185,7 +186,7 @@ export function ActivityView({ guild, version, onOpen }: { guild: AgoraGuild; ve
     <div className="fs-agx-feed" data-testid="agora-activity">
       {feed.items.map((item) => (
         <article key={item.id} className="fs-agx-activity" style={{ '--agx-c': agentColor(item.author) } as CSSProperties}>
-          <span className="fs-agx-avatar" aria-hidden="true">{agentInitials(item.author)}</span>
+          <AgentAvatar id={item.author} />
           <div>
             <header><strong>{item.author}</strong>
               <button type="button" className="fs-agx-link" onClick={() => onOpen({ kind: 'thread', id: String(item.thread_id) })}>
@@ -311,7 +312,11 @@ export function InboxView({ servers, version, onOpen }: { servers: AgoraServer[]
 
 /* ── Search: where something was said ── */
 
-export function SearchView({ guild, servers, query, onQuery, onOpen }: { guild: AgoraGuild; servers: AgoraServer[]; query: string; onQuery: (q: string) => void; onOpen: Open }) {
+/** `within`: the slug of a channel the search is kept to (the chip «en: #canal»); `onWithin(null)` widens it again. */
+export function SearchView({ guild, servers, query, onQuery, onOpen, within, onWithin }: {
+  guild: AgoraGuild; servers: AgoraServer[]; query: string; onQuery: (q: string) => void; onOpen: Open;
+  within?: string | null; onWithin?: (slug: string | null) => void;
+}) {
   const [text, setText] = useState(query);
   const [everywhere, setEverywhere] = useState(false);
   const [hits, setHits] = useState<SearchHit | null>(null);
@@ -328,17 +333,25 @@ export function SearchView({ guild, servers, query, onQuery, onOpen }: { guild: 
     return () => controller.abort();
   }, [query, everywhere, guild.space.id]);
   const name = (id: string) => servers.find((s) => s.id === id)?.title ?? id;
-  const total = hits ? hits.tasks.length + hits.threads.length + hits.messages.length : 0;
+  const scope = within ? guild.channels.find((c) => c.slug === within) ?? null : null;
+  const shown = hits && scope
+    ? { ...hits, tasks: [], threads: [], messages: hits.messages.filter((m) => m.thread_id === scope.thread_id && m.space_id === guild.space.id) }
+    : hits;
+  const total = shown ? shown.tasks.length + shown.threads.length + shown.messages.length : 0;
   return (
     <div className="fs-agx-feed" data-testid="agora-search">
       <form className="fs-agx-board__bar" onSubmit={(e) => { e.preventDefault(); onQuery(text.trim()); }}>
+        {scope && (
+          <span className="fs-agx-chip" data-testid="agora-search-scope">{t('in:')} #{scope.title}
+            <button type="button" aria-label={t('Search the whole server')} onClick={() => onWithin?.(null)}><X size={12} aria-hidden="true" /></button></span>
+        )}
         <input className="fs-field" autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={t('A word, a phrase or a task number')} aria-label={t('Search the Agora')} data-testid="agora-search-input" />
         <Button size="sm" variant="primary" type="submit" icon={Search} label={t('Search')} loading={busy} />
         <label className="fs-switch"><input type="checkbox" checked={everywhere} onChange={(e) => setEverywhere(e.target.checked)} /> {t('In every server')}</label>
       </form>
       {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
-      {hits && !total && <EmptyState icon={Search} title={t('Nothing found')} body={t('No message, task or thread has “{q}”.', { q: hits.q ?? query })} />}
-      {hits?.tasks.map((task) => (
+      {shown && !total && <EmptyState icon={Search} title={t('Nothing found')} body={t('No message, task or thread has “{q}”.', { q: shown.q ?? query })} />}
+      {shown?.tasks.map((task) => (
         <article key={'t' + task.space_id + task.id} className="fs-agx-delivery" data-status={task.status}>
           <header><Who id={task.owner} />
             <button type="button" className="fs-agx-delivery__title" onClick={() => task.thread_id && onOpen({ kind: 'thread', id: String(task.thread_id) }, task.space_id)}>#{task.id} {task.title}</button>
@@ -346,16 +359,16 @@ export function SearchView({ guild, servers, query, onQuery, onOpen }: { guild: 
             {everywhere && <span className="fs-agx-tag">{name(task.space_id)}</span>}</header>
         </article>
       ))}
-      {hits?.threads.map((thread) => (
+      {shown?.threads.map((thread) => (
         <article key={'h' + thread.id} className="fs-agx-delivery">
           <header><button type="button" className="fs-agx-delivery__title" onClick={() => onOpen({ kind: 'thread', id: String(thread.id) }, thread.space_id)}>{thread.title}</button>
             <span className="fs-agx-tag">{t(THREAD_KIND_LABEL[thread.kind] ?? thread.kind)}</span>
             {everywhere && <span className="fs-agx-tag">{name(thread.space_id)}</span>}</header>
         </article>
       ))}
-      {hits?.messages.map((message) => (
+      {shown?.messages.map((message) => (
         <article key={'m' + message.id} className="fs-agx-activity" style={{ '--agx-c': agentColor(message.author) } as CSSProperties}>
-          <span className="fs-agx-avatar" aria-hidden="true">{agentInitials(message.author)}</span>
+          <AgentAvatar id={message.author} />
           <div>
             <header><strong>{message.author}</strong>
               <button type="button" className="fs-agx-link" onClick={() => onOpen({ kind: 'thread', id: String(message.thread_id) }, message.space_id)}>
@@ -364,6 +377,36 @@ export function SearchView({ guild, servers, query, onQuery, onOpen }: { guild: 
               <time>{stamp(message.created)}</time></header>
             <p>{message.snippet}</p>
           </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+/* ── Threads: every open conversation of the server, those that wait for the person first ── */
+
+export function ThreadsView({ guild, onOpen, onNew }: { guild: AgoraGuild; onOpen: Open; onNew: () => void }) {
+  const open = guild.threads.filter((thread) => thread.status !== 'escalated');
+  return (
+    <div className="fs-agx-feed" data-testid="agora-threads">
+      <div className="fs-agx-board__bar"><Button size="sm" variant="secondary" icon={Plus} label={t('New thread')} onClick={onNew} /></div>
+      {!guild.waiting.length && !open.length && <EmptyState icon={MessagesSquare} title={t('No open threads.')} body={t('A thread is a conversation on one subject: a debate, a question, a handoff.')} />}
+      {guild.waiting.map((thread) => (
+        <article key={'w' + thread.id} className="fs-agx-delivery" data-status="changes">
+          <header><MessageCircleQuestion size={16} aria-hidden="true" />
+            <button type="button" className="fs-agx-delivery__title" onClick={() => onOpen({ kind: 'thread', id: String(thread.id) })}>{thread.title}</button>
+            <span className="fs-agx-tag" data-kind="escalation">{t('Question for you')}</span><time>{stamp(thread.updated)}</time></header>
+          {thread.question && <p className="fs-agx-delivery__meta">{(thread.escalated_by ? thread.escalated_by + ': ' : '') + thread.question}</p>}
+        </article>
+      ))}
+      {open.map((thread) => (
+        <article key={'h' + thread.id} className="fs-agx-delivery">
+          <header><Who id={thread.last_author || thread.created_by} />
+            <button type="button" className="fs-agx-delivery__title" onClick={() => onOpen({ kind: 'thread', id: String(thread.id) })}>{thread.title}</button>
+            <span className="fs-agx-tag">{t(THREAD_KIND_LABEL[thread.kind] ?? thread.kind)}</span>
+            {thread.mentions > 0 ? <CountBadge n={thread.mentions} mentions /> : thread.unread > 0 ? <CountBadge n={thread.unread} /> : null}
+            <time>{stamp(thread.updated)}</time></header>
+          <p className="fs-agx-delivery__meta">{tn(thread.messages, '{n} message', '{n} messages')}{thread.last_author ? ' · ' + t('last: {name}', { name: thread.last_author }) : ''}</p>
         </article>
       ))}
     </div>

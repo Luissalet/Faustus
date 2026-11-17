@@ -11918,3 +11918,28 @@ X self-chat	Chat de X contigo mismo
 already exists	ya existe
 {n} entries, edited in their own panel.	{n} entradas; se editan en su propio panel.
 Runs in this thread	Ejecuciones de este hilo
+Person	Persona
+session	sesión
+1 commit	1 commit
+{n} commits	{n} commits
+Bold	Negrita
+Italic	Cursiva
+Emoji	Emoji
+Go to…	Ir a…
+Channels, threads, tasks or agents	Canales, hilos, tareas o agentes
+Nothing by that name.	Nada con ese nombre.
+Thread	Hilo
+mention in the message	mencionar en el mensaje
+Mentions, answers and questions of the agents	Menciones, respuestas y preguntas de los agentes
+Add people or agents	Añadir personas o agentes
+Mention {name} in the message	Mencionar a {name} en el mensaje
+No agent around right now.	Ahora no hay ningún agente activo.
+in:	en:
+Search the whole server	Buscar en todo el servidor
+A thread is a conversation on one subject: a debate, a question, a handoff.	Un hilo es una conversación sobre un asunto: un debate, una pregunta, un traspaso.
+last: {name}	último: {name}
+Every open conversation of this server, those that wait for you first	Todas las conversaciones abiertas del servidor, primero las que te esperan
+Pinned: the decisions of this server	Fijados: las decisiones de este servidor
+Search in this channel	Buscar en este canal
+Write in #{name} · use @ to call an agent	Escribe en #{name} · usa @ para llamar a un agente
+Reply in this thread · use @ to call an agent	Responde en este hilo · usa @ para llamar a un agente

@@ -1,4 +1,7 @@
-import { ArrowDown, Check, Copy, CornerUpLeft, MoreHorizontal, Paperclip, Send, X } from 'lucide-react';
+import {
+  ArrowDown, Bold, Check, Code, Copy, CornerUpLeft, GitCommitHorizontal, Italic, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Quote, Send, Smile,
+  SquareCode, Strikethrough, X, type LucideIcon,
+} from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import {
   addTask, editTask, getTask, MAX_FILE_BYTES, MAX_FILES_PER_MESSAGE, react as reactTo, readTarget, reopenThread, resolveThread, reviewTask,
@@ -9,9 +12,10 @@ import { Button, IconButton, Menu, Skeleton, type MenuItem } from '../../compone
 import { Rich } from '../rich';
 import { t } from '../../i18n';
 import { usePlatform } from '../../shell/platform';
-import { Carrying, Files, Quoted, ReactButton, Reactions } from './MessageExtras';
+import { AgentAvatar, AgentFace, roleLine } from './Identity';
+import { Carrying, EmojiButton, Files, Quoted, ReactButton, Reactions } from './MessageExtras';
 import {
-  agentColor, agentInitials, clock, composerBus, dayLabel, findTask, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
+  agentColor, clock, composerBus, dayLabel, findTask, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
   THREAD_KIND_LABEL, type View,
 } from './util';
 import '../studio.css';
@@ -65,18 +69,22 @@ const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOp
   const refs = [...new Set([...message.body.matchAll(/#(\d{1,6})\b/g)].map((m) => Number(m[1])))]
     .map((id) => findTask(guild, id)).filter((task): task is NonNullable<typeof task> => Boolean(task && task.thread_id)).slice(0, 5);
   const label = KIND_LABEL[message.kind] || '';
+  const author = guild.members.find((m) => m.id === message.author);
+  // Commit hashes a message names: shown as a delivery under it, linked to the task it talks about when there is one.
+  const commits = [...new Set([...message.body.matchAll(/(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g)].map((m) => m[0]).filter((h) => /[a-f]/.test(h) && /\d/.test(h)))].slice(0, 6);
   const copy = () => { void navigator.clipboard?.writeText(message.body).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }).catch(() => undefined); };
   return (
     <article className="fs-agx-msg" id={'agx-m-' + message.id} data-head={head || undefined} data-mine={mine || undefined} data-tome={toMe || undefined}
       data-kind={message.kind} data-tools={tools || undefined} style={{ '--agx-c': agentColor(message.author) } as CSSProperties} data-testid="agora-message"
       onClick={(e) => { if (byTouch() && !(e.target as HTMLElement).closest('a,button,input,textarea')) setTools((v) => !v); }}>
       {head
-        ? <span className="fs-agx-avatar" aria-hidden="true">{agentInitials(message.author)}</span>
+        ? <AgentAvatar id={message.author} presence={author?.presence} />
         : <time className="fs-agx-msg__gutter">{clock(message.created)}</time>}
       <div className="fs-agx-msg__main">
         {head && (
           <header className="fs-agx-msg__head">
             <strong>{message.author}</strong>
+            <span className="fs-agx-msg__role">{roleLine(message.author, author)}</span>
             {label && <span className="fs-agx-tag" data-kind={message.kind}>{t(label)}</span>}
             <time title={new Date(message.created * 1000).toLocaleString()}>{stamp(message.created)}</time>
             {message.mentions.length > 0 && <span className="fs-agx-msg__to">→ {message.mentions.slice(0, 6).map((m) => '@' + m).join(' ')}{message.mentions.length > 6 ? ' …' : ''}</span>}
@@ -91,9 +99,18 @@ const MessageRow = memo(function MessageRow({ message, head, viewer, guild, onOp
             {refs.map((task) => (
               <button key={task.id} type="button" className="fs-agx-ref" data-status={task.status}
                 onClick={() => onOpen({ kind: 'thread', id: String(task.thread_id) })} title={t(STATUS_LABEL[task.status] ?? task.status)}>
-                #{task.id} {task.title}
+                <span className="fs-agx-status" data-status={task.status}>{t(STATUS_LABEL[task.status] ?? task.status)}</span>
+                <span className="fs-agx-ref__text">{t('Task')} <strong>#{task.id}</strong> · {task.title}</span>
+                {task.owner && <span className="fs-agx-ref__owner">{task.owner}</span>}
               </button>
             ))}
+          </div>
+        )}
+        {commits.length > 0 && (
+          <div className="fs-agx-commits" data-testid="agora-commits">
+            <GitCommitHorizontal size={14} aria-hidden="true" />
+            <span>{commits.length === 1 ? t('1 commit') : t('{n} commits', { n: commits.length })}</span>
+            {commits.map((hash) => <code key={hash} title={hash}>{hash.slice(0, 9)}</code>)}
           </div>
         )}
         <Files files={message.files} />
@@ -426,6 +443,37 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
     area.style.blockSize = Math.min(220, Math.max(44, area.scrollHeight)) + 'px';
   }, [draft]);
 
+  // The format bar: wraps what is selected (or a placeholder) in Markdown, or starts each selected line with a mark.
+  const edit = (make: (picked: string) => { text: string; select: [number, number] }) => {
+    const area = input.current;
+    const from = area?.selectionStart ?? draft.length;
+    const to = area?.selectionEnd ?? draft.length;
+    const out = make(draft.slice(from, to));
+    setDraft(draft.slice(0, from) + out.text + draft.slice(to));
+    window.requestAnimationFrame(() => { area?.focus(); area?.setSelectionRange(from + out.select[0], from + out.select[1]); setCaret(from + out.select[1]); });
+  };
+  const wrap = (mark: string, end = mark, empty = t('text')) => edit((picked) => {
+    const inner = picked || empty;
+    return { text: mark + inner + end, select: [mark.length, mark.length + inner.length] };
+  });
+  const lines = (mark: (n: number) => string) => edit((picked) => {
+    const text = (picked || t('text')).split('\n').map((line, i) => mark(i + 1) + line).join('\n');
+    return { text, select: [0, text.length] };
+  });
+  const FORMAT: { icon: LucideIcon; label: string; run: () => void; sep?: boolean }[] = [
+    { icon: Bold, label: t('Bold'), run: () => wrap('**') },
+    { icon: Italic, label: t('Italic'), run: () => wrap('*') },
+    { icon: Strikethrough, label: t('Strikethrough'), run: () => wrap('~~') },
+    { icon: Code, label: t('Code'), run: () => wrap('`'), sep: true },
+    { icon: SquareCode, label: t('Code block'), run: () => wrap('```\n', '\n```', t('code')) },
+    { icon: Link2, label: t('Link'), run: () => edit((picked) => {
+      const name = picked || t('text');
+      return { text: '[' + name + '](https://)', select: [name.length + 3, name.length + 11] };
+    }), sep: true },
+    { icon: List, label: t('Bulleted list'), run: () => lines(() => '- '), sep: true },
+    { icon: ListOrdered, label: t('Numbered list'), run: () => lines((n) => n + '. ') },
+    { icon: Quote, label: t('Quote'), run: () => lines(() => '> ') },
+  ];
   const items = useMemo(() => buildItems(messages, seenUpto, viewer), [messages, seenUpto, viewer]);
   const reply = useCallback((message: AgoraMessage) => { setQuote(message); input.current?.focus(); }, []);
   const reactOn = useCallback((id: number, emoji: string, on?: boolean) => {
@@ -491,7 +539,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
                 return (
                   <li key={id}>
                     <button type="button" role="option" id={'agora-mention-' + index} aria-selected={index === pick} onMouseDown={(e) => { e.preventDefault(); choose(id); }}>
-                      <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id) } as CSSProperties}>{id === 'here' ? '@' : agentInitials(id)}</span>
+                      <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id) } as CSSProperties}>{id === 'here' ? '@' : <AgentFace id={id} size={11} />}</span>
                       <strong>{id}</strong>
                       <span className="fs-muted">{id === 'here' ? t('everyone around lately') : member?.doing || (member ? t(member.presence === 'offline' ? 'Offline' : 'Around') : '')}</span>
                     </button>
@@ -509,13 +557,24 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
             onDropFile={(id) => setCarried((old) => old.filter((f) => f.id !== id))} />
           <div className="fs-agx-composer__box">
             <input ref={filePicker} type="file" multiple hidden onChange={(e) => { attach([...(e.target.files ?? [])]); e.target.value = ''; }} data-testid="agora-file-input" />
-            <IconButton icon={Paperclip} label={t('Attach files')} onClick={() => filePicker.current?.click()} testId="agora-attach" />
             <textarea ref={input} value={draft} rows={1} maxLength={20000} placeholder={placeholder} aria-label={placeholder}
               onPaste={(e) => { const pasted = [...(e.clipboardData?.files ?? [])]; if (pasted.length) { e.preventDefault(); attach(pasted); } }}
               aria-autocomplete="list" aria-controls={mention ? 'agora-mention-list' : undefined} aria-activedescendant={mention ? 'agora-mention-' + pick : undefined}
               onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
               onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)} onKeyDown={onKey} data-testid="agora-input" />
-            <IconButton icon={Send} label={t('Send')} disabled={(!draft.trim() && !carried.length) || sending || uploading > 0} onClick={() => void send()} testId="agora-send" />
+            <div className="fs-agx-composer__bar" role="toolbar" aria-label={t('Format')} data-testid="agora-format-bar">
+              {FORMAT.map((f) => (
+                <span key={f.label} className="fs-agx-composer__tool" data-sep={f.sep || undefined}>
+                  <IconButton size="sm" icon={f.icon} label={f.label} onClick={f.run} />
+                </span>
+              ))}
+              <span className="fs-agx-composer__tool" data-sep>
+                <EmojiButton onPick={(emoji) => edit(() => ({ text: emoji, select: [emoji.length, emoji.length] }))} />
+              </span>
+              <IconButton size="sm" icon={Paperclip} label={t('Attach files')} onClick={() => filePicker.current?.click()} testId="agora-attach" />
+              <span className="fs-spacer" />
+              <IconButton icon={Send} label={t('Send')} disabled={(!draft.trim() && !carried.length) || sending || uploading > 0} onClick={() => void send()} testId="agora-send" />
+            </div>
           </div>
           <p className="fs-agx-composer__hint">{t('Enter sends · Shift + Enter new line · @ mentions · paste or drop files · /tarea Title creates a task')}</p>
         </div>

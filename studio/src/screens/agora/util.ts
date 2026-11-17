@@ -25,6 +25,13 @@ export const viewTarget = (view: View): Target | null =>
 export const ROLE_COLORS: Record<string, string> = {
   person: '#e2b24c', claude: '#d97757', codex: '#10a37f', cursor: '#7aa2f7', faustus: '#d0545b', other: '#9aa3b2', system: '#8c929e',
 };
+/** A steady colour per server id, for a server that has none of its own: its letter tile is not grey. */
+const SERVER_COLORS = ['#e06c75', '#d19a66', '#e5c07b', '#98c379', '#56b6c2', '#61afef', '#c678dd', '#be5046', '#7aa2f7', '#2ac3a2'];
+export function serverColor(id: string): string {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
+  return SERVER_COLORS[hash % SERVER_COLORS.length];
+}
 export const ROLE_ORDER = ['person', 'claude', 'codex', 'cursor', 'faustus', 'other'];
 export const ROLE_LABEL: Record<string, string> = {
   person: 'You', claude: 'Claude', codex: 'Codex', cursor: 'Cursor', faustus: 'Faustus', other: 'Others',

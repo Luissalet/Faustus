@@ -8,9 +8,10 @@ import { Button, IconButton, Menu, Popover } from '../../components';
 import { t, tn } from '../../i18n';
 import { AddAgentDialog, AgentModelsDialog, effortLabel, failureWhy, modelLine, PruneAgentsDialog, RankOptions, RemoveAgentDialog } from './MemberDialogs';
 import {
-  ago, agentColor, agentInitials, composerBus, DEFAULT_RANK, findTask, isOnline, PRESENCE_LABEL, RANK_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER,
+  ago, agentColor, composerBus, DEFAULT_RANK, findTask, isOnline, PRESENCE_LABEL, RANK_LABEL, ROLE_COLORS, ROLE_LABEL, ROLE_ORDER,
   STATUS_LABEL, type View,
 } from './util';
+import { AgentAvatar } from './Identity';
 
 function quotaOf(providers: QuotaProvider[], role: string): { free: number | null; reset: string } | null {
   const provider = providers.find((p) => p.provider_id === role);
@@ -59,7 +60,7 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop, onRank }
   return (
     <div className="fs-agx-profile" style={{ '--agx-c': agentColor(member.id) } as CSSProperties} data-testid="agora-profile">
       <header>
-        <span className="fs-agx-avatar" data-size="lg" data-presence={member.presence} aria-hidden="true">{agentInitials(member.id)}</span>
+        <AgentAvatar id={member.id} presence={member.presence} size="lg" />
         <div><strong>{member.id}</strong><span>{t(PRESENCE_LABEL[member.presence])}{member.presence === 'invited' ? '' : ' · ' + t('seen {when}', { when: ago(member.last_seen) })}</span></div>
       </header>
       {member.role !== 'person' && (
@@ -115,7 +116,7 @@ function MemberRow({ member, guild, onOpen, onRemove, started, onStop, onRank }:
       <Popover side="left" align="start" className="fs-agx-profile-pop" testId="agora-member-pop" trigger={
         <button type="button" className="fs-agx-member" data-presence={member.presence} style={{ '--agx-c': agentColor(member.id) } as CSSProperties}
           title={member.id + ' · ' + t(PRESENCE_LABEL[member.presence])} data-testid={'agora-member-' + member.id}>
-          <span className="fs-agx-avatar" data-presence={member.presence} aria-hidden="true">{agentInitials(member.id)}</span>
+          <AgentAvatar id={member.id} presence={member.presence} />
           {/* The role goes under the name, so a long name is not cut short to make room for it. */}
           <span className="fs-agx-member__text"><strong>{member.id}</strong>
             {member.role !== 'person' && model.name && <span title={model.line} data-testid="agora-member-model">{model.name}</span>}
@@ -207,9 +208,6 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
           { label: t('Take off those who no longer come…'), icon: UserMinus, onSelect: () => setPruning(true) },
         ]} />
       </header>
-      <div className="fs-agx-members__add">
-        <Button size="sm" variant="secondary" icon={UserPlus} label={t('Add an agent')} onClick={() => setAdding(true)} testId="agora-add-agent" />
-      </div>
       {groups.map(({ role, members }) => {
         const quota = role === 'person' ? null : quotaOf(guild.providers, role);
         const leader = consoleData?.leaders.find((l) => l.id === role && (l.catalog ?? []).length > 0);
@@ -237,6 +235,9 @@ export function MembersPane({ guild, onOpen, notify, onChanged }: {
           </section>
         );
       })}
+      <button type="button" className="fs-agx-members__add" onClick={() => setAdding(true)} data-testid="agora-add-agent">
+        <span className="fs-agx-members__plus" aria-hidden="true"><Plus size={16} /></span>{t('Add people or agents')}
+      </button>
       {offline.length > 0 && (
         <section className="fs-agx-role" data-offline>
           <h3>

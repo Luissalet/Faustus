@@ -3,7 +3,7 @@ import { useState, type CSSProperties } from 'react';
 import { iconUrl, spaceIconUrl, type AgoraServer } from '../../adapters/agora';
 import { BrandMark } from '../../shell/BrandMark';
 import { t, tn } from '../../i18n';
-import { agentInitials } from './util';
+import { agentInitials, serverColor } from './util';
 
 function serverHint(server: AgoraServer): string {
   const c = server.counts;
@@ -18,26 +18,33 @@ function serverHint(server: AgoraServer): string {
   return bits.join(' · ');
 }
 
-/** The picture of a server: its own letter or emoji, the icon of its app, or its initials. */
+
+/**
+ * The picture of a server: its own picture, letter or emoji, the icon of its app (by the app it names or, failing
+ * that, by its own id) or its initials. The initials are always underneath: while a picture loads, or when it
+ * cannot be had, the tile shows the server's letters in its colour instead of an empty circle.
+ */
 export function ServerIcon({ server, size = 44 }: { server: Pick<AgoraServer, 'id' | 'title' | 'icon' | 'icon_app' | 'color'>; size?: number }) {
   const [broken, setBroken] = useState(false);
-  const style = { '--agx-c': server.color || undefined, inlineSize: size, blockSize: size } as CSSProperties;
+  const [loaded, setLoaded] = useState(false);
+  const style = {
+    '--agx-c': server.color || serverColor(server.id), inlineSize: size, blockSize: size,
+    fontSize: Math.round(size * 0.34),
+  } as CSSProperties;
   const own = (server.icon || '').trim();
-  if (own.startsWith('img:') && !broken) {
-    return <span className="fs-agx-sicon" style={style} data-kind="image" aria-hidden="true">
-      <img src={spaceIconUrl(server.id, own)} alt="" loading="lazy" onError={() => setBroken(true)} />
-    </span>;
-  }
-  if (own.startsWith('img:')) return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{agentInitials(server.title)}</span>;
-  if (own && own.length <= 4) return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{own}</span>;
-  const app = own || server.icon_app || '';
+  const letters = <span className="fs-agx-sicon__letters">{agentInitials(server.title || server.id)}</span>;
+  const picture = (src: string) => (
+    <span className="fs-agx-sicon" style={style} data-kind={loaded ? 'image' : 'glyph'} aria-hidden="true">
+      {letters}
+      <img src={src} alt="" loading="lazy" data-loaded={loaded || undefined} onLoad={() => setLoaded(true)} onError={() => setBroken(true)} />
+    </span>
+  );
+  if (own.startsWith('img:') && !broken) return picture(spaceIconUrl(server.id, own));
+  if (own && !own.startsWith('img:') && own.length <= 4) return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{own}</span>;
+  const app = (own.startsWith('img:') ? '' : own) || server.icon_app || server.id;
   if (app === 'faustus') return <span className="fs-agx-sicon" style={style} data-kind="brand" aria-hidden="true"><BrandMark size={Math.round(size * 0.6)} /></span>;
-  if (app && !broken) {
-    return <span className="fs-agx-sicon" style={style} data-kind="image" aria-hidden="true">
-      <img src={iconUrl(app)} alt="" loading="lazy" onError={() => setBroken(true)} />
-    </span>;
-  }
-  return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{agentInitials(server.title)}</span>;
+  if (app && !broken) return picture(iconUrl(app));
+  return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{letters}</span>;
 }
 
 export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden, onToggleHidden, onInbox, inboxOpen }: {

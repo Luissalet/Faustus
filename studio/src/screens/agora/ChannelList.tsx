@@ -1,7 +1,7 @@
 import {
   Activity, AlertTriangle, Ban, Bell, BellOff, BellRing, BookOpen, CheckCheck, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, Eye, EyeOff,
   FolderKanban, FolderOpen, GitPullRequest, Hash, Kanban, Landmark, Lock, MessageCircleQuestion, MessagesSquare, PackageCheck,
-  Pencil, Plus, Scale, Settings2, SquarePen, Users, Volume2, type LucideIcon,
+  Home, Inbox, Pencil, Plus, Scale, Search, Settings2, SquarePen, Users, Volume2, type LucideIcon,
   Pin, PinOff,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
@@ -10,9 +10,10 @@ import type { GroupState } from '../../adapters/group';
 import { speakerName } from '../../adapters/group';
 import { IconButton, Menu } from '../../components';
 import { t, tn } from '../../i18n';
-import { agentColor, agentInitials, COLUMN_LABEL, recall, remember, THREAD_KIND_LABEL, viewKey, type View } from './util';
+import { AgentAvatar, AgentFace, roleLine } from './Identity';
+import { agentColor, COLUMN_LABEL, composerBus, isOnline, recall, remember, THREAD_KIND_LABEL, viewKey, type View } from './util';
 
-export type ListAction = 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'toggle-pin' | 'toggle-muted' | 'notify' | 'open-project' | 'council' | 'classic';
+export type ListAction = 'add-agent' | 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'toggle-pin' | 'toggle-muted' | 'notify' | 'open-project' | 'council' | 'classic';
 
 const TASK_ICON: Record<string, LucideIcon> = {
   open: Circle, claimed: CircleDot, in_progress: CircleDot, blocked: AlertTriangle, changes: AlertTriangle,
@@ -114,9 +115,9 @@ function ChannelRow({ channel, current, onOpen, onMove }: {
   );
 }
 
-export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, rooms, hidden, embedded }: {
+export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, rooms, hidden, embedded, onJump }: {
   guild: AgoraGuild; view: View; onOpen: (view: View) => void; onAction: (action: ListAction, arg?: string) => void;
-  onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean;
+  onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean; onJump: () => void;
 }) {
   const space = guild.space;
   const muted = Boolean(space.meta.muted);
@@ -136,6 +137,10 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
     return next;
   });
   const current = viewKey(view);
+  const attention = guild.waiting.length + guild.channels.reduce((n, c) => n + c.mentions, 0) + guild.threads.reduce((n, th) => n + th.mentions, 0);
+  const threadUnread = guild.threads.reduce((n, th) => n + th.unread, 0);
+  const openTasks = (guild.column_counts.open ?? 0) + (guild.column_counts.in_progress ?? 0) + (guild.column_counts.review ?? 0);
+  const agents = guild.members.filter((m) => m.role !== 'person' && isOnline(m));
   const is = (kind: View['kind'], id: string | number) => current === viewKey({ kind, id: String(id) });
 
   const categories = useMemo(() => {
@@ -153,7 +158,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
       tone={task.status === 'blocked' || task.status === 'changes' ? 'warn' : task.status === 'dropped' ? 'muted' : task.status === 'approved' ? 'ok' : undefined}
       title={'#' + task.id + ' · ' + task.title + (task.owner ? ' · ' + task.owner : '') + (task.waiting_on.length ? ' · ' + t('waits for') + ' ' + task.waiting_on.map((i) => '#' + i).join(', ') : '')}
       onClick={() => task.thread_id && onOpen({ kind: 'thread', id: String(task.thread_id) })} testId={'agora-task-' + task.id}
-      lead={task.owner ? <span className="fs-agx-mini" style={{ '--agx-c': agentColor(task.owner) } as CSSProperties} title={task.owner}>{agentInitials(task.owner)}</span> : undefined} />
+      lead={task.owner ? <span className="fs-agx-mini" style={{ '--agx-c': agentColor(task.owner) } as CSSProperties} title={task.owner}><AgentFace id={task.owner} size={11} /></span> : undefined} />
   );
 
   const menu = [
@@ -191,6 +196,17 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
           <Settings2 size={15} aria-hidden="true" />
         </button>} />
       <div className="fs-agx-channels__scroll">
+        <button type="button" className="fs-agx-goto" onClick={onJump} data-testid="agora-goto">
+          <Search size={15} aria-hidden="true" /><span>{t('Go to…')}</span><kbd>Ctrl K</kbd>
+        </button>
+        <ul className="fs-agx-cat__items fs-agx-shortcuts" aria-label={t('Shortcuts')}>
+          <Row current={is('view', 'welcome')} icon={Home} label={t('Home')} onClick={() => onOpen({ kind: 'view', id: 'welcome' })} testId="agora-go-home" />
+          <Row current={is('view', 'inbox')} icon={Inbox} label={t('Inbox')} mentions={attention} title={t('Mentions, answers and questions of the agents')}
+            onClick={() => onOpen({ kind: 'view', id: 'inbox' })} testId="agora-go-inbox" />
+          <Row current={is('view', 'threads')} icon={MessagesSquare} label={t('Threads')} unread={threadUnread} count={guild.threads.length + guild.waiting.length}
+            onClick={() => onOpen({ kind: 'view', id: 'threads' })} testId="agora-go-threads" />
+          <Row current={is('view', 'board')} icon={Kanban} label={t('Tasks')} count={openTasks} onClick={() => onOpen({ kind: 'view', id: 'board' })} testId="agora-go-tasks" />
+        </ul>
         <Section id="info" title={t('Information')} folded={folded.has('info')} onFold={fold}>
           <Row current={is('view', 'welcome')} icon={VIEW_ICON.welcome} label={t('welcome')} onClick={() => onOpen({ kind: 'view', id: 'welcome' })} testId="agora-view-welcome" />
           <Row current={is('view', 'decisions')} icon={VIEW_ICON.decisions} label={t('decisions')} count={guild.views.decisions?.count}
@@ -198,7 +214,8 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
         </Section>
 
         {categories.map(([category, channels]) => (
-          <Section key={category} id={'cat-' + category} title={category === 'chat' ? t('Text channels') : category} folded={folded.has('cat-' + category)} onFold={fold}
+          <Section key={category} id={'cat-' + category} title={category === 'chat' ? t('Channels') : category}
+            count={channels.reduce((n, c) => n + c.unread, 0) || undefined} folded={folded.has('cat-' + category)} onFold={fold}
             onDropChannel={(slug) => onMoveChannel(slug, { place: 'end', category })}
             action={<IconButton size="sm" icon={Plus} label={t('New channel')} onClick={() => onAction('new-channel', category)} testId={'agora-new-channel-' + category} />}>
             {channels.map((channel) => (
@@ -207,6 +224,20 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
             ))}
           </Section>
         ))}
+
+        <Section id="agents" title={t('Agents')} count={agents.length} folded={folded.has('agents')} onFold={fold}
+          action={<IconButton size="sm" icon={Plus} label={t('Add people or agents')} onClick={() => onAction('add-agent')} testId="agora-sidebar-add-agent" />}>
+          {agents.slice(0, 30).map((member) => (
+            <li key={member.id}>
+              <button type="button" className="fs-agx-row fs-agx-agentrow" onClick={() => composerBus.insert('@' + member.id + ' ')}
+                title={t('Mention {name} in the message', { name: member.id }) + (member.doing ? ' · ' + member.doing : '')} data-testid={'agora-sidebar-agent-' + member.id}>
+                <AgentAvatar id={member.id} presence={member.presence} size="sm" />
+                <span className="fs-agx-agentrow__text"><span className="fs-agx-row__label">{member.id}</span><small>{roleLine(member.id, member)}</small></span>
+              </button>
+            </li>
+          ))}
+          {!agents.length && <li className="fs-agx-cat__empty">{t('No agent around right now.')}</li>}
+        </Section>
 
         <Section id="work" title={t('Work')} folded={folded.has('work')} onFold={fold}
           action={<IconButton size="sm" icon={Plus} label={t('New task')} onClick={() => onAction('new-task')} testId="agora-new-task" />}>

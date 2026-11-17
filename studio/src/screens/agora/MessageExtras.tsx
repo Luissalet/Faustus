@@ -1,4 +1,4 @@
-import { CornerUpLeft, Download, FileText, SmilePlus, X } from 'lucide-react';
+import { CornerUpLeft, Download, FileText, Smile, SmilePlus, X, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { fileUrl, type MessageFile, type MessageQuote, type MessageReaction } from '../../adapters/agora';
 import { IconButton, Popover } from '../../components';
@@ -25,14 +25,14 @@ export function Reactions({ reactions, onToggle }: { reactions: MessageReaction[
 }
 
 /** The button that opens the reactions to choose from. */
-export function ReactButton({ onPick }: { onPick: (emoji: string) => void }) {
+export function ReactButton({ onPick, icon = SmilePlus, label, testId = 'agora-react' }: { onPick: (emoji: string) => void; icon?: LucideIcon; label?: string; testId?: string }) {
   const [open, setOpen] = useState(false);
   const [other, setOther] = useState('');
   const pick = (emoji: string) => { const value = emoji.trim(); if (!value) return; setOpen(false); setOther(''); onPick(value); };
   return (
     <Popover open={open} onOpenChange={setOpen} side="top" align="end" className="fs-agx-react-pop" testId="agora-react-pop"
-      trigger={<IconButton size="sm" icon={SmilePlus} label={t('React')} testId="agora-react" />}>
-      <div className="fs-agx-react-pop__grid" role="group" aria-label={t('React')}>
+      trigger={<IconButton size="sm" icon={icon} label={label ?? t('React')} testId={testId} />}>
+      <div className="fs-agx-react-pop__grid" role="group" aria-label={label ?? t('React')}>
         {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" onClick={() => pick(emoji)} aria-label={emoji} data-testid="agora-react-quick">{emoji}</button>)}
       </div>
       <form className="fs-agx-react-pop__other" onSubmit={(e) => { e.preventDefault(); pick(other); }}>
@@ -42,6 +42,10 @@ export function ReactButton({ onPick }: { onPick: (emoji: string) => void }) {
     </Popover>
   );
 }
+
+/** The emoji picker of the composer: the same choice as a reaction, put where the cursor is. */
+export const EmojiButton = ({ onPick }: { onPick: (emoji: string) => void }) =>
+  <ReactButton onPick={onPick} icon={Smile} label={t('Emoji')} testId="agora-emoji" />;
 
 /** The message this one answers, above it: a click goes to it. */
 export function Quoted({ quote, onJump }: { quote: MessageQuote; onJump: (id: number) => void }) {
