@@ -68,11 +68,17 @@ Course scene and gameplay source are preserved.
 
 `run_playtest` takes `output` (a fresh absolute directory), optional `routes`
 (`straight`, `arrow35`, `arrow90`, `wall_parallel`, `wall_perpendicular`,
-`walk`, `run`, `tunnel`), `seconds` (default 4), `warmup` (2), `simulationHz`
+`walk`, `run`, `tunnel`, and the opt-in `ascent`), `seconds` (default 4), `warmup` (2), `simulationHz`
 (60), `captureHz` (10), `width` (960), `height` (540), `capture` (true) and
 the same `recipe`. It starts real Play mode and drives `PlayerInputReader`.
 Setup positions and settles the existing player; it does not force collision
-responses or Animator states. The tunnel uses the authored `Course.unity`.
+responses or Animator states. The tunnel uses the authored `Course.unity`. `ascent` loads `Earth.unity`, runs
+offline, starts 3 km over Madrid with the nose 65 degrees up, cycles travel to x1000
+through the same call as the T key, crosses the Karman line, then holds a real
+nose-down input and flies back; use `seconds: 30`. It records altitude, height
+over terrain, the effective and requested travel multiplier, night and star level,
+the camera's offset from the player and its turn per frame, and FOV. It is not in
+the default suite.
 
 Poll `playtest_status` with that `output`; do not resubmit the start after
 a timeout. `completed` describes execution, not design acceptance. The raw

@@ -12,6 +12,7 @@ def test_playtest_schema_is_available_without_editor(monkeypatch):
     for operation in ("build_playtest", "run_playtest", "playtest_status"):
         assert operation in result["operations"]
         assert result["arguments"][operation]
+    assert "ascent" in result["arguments"]["run_playtest"]
     assert "playtest_status" in READ_OPERATIONS
     assert "run_playtest" not in READ_OPERATIONS
 

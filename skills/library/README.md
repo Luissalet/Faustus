@@ -1,5 +1,19 @@
 # Skill library
 
+## Game asset pipeline
+
+Six procedures take a game asset from a mesh to Unity using only local tools:
+`game-asset-rigging` (Unity Humanoid-compatible skeleton and skin weights with an
+audit), `game-motion-from-video` (local pose estimation from a video to a
+Blender action), `game-asset-retopology` (quad or voxel-and-decimate low mesh
+with measured deviation), `game-asset-uv-bake` (UV unwrap and normal and
+occlusion bakes with Cycles on the CPU), `game-pbr-materials` (checking and
+packing texture sets into an HDRP mask map or a glTF ORM map) and
+`game-unity-export` (FBX with a LOD chain, re-imported to verify scale, axes and
+triangle counts). Each ships its headless script in `references/`; Blender runs
+in background mode and no GPU or hosted service is involved. The motion
+procedure also needs `mediapipe` and `opencv-python` and a downloaded pose model.
+
 ## Recorded Unity verification
 
 Six original procedures extend the existing `gamedev` and game-production

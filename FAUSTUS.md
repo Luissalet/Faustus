@@ -18577,3 +18577,20 @@ Qué puede hacer el Cerebro además de guardar y buscar:
   el mismo Cerebro que ve la pantalla; cómo conectarlo está en
   `docs/api/brain.md`. Rutas: `/api/brain/review`, `/review/resolve`, `/ratify`,
   `/ratified` y `/galaxy`.
+
+
+## Skills de producción de assets de juego
+
+La biblioteca incluye seis procedimientos que llevan un asset de un modelo a Unity con
+herramientas locales: `game-asset-rigging` (esqueleto compatible con Unity Humanoid y
+pesos, con auditoría), `game-motion-from-video` (pose desde un vídeo con MediaPipe en
+CPU y retarget a una acción de Blender), `game-asset-retopology` (malla baja de quads o
+voxel más decimado, con desviación medida), `game-asset-uv-bake` (UV y horneado de
+normales y oclusión con Cycles en CPU), `game-pbr-materials` (comprobación y empaquetado
+a mapa de máscara HDRP o ORM de glTF) y `game-unity-export` (FBX con cadena de LOD,
+reimportado para comprobar escala, ejes y triángulos). Cada una lleva su script en
+`references/` y se ejecuta con Blender sin ventana; ninguna usa GPU ni servicio externo.
+La de movimiento necesita además `mediapipe`, `opencv-python` y un modelo de pose
+descargado. `tests/test_game_asset_skills.py` ejecuta los scripts reales (se omite sin Blender).
+La herramienta `unity` acepta además la ruta opcional `ascent` en `run_playtest`
+(escena de la Tierra de Blood Arrows, sin red, `seconds:30`).
