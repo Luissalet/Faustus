@@ -11854,3 +11854,36 @@ WebGL is not available here, so the points cannot be drawn.	WebGL no está dispo
 Nothing to show yet	Aún no hay nada que mostrar
 Projects, chats, agents, outputs and entities appear here as soon as they exist.	Los proyectos, chats, agentes, salidas y entidades aparecen aquí en cuanto existen.
 {n} links	{n} enlaces
+Add route	Añadir ruta
+Brings the instructions, memories, MCP servers, skills and agents of Claude Code, Codex CLI and Cursor into Faustus. Preview first; a re-sync imports again what changed there.	Trae a Faustus las instrucciones, memorias, servidores MCP, skills y agentes de Claude Code, Codex CLI y Cursor. Primero se ve qué hay; re-sincronizar vuelve a importar lo que cambió allí.
+Client ID saved; not connected yet.	Client ID guardado; aún sin conectar.
+Connect again	Conectar de nuevo
+Connected.	Conectado.
+Default route	Ruta por defecto
+Delegation routes	Rutas de delegación
+Effort: inherit	Esfuerzo: heredado
+Enabled, not running.	Activado, sin funcionar todavía.
+Encryption identity ready for account {id}.	Identidad de cifrado lista para la cuenta {id}.
+Endpoint id	Id del endpoint
+Import from other agents	Importar de otros agentes
+Import {n} selected	Importar {n} seleccionados
+Imported {n}, failed {f}.	Importados {n}, fallidos {f}.
+Missing: {what}	Falta: {what}
+None: the coordinator's model	Ninguna: el modelo del coordinador
+Not configured.	Sin configurar.
+Not installed here.	No está instalado aquí.
+Nothing to import was found.	No se encontró nada que importar.
+One line: when to use it	Una línea: cuándo usarla
+Re-sync	Re-sincronizar
+Redirect URI to register in your Spotify app: {uri}	Redirect URI que debes registrar en tu app de Spotify: {uri}
+Register encryption identity	Registrar identidad de cifrado
+Routes saved. New turns offer them to the coordinator.	Rutas guardadas. Los turnos nuevos se las ofrecen al coordinador.
+Running: answering your self-chat.	Funcionando: contesta en tu chat contigo mismo.
+Save routes	Guardar rutas
+Skills, comma-separated	Skills, separadas por comas
+The coordinator picks one per sub-agent by name. Only the name and the description reach the model; the rest says what the worker runs on.	El coordinador elige una por sub-agente, por su nombre. Al modelo solo le llegan el nombre y la descripción; lo demás dice con qué trabaja el sub-agente.
+Tool categories	Categorías de herramientas
+What the model reads: {text}	Lo que lee el modelo: {text}
+X self-chat	Chat de X contigo mismo
+already exists	ya existe
+{n} entries, edited in their own panel.	{n} entradas; se editan en su propio panel.
