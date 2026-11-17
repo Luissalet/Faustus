@@ -47,7 +47,7 @@
   font: inherit;
   padding: 4px 6px;
   border-radius: 6px;
-  border: 1px solid var(--fs-border, #8884);
+  border: 1px solid var(--fs-border);
   background: var(--fs-surface, transparent);
   color: inherit;
 }
@@ -76,12 +76,12 @@
 }
 
 .fs-thread-agent__jobs li[data-status='failed'] .fs-thread-agent__job-status {
-  color: var(--fs-danger, #c0392b);
+  color: var(--fs-danger);
 }
 
 .fs-thread-agent__job-error {
   flex-basis: 100%;
-  color: var(--fs-danger, #c0392b);
+  color: var(--fs-danger);
   overflow-wrap: anywhere;
 }
 
@@ -93,7 +93,7 @@
   line-height: 1.35;
   padding: var(--fs-space-2);
   border-radius: 6px;
-  background: var(--fs-surface-sunken, #0001);
+  background: var(--fs-surface-2);
   white-space: pre;
 }
 
