@@ -5,6 +5,9 @@
  */
 export const en: Record<string, string> = {
   '{n} active#': '{n} active',
+  'Plan#loop': 'Plan',
+  'Done#loop': 'Done',
+  'Reasoning#loop': 'Reasoning',
   '{n} archived.#': '{n} archived.',
   'All#f': 'All',
   '{n} pinned#': '{n} pinned',

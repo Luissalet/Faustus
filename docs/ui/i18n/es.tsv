@@ -11918,7 +11918,6 @@ X self-chat	Chat de X contigo mismo
 already exists	ya existe
 {n} entries, edited in their own panel.	{n} entradas; se editan en su propio panel.
 Runs in this thread	Ejecuciones de este hilo
-<<<<<<< HEAD
 Person	Persona
 session	sesión
 1 commit	1 commit
@@ -11944,7 +11943,6 @@ Pinned: the decisions of this server	Fijados: las decisiones de este servidor
 Search in this channel	Buscar en este canal
 Write in #{name} · use @ to call an agent	Escribe en #{name} · usa @ para llamar a un agente
 Reply in this thread · use @ to call an agent	Responde en este hilo · usa @ para llamar a un agente
-=======
 Proposed change to its instructions	Cambio propuesto a sus instrucciones
 Because of: {source}	Por: {source}
 The instructions changed after this was proposed; the difference below is against the current text.	Las instrucciones cambiaron después de proponerlo; la diferencia de abajo es contra el texto actual.
@@ -11988,4 +11986,23 @@ Routines	Rutinas
 No direct conversations yet. Open an agent and tell it something.	Aún no hay conversaciones directas. Abre un agente y dile algo.
 Correction	Corrección
 Open its page	Abrir su página
->>>>>>> f338c6e3 (Add the agent page, the direct-message list and the instruction proposals to Studio's Agora)
+Agent loop	Bucle del agente
+Act	Actuar
+Observe	Observar
+Lap {n}	Vuelta {n}
+No steps yet	Aún no hay pasos
+Practices to review	Buenas prácticas a revisar
+Turn failed	Turno con error
+Met	Cumplida
+Failing	Incumplida
+Not settled	Sin confirmar
+Tests run	Tests ejecutados
+App checked in a browser	App probada en navegador
+Docs updated (FAUSTUS.md / README)	Documentación al día (FAUSTUS.md / README)
+Commit with the right identity	Commit con la identidad correcta
+No evidence files committed	Sin ficheros de evidencias en el commit
+Delivered in the Agora (submit / done)	Entregado en el Ágora (submit / done)
+{ok} met · {fail} failing · {open} missing	{ok} cumplidas · {fail} incumplidas · {open} faltan
+Plan#loop	Planear
+Done#loop	Terminado
+Reasoning#loop	Razona

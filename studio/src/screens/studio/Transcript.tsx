@@ -6,6 +6,7 @@ import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton, TurnCostBreakdown } from '../../components';
 import { TurnActivity } from './TurnActivity';
+import { TurnLoop } from '../../components/agentloop/TurnLoop';
 import { DebatePanel } from '../group/DebatePanel';
 import { ToolsOfferedLine } from './ToolsOfferedLine';
 import { AgentMessageTurn } from './AgentMessageTurn';
@@ -2251,6 +2252,7 @@ function AssistantTurn({
             <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />
           </Suspense>
         )}
+        <TurnLoop turn={turn} />
         <TurnActivity turn={turn} />
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
         {body && <Foldable text={body} active={!turn.streaming}><Rich text={body} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} sources={turn.sources} /></Foldable>}

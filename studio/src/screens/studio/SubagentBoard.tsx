@@ -7,6 +7,8 @@ import { steerWorker, stopWorker } from '../../adapters/agents';
 import type { DelegationTask } from '../../adapters/chat';
 import { workerLive, type Worker } from './model';
 import SubagentTranscript, { heatLevel } from './SubagentTranscript';
+import { AgentLoopRing } from '../../components/agentloop/AgentLoopRing';
+import { loopOfWorker } from '../../components/agentloop/loop';
 import { t, tn } from '../../i18n';
 
 /**
@@ -93,6 +95,7 @@ function WorkerCard({ w, live, now, heat, onOpen, onRerun, onNotice }: { w: Work
   const [showCaches, setShowCaches] = useState(false);
   const [stopState, setStopState] = useState<'idle' | 'stopping' | 'stopped' | 'gone'>('idle');
   const alive = workerLive(w);
+  const loop = loopOfWorker(w, now);
   const reviewer = w.role === 'reviewer';
   const name = reviewer ? `${t('Reviewer')} · ${w.name || 'reviewer'}` : `${(w.index ?? 0) + 1}. ${w.name || 'worker'}`;
   const p = pill(w, now);
@@ -146,6 +149,7 @@ function WorkerCard({ w, live, now, heat, onOpen, onRerun, onNotice }: { w: Work
   return (
     <article className="fs-sa" data-status={w.status} data-live={alive || undefined} data-stalled={w.stalled || undefined}>
       <header className="fs-sa__head">
+        <AgentLoopRing phase={loop.phase} lap={loop.lap} size="sm" live={alive} />
         {w.sessionId ? (
           <button type="button" className="fs-sa__name fs-sa__name--link" onClick={onOpen} title={t('Open the transcript')}>{name}</button>
         ) : (

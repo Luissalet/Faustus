@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from routes.session_routes import _verify_session_owner
 from src.auth_helpers import effective_user
-from src import thread_agents
+from src import agent_loop_state, thread_agents
 
 
 def _owner(request: Request, sid: str) -> str:
@@ -45,6 +45,12 @@ def setup_thread_agent_routes() -> APIRouter:
             return {**thread_agents.state(sid), "agents": thread_agents.agents()}
         except (KeyError, ValueError) as exc:
             _fail(exc)
+
+    @router.get("/{sid}/loop")
+    def get_loop(request: Request, sid: str):
+        _owner(request, sid)
+        loop = agent_loop_state.snapshot(sid)
+        return {"session_id": sid, "loop": loop}
 
     @router.put("/{sid}/agent")
     async def put_agent(request: Request, sid: str):

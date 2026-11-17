@@ -43,7 +43,7 @@ import uuid
 import weakref
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
-from src import api_version
+from src import agent_loop_state, api_version
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ def _outcome_of(status: str) -> Optional[str]:
 class _Run:
     __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "run_id", "last_key",
                  "lane", "queued_position", "log", "started_at", "label",
-                 "phase", "phase_since", "last_event_at", "round", "tool", "detail",
+                 "phase", "phase_since", "last_event_at", "round", "tool", "detail", "loop",
                  "model", "endpoint_url",
                  # OBS-02: canonical phase vocabulary, additive to `phase`
                  # (see the CANONICAL_PHASES block above) -- phase_raw is
@@ -214,6 +214,8 @@ class _Run:
         self.round: int = 1
         self.tool: Optional[str] = None
         self.detail: str = ""
+        # Plan -> act -> observe of this turn (src/agent_loop_state.py), set by start().
+        self.loop: Optional[agent_loop_state.LoopState] = None
         # Which model on which endpoint, so the heartbeat can ask Ollama what
         # the model is doing while the turn waits for its first token.
         self.model: str = ""
@@ -1109,6 +1111,7 @@ def _observe_activity(run: _Run, ev: str) -> None:
         return
     if not isinstance(payload, dict):
         return
+    agent_loop_state.feed(run.loop, payload)
     if "delta" in payload and not payload.get("type"):
         _set_phase(run, "thinking" if payload.get("thinking") else "writing")
         return
@@ -1690,6 +1693,7 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
             except Exception:
                 pass
         _ledger_run_event(session_id, run, run.status if run.status != "running" else "done")
+        agent_loop_state.finish(run.loop, run.status if run.status != "running" else "done")
         _drop_unread_steers(session_id, run)
         # Wake every subscriber with the end sentinel so their SSE closes.
         _wake_subscribers()
@@ -1762,6 +1766,7 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
     run = _Run(lane=lane, label=label)
     run.model = str(model or "")
     run.endpoint_url = str(endpoint_url or "")
+    run.loop = agent_loop_state.begin(session_id, run.run_id, run.started_at)
     _RUNS[session_id] = run
     _dock_presence(session_id, "thinking")
     if persistence_enabled():

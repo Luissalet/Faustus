@@ -28,6 +28,13 @@ SPECS = {
         "a Spark) or none."),
     "thread_agent_get": ("GET", "/{session_id}/agent", SID, ["session_id"], True,
         "Read who answers this thread now (agent, model), its workspace, its worktree and recent runs."),
+    "thread_loop": ("GET", "/{session_id}/loop", SID, ["session_id"], True,
+        "Read the agent loop of the thread's running or last turn: phase plan|act|observe|done (from the turn's own "
+        "events: model text = plan, tool call = act, tool result = observe), lap number, tool in flight, elapsed "
+        "seconds, tokens when reported, the steps taken (plan, tools, results, commit, delivery) and a checklist of "
+        "work practices (tests, browser check, docs, commit identity, no evidence files, Agora delivery) each "
+        "ok|fail|unknown|pending with the call that proves it. loop is null when this server has not run a turn "
+        "for the thread since it started."),
     "thread_agent_set": ("PUT", "/{session_id}/agent", {**SID, "agent": S, "model": S, "workspace": S},
         ["session_id", "agent"], False,
         "Change the agent that works this thread mid-conversation: 'faustus' or a runner key. With a runner, "
