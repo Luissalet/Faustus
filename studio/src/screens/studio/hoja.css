@@ -1,5 +1,5 @@
 /* Hoja: a spreadsheet in the side panel. Colours come from the Studio tokens so dark and light follow the app;
-   the chart series colours are a categorical set with a dark and a light version (dark is the base, like the tokens). */
+   the chart series colours are the categorical --fs-series-* tokens. */
 
 .fs-hj {
   --hj-line: var(--fs-border);
@@ -8,12 +8,8 @@
   --hj-cell: var(--fs-surface-1);
   --hj-sel: color-mix(in srgb, var(--fs-accent, var(--fs-brand)) 14%, transparent);
   --hj-ring: var(--fs-accent, var(--fs-brand));
-  --hj-s0: #6fa8ff; --hj-s1: #f2a65a; --hj-s2: #5fcf9f; --hj-s3: #d98cf0; --hj-s4: #f0d35f; --hj-s5: #ff7f8e; --hj-s6: #62d4e3; --hj-s7: #b0a08a;
+  --hj-s0: var(--fs-series-0); --hj-s1: var(--fs-series-1); --hj-s2: var(--fs-series-2); --hj-s3: var(--fs-series-3); --hj-s4: var(--fs-series-4); --hj-s5: var(--fs-series-5); --hj-s6: var(--fs-series-6); --hj-s7: var(--fs-series-7);
   display: flex; flex-direction: column; flex: 1 1 auto; min-block-size: 0; min-inline-size: 0; position: relative; user-select: none;
-}
-:root[data-theme='light'] .fs-hj { --hj-s0: #2f6fd6; --hj-s1: #c76a14; --hj-s2: #1f8a5f; --hj-s3: #9b45c0; --hj-s4: #a98600; --hj-s5: #c93f55; --hj-s6: #17899b; --hj-s7: #7d6c55; }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']) .fs-hj { --hj-s0: #2f6fd6; --hj-s1: #c76a14; --hj-s2: #1f8a5f; --hj-s3: #9b45c0; --hj-s4: #a98600; --hj-s5: #c93f55; --hj-s6: #17899b; --hj-s7: #7d6c55; }
 }
 .fs-hj[hidden] { display: none !important; }
 .fs-hj-state { display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; color: var(--fs-text-3); font-size: 13px; }
@@ -25,7 +21,7 @@
 .fs-hj-head { display: flex; align-items: center; gap: 4px; padding: 6px var(--fs-space-3); border-block-end: 1px solid var(--fs-border); min-inline-size: 0; }
 .fs-hj-title { flex: 0 1 auto; min-inline-size: 60px; text-overflow: ellipsis; font: inherit; font-size: 13px; font-weight: 600; color: var(--fs-text-1); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; }
 .fs-hj-title:hover { border-color: var(--fs-border); }
-.fs-hj-title:focus { outline: none; border-color: var(--hj-ring); background: var(--fs-surface-1); }
+.fs-hj-title:focus { border-color: var(--hj-ring); background: var(--fs-surface-1); }
 .fs-hj-status { font-size: 11px; color: var(--fs-text-3); white-space: nowrap; padding-inline: 6px; }
 .fs-hj-status[data-state='error'] { color: var(--fs-danger); }
 .fs-hj-grow { flex: 1 1 auto; }
@@ -43,7 +39,7 @@
 .fs-hj-name { flex: none; min-inline-size: 64px; text-align: center; font-size: 12px; font-weight: 600; color: var(--fs-text-2); border: 1px solid var(--fs-border); border-radius: 6px; padding: 3px 8px; background: var(--fs-surface-1); font-variant-numeric: tabular-nums; }
 .fs-hj-fxl { font-size: 12px; font-style: italic; color: var(--fs-text-3); }
 .fs-hj-formula { flex: 1 1 auto; min-inline-size: 0; font: inherit; font-size: 13px; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 6px; padding: 4px 8px; }
-.fs-hj-formula:focus { outline: none; border-color: var(--hj-ring); }
+.fs-hj-formula:focus { border-color: var(--hj-ring); }
 
 /* the grid: corner, headers and the scroller are four cells of a grid */
 .fs-hj-grid { display: grid; grid-template-columns: var(--hj-rh) minmax(0, 1fr); grid-template-rows: var(--hj-ch) minmax(0, 1fr); flex: 1 1 auto; min-block-size: 0; overflow: hidden; background: var(--hj-cell); }
@@ -61,12 +57,12 @@
 .fs-hj-rz:hover { background: color-mix(in srgb, var(--hj-ring) 55%, transparent); }
 
 .fs-hj input, .fs-hj textarea { user-select: text; }
-.fs-hj-scroll { position: relative; overflow: auto; outline: none; background: var(--hj-cell); overscroll-behavior: contain; user-select: none; }
+.fs-hj-scroll { position: relative; overflow: auto; background: var(--hj-cell); overscroll-behavior: contain; user-select: none; }
 .fs-hj-scroll:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--hj-ring) 45%, transparent); }
 .fs-hj-sizer { display: grid; position: relative; }
 .fs-hj-layer { grid-area: 1 / 1; position: relative; min-inline-size: 0; min-block-size: 0; }
-.fs-hj-frozen-rows { position: sticky; top: 0; z-index: 3; align-self: start; box-shadow: 0 1px 0 var(--hj-line), 0 3px 6px -4px rgba(0, 0, 0, .35); }
-.fs-hj-frozen-cols { position: sticky; left: 0; z-index: 3; justify-self: start; box-shadow: 1px 0 0 var(--hj-line), 3px 0 6px -4px rgba(0, 0, 0, .35); }
+.fs-hj-frozen-rows { position: sticky; top: 0; z-index: 3; align-self: start; box-shadow: 0 1px 0 var(--hj-line), 0 3px 6px -4px var(--fs-shade-35); }
+.fs-hj-frozen-cols { position: sticky; left: 0; z-index: 3; justify-self: start; box-shadow: 1px 0 0 var(--hj-line), 3px 0 6px -4px var(--fs-shade-35); }
 .fs-hj-frozen-corner { position: sticky; top: 0; left: 0; z-index: 4; align-self: start; justify-self: start; }
 
 /* cells */
@@ -95,16 +91,18 @@
 .fs-hj-filter { margin-inline-start: auto; color: var(--hj-ring); display: inline-flex; }
 .fs-hj-fh { position: absolute; inset-inline-end: -1px; inset-block-end: -1px; inline-size: 8px; block-size: 8px; background: var(--hj-ring); border: 1px solid var(--hj-cell); cursor: crosshair; z-index: 6; }
 
-.fs-hj-edit { position: absolute; z-index: 20; box-sizing: border-box; font: inherit; font-size: 13px; color: var(--fs-text-1); background: var(--fs-surface-2); border: 2px solid var(--hj-ring); border-radius: 0; padding: 0 5px; outline: none; user-select: text; }
+.fs-hj-edit { position: absolute; z-index: 20; box-sizing: border-box; font: inherit; font-size: 13px; color: var(--fs-text-1); background: var(--fs-surface-2); border: 2px solid var(--hj-ring); border-radius: 0; padding: 0 5px; user-select: text; }
+.fs-app .fs-hj-edit:focus-visible { outline: 2px solid transparent; outline-offset: -2px; border-radius: 0; }
+.fs-app .fs-hj-scroll:focus-visible { outline-offset: -2px; border-radius: 0; }
 
 /* the agent's cursor */
 .fs-hj-agent { position: absolute; z-index: 15; pointer-events: none; box-sizing: border-box; border: 2px solid var(--ag, var(--hj-ring)); background: color-mix(in srgb, var(--ag, var(--hj-ring)) 16%, transparent); transition: left .25s cubic-bezier(.2, .7, .2, 1), top .25s cubic-bezier(.2, .7, .2, 1), opacity .4s; }
 .fs-hj-agent[data-state='idle'] { opacity: .35; }
-.fs-hj-agent-name { position: absolute; inset-inline-start: -2px; inset-block-end: 100%; white-space: nowrap; background: var(--ag, var(--hj-ring)); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px 6px 6px 0; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+.fs-hj-agent-name { position: absolute; inset-inline-start: -2px; inset-block-end: 100%; white-space: nowrap; background: var(--ag, var(--hj-ring)); color: var(--fs-on-solid); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px 6px 6px 0; box-shadow: 0 1px 4px var(--fs-shade-35); }
 
 /* charts */
 .fs-hj-chart { position: absolute; z-index: 8; user-select: none; }
-.fs-hj-chart-svg { display: block; overflow: visible; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .25)); }
+.fs-hj-chart-svg { display: block; overflow: visible; filter: drop-shadow(0 4px 10px var(--fs-shade-25)); }
 .fs-hj-chart-bg { fill: var(--fs-surface-2); stroke: var(--fs-border-strong, var(--fs-border)); }
 .fs-hj-chart-title { fill: var(--fs-text-1); font-size: 13px; font-weight: 600; }
 .fs-hj-chart-t { fill: var(--fs-text-3); font-size: 10.5px; }
@@ -129,17 +127,17 @@
 .fs-hj-sum, .fs-hj-rows { font-size: 11px; color: var(--fs-text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* context menu and the small prompt */
-.fs-hj-menu { position: fixed; z-index: 60; min-inline-size: 190px; background: var(--fs-surface-2); border: 1px solid var(--fs-border-strong, var(--fs-border)); border-radius: 8px; padding: 4px; box-shadow: var(--fs-shadow-overlay, 0 8px 24px rgba(0, 0, 0, .4)); display: flex; flex-direction: column; }
+.fs-hj-menu { position: fixed; z-index: 60; min-inline-size: 190px; background: var(--fs-surface-2); border: 1px solid var(--fs-border-strong, var(--fs-border)); border-radius: 8px; padding: 4px; box-shadow: var(--fs-shadow-overlay); display: flex; flex-direction: column; }
 .fs-hj-menu button { font: inherit; font-size: 13px; text-align: start; color: var(--fs-text-1); background: transparent; border: 0; border-radius: 5px; padding: 6px 10px; cursor: pointer; }
 .fs-hj-menu button:hover { background: var(--fs-surface-3); }
 .fs-hj-menu button[data-danger] { color: var(--fs-danger); }
-.fs-hj-prompt { position: absolute; z-index: 70; inset-block-start: 96px; inset-inline-start: 50%; transform: translateX(-50%); inline-size: min(360px, calc(100% - 32px)); display: grid; gap: 10px; padding: 14px; background: var(--fs-surface-2); border: 1px solid var(--fs-border-strong, var(--fs-border)); border-radius: 10px; box-shadow: var(--fs-shadow-overlay, 0 8px 24px rgba(0, 0, 0, .4)); }
+.fs-hj-prompt { position: absolute; z-index: 70; inset-block-start: 96px; inset-inline-start: 50%; transform: translateX(-50%); inline-size: min(360px, calc(100% - 32px)); display: grid; gap: 10px; padding: 14px; background: var(--fs-surface-2); border: 1px solid var(--fs-border-strong, var(--fs-border)); border-radius: 10px; box-shadow: var(--fs-shadow-overlay); }
 .fs-hj-prompt label { display: grid; gap: 6px; font-size: 12px; color: var(--fs-text-2); }
 .fs-hj-prompt input { font: inherit; font-size: 13px; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 6px; padding: 6px 8px; }
-.fs-hj-prompt input:focus { outline: none; border-color: var(--hj-ring); }
+.fs-hj-prompt input:focus { border-color: var(--hj-ring); }
 .fs-hj-prompt-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .fs-hj-prompt-actions button { font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--fs-border); background: transparent; color: var(--fs-text-1); cursor: pointer; }
-.fs-hj-prompt-actions button[data-primary] { background: var(--hj-ring); border-color: var(--hj-ring); color: #fff; }
+.fs-hj-prompt-actions button[data-primary] { background: var(--hj-ring); border-color: var(--hj-ring); color: var(--fs-on-solid); }
 
 @media (max-width: 640px) {
   .fs-hj-title { flex-basis: 120px; }

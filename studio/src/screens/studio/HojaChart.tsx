@@ -126,7 +126,7 @@ export default function HojaChart({ chart }: { chart: HojaChartData }) {
   };
 
   return (
-    <svg className="fs-hj-chart-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={chart.title || chart.type} data-chart-type={chart.type}>
+    <svg /* guard-ok: a chart is drawn from data, there is no icon for it */ className="fs-hj-chart-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={chart.title || chart.type} data-chart-type={chart.type}>
       <rect x="0.5" y="0.5" width={w - 1} height={h - 1} rx="8" className="fs-hj-chart-bg" />
       {chart.title && <text x={PAD.l} y="19" className="fs-hj-chart-title">{chart.title}</text>}
       {empty ? <text x={w / 2} y={h / 2} textAnchor="middle" className="fs-hj-chart-t">…</text> : body()}

@@ -60,10 +60,10 @@ function inkFor(fill: string): string | null {
   } else {
     try {
       const ctx = document.createElement('canvas').getContext('2d');
-      if (ctx) { ctx.fillStyle = '#000'; ctx.fillStyle = fill; ctx.fillRect(0, 0, 1, 1); const d = ctx.getImageData(0, 0, 1, 1).data; if (d[3] > 0) rgb = [d[0], d[1], d[2]]; }
+      if (ctx) { ctx.fillStyle = '#000'; ctx.fillStyle = fill; ctx.fillRect(0, 0, 1, 1); const d = ctx.getImageData(0, 0, 1, 1).data; if (d[3] > 0) rgb = [d[0], d[1], d[2]]; } // guard-ok: canvas scratch pad that resolves a CSS colour to channels, never painted
     } catch { /* no canvas: leave the theme colour */ }
   }
-  const out = rgb ? ((0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])) > 0.4 ? '#1a1a1a' : '#ffffff') : null;
+  const out = rgb ? ((0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])) > 0.4 ? '#1a1a1a' : '#ffffff') : null; // guard-ok: ink picked for an arbitrary user fill, so it cannot be a theme token
   inkCache.set(fill, out);
   return out;
 }
@@ -138,6 +138,12 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
   const drag = useRef<{ mode: 'select' | 'fill' | 'col' | 'row'; start?: { r: number; c: number }; index?: number; origin?: number; size?: number } | null>(null);
 
   useEffect(() => { setTitleText(title); }, [title]);
+  useEffect(() => {      // a click anywhere outside the open context menu closes it
+    if (!ctx) return;
+    const close = (e: MouseEvent) => { if (!(e.target as Element | null)?.closest?.('.fs-hj-menu')) setCtx(null); };
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [ctx]);
 
   /* ── geometry ── */
   const rowAxis = useMemo(() => makeAxis(extent.rows, DEFAULT_ROW_H, {
@@ -744,7 +750,7 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
   ) : null;
 
   return (
-    <div className="fs-hj" hidden={hidden} data-testid="hoja" data-load={load} onClick={() => setCtx(null)}>
+    <div className="fs-hj" hidden={hidden} data-testid="hoja" data-load={load}>
       <div className="fs-hj-head">
         <input
           className="fs-hj-title" style={{ inlineSize: `${Math.max(10, titleText.length + 3)}ch` }} value={titleText} aria-label={t('Spreadsheet title')} onChange={(e) => setTitleText(e.target.value)}
@@ -775,8 +781,8 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
         <Tb icon={AlignCenter} label={t('Align center')} size="sm" pressed={activeStyle?.al === 'c'} onClick={() => fmt({ align: 'center' })} />
         <Tb icon={AlignRight} label={t('Align right')} size="sm" pressed={activeStyle?.al === 'r'} onClick={() => fmt({ align: 'right' })} />
         <span className="fs-hj-sep" />
-        <label className="fs-hj-color" title={t('Text colour')}><Baseline size={15} aria-hidden="true" /><input type="color" aria-label={t('Text colour')} value={activeStyle?.c ?? '#000000'} onChange={(e) => fmt({ color: e.target.value })} data-testid="hoja-color" /></label>
-        <label className="fs-hj-color" title={t('Fill colour')}><PaintBucket size={15} aria-hidden="true" /><input type="color" aria-label={t('Fill colour')} value={activeStyle?.bg ?? '#ffffff'} onChange={(e) => fmt({ fill: e.target.value })} data-testid="hoja-fill" /></label>
+        <label className="fs-hj-color" title={t('Text colour')}><Baseline size={15} aria-hidden="true" /><input type="color" /* guard-ok: a colour input only takes hex */ aria-label={t('Text colour')} value={activeStyle?.c ?? '#000000'} onChange={(e) => fmt({ color: e.target.value })} data-testid="hoja-color" /></label>
+        <label className="fs-hj-color" title={t('Fill colour')}><PaintBucket size={15} aria-hidden="true" /><input type="color" /* guard-ok: a colour input only takes hex */ aria-label={t('Fill colour')} value={activeStyle?.bg ?? '#ffffff'} onChange={(e) => fmt({ fill: e.target.value })} data-testid="hoja-fill" /></label>
         <span className="fs-hj-sep" />
         <Menu testId="hoja-numfmt" trigger={<button type="button" className="fs-hj-fmtbtn" aria-label={t('Number format')} data-testid="hoja-numfmt-trigger">{t('Format')}</button>} items={nfItems.map((i) => ({
           label: i.label, onSelect: () => (i.cur ? fmt({ format: 'currency', symbol: i.cur, decimals: 2 }) : fmt({ format: i.nf })),
@@ -884,7 +890,7 @@ export default function Hoja({ sheetId, title, sessionId, hidden, maximized, onT
       </div>
 
       {ctx && (
-        <div className="fs-hj-menu" role="menu" style={{ left: ctx.x, top: ctx.y }} data-testid="hoja-context-menu" onClick={(e) => e.stopPropagation()}>
+        <div className="fs-hj-menu" role="menu" style={{ left: ctx.x, top: ctx.y }} data-testid="hoja-context-menu">
           {ctxItems().map((it) => (
             <button key={it.label} type="button" role="menuitem" data-danger={it.danger || undefined} onClick={() => { setCtx(null); it.run(); }}>{it.label}</button>
           ))}

@@ -92,7 +92,7 @@ const ItemNode = memo(function ItemNode({ id, data, selected }: NodeProps<PzNode
   } else if (kind === 'stroke') {
     const pts = jc.fx?.pts ?? [];
     body = (
-      <svg className="fs-pz-stroke" viewBox={`0 0 ${Math.max(1, jc.width)} ${Math.max(1, jc.height)}`} preserveAspectRatio="none" aria-hidden="true">
+      <svg /* guard-ok: a freehand stroke is drawn from data */ className="fs-pz-stroke" viewBox={`0 0 ${Math.max(1, jc.width)} ${Math.max(1, jc.height)}`} preserveAspectRatio="none" aria-hidden="true">
         <path d={strokePath(pts)} fill="none" strokeWidth={jc.fx?.sw ?? 3} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       </svg>
     );
@@ -104,7 +104,7 @@ const ItemNode = memo(function ItemNode({ id, data, selected }: NodeProps<PzNode
     body = (
       <>
         {kind === 'diamond' && (
-          <svg className="fs-pz-bgshape" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="50,1 99,50 50,99 1,50" vectorEffect="non-scaling-stroke" /></svg>
+          <svg /* guard-ok: a node outline is drawn to fit its box */ className="fs-pz-bgshape" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="50,1 99,50 50,99 1,50" vectorEffect="non-scaling-stroke" /></svg>
         )}
         <div className="fs-pz-text">{editing ? edit : text}</div>
       </>
@@ -200,7 +200,7 @@ function Cursors({ cursors }: { cursors: Record<string, Cursor> }) {
     <>
       {Object.values(cursors).map((c) => (
         <div key={c.actor.id} className="fs-pz-cursor" data-state={c.state} data-testid="pizarra-agent-cursor" style={{ transform: `translate(${c.x}px, ${c.y}px) scale(${1 / Math.max(0.25, zoom)})`, ['--c' as string]: c.actor.color } as React.CSSProperties}>
-          <svg width="18" height="20" viewBox="0 0 18 20" aria-hidden="true"><path d="M1 1l14 7-6 2-2 7z" fill="var(--c)" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" /></svg>
+          <svg /* guard-ok: the cursor is filled with the agent colour and outlined in white on any theme */ width="18" height="20" viewBox="0 0 18 20" aria-hidden="true"><path d="M1 1l14 7-6 2-2 7z" fill="var(--c)" stroke="var(--fs-on-solid)" strokeWidth="1.2" strokeLinejoin="round" /></svg>
           <span>{c.actor.name}</span>
         </div>
       ))}
@@ -839,8 +839,8 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
             >
               <Background variant={BackgroundVariant.Dots} gap={24} size={1.4} />
               {showMap && nodes.length > 0 && (
-                <MiniMap pannable zoomable ariaLabel={t('Minimap')} nodeStrokeWidth={2} maskColor="color-mix(in srgb, var(--fs-text-3, #888) 22%, transparent)"
-                  nodeColor={(n) => colorHex((n.data as PzData).jc.color) ?? 'var(--fs-text-3, #888)'} />
+                <MiniMap pannable zoomable ariaLabel={t('Minimap')} nodeStrokeWidth={2} maskColor="color-mix(in srgb, var(--fs-text-3) 22%, transparent)"
+                  nodeColor={(n) => colorHex((n.data as PzData).jc.color) ?? 'var(--fs-text-3)'} />
               )}
               <ViewportPortal>
                 {guides.map((g, i) => (
@@ -850,7 +850,7 @@ function Board({ boardId, title, sessionId, hidden, maximized, onToggleMaximize,
                   <div className="fs-pz-draft" data-kind={draft.kind} style={{ left: Math.min(draft.a.x, draft.b.x), top: Math.min(draft.a.y, draft.b.y), width: Math.abs(draft.b.x - draft.a.x), height: Math.abs(draft.b.y - draft.a.y) }} />
                 )}
                 {draft?.pts && (
-                  <svg className="fs-pz-penlive" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }} width="1" height="1">
+                  <svg /* guard-ok: the live pen stroke is drawn from data */ className="fs-pz-penlive" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }} width="1" height="1">
                     <path d={strokePath(draft.pts)} fill="none" stroke={colorHex(penColor) ?? 'var(--pz-ink)'} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}

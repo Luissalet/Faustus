@@ -996,10 +996,10 @@
   border-radius: var(--fs-radius-control);
 }
 .fs-brain__review-option[data-ratified] {
-  background: color-mix(in srgb, var(--fs-brand, #e06c75) 10%, transparent);
+  background: color-mix(in srgb, var(--fs-brand) 10%, transparent);
 }
 .fs-brain__review-row[data-state='expired'] {
-  background: color-mix(in srgb, var(--fs-danger, #e06c75) 8%, transparent);
+  background: color-mix(in srgb, var(--fs-danger) 8%, transparent);
 }
 .fs-brain__review-value {
   display: flex;
@@ -1022,18 +1022,18 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--fs-brand, #e06c75);
+  color: var(--fs-brand);
 }
 .fs-brain__review-count {
   margin-inline-start: 4px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--fs-brand, #e06c75);
-  color: var(--fs-on-brand, #fff);
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
   font-size: 11px;
 }
 .fs-brain__relations li[data-ratified] .fs-brain__rel-verb {
-  color: var(--fs-brand, #e06c75);
+  color: var(--fs-brand);
 }
 
 /* ── Galaxy ── */
@@ -1080,7 +1080,7 @@
   flex: 1;
   min-block-size: 440px;
   border-radius: var(--fs-radius-control);
-  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--fs-text-1, #fff) 7%, #05060a) 0%, #05060a 75%);
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--fs-text-1) 7%, var(--fs-galaxy-bg)) 0%, var(--fs-galaxy-bg) 75%);
   overflow: hidden;
 }
 .fs-brain__galaxy-canvas {
@@ -1099,8 +1099,8 @@
   pointer-events: none;
   padding: 3px 8px;
   border-radius: var(--fs-radius-control);
-  background: rgba(10, 12, 20, 0.88);
-  color: #e8ebf5;
+  background: var(--fs-galaxy-tip);
+  color: var(--fs-galaxy-ink);
   font-size: var(--fs-label-size);
   max-inline-size: 260px;
 }

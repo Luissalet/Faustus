@@ -32,7 +32,7 @@ function kindLabel(kind: GalaxyKind): string {
 }
 
 function hex(c: [number, number, number]): string {
-  return `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`;
+  return `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`; // guard-ok: computed from the layout's colour channels, not a literal
 }
 
 const POINT_VS = `

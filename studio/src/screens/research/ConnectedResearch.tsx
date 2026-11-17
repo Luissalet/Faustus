@@ -118,5 +118,5 @@ export function ConnectedReport({ id, sources, children }: { id: string; sources
     catch { setError(t('This source could not open beside the chat. Open the original in its own window.')); }
     finally { setBusy(false); }
   };
-  return <div onClick={e => void click(e)} aria-busy={busy || undefined}>{children}{error && <div role="alert"><p>{error}</p>{sources.filter(s => s.appId && safeExternal(s.url)).map(s => <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>{connectedTitle(s)}</a>)}</div>}</div>;
+  return <div /* guard-ok: delegates to the real links inside, which are already keyboard-operable */ onClick={e => void click(e)} aria-busy={busy || undefined}>{children}{error && <div role="alert"><p>{error}</p>{sources.filter(s => s.appId && safeExternal(s.url)).map(s => <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>{connectedTitle(s)}</a>)}</div>}</div>;
 }
