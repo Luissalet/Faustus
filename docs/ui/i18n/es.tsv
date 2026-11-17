@@ -12025,3 +12025,48 @@ It decides with	Decide con
 {n} agents	{n} agentes
 The Sparks model	El modelo de las Sparks
 Rules only	Solo reglas
+{n} reply	{n} respuesta
+{n} replies	{n} respuestas
+Part of a thread	Parte de un hilo
+Start a thread from these messages	Abrir un hilo desde estos mensajes
+Start a thread from this message	Abrir un hilo desde este mensaje
+The thread keeps the link to where it began, and the channel shows how many answers it has.	El hilo conserva el enlace a su origen y el canal muestra cuántas respuestas tiene.
+Start the thread	Abrir el hilo
+Suggesting a title…	Proponiendo un título…
+A short title	Un título corto
+Suggested from what was said. Change it if you like.	Propuesto a partir de lo dicho. Cámbialo si quieres.
+Taken from the first line. Change it if you like.	Tomado de la primera línea. Cámbialo si quieres.
+First answer (optional)	Primera respuesta (opcional)
+That message already had a thread.	Ese mensaje ya tenía un hilo.
+Rename the thread	Renombrar el hilo
+From {author}: {text}	De {author}: {text}
+Following: stop following	Siguiendo: dejar de seguir
+Follow this thread	Seguir este hilo
+Close the thread	Cerrar el hilo
+Open the thread again	Reabrir el hilo
+Take out of the archive	Sacar del archivo
+Archive the thread	Archivar el hilo
+{n} pinned message	{n} mensaje fijado
+{n} pinned messages	{n} mensajes fijados
+Threads from messages	Hilos desde mensajes
+Which threads	Qué hilos
+Following	Siguiendo
+Any state	Cualquier estado
+Only with something new	Solo con novedades
+Loading the threads	Cargando los hilos
+No threads here	No hay hilos aquí
+Start one from any message with «Start a thread»: you follow the ones you start, write in or are named in.	Abre uno desde cualquier mensaje con «Abrir un hilo»: sigues los que abres, en los que escribes o donde te nombran.
+Nobody has started a thread on this server yet.	Nadie ha abierto todavía un hilo en este servidor.
+Loading the page…	Cargando la página…
+That page cannot be read now.	Esa página no se puede leer ahora.
+The Brain has no page with that name yet.	El Cerebro aún no tiene una página con ese nombre.
+The page is empty.	La página está vacía.
+Cited in the Agora	Citada en el Ágora
+{n} citation	{n} cita
+{n} citations	{n} citas
+Start the thread up to this message	Abrir el hilo hasta este mensaje
+Start a thread	Abrir un hilo
+Cancel the selection	Cancelar la selección
+Select messages from here	Seleccionar mensajes desde aquí
+Choose the last message of the thread: use «Start the thread up to this message».	Elige el último mensaje del hilo: usa «Abrir el hilo hasta este mensaje».
+Thread started: {title}	Hilo abierto: {title}
