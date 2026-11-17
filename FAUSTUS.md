@@ -37124,3 +37124,15 @@ con 123 pruebas del área y ocho de README. Pyflakes conserva cinco diagnóstico
 previos y añade cero. La revisión visual quedó bloqueada cuando Computer Use
 no pudo verificar con suficiente confianza la URL de Brave. Las capturas en
 claro y oscuro siguen pendientes. Evidencia en `Research/trazas3125/`.
+
+## Hilos, fijados y enlaces al Cerebro en el Ágora
+
+Studio abre un hilo desde cualquier mensaje o desde un tramo de mensajes seguidos (el título lo propone el modelo de las
+Sparks por el Hub, con la primera línea como respaldo, y se puede cambiar). Bajo el mensaje de origen se ve «N respuestas ·
+última hace X» y el hilo se abre al pulsarlo; en la cabecera del hilo se renombra, se sigue o se deja de seguir, se cierra
+y se archiva, y escribir en un hilo cerrado lo reabre. **Hilos** lista los que sigue el lector con lo no leído. Los mensajes
+se fijan en su canal y los fijados son un botón de la cabecera. `[[Página]]`, `[[Página#sección]]` y `[[Página|texto]]` en
+un mensaje abren la página del Cerebro y enseñan una vista previa al pasar el ratón, y la página del Cerebro muestra en
+«Citada en el Ágora» los mensajes y tareas que la nombran. Son las herramientas `hub_agora_thread_from|thread_title|
+thread_set|thread_follow|thread_list|message_pin|pins|brain_links|brain_backlinks`, que `agora_read` y `agora_write` de
+Faustus también alcanzan. Componentes en `studio/src/screens/agora-threads/`.

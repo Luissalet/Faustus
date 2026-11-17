@@ -192,3 +192,16 @@ def test_a_file_on_its_way_to_the_hub_is_given_time(client):
     assert calls[-1]["path"] == "/api/agora/file_add" and calls[-1]["timeout"] == 180.0
     http.post("/api/agora/x/react", json={"space_id": "atlas", "message_id": 3, "emoji": "👍"})
     assert calls[-1]["timeout"] == 40.0
+
+
+def test_threads_pins_and_brain_links_go_through_with_their_arguments(client):
+    http, calls = client
+    http.post("/api/agora/x/thread_from", json={"space_id": "atlas", "message_id": 7, "to_message_id": 9, "title": "Puerto"})
+    assert calls[-1]["method"] == "POST" and calls[-1]["path"] == "/api/agora/thread_from"
+    assert calls[-1]["body"]["message_id"] == 7 and calls[-1]["body"]["to_message_id"] == 9
+    http.post("/api/agora/x/message_pin", json={"space_id": "atlas", "message_id": 7, "pinned": True})
+    assert calls[-1]["path"] == "/api/agora/message_pin"
+    http.get("/api/agora/x/thread_list", params={"space_id": "atlas", "scope": "following", "state": "open"})
+    assert calls[-1]["path"] == "/api/agora/thread_list" and calls[-1]["query"]["scope"] == "following"
+    http.get("/api/agora/x/brain_backlinks", params={"page": "Hilos del Agora", "aliases": "Proyectos/Hilos del Agora"})
+    assert calls[-1]["path"] == "/api/agora/brain_backlinks" and calls[-1]["query"]["aliases"] == "Proyectos/Hilos del Agora"

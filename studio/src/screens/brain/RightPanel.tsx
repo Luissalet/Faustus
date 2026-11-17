@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { EntityPanel } from './EntityPanel';
 import { RatifyButton } from './ReviewPanel';
 import { t, tn } from '../../i18n';
+import { AgoraBacklinks } from '../agora-threads/AgoraBacklinks';
 
 /**
  * The right pane: what points at this note, what it points at, its tags,
@@ -62,6 +63,8 @@ export function RightPanel({ note, onOpenNote, onEntityChanged }: { note: ReadNo
           ))}
         </ul>
       </section>
+
+      <AgoraBacklinks title={note.title} path={note.path} />
 
       {note.tags.length > 0 && (
         <section className="fs-brain__right-section">

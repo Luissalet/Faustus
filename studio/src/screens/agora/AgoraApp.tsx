@@ -20,6 +20,7 @@ import { QuickJump } from './QuickJump';
 import { RoomsPane } from './RoomsPane';
 import { AddServerDialog, AgoraNotifyDialog, EditServerDialog, NewChannelDialog, NewTaskDialog, NewThreadDialog } from './ServerDialogs';
 import { ServerRail } from './ServerRail';
+import { FollowedThreads } from '../agora-threads/FollowedThreads';
 import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, LocksView, SearchView, ThreadsView, WelcomeView } from './Views';
 import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, ROLE_COLORS, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
 import './agora-app.css';
@@ -336,7 +337,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
               {view.id === 'inbox' && <InboxView servers={servers ?? []} version={ready.version} onOpen={open} />}
               {view.id === 'search' && <SearchView guild={ready} servers={servers ?? []} query={params.get('q') || ''} onQuery={(q) => setQuery(q)} onOpen={open}
                 within={params.get('in')} onWithin={(slug) => setQuery(params.get('q') || '', slug)} />}
-              {view.id === 'threads' && <ThreadsView guild={ready} onOpen={open} onNew={() => setDialog({ kind: 'new-thread' })} />}
+              {view.id === 'threads' && <><FollowedThreads space={spaceId} version={ready.version} onOpen={(id) => open({ kind: 'thread', id: String(id) })} /><ThreadsView guild={ready} onOpen={open} onNew={() => setDialog({ kind: 'new-thread' })} /></>}
               {!['live', 'board', 'deliveries', 'reviews', 'activity', 'decisions', 'locks', 'inbox', 'search', 'threads'].includes(view.id) && (
                 <WelcomeView guild={ready} onEdit={() => setDialog({ kind: 'edit-server' })} notify={notify} onRefresh={refresh} />
               )}

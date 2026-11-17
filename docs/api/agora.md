@@ -29,6 +29,8 @@ the path of a copy of the hub's token), which the hub leaves on a Spark while Fa
 open towards it. The Agora routes and coordination (`src/shared_coordination.py`: rooms and council) go through it;
 nothing else does. Folders of a server are then chosen on the hub's machine (`GET /api/agora/x/folders?path=`).
 
+**Threads, pins and Brain links.** `POST /api/agora/x/thread_from` (`message_id`, optional `to_message_id`, `title`, `body`), `thread_title` (a suggested title, nothing created), `thread_set` (`title`, `state`: open, closed or archived), `thread_follow` and `message_pin`; `GET /api/agora/x/thread_list` (`scope`, `state`, `channel`, `unread`), `pins`, `brain_links` and `brain_backlinks` (`page`, `aliases` separated by `|`). A channel read carries `thread`, `thread_span`, `pinned` and `brain` on its messages, and `pins` and `subthread` on the page.
+
 **Members, reactions, quotes, order.** All through `POST /api/agora/x/<op>`: `member_add`, `member_remove` (`to_agent`
 hands the work over), `members_prune` (`dry_run`), `react`, `channel_post` with `reply_to` and `files`, and
 `channels_reorder`; `GET /api/agora/x/members` lists everyone on a server. Starting a session uses the hub's console

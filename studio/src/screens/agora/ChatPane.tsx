@@ -1,5 +1,5 @@
 import {
-  ArrowDown, Bold, Check, Code, Copy, CornerUpLeft, GitCommitHorizontal, Italic, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Quote, Send, Smile,
+  ArrowDown, Bold, Check, Code, Copy, CornerUpLeft, GitCommitHorizontal, Italic, Link2, List, ListOrdered, ListStart, MessagesSquare, MoreHorizontal, Paperclip, Pin, PinOff, Quote, Send, Smile,
   SquareCode, Strikethrough, X, type LucideIcon,
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
@@ -9,7 +9,9 @@ import {
   type AgoraGuild, type AgoraMessage, type AgoraPage, type AgoraTask, type AgoraThreadInfo, type MessageFile, type Target,
 } from '../../adapters/agora';
 import { Button, IconButton, Menu, Skeleton, type MenuItem } from '../../components';
-import { Rich } from '../rich';
+import { pinMessage, type AgoraSubthread, type MessageThreadInfo, type PageThreadInfo, type PinnedMessage } from '../../adapters/agoraThreads';
+import { BrainText } from '../agora-threads/BrainText';
+import { PinsButton, ThreadBadge, ThreadHeader, ThreadSpanNote, ThreadStartDialog } from '../agora-threads/ThreadParts';
 import { t } from '../../i18n';
 import { usePlatform } from '../../shell/platform';
 import { AgentAvatar, AgentFace, roleLine } from './Identity';
@@ -57,10 +59,12 @@ function buildItems(messages: AgoraMessage[], seenUpto: number, viewer: string):
   return out;
 }
 
-const MessageRow = memo(function MessageRow({ message, head, tail, viewer, guild, onOpen, onReply, onReact, onJump }: {
+const MessageRow = memo(function MessageRow({ message: shown, head, tail, viewer, guild, onOpen, onReply, onReact, onJump, onThread, onPin, range, onRange }: {
   message: AgoraMessage; head: boolean; tail?: boolean; viewer: string; guild: AgoraGuild; onOpen: (view: View) => void; onReply: (message: AgoraMessage) => void;
   onReact: (id: number, emoji: string, on?: boolean) => void; onJump: (id: number) => void;
+  onThread: (from: number, to?: number) => void; onPin: (id: number, on: boolean) => void; range: number | null; onRange: (id: number | null) => void;
 }) {
+  const message = shown as AgoraMessage & MessageThreadInfo;
   const [whole, setWhole] = useState(false);
   const [copied, setCopied] = useState(false);
   // Where there is no pointer to hover with, a tap on the message brings its buttons.
@@ -82,7 +86,7 @@ const MessageRow = memo(function MessageRow({ message, head, tail, viewer, guild
   const commits = [...new Set([...message.body.matchAll(/(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g)].map((m) => m[0]).filter((h) => /[a-f]/.test(h) && /\d/.test(h)))].slice(0, 6);
   const copy = () => { void navigator.clipboard?.writeText(message.body).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }).catch(() => undefined); };
   return (
-    <article className="fs-agx-msg" id={'agx-m-' + message.id} data-head={head || undefined} data-tail={tail || undefined} data-mine={mine || undefined} data-tome={toMe || undefined}
+    <article className="fs-agx-msg" id={'agx-m-' + message.id} data-head={head || undefined} data-tail={tail || undefined} data-mine={mine || undefined} data-tome={toMe || undefined} data-pinned={message.pinned || undefined}
       data-kind={message.kind} data-tools={tools || undefined} style={{ '--agx-c': agentColor(message.author) } as CSSProperties} data-testid="agora-message"
       onClick={(e) => { if (byTouch() && !(e.target as HTMLElement).closest('a,button,input,textarea')) setTools((v) => !v); }}>
       {head
@@ -99,7 +103,7 @@ const MessageRow = memo(function MessageRow({ message, head, tail, viewer, guild
           </header>
         )}
         {message.reply && <Quoted quote={message.reply} onJump={onJump} />}
-        {!namesOnly && <div className="fs-agx-msg__body"><Rich text={body} /></div>}
+        {!namesOnly && <div className="fs-agx-msg__body"><BrainText text={body} /></div>}
         {long && <button type="button" className="fs-agx-link" onClick={() => setWhole(true)}>{t('Show the whole message ({n} characters)', { n: message.body.length })}</button>}
         {message.body_truncated && <p className="fs-muted">{t('This message is longer than what the page loads.')}</p>}
         <RouteLine route={message.route} />
@@ -124,10 +128,17 @@ const MessageRow = memo(function MessageRow({ message, head, tail, viewer, guild
         )}
         <Files files={message.files} />
         <Reactions reactions={message.reactions} onToggle={(emoji, on) => onReact(message.id, emoji, on)} />
+        {message.thread && <ThreadBadge thread={message.thread} onOpen={(id) => onOpen({ kind: 'thread', id: String(id) })} />}
+        {!message.thread && message.thread_span && <ThreadSpanNote threadId={message.thread_span} onOpen={(id) => onOpen({ kind: 'thread', id: String(id) })} />}
       </div>
       <div className="fs-agx-msg__tools">
         <ReactButton onPick={(emoji) => onReact(message.id, emoji, true)} />
         <IconButton size="sm" icon={CornerUpLeft} label={t('Answer quoting {name}', { name: message.author })} onClick={() => onReply(message)} testId="agora-quote-button" />
+        {!message.thread && !message.thread_span && (range !== null && range !== message.id
+          ? <IconButton size="sm" icon={MessagesSquare} label={t('Start the thread up to this message')} onClick={() => { onThread(range, message.id); onRange(null); }} testId="agora-thread-range-end" />
+          : <IconButton size="sm" icon={MessagesSquare} label={t('Start a thread')} onClick={() => onThread(message.id)} testId="agora-thread-button" />)}
+        {!message.thread && !message.thread_span && <IconButton size="sm" icon={ListStart} label={range === message.id ? t('Cancel the selection') : t('Select messages from here')} onClick={() => onRange(range === message.id ? null : message.id)} testId="agora-thread-range" />}
+        <IconButton size="sm" icon={message.pinned ? PinOff : Pin} label={message.pinned ? t('Unpin') : t('Pin this message')} onClick={() => onPin(message.id, !message.pinned)} testId="agora-pin-button" />
         <IconButton size="sm" icon={copied ? Check : Copy} label={t('Copy the text')} onClick={copy} />
       </div>
     </article>
@@ -215,6 +226,10 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   const [messages, setMessages] = useState<AgoraMessage[]>([]);
   const [info, setInfo] = useState<{ thread: AgoraThreadInfo | null; task: AgoraTask | null }>({ thread: null, task: null });
   const [seenUpto, setSeenUpto] = useState(0);
+  // What the hub adds to a conversation besides its messages: the pinned ones and, in a thread, what it is.
+  const [extras, setExtras] = useState<{ pins: PinnedMessage[]; subthread: AgoraSubthread | null }>({ pins: [], subthread: null });
+  const [starting, setStarting] = useState<{ from: number; to?: number } | null>(null);
+  const [range, setRange] = useState<number | null>(null);
   const [more, setMore] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [older, setOlder] = useState(false);
@@ -245,6 +260,8 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
 
   const apply = useCallback((page: AgoraPage, mode: 'reset' | 'merge') => {
     setInfo({ thread: page.thread, task: page.task ?? null });
+    const added = page as AgoraPage & PageThreadInfo;
+    if (added.pins) setExtras({ pins: added.pins, subthread: added.subthread ?? null });
     if (mode === 'reset') {
       setMessages(page.messages); setSeenUpto(page.seen_upto || 0);
       setMore(page.pagination.has_more ? page.pagination.next_before_id : null);
@@ -258,9 +275,10 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
         let touched = false;
         const kept = old.map((m) => {
           const now = again.get(m.id);
-          if (!now || JSON.stringify(now.reactions ?? []) === JSON.stringify(m.reactions ?? [])) return m;
+          const [a, b] = [now as AgoraMessage & MessageThreadInfo | undefined, m as AgoraMessage & MessageThreadInfo];
+          if (!a || JSON.stringify([a.reactions ?? [], a.thread ?? null, a.pinned ?? false]) === JSON.stringify([b.reactions ?? [], b.thread ?? null, b.pinned ?? false])) return m;
           touched = true;
-          return { ...m, reactions: now.reactions };
+          return { ...m, reactions: a.reactions, thread: a.thread, pinned: a.pinned, thread_span: a.thread_span } as AgoraMessage;
         });
         if (!fresh.length) return touched ? kept : old;
         return [...kept, ...fresh].sort((a, b) => a.id - b.id);
@@ -277,7 +295,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(''); setMessages([]); setInfo({ thread: null, task: null }); setMore(null); setPrompt(null); setKind('comment');
-    setQuote(null); setCarried([]); setUploading(0); setDragging(false);
+    setQuote(null); setCarried([]); setUploading(0); setDragging(false); setExtras({ pins: [], subthread: null }); setRange(null);
     draftOf.current = scope;
     try { setDraft(window.sessionStorage.getItem('agora:draft:' + scope) || ''); } catch { setDraft(''); }
     pinned.current = true;
@@ -502,6 +520,12 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
     row.setAttribute('data-flash', '');
     window.setTimeout(() => row.removeAttribute('data-flash'), 1600);
   }, [notify]);
+  const pinOn = useCallback((id: number, on: boolean) => {
+    pinMessage(space, id, on)
+      .then((out) => { setExtras((old) => ({ ...old, pins: out.pins })); setMessages((old) => old.map((m) => (m.id === id ? ({ ...m, pinned: on } as AgoraMessage) : m))); })
+      .catch((e: Error) => notify(e.message, 'warn'));
+  }, [notify, space]);
+  const startThread = useCallback((from: number, to?: number) => setStarting({ from: Math.min(from, to ?? from), to: to === undefined ? undefined : Math.max(from, to) }), []);
   const debate = info.thread && !info.task && ['debate', 'question', 'decision', 'review'].includes(info.thread.kind);
   const runPrompt = async () => {
     if (!prompt || (!prompt.optional && !promptText.trim())) return;
@@ -517,7 +541,18 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
       onDrop={(e) => { if (e.dataTransfer?.files?.length) { e.preventDefault(); setDragging(false); attach([...e.dataTransfer.files]); } }}>
       {info.task && <TaskBar task={info.task} guild={guild} ask={(p) => { setPrompt(p); setPromptText(''); }} act={act} />}
-      {!info.task && info.thread && view.kind === 'thread' && <ThreadBar thread={info.thread} guild={guild} ask={(p) => { setPrompt(p); setPromptText(''); }} />}
+      {!info.task && info.thread && view.kind === 'thread' && !extras.subthread && <ThreadBar thread={info.thread} guild={guild} ask={(p) => { setPrompt(p); setPromptText(''); }} />}
+      {extras.subthread && view.kind === 'thread' && (
+        <ThreadHeader space={space} thread={extras.subthread} notify={notify} onChanged={(next) => setExtras((old) => ({ ...old, subthread: next }))}
+          onOrigin={() => onOpen({ kind: 'channel', id: extras.subthread!.channel || 'general' })} />
+      )}
+      {(extras.pins.length > 0 || range !== null) && (
+        <div className="fs-agt-bar" data-testid="agora-pins-bar">
+          {range !== null && <span className="fs-agt-bar__note">{t('Choose the last message of the thread: use «Start the thread up to this message».')} <button type="button" className="fs-agx-link" onClick={() => setRange(null)}>{t('Cancel')}</button></span>}
+          <span className="fs-spacer" />
+          <PinsButton pins={extras.pins} onJump={jumpTo} onUnpin={(id) => pinOn(id, false)} />
+        </div>
+      )}
       <div className="fs-agx-chat__scroll" ref={scroller} onScroll={onScroll} role="log" aria-live={loading ? 'off' : 'polite'} aria-busy={loading || undefined} aria-label={t('Messages')}>
         {loading && <Skeleton label={t('Loading the conversation')} count={6} height="44px" />}
         {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
@@ -534,8 +569,11 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
           ? <div key={item.key} className="fs-agx-day"><span>{item.label}</span></div>
           : item.type === 'new'
             ? <div key={item.key} className="fs-agx-new"><span>{t('New')}</span></div>
-            : <MessageRow key={item.key} message={item.message} head={item.head} tail={item.tail} viewer={viewer} guild={guild} onOpen={onOpen} onReply={reply} onReact={reactOn} onJump={jumpTo} />)}
+            : <MessageRow key={item.key} message={item.message} head={item.head} tail={item.tail} viewer={viewer} guild={guild} onOpen={onOpen} onReply={reply} onReact={reactOn} onJump={jumpTo}
+              onThread={startThread} onPin={pinOn} range={range} onRange={setRange} />)}
       </div>
+      <ThreadStartDialog space={space} messageId={starting?.from ?? null} toMessageId={starting?.to} notify={notify} onClose={() => setStarting(null)}
+        onStarted={(thread) => { notify(t('Thread started: {title}', { title: thread.title })); void reload(); onOpen({ kind: 'thread', id: String(thread.thread_id) }); }} />
       {below && <button type="button" className="fs-agx-chat__jump" onClick={toBottom}><ArrowDown size={14} aria-hidden="true" /> {t('Latest messages')}</button>}
       {prompt ? (
         <form className="fs-agx-prompt" onSubmit={(event) => { event.preventDefault(); void runPrompt(); }} data-testid="agora-prompt">
