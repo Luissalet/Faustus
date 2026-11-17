@@ -59,12 +59,15 @@ def main():
     parser.add_argument("--class", dest="class_name")
     parser.add_argument("--min-height", type=int, default=1)
     parser.add_argument("--expect-ime", choices=("hidden", "visible"))
+    parser.add_argument("--above-ime", action="store_true", help="limit the rect to the observed space above the visible IME")
     parser.add_argument("--require-focus", action="store_true", help="require the exact labeled node to have input focus")
     parser.add_argument("--wait-tree-ms", type=int, default=0,
                         help="retry fresh tree reads while the expected app and IME still match")
     args = parser.parse_args()
     if args.require_label and (not args.list or any(not label.strip() for label in args.require_label)):
         parser.error("--require-label needs --list and a nonempty label")
+    if args.above_ime and args.expect_ime != "visible":
+        parser.error("--above-ime needs --expect-ime visible")
     if args.require_focus and not args.label:
         parser.error("--require-focus needs an exact --label")
     if not 0 <= args.wait_tree_ms <= 15000:
@@ -102,6 +105,13 @@ def main():
             if not before["matched"] or not before.get("imeMatched", True):
                 print(json.dumps({**result, "foreground": before}))
                 return 1
+            rect = args.rect
+            if args.above_ime:
+                keyboard = before.get("imeBounds")
+                if keyboard is None or keyboard[1] <= top:
+                    print(json.dumps({**result, "foreground": before, "reason": "no-observed-space-above-ime"}))
+                    return 1
+                rect = [left, top, right, min(bottom, keyboard[1])]
             remote = "/data/local/tmp/faustus-ui-" + uuid.uuid4().hex + ".xml"
             try:
                 try:
@@ -110,7 +120,7 @@ def main():
                 finally:
                     observe("shell", "rm", "-f", remote)
                 nodes = find_nodes(
-                    xml, args.package, args.label, args.rect, args.class_name, args.min_height,
+                    xml, args.package, args.label, rect, args.class_name, args.min_height,
                     require_focus=args.require_focus,
                 )
             except (subprocess.CalledProcessError, ET.ParseError):
@@ -120,6 +130,11 @@ def main():
             after = foreground()
             if not after["matched"] or not after.get("imeMatched", True):
                 print(json.dumps({**result, "foreground": after}))
+                return 1
+            if args.above_ime and after.get("imeBounds") != before.get("imeBounds"):
+                if wait_for_next_tree():
+                    continue
+                print(json.dumps({**result, "foreground": after, "reason": "ime-moved-during-observation"}))
                 return 1
             if args.require_label:
                 observed = {}

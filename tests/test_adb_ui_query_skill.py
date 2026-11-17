@@ -168,3 +168,25 @@ def test_visible_unfocused_field_is_not_ready_for_typing(monkeypatch, tmp_path, 
         selection=("--label", "Mote", "--class", FIELD, "--require-focus"),
     )
     assert status == 1 and not result["matched"] and result["matchCount"] == 0
+
+
+def test_readback_uses_the_observed_keyboard_edge(monkeypatch, tmp_path, capsys):
+    tree = "<hierarchy>" + element(bounds="[20,978][510,1052]") + element(bounds="[20,1010][510,1090]") + "</hierarchy>"
+    foreground = {"matched": True, "imeMatched": True, "imeBounds": [0, 1069, 720, 1600]}
+    status, result, commands = run_cli(
+        monkeypatch, tmp_path, capsys, iter([tree]), iter([foreground] * 2), wait=0,
+        selection=("--label", "Mote", "--require-focus", "--above-ime", "--expect-ime", "visible"),
+    )
+    assert status == 0 and result["node"]["bounds"] == [20, 978, 510, 1052]
+    assert all("input" not in command for command in commands)
+
+
+def test_readback_rejects_bounds_when_the_keyboard_moves(monkeypatch, tmp_path, capsys):
+    tree = "<hierarchy>" + element(bounds="[20,978][510,1052]") + "</hierarchy>"
+    bounds = [{"matched": True, "imeMatched": True, "imeBounds": [0, top, 720, 1600]} for top in (1069, 1050)]
+    status, result, _ = run_cli(
+        monkeypatch, tmp_path, capsys, iter([tree]), iter(bounds), wait=0,
+        selection=("--label", "Mote", "--require-focus", "--above-ime", "--expect-ime", "visible"),
+    )
+    assert status == 1 and result["reason"] == "ime-moved-during-observation"
+    assert "node" not in result

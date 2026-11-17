@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.21
+version: 1.0.22
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -34,7 +34,7 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 
    To resolve a duplicate label or read back a field, run `python <skill-directory>/scripts/adb_ui_query.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package> --label "<observed label>" --class android.widget.EditText --rect <left> <top> <right> <bottom> --min-height <observed field height> --expect-ime hidden`. The rectangle excludes the visible app header, footer and overlays. The helper reads a fresh tree and returns the actual text and center only for a unique matching node. It sends no input. After a confirmed navigation, add `--wait-tree-ms 6000` if the field has yet to settle. The helper retries a missing, incomplete or ambiguous fresh tree only while the expected app and IME still match. A transport timeout or package change ends the observation. When a match is clipped, scroll the field clear and query again. Compare the actual text after typing or closing the IME before committing a form.
 
-   When a dialog opens with an unconfirmed keyboard state, query its exact editable field without an IME expectation. Tap the observed center, wait for the expected IME state and use the same field query with --require-focus before typing. Read node.text from the returned JSON after typing. A visible dialog or keyboard alone does not confirm the target field has input focus.
+   When a dialog opens with an unconfirmed keyboard state, query its exact editable field without an IME expectation. Tap the observed center, wait for the expected IME state and use the same field query with --require-focus before typing. With a visible IME, use --above-ime with --expect-ime visible and the observed application rectangle. The helper clips the lower edge using the keyboard bounds and confirms that it stayed there during the hierarchy read. Read node.text from the returned JSON after typing. A visible dialog or keyboard alone does not confirm the target field has input focus.
 
    A control can have plausible screen coordinates while hidden under a fixed app header or bottom navigation. Use the observed unobscured content area, not just the physical screen bounds. Scroll the whole target into that area and get fresh references before tapping. Distinguish the app header from system bars, cutouts and the actual IME. Dismiss a covering IME through observed permitted controls, then refresh. A header control persistently behind a system bar or cutout is an app defect: record it rather than replay taps or scroll the body; use observed exterior close or Back if permitted. After a picker tap, confirm that its filter or options actually appeared before typing. Read translated labels from the current tree rather than guessing their wording.
 

@@ -28,6 +28,19 @@ def ime_visibility(window_dump):
     return next(iter(states)) == "true" if len(states) == 1 else None
 
 
+def visible_ime_bounds(window_dump):
+    pattern = re.compile(
+        r"\s*InsetsSource\s+.*\btype=ime\b.*?\bframe=\[(\d+),(\d+)\]\[(\d+),(\d+)\].*\bvisible=true\b"
+    )
+    frames = {tuple(map(int, match.groups())) for line in window_dump.splitlines()
+              if (match := pattern.match(line))}
+    if len(frames) == 1:
+        left, top, right, bottom = next(iter(frames))
+        if left < right and top < bottom:
+            return [left, top, right, bottom]
+    return None
+
+
 def check_foreground(activity_dump, window_dump, expected, expect_ime=None):
     activity = package_for(activity_dump, "topResumedActivity=")
     if activity is None and "topResumedActivity=" not in activity_dump:
@@ -42,6 +55,8 @@ def check_foreground(activity_dump, window_dump, expected, expect_ime=None):
     if expect_ime is not None:
         visible = ime_visibility(window_dump)
         result.update(imeVisible=visible, imeMatched=visible is (expect_ime == "visible"))
+        if visible and (bounds := visible_ime_bounds(window_dump)) is not None:
+            result["imeBounds"] = bounds
     return result
 
 

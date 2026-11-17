@@ -55,6 +55,16 @@ def test_ime_expectation_fails_when_window_insets_are_missing_or_conflict():
         assert result["matched"] and not result["imeMatched"] and result["imeVisible"] is None
 
 
+def test_visible_ime_bounds_are_observed_only_when_unique():
+    activity = "topResumedActivity=ActivityRecord{10 u0 com.example.dex/.Main t4}"
+    focus = "mCurrentFocus=Window{10 u0 com.example.dex/.Main}"
+    ime = "InsetsSource id=3 type=ime frame=[0,1069][720,1600] visible=true"
+    output = CHECK(activity, focus + "\n" + ime, "com.example.dex", "visible")
+    assert output["imeBounds"] == [0, 1069, 720, 1600]
+    two_positions = focus + "\n" + ime + "\n" + ime.replace("1069", "1010")
+    assert "imeBounds" not in CHECK(activity, two_positions, "com.example.dex", "visible")
+
+
 QUERY = CHECK.__globals__["query_foreground"]
 DEX = "com.example.dex"
 ACTIVITY = "topResumedActivity=ActivityRecord{10 u0 com.example.dex/.Main t4}"
