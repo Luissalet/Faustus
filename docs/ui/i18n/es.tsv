@@ -11822,6 +11822,8 @@ Create worktree	Crear worktree
 Faustus answers with the thread model. Another agent receives what you send from the composer, with the thread context, and answers here.	Faustus responde con el modelo del hilo. Otro agente recibe lo que envías desde el compositor, con el contexto del hilo, y responde aquí.
 Hand off	Pasar
 Hand off to…	Pasar a…
+Faustus works it as a subagent with the thread model, or with the model you type.	Faustus lo trabaja como subagente con el modelo del hilo, o con el modelo que escribas.
+on the PC	en el PC
 No uncommitted changes	Sin cambios por confirmar
 Open PR	Abrir PR
 Pull request opened	Pull request abierta

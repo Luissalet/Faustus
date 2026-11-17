@@ -3471,6 +3471,8 @@ export const es: Record<string, string> = {
   "Hand it over": "Traspasar",
   "Hand off": "Pasar",
   "Hand off to…": "Pasar a…",
+  "Faustus works it as a subagent with the thread model, or with the model you type.": "Faustus lo trabaja como subagente con el modelo del hilo, o con el modelo que escribas.",
+  "on the PC": "en el PC",
   "Hand the task over": "Traspasar la tarea",
   "Handed to an agent. It runs in the background.": "Entregado a un agente. Se ejecuta en segundo plano.",
   "Handoff": "Traspaso",

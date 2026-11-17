@@ -23,7 +23,9 @@ SID = {"session_id": {"type": "string", "description": "Studio conversation (ses
 SPECS = {
     "thread_agents_list": ("GET", "/agents", {}, [], True,
         "List the agents a thread can use: 'faustus' (the thread's own model) and every CLI runner "
-        "Faustus can run one task with (Claude Code, Codex, OpenCode…), with whether it is installed."),
+        "Faustus can run one task with (Claude Code, Codex, OpenCode…), with whether it is installed and where "
+        "it lives: 'local' (this machine), 'pc' (the person's PC, reached through the Hub when Faustus runs on "
+        "a Spark) or none."),
     "thread_agent_get": ("GET", "/{session_id}/agent", SID, ["session_id"], True,
         "Read who answers this thread now (agent, model), its workspace, its worktree and recent runs."),
     "thread_agent_set": ("PUT", "/{session_id}/agent", {**SID, "agent": S, "model": S, "workspace": S},
@@ -34,10 +36,12 @@ SPECS = {
     "thread_send": ("POST", "/{session_id}/turn", {**SID, "text": S}, ["session_id", "text"], False,
         "Send a message to the thread's current runner agent. Returns a job; the answer is appended to the "
         "thread when it ends (poll thread_job)."),
-    "thread_handoff": ("POST", "/{session_id}/handoff", {**SID, "agent": S, "task": S, "model": S},
-        ["session_id", "agent", "task"], False,
+    "thread_handoff": ("POST", "/{session_id}/handoff",
+        {**SID, "agent": S, "task": S, "model": S, "endpoint_id": S}, ["session_id", "agent", "task"], False,
         "Pass one concrete task to another agent with a summary of the thread. The result is appended to the "
-        "same thread; the thread's own agent does not change. Returns a job."),
+        "same thread; the thread's own agent does not change. Returns a job. agent 'faustus' runs a Faustus "
+        "subagent on the thread's model, or on model / endpoint_id when given; a runner on the PC is run there "
+        "through the Hub."),
     "thread_job": ("GET", "/{session_id}/jobs/{job_id}", {**SID, "job_id": S}, ["session_id", "job_id"], True,
         "Read a thread run: status running|done|failed|cancelled, agent, seconds and error."),
     "thread_job_cancel": ("POST", "/{session_id}/jobs/{job_id}/cancel", {**SID, "job_id": S},

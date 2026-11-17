@@ -12,10 +12,14 @@ import './thread-agent.css';
  * its diff, commit, push and pull request.
  */
 
-export interface ThreadAgentOption { key: string; label: string; installed: boolean; runner: boolean }
+export interface ThreadAgentOption {
+  key: string; label: string; installed: boolean; runner: boolean;
+  /** Where it runs: Faustus itself, this machine, or the person's PC (through the Hub). */
+  where?: 'faustus' | 'local' | 'pc' | null; where_label?: string;
+}
 export interface ThreadJob {
   id: string; kind: 'turn' | 'handoff'; agent: string; agent_label: string; model?: string | null;
-  task: string; status: 'running' | 'done' | 'failed' | 'cancelled'; ok?: boolean | null;
+  task: string; status: 'running' | 'done' | 'failed' | 'cancelled'; ok?: boolean | null; where?: 'faustus' | 'local' | 'pc';
   error?: string | null; seconds?: number | null; started: number;
 }
 export interface ThreadWorktree { repo: string; path: string; branch: string; base_sha: string; base_branch: string }
@@ -29,6 +33,12 @@ interface WorktreeStatus extends ThreadWorktree {
 }
 
 const base = (sid: string) => `/api/threads/${encodeURIComponent(sid)}`;
+
+/** `Claude Code (en el PC (host))`, `Codex (no instalado)`; Faustus itself carries no place. */
+const agentOption = (a: ThreadAgentOption) => {
+  const place = a.runner ? (a.where_label || (a.installed ? '' : t('not installed'))) : '';
+  return place ? `${a.label} (${place})` : a.label;
+};
 
 async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -106,10 +116,11 @@ export function ThreadAgentPanel({ sessionId, state, workspace, refresh, onChang
     setModel(state.model ?? '');
   }, [state?.agent, state?.model]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const runners = (state?.agents ?? []).filter((a) => a.runner);
+  // «Pasar a…» takes every agent, Faustus itself included.
+  const targets = state?.agents ?? [];
   useEffect(() => {
-    if (!target && runners.length) setTarget((runners.find((a) => a.installed) ?? runners[0]).key);
-  }, [runners.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!target && targets.length) setTarget((targets.find((a) => a.runner && a.installed) ?? targets[0]).key);
+  }, [targets.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = useCallback(async (name: string, fn: () => Promise<unknown>, done?: string) => {
     setBusy(name);
@@ -134,7 +145,7 @@ export function ThreadAgentPanel({ sessionId, state, workspace, refresh, onChang
         <div className="fs-thread-agent__row">
           <select aria-label={t('Agent')} value={agent} onChange={(e) => setAgent(e.target.value)} data-testid="thread-agent-select">
             {(state?.agents ?? [{ key: 'faustus', label: 'Faustus', installed: true, runner: false }]).map((a) => (
-              <option key={a.key} value={a.key}>{a.label}{a.installed ? '' : ` (${t('not installed')})`}</option>
+              <option key={a.key} value={a.key}>{agentOption(a)}</option>
             ))}
           </select>
           {agent !== 'faustus' && <input aria-label={t('Model (optional)')} placeholder={t('Model (optional)')} value={model} onChange={(e) => setModel(e.target.value)} />}
@@ -150,10 +161,11 @@ export function ThreadAgentPanel({ sessionId, state, workspace, refresh, onChang
         <h3 id="ta-handoff">{t('Hand off to…')}</h3>
         <div className="fs-thread-agent__row">
           <select aria-label={t('Agent')} value={target} onChange={(e) => setTarget(e.target.value)} data-testid="thread-handoff-agent">
-            {runners.map((a) => <option key={a.key} value={a.key}>{a.label}{a.installed ? '' : ` (${t('not installed')})`}</option>)}
+            {targets.map((a) => <option key={a.key} value={a.key}>{agentOption(a)}</option>)}
           </select>
           <input aria-label={t('Model (optional)')} placeholder={t('Model (optional)')} value={handoffModel} onChange={(e) => setHandoffModel(e.target.value)} />
         </div>
+        {target === 'faustus' && <p className="fs-thread-agent__hint" data-testid="thread-handoff-faustus-hint">{t('Faustus works it as a subagent with the thread model, or with the model you type.')}</p>}
         <textarea aria-label={t('Task')} placeholder={t('What should it do? It receives a summary of this thread.')} rows={3}
           value={task} onChange={(e) => setTask(e.target.value)} data-testid="thread-handoff-task" />
         <Button size="sm" disabled={Boolean(busy) || !task.trim() || !target} testId="thread-handoff-send"
@@ -171,7 +183,7 @@ export function ThreadAgentPanel({ sessionId, state, workspace, refresh, onChang
           <ul className="fs-thread-agent__jobs" data-testid="thread-agent-jobs">
             {[...(state?.jobs ?? [])].reverse().slice(0, 8).map((job) => (
               <li key={job.id} data-status={job.status}>
-                <span className="fs-thread-agent__job-agent">{job.agent_label}</span>
+                <span className="fs-thread-agent__job-agent">{job.agent_label}{job.where === 'pc' ? ` · ${t('on the PC')}` : ''}</span>
                 <span>{job.kind === 'handoff' ? t('hand-off') : t('turn')}</span>
                 <span className="fs-thread-agent__job-status">{t(job.status)}{job.seconds ? ` · ${Math.round(job.seconds)} s` : ''}</span>
                 {job.status === 'running' && <Button size="sm" variant="ghost"

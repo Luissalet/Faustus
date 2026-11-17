@@ -12,11 +12,16 @@ model. This module keeps, per thread:
   and only what other agents said meanwhile is summarised for it;
 * **hand-offs** — :func:`start_handoff` passes one concrete task to another
   agent with a summary of the thread, and the result comes back into the same
-  thread without changing who answers next;
+  thread without changing who answers next. The agent can be Faustus itself: a
+  subagent that works with the thread's model (or another model or route), is
+  listed as a job and is cancelled like a CLI run;
 * **an optional git worktree** — one branch per thread, created from a repo
   the user names. Runner turns work inside it; :func:`worktree_status` gives
   the thread's diff against the commit it started from, and commit, push and
   pull request act on it.
+
+A CLI runner lives on this machine or, when Faustus runs on a Spark linked to the
+person's PC, on that PC (:mod:`src.pc_executors`); the agent list says which.
 
 State lives in ``DATA_DIR/thread_agents.json``; runs execute through
 :func:`src.external_worker.run_task`, the same runner path dispatch uses.
@@ -106,15 +111,44 @@ def _update(sid: str, fn: Callable[[Dict[str, Any]], Any]) -> Any:
 
 def agents(*, which: Any = None) -> List[Dict[str, Any]]:
     """Faustus plus every CLI runner Faustus knows how to run one task with.
-    ``installed`` says whether this machine has the binary."""
+    ``installed`` says whether the agent can run (here or on the PC) and
+    ``where`` / ``where_label`` say where: ``faustus`` (this process), ``local``
+    (this machine), ``pc`` (the person's PC, through the Hub) or ``None``."""
     from src import agent_runners as reg
-    rows = [{"key": FAUSTUS, "label": FAUSTUS_LABEL, "installed": True, "runner": False}]
+    from src import pc_executors
+    rows = [{"key": FAUSTUS, "label": FAUSTUS_LABEL, "installed": True, "runner": False,
+             "where": "faustus", "where_label": "Faustus"}]
+    pc = pc_executors.installed() if pc_executors.available() else None
     for row in reg.catalogue(which=which):
         if row.get("kind") != "cli" or not row.get("invocation_known"):
             continue
-        rows.append({"key": row["key"], "label": row["label"], "installed": bool(row.get("installed")),
-                     "runner": True})
+        here = bool(row.get("installed"))
+        on_pc = (not here) and pc is not None and str((row.get("argv") or [""])[0]) in pc["programs"]
+        if here:
+            where, label = "local", "en este equipo"
+        elif on_pc:
+            where, label = "pc", "en el PC" + (f" ({pc['host']})" if pc["host"] else "")
+        else:
+            where = None
+            label = "no instalado" + ("" if pc is None else " ni aquí ni en el PC" if pc["reachable"]
+                                      else "; el PC no responde")
+        rows.append({"key": row["key"], "label": row["label"], "installed": here or on_pc, "runner": True,
+                     "where": where, "where_label": label})
     return rows
+
+
+def _location(agent: str) -> str:
+    """``faustus``, ``local`` or ``pc``: where a run of this agent happens. A runner that is not on this machine but
+    is on the PC (and Faustus has a link to it) runs there; anything else keeps the local path and its own error."""
+    if agent == FAUSTUS:
+        return "faustus"
+    from src import agent_runners as reg
+    from src import pc_executors
+    runner = reg.get(agent)
+    if (runner is not None and pc_executors.available() and not reg.to_row(runner)["installed"]
+            and pc_executors.has(runner)):
+        return "pc"
+    return "local"
 
 
 def _label(agent: str) -> str:
@@ -155,7 +189,7 @@ def set_agent(sid: str, agent: Any, *, model: Optional[str] = None,
     key = _resolve_agent(agent)
     if workspace is not None:
         workspace = str(workspace).strip() or None
-        if workspace and not os.path.isdir(workspace):
+        if workspace and _location(key) != "pc" and not os.path.isdir(workspace):
             raise ValueError(f"workspace is not a folder: {workspace}")
 
     def apply(row):
@@ -267,26 +301,109 @@ def _runner_call(*args, **kwargs):
     return external_worker.run_task(*args, **kwargs)
 
 
+FAUSTUS_PREAMBLE = (
+    "Eres un subagente de Faustus. Un hilo de conversación te pasa una tarea concreta con un resumen de lo hablado. "
+    "Trabaja con las herramientas que tengas y responde con el resultado: qué hiciste, qué encontraste y qué queda.")
+
+
+def _faustus_call(job: Dict[str, Any], prompt: str, owner: Optional[str]) -> Dict[str, Any]:
+    """Run Faustus itself as the agent: a worker (the ``delegate_agents`` one) on the thread's model route, or on the
+    model / endpoint the hand-off named. Cancelling the job cancels the worker."""
+    import asyncio
+    from src.agent_tools.subagent_tools import SubagentRun, _run_subagent
+    from src.swarm import runner as swarm
+    started = time.time()
+    try:
+        url, model, headers, _ = swarm.resolve_route(
+            {"session_id": job["session_id"], "model": job.get("model") or "",
+             "endpoint_id": job.get("endpoint_id") or ""}, owner or "")
+    except swarm.ItemError as exc:
+        return {"ok": False, "error": str(exc)}
+    run = SubagentRun(0, {"name": f"hilo {job['session_id'][:6]}", "instruction": prompt,
+                          "system_prompt": FAUSTUS_PREAMBLE}, role="worker")
+    run.lane_disabled_tools = set(swarm.RECURSION_TOOLS)
+    workspace = job["workspace"]
+
+    async def _emit(_payload: Dict[str, Any]) -> None:
+        return None
+
+    async def _go() -> bool:
+        task = asyncio.ensure_future(_run_subagent(
+            run, endpoint_url=url, model=model, headers=headers, owner=owner or "", workspace=workspace,
+            workspace_roots=[workspace], max_rounds=swarm.DEFAULT_AGENT_ROUNDS, shared_context="",
+            parent_session_id=job["session_id"], emit=_emit, timeout_s=None, save_transcript=False))
+        while not task.done():
+            if job.get("cancel"):
+                task.cancel()
+            await asyncio.wait({task}, timeout=0.3)
+        try:
+            await task
+        except asyncio.CancelledError:
+            return True
+        return False
+
+    try:
+        cancelled = asyncio.run(_go())
+    except Exception as exc:  # noqa: BLE001 - a worker failure is the job's answer, not a crash
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "seconds": round(time.time() - started, 2)}
+    text = (run.text or "").strip()
+    seconds = round(time.time() - started, 2)
+    if cancelled:
+        return {"ok": False, "cancelled": True, "error": "cancelado", "response_text": text, "seconds": seconds,
+                "model": model}
+    if run.error:
+        return {"ok": False, "error": str(run.error), "response_text": text, "seconds": seconds, "model": model}
+    if not text:
+        return {"ok": False, "error": f"el subagente terminó sin respuesta ({run.report().get('stop_reason')})",
+                "seconds": seconds, "model": model}
+    try:
+        from src.ai_interaction import get_session_manager
+        sm = get_session_manager()
+        if sm and getattr(run, "session_id", None):
+            sm.delete_session(run.session_id)
+    except Exception:  # noqa: BLE001 - a leftover worker chat is not worth failing the job
+        pass
+    return {"ok": True, "response_text": text, "seconds": seconds, "model": model}
+
+
+def _execute(job: Dict[str, Any], prompt: str, resume: Optional[str], owner: Optional[str]) -> Dict[str, Any]:
+    agent, where = job["agent"], job.get("where") or "local"
+    if where == "faustus":
+        return _faustus_call(job, prompt, owner)
+    if where == "pc":
+        from src import pc_executors
+        return pc_executors.run_task(agent, prompt, workspace=job["workspace"], model=job["model"],
+                                     should_cancel=lambda: bool(job.get("cancel")))
+    return _runner_call(agent, prompt, workspace=job["workspace"], model=job["model"],
+                        resume=resume, owner=owner, workspace_roots=[job["workspace"]],
+                        run_id=f"thread-{job['id']}", should_cancel=lambda: bool(job.get("cancel")))
+
+
 def _start(sid: str, *, kind: str, agent: str, text: str, model: Optional[str],
-           owner: Optional[str]) -> Dict[str, Any]:
-    if agent == FAUSTUS:
+           owner: Optional[str], endpoint_id: Optional[str] = None) -> Dict[str, Any]:
+    if agent == FAUSTUS and kind != "handoff":
         raise ValueError("Faustus answers through the normal chat; choose a runner to run here")
     with _LOCK:
         row = _thread(_load(), sid)
     history = _history(sid)
     label = _label(agent)
-    saved = (row.get("sessions") or {}).get(agent) if kind == "turn" else None
+    where = _location(agent)
+    saved = (row.get("sessions") or {}).get(agent) if kind == "turn" and where == "local" else None
     resume = saved.get("id") if isinstance(saved, dict) and saved.get("id") else None
     if kind == "turn":
         since = history[int(saved.get("seen") or 0):] if resume else history
         prompt = turn_prompt(text, summarize(since), resumed=bool(resume))
     else:
         prompt = handoff_prompt(text, summarize(history))
-    workspace = _workspace_for(sid, row)
+    if where == "pc":
+        # A folder of this machine means nothing on the PC; only one the person named for the PC is used.
+        workspace = str(row.get("workspace") or "") or None
+    else:
+        workspace = _workspace_for(sid, row)
     job = {"id": uuid.uuid4().hex[:12], "session_id": sid, "kind": kind, "agent": agent,
-           "agent_label": label, "model": model, "task": text[:500], "status": "running",
-           "started": time.time(), "finished": None, "ok": None, "error": None,
-           "workspace": workspace, "resumed": bool(resume), "cancel": False}
+           "agent_label": label, "model": model, "endpoint_id": endpoint_id, "task": text[:500],
+           "status": "running", "where": where, "started": time.time(), "finished": None, "ok": None,
+           "error": None, "workspace": workspace, "resumed": bool(resume), "cancel": False}
     note = text if kind == "turn" else f"Pasar a {label}: {text}"
     _append(sid, "user", note, {"source": "thread_agent", "thread_agent": agent, "agent_label": label,
                                 "job_id": job["id"], "kind": kind})
@@ -304,9 +421,7 @@ def _start(sid: str, *, kind: str, agent: str, text: str, model: Optional[str],
 def _run(job: Dict[str, Any], prompt: str, resume: Optional[str], owner: Optional[str]) -> None:
     sid, agent = job["session_id"], job["agent"]
     try:
-        result = _runner_call(agent, prompt, workspace=job["workspace"], model=job["model"],
-                              resume=resume, owner=owner, workspace_roots=[job["workspace"]],
-                              run_id=f"thread-{job['id']}", should_cancel=lambda: bool(job.get("cancel")))
+        result = _execute(job, prompt, resume, owner)
     except Exception as exc:  # noqa: BLE001 - run_task never raises; a stub might
         result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     ok = bool(result.get("ok"))
@@ -359,15 +474,19 @@ def start_turn(sid: str, text: str, *, owner: Optional[str] = None) -> Dict[str,
 
 
 def start_handoff(sid: str, agent: Any, task: str, *, model: Optional[str] = None,
-                  owner: Optional[str] = None) -> Dict[str, Any]:
+                  owner: Optional[str] = None, endpoint_id: Optional[str] = None) -> Dict[str, Any]:
     """Pass one task to ``agent`` with a summary of the thread; the result is
-    appended to the same thread. The thread's own agent does not change."""
+    appended to the same thread. The thread's own agent does not change.
+    ``agent`` may be ``faustus``: a subagent on the thread's model, or on the
+    ``model`` / ``endpoint_id`` given (a runner takes only ``model``)."""
     sid = _check_sid(sid)
     task = str(task or "").strip()
     if not task:
         raise ValueError("empty task")
-    return _start(sid, kind="handoff", agent=_resolve_agent(agent), text=task,
-                  model=(str(model).strip() or None) if model else None, owner=owner)
+    key = _resolve_agent(agent)
+    return _start(sid, kind="handoff", agent=key, text=task,
+                  model=(str(model).strip() or None) if model else None, owner=owner,
+                  endpoint_id=(str(endpoint_id).strip() or None) if endpoint_id and key == FAUSTUS else None)
 
 
 def job(sid: str, job_id: str) -> Dict[str, Any]:

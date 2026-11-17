@@ -71,7 +71,8 @@ def setup_thread_agent_routes() -> APIRouter:
         body = await _body(request)
         try:
             return thread_agents.start_handoff(sid, body.get("agent"), body.get("task"),
-                                               model=body.get("model"), owner=owner or None)
+                                               model=body.get("model"), owner=owner or None,
+                                               endpoint_id=body.get("endpoint_id"))
         except (KeyError, ValueError) as exc:
             _fail(exc)
 
