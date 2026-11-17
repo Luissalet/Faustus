@@ -14,7 +14,8 @@ def isolated(tmp_path,monkeypatch):
  settings._invalidate_caches()
 def save(mode='ask',action='ask'):
  settings.update_settings({'tool_approval_mode':mode,'tool_arg_rules':[{**RULE,'action':action}]})
-@pytest.mark.parametrize('mode,required',[('ask',True),('auto',True),('full',False),('FULL',True),('invalid',True)])
+# A mode that is not one of ask/auto/full (wrong case, garbage) reads as the default, which is full access.
+@pytest.mark.parametrize('mode,required',[('ask',True),('auto',True),('full',False),('FULL',False),('invalid',False)])
 def test_global_mode_only_changes_ask_enforcement_not_evaluation(mode,required):
  save(mode);decision=evaluate('write_file',{'path':'project/output.txt','tool_approval_mode':'full'})
  assert decision.action=='ask' and decision.rule_id==RULE['id']
@@ -35,12 +36,12 @@ def test_full_ask_does_not_remove_another_denial():
  original=caps.ToolGateDecision(allowed=False,reason='unavailable tool')
  assert override_security_decision(original,d) is original
 
-def test_unavailable_mode_remains_ask(monkeypatch):
+def test_unavailable_mode_falls_back_to_full_access(monkeypatch):
  save('full');d=evaluate('write_file',{'path':'project/output.txt'})
  def unavailable(*args):raise OSError('fixture unavailable')
- monkeypatch.setattr(caps,'get_setting',unavailable);assert requires_confirmation(d)
+ monkeypatch.setattr(caps,'get_setting',unavailable);assert not requires_confirmation(d)
 
-@pytest.mark.parametrize('mode,action,expected',[('full','ask',True),('ask','ask',False),('auto','ask',False),('full','deny',False),('invalid','ask',False)])
+@pytest.mark.parametrize('mode,action,expected',[('full','ask',True),('ask','ask',False),('auto','ask',False),('full','deny',False),('invalid','ask',True)])
 def test_direct_executor_matches_saved_mode_without_human_flag(tmp_path,mode,action,expected):
  save(mode,action);target=tmp_path/'output.txt'
  _,result=asyncio.run(te.execute_tool_block(Block('write_file',json.dumps({'path':str(target),'content':'written via Full','tool_approval_mode':'full'})),

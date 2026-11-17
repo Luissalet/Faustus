@@ -102,9 +102,12 @@ def test_pages_site_owns_its_entrypoint_and_media():
     # looked at, what was accepted or rejected and why. Same kind of material
     # as docs/adaptations/ -- addressed to whoever picks the work up, and
     # deliberately not a page anyone publishes.
+    # docs/AGENT-FLOWS.md and docs/GUIDED_TOOL_CALLS.md describe how two endpoints and the
+    # strict tool-call path behave; the README links to them as engineering references.
     ENGINEERING = ("docs/ui/", "docs/design/", "docs/spec/", "docs/api/", "docs/adaptations/",
                    "docs/radar/", "docs/recipes/", "docs/evals/",
-                   "docs/requirements-format.md", "docs/showcase.md")
+                   "docs/requirements-format.md", "docs/showcase.md",
+                   "docs/AGENT-FLOWS.md", "docs/GUIDED_TOOL_CALLS.md")
     stray = [
         p for p in docs_files
         if p.suffix.lower() in VIDEO_EXTS | {".md"}
