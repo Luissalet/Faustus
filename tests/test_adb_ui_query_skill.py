@@ -15,10 +15,10 @@ def query(monkeypatch):
     return importlib.import_module("adb_ui_query").find_nodes
 
 
-def element(label="Mote", *, text="", bounds="[20,410][510,490]", package=PACKAGE, kind=FIELD, enabled=True):
+def element(label="Mote", *, text="", bounds="[20,410][510,490]", package=PACKAGE, kind=FIELD, enabled=True, focused=True):
     return (
         f'<node package="{package}" class="{kind}" enabled="{str(enabled).lower()}" '
-        f'content-desc="{label}" text="{text}" bounds="{bounds}" focused="true"/>'
+        f'content-desc="{label}" text="{text}" bounds="{bounds}" focused="{str(focused).lower()}"/>'
     )
 
 
@@ -147,3 +147,24 @@ def test_list_reports_the_missing_context_without_approving_a_partial_tree(monke
     assert status == 1 and not result["matched"]
     assert result["missingLabels"] == ["1/1025"]
     assert list(result["requiredNodes"]) == ["Pokédex"]
+
+
+def test_exact_field_waits_for_focus_in_a_fresh_tree(monkeypatch, tmp_path, capsys):
+    unfocused = "<hierarchy>" + element(text="Before", focused=False) + "</hierarchy>"
+    focused = "<hierarchy>" + element(text="Before", focused=False) + element(text="Ready") + "</hierarchy>"
+    status, result, commands = run_cli(
+        monkeypatch, tmp_path, capsys, iter([unfocused, focused]), iter([{"matched": True}]*4),
+        selection=("--label", "Mote", "--class", FIELD, "--require-focus"),
+    )
+    assert status == 0 and result["node"]["focused"] and result["node"]["text"] == "Ready"
+    assert sum(command[:3] == ["shell", "uiautomator", "dump"] for command in commands) == 2
+    assert all("input" not in command for command in commands)
+
+
+def test_visible_unfocused_field_is_not_ready_for_typing(monkeypatch, tmp_path, capsys):
+    tree = "<hierarchy>" + element(text="Visible", focused=False) + "</hierarchy>"
+    status, result, _ = run_cli(
+        monkeypatch, tmp_path, capsys, iter([tree]), iter([{"matched": True}]*2), wait=0,
+        selection=("--label", "Mote", "--class", FIELD, "--require-focus"),
+    )
+    assert status == 1 and not result["matched"] and result["matchCount"] == 0

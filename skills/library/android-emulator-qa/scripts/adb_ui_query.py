@@ -13,7 +13,7 @@ from adb_foreground import check_foreground
 BOUNDS = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 
 
-def find_nodes(xml, package, label, rect, class_name=None, min_height=1):
+def find_nodes(xml, package, label, rect, class_name=None, min_height=1, *, require_focus=False):
     left, top, right, bottom = rect
     result = []
     for node in ET.fromstring(xml).iter("node"):
@@ -24,6 +24,9 @@ def find_nodes(xml, package, label, rect, class_name=None, min_height=1):
         if not observed_label or observed_label not in labels:
             continue
         if class_name is not None and node.get("class") != class_name:
+            continue
+        focused = node.get("focused") == "true"
+        if require_focus and not focused:
             continue
         match = BOUNDS.fullmatch(node.get("bounds", ""))
         if match is None:
@@ -37,7 +40,7 @@ def find_nodes(xml, package, label, rect, class_name=None, min_height=1):
             "class": node.get("class", ""),
             "bounds": [x1, y1, x2, y2],
             "center": [(x1 + x2) // 2, (y1 + y2) // 2],
-            "focused": node.get("focused") == "true",
+            "focused": focused,
         })
     return result
 
@@ -56,11 +59,14 @@ def main():
     parser.add_argument("--class", dest="class_name")
     parser.add_argument("--min-height", type=int, default=1)
     parser.add_argument("--expect-ime", choices=("hidden", "visible"))
+    parser.add_argument("--require-focus", action="store_true", help="require the exact labeled node to have input focus")
     parser.add_argument("--wait-tree-ms", type=int, default=0,
                         help="retry fresh tree reads while the expected app and IME still match")
     args = parser.parse_args()
     if args.require_label and (not args.list or any(not label.strip() for label in args.require_label)):
         parser.error("--require-label needs --list and a nonempty label")
+    if args.require_focus and not args.label:
+        parser.error("--require-focus needs an exact --label")
     if not 0 <= args.wait_tree_ms <= 15000:
         parser.error("tree wait must be between 0 and 15000 ms")
     if not args.adb.is_absolute() or not args.adb.is_file():
@@ -103,7 +109,10 @@ def main():
                     xml = observe("exec-out", "cat", remote)
                 finally:
                     observe("shell", "rm", "-f", remote)
-                nodes = find_nodes(xml, args.package, args.label, args.rect, args.class_name, args.min_height)
+                nodes = find_nodes(
+                    xml, args.package, args.label, args.rect, args.class_name, args.min_height,
+                    require_focus=args.require_focus,
+                )
             except (subprocess.CalledProcessError, ET.ParseError):
                 if wait_for_next_tree():
                     continue
