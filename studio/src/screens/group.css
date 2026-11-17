@@ -1051,7 +1051,9 @@
 .fs-main:has(.fs-project-agora-shell),
 .fs-shell[data-nav='rail'] .fs-main:has(.fs-project-agora-shell) {
   padding: 0;
-  overflow: hidden;
+  /* clip, not hidden: a hidden box can still be scrolled by focus, and opening a
+     dialog shifted the whole Agora up and left a dark band under it */
+  overflow: clip;
   display: grid;
 }
 .fs-main:has(.fs-project-agora-shell) :is(.fs-main__inner, .fs-route) {
