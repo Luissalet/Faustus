@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.20
+version: 1.0.21
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -24,7 +24,7 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 
    For an authorized update, allow a bounded transfer deadline suited to the device and APK. If installation stalls, check the original ADB process and matching package session before retrying. Record elapsed time and phase. Once installed, check version. For exact identity, resolve the APK with `pm path` and compare SHA-256. After a cold start, `am start -W` confirms activity launch. Wait within a separate deadline for the actual task content. At expiry capture the visible screen and scoped logs before further input.
 
-   Before coordinate input and after installation, app switches or dialogs, confirm both foreground observations. Run `python <skill-directory>/scripts/adb_foreground.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package>`. Exit 0 matches the package, including launcher aliases. Use `--wait-ime-ms 1500` with an expected IME state after an observed field tap or keyboard dismissal when Android is still animating. The guard reads both foreground observations again during the short settle window and stops if the app loses focus. The observation mode sends no input. An exit 2 identifies the activity or window probe that failed.
+   Before coordinate input and after installation, app switches or dialogs, confirm both foreground observations. Run `python <skill-directory>/scripts/adb_foreground.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package>`. Exit 0 matches the package, including launcher aliases. Use `--wait-ime-ms 1500` with an expected IME state after an observed field tap or keyboard dismissal when Android is still animating. The guard reads both foreground observations again during the short settle window, including after a failed dumpsys command while waiting. It stops when either observation identifies another app. On return to a screen with a text field, wait for the hidden keyboard and read the new hierarchy before clearing or typing in that field. The observation mode sends no input. An exit 2 identifies the activity or window probe that failed.
 
 4. Record the baseline tab, game, save, language, filters and counters. Use observed values to verify restoration.
 

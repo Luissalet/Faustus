@@ -63,10 +63,16 @@ def query_foreground(base, package, expect_ime, wait_ime_ms):
                 if deadline is not None:
                     return previous
                 return {"matched": False, "probe": probe[0], "error": str(error)}
+            except subprocess.CalledProcessError as error:
+                result = {"matched": False, "probe": probe[0], "error": str(error)}
+                break
             except (subprocess.SubprocessError, OSError) as error:
                 return {"matched": False, "probe": probe[0], "error": str(error)}
-        result = check_foreground(*dumps, package, expect_ime)
-        if not wait_ime_ms or not result["matched"] or result.get("imeMatched", True):
+        else:
+            result = check_foreground(*dumps, package, expect_ime)
+            if not result["matched"] or result.get("imeMatched", True):
+                return result
+        if not wait_ime_ms:
             return result
         previous = result
         if deadline is None:

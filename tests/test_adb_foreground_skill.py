@@ -80,6 +80,7 @@ def query_fixture(monkeypatch, responses):
     monkeypatch.setitem(QUERY.__globals__, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep))
     monkeypatch.setitem(QUERY.__globals__, "subprocess", SimpleNamespace(
         check_output=check_output, TimeoutExpired=subprocess.TimeoutExpired, SubprocessError=subprocess.SubprocessError,
+        CalledProcessError=subprocess.CalledProcessError,
     ))
     return calls
 
@@ -113,6 +114,23 @@ def test_initial_activity_timeout_identifies_the_unresponsive_probe(monkeypatch)
     assert not result["matched"] and result["probe"] == "activity"
     assert "timed out" in result["error"]
     assert len(calls) == 1
+
+
+def test_wait_rechecks_both_probes_after_temporary_window_failure(monkeypatch):
+    error = subprocess.CalledProcessError(1, "dumpsys window")
+    calls = query_fixture(monkeypatch, [ACTIVITY, error, ACTIVITY, WINDOW + "false"])
+    assert QUERY(ADB, DEX, "hidden", 500)["imeMatched"]
+    assert [command[5] for command, _ in calls] == ["activity", "window", "activity", "window"]
+    assert all(0 < timeout < .5 for _, timeout in calls[2:])
+
+
+def test_window_command_failure_keeps_its_probe_without_wait_or_after_deadline(monkeypatch):
+    error = subprocess.CalledProcessError(1, "dumpsys window")
+    for wait in (0, 100):
+        calls = query_fixture(monkeypatch, [ACTIVITY, error])
+        result = QUERY(ADB, DEX, "hidden", wait)
+        assert not result["matched"] and result["probe"] == "window" and "error" in result
+        assert len(calls) == 2
 
 
 DISMISS = CHECK.__globals__["dismiss_visible_ime"]
