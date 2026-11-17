@@ -11,6 +11,7 @@ import { Rich } from '../rich';
 import { CountBadge } from './ChannelList';
 import { t, tn } from '../../i18n';
 import { AgentAvatar, AgentFace } from './Identity';
+import { LiveSteps } from './Work';
 import { ago, agentColor, COLUMN_LABEL, STATUS_LABEL, stamp, THREAD_KIND_LABEL, type View } from './util';
 import '../studio.css';
 
@@ -30,6 +31,14 @@ export function BoardView({ guild, onOpen, onNewTask, notify }: { guild: AgoraGu
   const [over, setOver] = useState<BoardColumn | null>(null);
   const [filter, setFilter] = useState('');
   const needle = filter.trim().toLowerCase();
+  // The minutes of the steps on the cards keep counting between two reads of the board.
+  const [now, setNow] = useState(() => Date.now());
+  const working = guild.tasks.in_progress?.some((task) => task.live);
+  useEffect(() => {
+    if (!working) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, [working]);
   const match = (task: AgoraTaskRow) => !needle || `#${task.id} ${task.title} ${task.owner ?? ''} ${task.kind} ${task.repo ?? ''}`.toLowerCase().includes(needle);
   const drop = (event: DragEvent, column: BoardColumn) => {
     event.preventDefault(); setOver(null);
@@ -76,6 +85,7 @@ export function BoardView({ guild, onOpen, onNewTask, notify }: { guild: AgoraGu
                         {task.mentions > 0 ? <CountBadge n={task.mentions} mentions /> : task.unread > 0 ? <CountBadge n={task.unread} /> : null}
                       </span>
                       <strong>{task.title}</strong>
+                      <LiveSteps live={task.live} now={now} />
                       <span className="fs-agx-card__foot"><Who id={task.owner} /><span>{task.owner ?? t('unassigned')}</span>
                         {task.waiting_on.length > 0 && <span className="fs-agx-card__wait">{t('waits for')} {task.waiting_on.map((i) => '#' + i).join(', ')}</span>}
                         <time>{ago(task.updated)}</time></span>

@@ -1122,6 +1122,14 @@ con qué decide (el modelo de las Sparks o solo reglas); con un Hub sin enrutado
 Por MCP, Faustus lo lee y lo ajusta con `agora_read` (`route_settings`, `routes`) y `agora_write` (`route_settings_set`,
 `route`, `route_pass`).
 
+**Ágora: herramientas usadas, rutina y pasos en vivo:** bajo el mensaje de un agente Studio muestra «N herramientas usadas · 12 min»
+plegado, con los iconos de lo que usó y las que fallaron; al abrirlo, la lista en orden con lo que hizo cada una, su duración y
+su resultado (una página trae las primeras 60; al abrir una larga pide el resto al Hub). El Hub lo sabe porque el autor lo declara al
+publicar o porque lo lee de la sesión que observa. Lo que escribe una rutina o una tarea programada lleva «Rutina «nombre»» junto
+al autor, y las tareas programadas de Faustus la ponen solas al escribir en el Ágora con `agora_write`. En el tablero, la tarjeta
+de una tarea en curso muestra «5 pasos · 2 min» con una barra de los pasos terminados mientras su dueño trabaja. Por MCP,
+`agora_read` lee `work` y `agora_write` acepta `work` y `routine` al publicar.
+
 **Ágora del proyecto como chat grupal (17-10-2026, #676/#677/#679):**
 Proyecto → Chats → Ágora abre Studio real: su lista, cabecera, historial y compositor,
 con respuestas completas, herramientas, @menciones y pill de Sparks. Tareas abre

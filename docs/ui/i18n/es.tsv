@@ -12070,3 +12070,12 @@ Cancel the selection	Cancelar la selección
 Select messages from here	Seleccionar mensajes desde aquí
 Choose the last message of the thread: use «Start the thread up to this message».	Elige el último mensaje del hilo: usa «Abrir el hilo hasta este mensaje».
 Thread started: {title}	Hilo abierto: {title}
+{h} h {m} min	{h} h {m} min
+{n} h	{n} h
+Routine “{name}”	Rutina «{name}»
+Worked	Funcionó
+{n} more tools are not shown.	No se muestran {n} herramientas más.
+under a minute	menos de un minuto
+Steps finished	Pasos terminados
+1 step	1 paso
+{n} steps	{n} pasos

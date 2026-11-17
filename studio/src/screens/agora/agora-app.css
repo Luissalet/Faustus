@@ -688,3 +688,29 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 .fs-agx-form__hint { margin: 0; font-size: 12.5px; }
 .fs-agx-router { display: grid; gap: var(--fs-space-3); }
 .fs-agx-router select:disabled { opacity: 0.55; }
+
+/* What an agent did for a message (the tools, folded), the routine behind it and the steps on the card of a task in progress. */
+.fs-agx-routine { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2); color: var(--fs-text-2); font-size: 11.5px; line-height: 1.5; white-space: nowrap; }
+.fs-agx-work { margin-block: 6px 0; font-size: 12px; color: var(--fs-text-3); }
+.fs-agx-work__toggle { display: inline-flex; align-items: center; gap: 6px; max-inline-size: 100%; padding: 2px 8px 2px 4px; border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control); background: var(--fs-surface-2); color: var(--fs-text-2); font: inherit; cursor: pointer; }
+.fs-agx-work__toggle:hover { border-color: var(--fs-border-strong); color: var(--fs-text-1); }
+.fs-agx-work__chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+.fs-agx-work[data-open] .fs-agx-work__chevron { transform: rotate(90deg); }
+.fs-agx-work__icons { display: inline-flex; align-items: center; gap: 3px; color: var(--fs-text-3); }
+.fs-agx-work__failed { color: var(--fs-danger); }
+.fs-agx-work__body { margin-block-start: 6px; padding: 6px 8px; border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); background: var(--fs-surface-1); }
+.fs-agx-work__body ol { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; max-block-size: 320px; overflow: auto; }
+.fs-agx-work__tool { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 6px; min-inline-size: 0; color: var(--fs-text-2); }
+.fs-agx-work__tool code { color: var(--fs-text-1); font-size: 11.5px; }
+.fs-agx-work__summary { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fs-text-3); }
+.fs-agx-work__result { display: inline-flex; align-items: center; gap: 6px; color: var(--fs-text-3); font-variant-numeric: tabular-nums; }
+.fs-agx-work__tool[data-ok='true'] .fs-agx-work__result svg { color: var(--fs-success); }
+.fs-agx-work__tool[data-ok='false'] .fs-agx-work__result svg { color: var(--fs-danger); }
+.fs-agx-steps { display: flex; align-items: center; gap: 8px; color: var(--fs-text-3); font-size: 11px; white-space: nowrap; }
+.fs-agx-steps__bar { display: inline-block; inline-size: 40px; block-size: 4px; overflow: hidden; border-radius: 2px; background: var(--fs-surface-3); flex-shrink: 0; }
+.fs-agx-steps__bar > i { display: block; block-size: 100%; background: var(--fs-brand); transition: inline-size 0.4s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .fs-agx-work__chevron, .fs-agx-steps__bar > i { transition: none; }
+}

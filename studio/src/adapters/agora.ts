@@ -29,6 +29,8 @@ export interface AgoraTaskRow {
   priority: number; repo: string | null; thread_id: number | null; created: number; updated: number;
   submitted_at: number | null; closed_at: number | null; review_state: string | null; created_by: string;
   unread: number; mentions: number; waiting_on: number[]; column: BoardColumn;
+  /** Present while the owner's observed session has a turn running. */
+  live?: TaskLive | null;
 }
 export interface AgoraThreadRow {
   id: number; title: string; kind: string; status: string; created_by: string; created: number; updated: number;
@@ -70,12 +72,27 @@ export interface MessageRoute {
   /** Already worded by the hub, e.g. «Lo atiende @claude-x · elegido por el enrutador (modelo)». */
   label: string; picks: RoutePick[]; engine: 'model' | 'rules' | string; note?: string | null;
 }
+/** One tool an agent used for a message: its name, result (`null` when unknown), duration and a short masked summary. */
+export interface WorkTool { name: string; ok: boolean | null; ms: number | null; summary: string }
+/** What an agent did for a message: the tools in order. A page carries the first ones and `more` says how many were left out. */
+export interface MessageWork {
+  count: number; ok: number; failed: number; duration_s: number; started: number | null; ended: number | null;
+  source: 'declared' | 'observed' | string; tools: WorkTool[]; more: number;
+}
+/** The routine or scheduled task that wrote a message. */
+export interface MessageRoutine { id: string; name: string; schedule: string }
 export interface AgoraMessage {
   id: number; thread_id: number; author: string; kind: string; body: string; mentions: string[]; created: number;
   body_truncated?: boolean; reactions?: MessageReaction[]; reply?: MessageQuote | null; files?: MessageFile[];
   /** Present when the router chose who answers this message. */
   route?: MessageRoute | null;
+  /** Present when the hub knows which tools the author used for it. */
+  work?: MessageWork | null;
+  /** Present when a routine or scheduled task wrote it. */
+  routine?: MessageRoutine | null;
 }
+/** How far the owner of a task is in the turn it is working on (calls made, finished, since when). */
+export interface TaskLive { steps: number; done: number; since: number | null; elapsed_s: number | null; phase?: string; tool?: string | null }
 export interface AgoraTask {
   id: number; title: string; body: string; status: string; owner: string | null; reviewer: string | null; kind: string;
   priority: number; repo: string | null; thread_id: number; commits: string[]; branch: string | null; result: string | null;
@@ -155,6 +172,11 @@ export const say = (space: string, target: Target, body: string, kind = 'comment
   agoraPost<{ message_id: number; mentions: string[]; channel: string | null; thread: AgoraThreadInfo }>(
     'channel_post', { space_id: space, ...targetArgs(target), body, kind, mentions,
       ...(carry.replyTo ? { reply_to: carry.replyTo } : {}), ...(carry.files?.length ? { files: carry.files } : {}) });
+
+/** Every tool of one message's work (a page of messages carries only the first ones). */
+export const getMessageWork = (space: string, messageId: number, signal?: AbortSignal) =>
+  agoraGet<{ message: { id: number; work?: MessageWork | null; routine?: MessageRoutine | null }; has_work: boolean }>(
+    'work', { space_id: space, message_id: messageId }, signal);
 
 /** Put a reaction on a message or take it back (without `on`, it toggles). */
 export const react = (space: string, messageId: number, emoji: string, on?: boolean) =>

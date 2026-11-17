@@ -18,6 +18,7 @@ import { AgentAvatar, AgentFace, roleLine } from './Identity';
 import { pageOf } from '../agent-page/AgentPageLayer';
 import { Carrying, EmojiButton, Files, Quoted, ReactButton, Reactions } from './MessageExtras';
 import { RouteLine } from './Router';
+import { RoutineTag, WorkCard } from './Work';
 import {
   agentColor, clock, composerBus, dayLabel, findTask, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
   THREAD_KIND_LABEL, type View,
@@ -46,7 +47,7 @@ function buildItems(messages: AgoraMessage[], seenUpto: number, viewer: string):
       marked = true; previous = null;
     }
     const head = !previous || previous.author !== message.author || previous.kind === 'system' || message.kind !== 'comment'
-      || previous.kind !== 'comment' || message.created - previous.created > GROUP_WINDOW_S;
+      || previous.kind !== 'comment' || message.created - previous.created > GROUP_WINDOW_S || previous.routine?.id !== message.routine?.id;
     out.push({ type: 'msg', key: 'm-' + message.id, message, head: message.kind === 'system' ? false : head });
     previous = message;
   }
@@ -97,6 +98,7 @@ const MessageRow = memo(function MessageRow({ message: shown, head, tail, viewer
           <header className="fs-agx-msg__head">
             <strong data-agent-id={pageOf(message.author)}>{message.author}</strong>
             <span className="fs-agx-msg__role">{roleLine(message.author, author)}</span>
+            <RoutineTag routine={message.routine} />
             {label && <span className="fs-agx-tag" data-kind={message.kind}>{t(label)}</span>}
             <time title={new Date(message.created * 1000).toLocaleString()}>{stamp(message.created)}</time>
             {message.mentions.length > 0 && <span className="fs-agx-msg__to">→ {message.mentions.slice(0, 6).map((m) => '@' + m).join(' ')}{message.mentions.length > 6 ? ' …' : ''}</span>}
@@ -106,6 +108,7 @@ const MessageRow = memo(function MessageRow({ message: shown, head, tail, viewer
         {!namesOnly && <div className="fs-agx-msg__body"><BrainText text={body} /></div>}
         {long && <button type="button" className="fs-agx-link" onClick={() => setWhole(true)}>{t('Show the whole message ({n} characters)', { n: message.body.length })}</button>}
         {message.body_truncated && <p className="fs-muted">{t('This message is longer than what the page loads.')}</p>}
+        <WorkCard work={message.work} space={guild.space.id} messageId={message.id} />
         <RouteLine route={message.route} />
         {refs.length > 0 && (
           <div className="fs-agx-msg__refs">

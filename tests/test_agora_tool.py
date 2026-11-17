@@ -21,7 +21,8 @@ CATALOGUE = [
     _tool("inbox", read=True, peek={"type": "boolean"}, wait_s={"type": "number"}),
     _tool("channel_read", channel={"type": "string", "description": "Channel name."}, peek={"type": "boolean"},
           limit={"type": "integer"}),
-    _tool("channel_post", channel={"type": "string"}, body={"type": "string"}, kind={"type": "string", "enum": ["comment", "agree"]}),
+    _tool("channel_post", channel={"type": "string"}, body={"type": "string"}, kind={"type": "string", "enum": ["comment", "agree"]},
+          routine={"type": "object"}, work={"type": "object"}),
     _tool("member_add", id={"type": "string"}),
     _tool("file_add", name={"type": "string"}, content_base64={"type": "string"}),
     _tool("thread", read=True, thread_id={"type": "integer"}, peek={"type": "boolean"}),
@@ -206,3 +207,27 @@ def test_the_tools_are_registered_like_their_neighbours():
     assert read.known and ToolEffect.READ_PRIVATE in read.effects and ToolEffect.WRITE_PRIVATE not in read.effects
     assert write.known and ToolEffect.WRITE_PRIVATE in write.effects
     assert "agora_write" in _PLAN_MODE_KNOWN_MUTATORS and "agora_read" not in _PLAN_MODE_KNOWN_MUTATORS
+
+
+def test_what_a_scheduled_task_writes_is_told_as_its_routine(hub, monkeypatch):
+    calls, _ = hub
+    from src import ai_interaction
+
+    sessions = {"s-task": SimpleNamespace(name="[Task] Resumen diario"), "s-chat": SimpleNamespace(name="Una charla"),
+                "s-empty": SimpleNamespace(name="[Task] ")}
+    monkeypatch.setattr(ai_interaction, "get_session_manager", lambda: SimpleNamespace(sessions=sessions))
+    write = AgoraTool(write=True)
+    run(write, {"action": "channel_post", "args": {"body": "listo"}}, {"session_id": "s-task"})
+    assert calls[-1]["body"]["arguments"]["routine"] == {"name": "Resumen diario"}
+    # a chat that is not a scheduled run, or one that names its own routine and work, is left as it is
+    run(write, {"action": "channel_post", "args": {"body": "hola"}}, {"session_id": "s-chat"})
+    run(write, {"action": "channel_post", "args": {"body": "hola"}}, {"session_id": "s-empty"})
+    run(write, {"action": "channel_post", "args": {"body": "hola"}})
+    assert all("routine" not in c["body"]["arguments"] for c in calls[-3:])
+    run(write, {"action": "channel_post", "args": {"body": "x", "routine": {"name": "Otra"}, "work": {"tools": [{"name": "t"}]}}},
+        {"session_id": "s-task"})
+    assert calls[-1]["body"]["arguments"]["routine"] == {"name": "Otra"} and calls[-1]["body"]["arguments"]["work"]["tools"]
+    # a hub that does not know routines is not sent one
+    monkeypatch.setattr(agora_tool, "_cache", {"at": 0.0, "url": "", "tools": {}})
+    run(AgoraTool(write=True), {"action": "member_add", "args": {"id": "x"}}, {"session_id": "s-task"})
+    assert "routine" not in calls[-1]["body"]["arguments"]

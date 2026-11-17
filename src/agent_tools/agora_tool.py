@@ -100,6 +100,26 @@ def actor(ctx: dict) -> str:
     return str(getattr(binding, "actor", "") or DEFAULT_ACTOR)
 
 
+TASK_PREFIX = "[Task] "
+
+
+def routine_of(ctx: dict) -> Optional[dict]:
+    """The scheduled task this conversation is the run of, as the hub names a routine; ``None`` for any other chat.
+
+    A scheduled task of Faustus runs in a session called ``[Task] <name>``: what it writes to the Agora is the work of
+    that routine, and the hub shows it next to the author."""
+    try:
+        from src.ai_interaction import get_session_manager
+        manager = get_session_manager()
+        session = manager.sessions.get(str(ctx.get("session_id") or "")) if manager is not None else None
+        name = str(getattr(session, "name", "") or "")
+    except Exception:  # noqa: BLE001 - tagging is a courtesy: a chat without a session manager is a chat without routine
+        return None
+    if not name.startswith(TASK_PREFIX) or not name[len(TASK_PREFIX):].strip():
+        return None
+    return {"name": " ".join(name[len(TASK_PREFIX):].split())[:80]}
+
+
 def _first_sentence(text: str, limit: int = 150) -> str:
     text = " ".join(str(text or "").split())
     cut = text.find(". ")
@@ -186,6 +206,10 @@ class AgoraTool:
                 # A hub that cannot peek here marks the conversation as read for whoever it is told reads: read
                 # as nobody rather than move Faustus's mark.
                 args.pop("agent", None)
+        if self.write and "routine" in props and not args.get("routine"):
+            routine = routine_of(ctx)
+            if routine:
+                args["routine"] = routine           # what a scheduled task of Faustus says is told as that routine's
         if action == "file_add":
             # A file goes as its bytes. A path would be read on the hub's machine, which is not this one's disk
             # nor this conversation's to read.
