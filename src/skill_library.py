@@ -264,4 +264,17 @@ def uninstall(owner: Optional[str], slugs: List[str]) -> Dict:
     return {"results": results}
 
 
-__all__ = ["LIBRARY_DIR", "list_library", "install", "uninstall", "installed"]
+def bundled(slug: str) -> Optional[Dict]:
+    """One bundled skill as a plain skill dict (source `library`), read straight from `skills/library` and never installed. The per-turn
+    prompt uses it for skills that apply to a kind of work whether or not the person installed them (`src.interface_work`)."""
+    if slug not in _library_slugs():
+        return None
+    skill = _read_library_skill(slug)
+    if skill is None:
+        return None
+    entry = skill.to_dict()
+    entry["source"] = "library"
+    return entry
+
+
+__all__ = ["LIBRARY_DIR", "list_library", "install", "uninstall", "installed", "bundled"]

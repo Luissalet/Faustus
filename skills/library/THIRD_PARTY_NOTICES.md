@@ -37,6 +37,9 @@ require.
 | `codebase-deepening`, `ticket-slicing`, `issue-triage`, `session-retro` | https://github.com/mattpocock/skills @ `5863806dd4e15c63174bee4e7515a4256792ecfa` (skills improve-codebase-architecture and codebase-design; to-tickets; triage and its agent-brief reference; retro; setup, report templates and per-host files not bundled) | MIT | © 2026 Matt Pocock |
 | `page-copywriting`, `seo-audit`, `conversion-page-review` | https://github.com/coreyhaines31/marketingskills @ `1f837447b20bb6f0e72d87b80ece1c221c362c7d` (skills copywriting, seo-audit and cro; reference pages and per-host files not bundled) | MIT | © 2025 Corey Haines |
 | `last-30-days-research` | https://github.com/mvanhorn/last30days-skill @ `5705e22647b1da8b61120afd10de7bb8a5fe5ead` (skills/last30days/SKILL.md; the method only, rewritten for Faustus's own search and page tools; engine scripts, vendored clients and setup flows not bundled) | MIT | © 2026 Matt Van Horn |
+| `ui-sdk` (the skill and `references/pick-a-component.md`, condensed from the skill's Markdown references) | https://github.com/vercel-labs/ui @ `10b3b6c0eccfd176a6d60ce4efaccf0d1584da08` (packages/core/skills/ui-sdk; the library itself, its docs and examples are not bundled) | Apache-2.0 | Copyright 2026 Vercel, Inc. |
+| `anime-ui-controls` | https://github.com/finktheartist/sakuga-vfx @ `c3dabb173928a3ad2372183103caf2e6f50953d0` (skills/sakuga-vfx/SKILL.md workflow and rules; the control scripts live in Vitruvius's Hoard with the licence of each set) | MIT | © 2026 Justin Finkelman |
+| `seed-scout`, `seed-market`, `seed-model`, `seed-plan`, `seed-deck`, `seed-investors`, `seed-closer`, `seed-coach`, `seed-terms`, `seed-dataroom`, `seed-updates` | https://github.com/Jakeschincariol/seed-skill @ `fde88957238bd3bc28e80e1fe0b252a64507b108` (the eleven SKILL.md procedures rewritten around Faustus tools and Hoards; the Python scripts, fixtures and example data are not bundled) | MIT | © 2026 Jake Schincariol |
 
 The tier-list additions are rewritten into this library's four-section dialect with Faustus tool names. The
 guides of `modern-web-guidance` are the one vendored copy: they are served by the `web_guidance` tool and
@@ -715,3 +718,10 @@ public licenses.
 
 Creative Commons may be contacted at creativecommons.org.
 ```
+
+## Sakuga effects pack with a required credit
+
+`anime-ui-controls` also points at https://github.com/kanaworksai-hue/kanaworks-sakuga-vfx. Nothing from it is copied into this
+repository: its assets are under the KanaWorks_AI VFX Asset License 1.0 (free below one million dollars of annual revenue, the credit
+`VFX: KanaWorks_AI (@KanaWorks_AI)` shown wherever they are used, no redistribution as an asset pack), so Vitruvius's Hoard downloads one
+effect on demand and writes the credit beside it.

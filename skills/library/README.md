@@ -210,3 +210,24 @@ cleaning, follow-ups with people, fine-tuning and evaluation, voxel models, elec
 analysis, manuscript continuity, print-ready models, consistent characters, model serving on a small cluster, screen
 capture, shared project files, catalogue and sales metrics, game libraries, personal context and depth cameras. Each
 names the app whose tools it drives (`apps`), so it reaches that app and no other unless asked for by name.
+
+## Interfaces, accessible by default
+
+`accessible-interfaces` is the baseline for anything a person will operate: native elements first, a name for every control, a
+visible focus indicator, a sensible Tab order, complete ARIA only where no native element exists, contrast, reduced motion and
+dialogs that return focus. It loads by itself whenever a request is to build or change an interface (`src/interface_work.py`),
+installed or not, and its check is Vitruvius's `interaction` rules plus a real Tab walk. `ui-sdk` covers keyboard, focus,
+selection, popup and drag-and-drop behaviours through a component library for React, Vue, Svelte, Solid and web components, and
+loads with the baseline when a request names that library. `anime-ui-controls` chooses, installs and keeps accessible the control
+style sets of Vitruvius's craft library (anime, 1930s cartoon, pixel art), and loads with the baseline when the request asks for
+one of those looks.
+
+## Startup fundraising pipeline
+
+Eleven skills take a startup from research to the investor update: `seed-scout` (competitors from their own reviews),
+`seed-market` (TAM, SAM and SOM with sources), `seed-model` (assumptions and a monthly model), `seed-plan`, `seed-deck`
+(ten slides, built in Cicero's Hoard when connected), `seed-investors` (a list of funds that write cheques of this size, kept in
+People's Hoard when connected), `seed-closer` (outreach and follow-up until the call, sent only after the founder confirms),
+`seed-coach` (investor-question practice), `seed-terms` (term-sheet red flags), `seed-dataroom` and `seed-updates`. They share a
+`seed/` working folder in the project, read like the others from the sources the founder gave, and never invent a number,
+investor or quote.

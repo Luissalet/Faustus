@@ -6393,6 +6393,16 @@ def _build_system_prompt(
                     engines=_skill_engines,
                     boost=(_connector_plan.boost if _connector_plan else None),
                 ) if _skill_max_injected > 0 else []
+                # Interface work (src/interface_work.py): the bundled accessibility skill, and the UI-library or
+                # style skill when the request calls for one, come with the turn even when the person never
+                # installed them. Their bodies get their own room in the skill budget below.
+                _interface_extra = 0
+                if _skill_max_injected > 0:
+                    try:
+                        from src import interface_work as _interface_work
+                        relevant_skills, _interface_extra = _interface_work.with_interface_skills(last_user, relevant_skills)
+                    except Exception:
+                        logger.debug("[skills] interface skills unavailable", exc_info=True)
                 _excluded_skills = {e["key"] for e in configuration_edits or ()
                                     if e["kind"] == "skill_text" or (e["kind"] == "skill" and not e["value"])}
                 relevant_skills = [s for s in relevant_skills if str(s.get("name") or "") not in _excluded_skills]
@@ -6410,7 +6420,7 @@ def _build_system_prompt(
                                                           DEFAULT_LEVEL1_BUDGET_TOKENS))
                     except Exception:
                         _level1_budget = DEFAULT_LEVEL1_BUDGET_TOKENS
-                    level1 = render_level1(relevant_skills, budget_tokens=_level1_budget,
+                    level1 = render_level1(relevant_skills, budget_tokens=_level1_budget + _interface_extra,
                                            source_root=sm.skills_root)
                     lines.append("## Relevant skills for this request")
                     lines.append("These skills are matched to your current request. Each is a "
