@@ -190,3 +190,36 @@ def test_readback_rejects_bounds_when_the_keyboard_moves(monkeypatch, tmp_path, 
     )
     assert status == 1 and result["reason"] == "ime-moved-during-observation"
     assert "node" not in result
+
+
+def test_exact_text_stale_field_is_reported_without_typing(monkeypatch, tmp_path, capsys):
+    tree = "<hierarchy>" + element(text="Danza EspadaDanza Espada") + "</hierarchy>"
+    status, result, commands = run_cli(
+        monkeypatch, tmp_path, capsys, iter([tree]), iter([{"matched": True}] * 2), wait=0,
+        selection=("--label", "Mote", "--class", FIELD, "--expect-text", "Danza Espada"),
+    )
+    assert status == 1 and result["reason"] == "text-mismatch"
+    assert not result["matched"] and not result["textMatched"]
+    assert result["node"]["text"] == "Danza EspadaDanza Espada"
+    assert all("input" not in command for command in commands)
+
+
+def test_exact_text_settles_to_an_empty_field(monkeypatch, tmp_path, capsys):
+    stale = "<hierarchy>" + element(text="Before") + "</hierarchy>"
+    cleared = "<hierarchy>" + element(text="") + "</hierarchy>"
+    status, result, commands = run_cli(
+        monkeypatch, tmp_path, capsys, iter([stale, cleared]), iter([{"matched": True}] * 4),
+        selection=("--label", "Mote", "--class", FIELD, "--expect-text="),
+    )
+    assert status == 0 and result["matched"] and result["textMatched"]
+    assert result["node"]["text"] == ""
+    assert sum(command[:3] == ["shell", "uiautomator", "dump"] for command in commands) == 2
+
+
+def test_exact_text_does_not_pick_a_matching_value_from_duplicate_labels(monkeypatch, tmp_path, capsys):
+    tree = "<hierarchy>" + element(text="Before") + element(text="Ready") + "</hierarchy>"
+    status, result, _ = run_cli(
+        monkeypatch, tmp_path, capsys, iter([tree]), iter([{"matched": True}] * 2), wait=0,
+        selection=("--label", "Mote", "--class", FIELD, "--expect-text", "Ready"),
+    )
+    assert status == 1 and result["matchCount"] == 2 and "node" not in result

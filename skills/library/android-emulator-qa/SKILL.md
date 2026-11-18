@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.24
+version: 1.0.25
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -35,6 +35,7 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
    Use the same helper with `--list` in place of `--label` to discover up to 80 enabled, labeled nodes inside the observed rectangle. It reports the total match count and retains multiple nodes with the same label. After navigation, use `--wait-tree-ms 6000` to retry a failed hierarchy read without sending input. Select a target only after checking its bounds and context.
 
    To resolve a duplicate label or read back a field, run `python <skill-directory>/scripts/adb_ui_query.py --adb <absolute-sdk-adb> --serial <serial> --package <expected-package> --label "<observed label>" --class android.widget.EditText --rect <left> <top> <right> <bottom> --min-height <observed field height> --expect-ime hidden`. The rectangle excludes the visible app header, footer and overlays. The helper reads a fresh tree and returns the actual text and center only for a unique matching node. It sends no input. After a confirmed navigation, add `--wait-tree-ms 6000` if the field has yet to settle. The helper retries a missing, incomplete or ambiguous fresh tree only while the expected app and IME still match. A transport timeout or package change ends the observation. When a match is clipped, scroll the field clear and query again. Compare the actual text after typing or closing the IME before committing a form.
+   On reopening a search or edit dialog, read the actual text before typing. A field can retain the previous query. Clear it through the observed control when the case calls for a fresh query. Use `--expect-text <observed empty text or placeholder>` to confirm the clear, and `--expect-text <requested input>` after typing. Pass `--expect-text=` for an empty value. A unique field with stale text returns `reason: text-mismatch` and its observed node. Resolve duplicate labels before relying on a text check.
 
    When a dialog opens with an unconfirmed keyboard state, query its exact editable field without an IME expectation. Tap the observed center, wait for the expected IME state and use the same field query with --require-focus before typing. With a visible IME, use --above-ime with --expect-ime visible and the observed application rectangle. The helper clips the lower edge using the keyboard bounds and confirms that it stayed there during the hierarchy read. Read node.text from the returned JSON after typing. A visible dialog or keyboard alone does not confirm the target field has input focus.
 

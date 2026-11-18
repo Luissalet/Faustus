@@ -60,6 +60,7 @@ def main():
     parser.add_argument("--min-height", type=int, default=1)
     parser.add_argument("--expect-ime", choices=("hidden", "visible"))
     parser.add_argument("--above-ime", action="store_true", help="limit the rect to the observed space above the visible IME")
+    parser.add_argument("--expect-text", metavar="TEXT", help="require the unique matched node's exact observed text")
     parser.add_argument("--require-focus", action="store_true", help="require the exact labeled node to have input focus")
     parser.add_argument("--wait-tree-ms", type=int, default=0,
                         help="retry fresh tree reads while the expected app and IME still match")
@@ -68,6 +69,8 @@ def main():
         parser.error("--require-label needs --list and a nonempty label")
     if args.above_ime and args.expect_ime != "visible":
         parser.error("--above-ime needs --expect-ime visible")
+    if args.expect_text is not None and args.label is None:
+        parser.error("--expect-text needs an exact --label")
     if args.require_focus and not args.label:
         parser.error("--require-focus needs an exact --label")
     if not 0 <= args.wait_tree_ms <= 15000:
@@ -146,7 +149,9 @@ def main():
                 missing_labels = list(dict.fromkeys(label for label in args.require_label if label not in observed))
                 ready = bool(nodes) and not missing_labels
             else:
-                ready = bool(nodes) if args.list else len(nodes) == 1
+                ready = bool(nodes) if args.list else (
+                    len(nodes) == 1 and (args.expect_text is None or nodes[0]["text"] == args.expect_text)
+                )
             if ready or not wait_for_next_tree():
                 break
     except (OSError, subprocess.SubprocessError, ET.ParseError) as error:
@@ -161,8 +166,13 @@ def main():
     if len(nodes) != 1:
         print(json.dumps({**result, "matchCount": len(nodes)}))
         return 1
-    print(json.dumps({**result, "matched": True, "node": nodes[0]}))
-    return 0
+    result.update(matched=ready, node=nodes[0])
+    if args.expect_text is not None:
+        result["textMatched"] = ready
+        if not ready:
+            result["reason"] = "text-mismatch"
+    print(json.dumps(result))
+    return 0 if ready else 1
 
 
 if __name__ == "__main__":
