@@ -1,7 +1,7 @@
 ---
 name: android-emulator-qa
 description: Exercise a real Android application through the visible emulator using fresh element readbacks, bounded actions and a measured return state. Use when testing Android, an emulador Android, ADB or a mobile user journey while preserving the user's data.
-version: 1.0.23
+version: 1.0.24
 category: testing
 tags: [android, emulator, adb, mobile, qa, restoration]
 status: published
@@ -43,6 +43,8 @@ Run short journeys through native Android MCP or authorized ADB. Use accessibili
 6. Keep a small action budget, normally twelve inputs for a smoke journey. If an action leaves the state unchanged, inspect focus, keyboard, a modal or scroll position before trying again. Two unsuccessful attempts at the same outcome end blind retries. Use an observed text field, a small scroll in its actual container or documented Back when appropriate. If the route remains blocked, report the last confirmed state and stop inputs. Do not reset storage or change unrelated preferences as a shortcut.
 
    A reachable ADB transport and `sys.boot_completed=1` can coexist with unresponsive activity and window services. Record which service failed before any input. Verify the AVD name with `adb -s <serial> emu avd name`. If a restart is already in scope and the guest cannot reboot, relaunch the same visible AVD with its existing userdata and a cold start. Wait for both service probes to recover, confirm the installed build again and resume from a fresh listing.
+
+   The install probe reports `bootId` and `readiness`. Wait for `ready` before launching the app. `booting` means Android has not reported boot completion. `activity-unavailable` and `package-unavailable` retain the observed boot ID and free bytes even when the respective service reports an error or times out. Compare boot IDs to verify an authorized restart, and check the foreground separately before any input.
 
    If the guest shell times out or UI Automator exits while the emulator console still responds, try the SDK console's display capture. Check `adb -s <serial> emu help screenrecord screenshot`, then use `adb -s <serial> emu screenrecord screenshot <existing-host-directory>` in a dedicated evidence folder. Identify and inspect the new PNG. It can have physical display dimensions and a device frame even when `adb shell wm size` reports a logical override. Use the actual dimensions and coordinate space of the input method. An `OK` reply or a frame that still shows the prior screen is not proof that a tap landed. This fallback applies to tool or guest failures within the authorized QA session.
 

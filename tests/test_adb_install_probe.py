@@ -1,5 +1,6 @@
 from pathlib import Path
 import runpy
+import subprocess
 
 import pytest
 
@@ -7,6 +8,8 @@ import pytest
 SKILL = Path(__file__).resolve().parents[1] / "skills/library/android-emulator-qa/scripts/adb_install_probe.py"
 PROBE = runpy.run_path(str(SKILL))
 PACKAGE = "com.example.dex"
+BOOT_ID = "12345678-1234-4abc-8123-123456789abc"
+BOOT_COMMAND = ("shell", "cat", "/proc/sys/kernel/random/boot_id")
 
 
 def test_toybox_storage_probe_reads_kibibytes_on_data_mount():
@@ -33,6 +36,7 @@ def test_probe_reports_raw_space_and_installed_version_without_installing():
         ("get-state",): "device\n",
         ("emu", "avd", "name"): "Task_AVD\nOK\n",
         ("shell", "df", "-k", "/data"): "Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/root 100 90 10 90% /data\n",
+        BOOT_COMMAND: BOOT_ID,
         ("shell", "getprop", "sys.boot_completed"): "1\n",
         ("shell", "cmd", "activity", "get-current-user"): "0\n",
         ("shell", "dumpsys", "package", PACKAGE): "    versionCode=803 minSdk=24 targetSdk=36\n    User 0: installed=true\n",
@@ -41,6 +45,8 @@ def test_probe_reports_raw_space_and_installed_version_without_installing():
     assert result["installedVersionCode"] == 803
     assert result["dataAvailableBytes"] == 10240
     assert result["rawApkFitsBySize"] is False
+    assert result["bootId"] == BOOT_ID
+    assert result["readiness"] == "ready"
     assert replies == {}
 
 
@@ -61,9 +67,35 @@ def test_transport_can_be_ready_while_the_guest_is_still_booting():
         ("get-state",): "device\n",
         ("emu", "avd", "name"): "Task_AVD\nOK\n",
         ("shell", "df", "-k", "/data"): "/dev/root 100 20 80 20% /data\n",
+        BOOT_COMMAND: BOOT_ID,
         ("shell", "getprop", "sys.boot_completed"): "\n",
     }
     result = PROBE["inspect_device"](lambda *command: replies.pop(command), "Task_AVD", PACKAGE, 2000)
     assert result["bootCompleted"] is False
+    assert result["readiness"] == "booting"
+    assert result["installedVersionCode"] is None
+    assert replies == {}
+
+
+def test_boot_completion_does_not_hide_an_unresponsive_activity_manager():
+    activity = ("shell", "cmd", "activity", "get-current-user")
+    replies = {
+        ("get-state",): "device\n",
+        ("emu", "avd", "name"): "Task_AVD\nOK\n",
+        ("shell", "df", "-k", "/data"): "/dev/root 100 20 80 20% /data\n",
+        BOOT_COMMAND: BOOT_ID,
+        ("shell", "getprop", "sys.boot_completed"): "1\n",
+    }
+
+    def read(*command):
+        if command == activity:
+            raise subprocess.TimeoutExpired(command, 12)
+        return replies.pop(command)
+
+    result = PROBE["inspect_device"](read, "Task_AVD", PACKAGE, 2000)
+    assert result["bootCompleted"] is True
+    assert result["bootId"] == BOOT_ID
+    assert result["readiness"] == "activity-unavailable"
+    assert result["dataAvailableBytes"] == 80 * 1024
     assert result["installedVersionCode"] is None
     assert replies == {}
