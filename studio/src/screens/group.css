@@ -1055,6 +1055,11 @@
      dialog shifted the whole Agora up and left a dark band under it */
   overflow: clip;
   display: grid;
+  /* a clipped box is not a scroll container, so without these it grows as tall as
+     its content and nothing inside the Agora can scroll */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-block-size: 0;
 }
 .fs-main:has(.fs-project-agora-shell) :is(.fs-main__inner, .fs-route) {
   max-inline-size: none;

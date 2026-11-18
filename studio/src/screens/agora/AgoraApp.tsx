@@ -280,7 +280,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
           : <nav className="fs-agx-rail" aria-label={t('Servers')} />
       )}
       {ready
-        ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} onMoveChannel={moveChannel} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)}
+        ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} onMoveChannel={moveChannel} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)} membersOpen={membersOpen}
             onJump={() => setDialog({ kind: 'jump' })} />
         : <aside className="fs-agx-channels"><div className="fs-agx-channels__scroll"><Skeleton label={t('Loading channels')} count={8} height="28px" /></div></aside>}
       <main className="fs-agx-main">

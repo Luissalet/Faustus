@@ -115,9 +115,9 @@ function ChannelRow({ channel, current, onOpen, onMove }: {
   );
 }
 
-export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, rooms, hidden, embedded, onJump }: {
+export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, rooms, hidden, embedded, onJump, membersOpen }: {
   guild: AgoraGuild; view: View; onOpen: (view: View) => void; onAction: (action: ListAction, arg?: string) => void;
-  onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean; onJump: () => void;
+  onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean; onJump: () => void; membersOpen: boolean;
 }) {
   const space = guild.space;
   const muted = Boolean(space.meta.muted);
@@ -225,7 +225,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
           </Section>
         ))}
 
-        <Section id="agents" title={t('Agents')} count={agents.length} folded={folded.has('agents')} onFold={fold}
+        {!membersOpen && <Section id="agents" title={t('Agents')} count={agents.length} folded={folded.has('agents')} onFold={fold}
           action={<IconButton size="sm" icon={Plus} label={t('Add people or agents')} onClick={() => onAction('add-agent')} testId="agora-sidebar-add-agent" />}>
           {agents.slice(0, 30).map((member) => (
             <li key={member.id}>
@@ -237,7 +237,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
             </li>
           ))}
           {!agents.length && <li className="fs-agx-cat__empty">{t('No agent around right now.')}</li>}
-        </Section>
+        </Section>}
 
         <Section id="work" title={t('Work')} folded={folded.has('work')} onFold={fold}
           action={<IconButton size="sm" icon={Plus} label={t('New task')} onClick={() => onAction('new-task')} testId="agora-new-task" />}>
