@@ -74,6 +74,30 @@ decides where a product UI may be striking and keeps work screens quiet,
 with motion rules and a bounded verification pass through Vitruvius and the
 design detector.
 
+## Production studio stations
+
+The `studio-*` skills are the stations of the production studio, written from
+real passes through the family's apps: each says what piece it receives and
+which it delivers, the calls that worked through the Hub (`hub_start_app`,
+`hub_app_tools`, `hub_call_app`, with the HTTP route as a fallback), how to
+check the output by looking at it, the details that must survive the hand-off
+and the traps met on the way. Visual branch: `studio-writer-production-brief`,
+`studio-prospero-character-sheet`, `studio-prospero-short-video`,
+`studio-vulcan-image-to-3d`, `studio-phidias-scenery`,
+`studio-nikias-print-color`, `studio-blender-headless-render`,
+`studio-godot-playable-scene` and `studio-figure-print-and-slice`.
+Presentation branch: `studio-drucker-engagement-brief`, `studio-writer-report`
+and `studio-cicero-deck-and-rehearsal`. Web branch:
+`studio-vitruvius-design-critique` and `studio-headless-web-testing`. Three
+chain skills (`studio-chain-visual`, `studio-chain-presentation`,
+`studio-chain-web`) give whoever directs the order of stations, what each
+hand-off carries and where a defect goes back. Station skills name their app
+in `apps`, and each Hoard names them in `skills.slugs` of its
+`faustus-plugin.json` (the limit grew by as many, so no earlier skill left
+the shelf). Station skills of an app also carry `accepts` and `produces`:
+the piece types of that app's `x-family.production.handoffs`, so a step of
+the station catalogue finds its skill.
+
 ## Web motion, media, page design and game production
 
 Added 2026-11-03, each adapted from a pinned upstream commit (sources,

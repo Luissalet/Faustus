@@ -18648,6 +18648,27 @@ La de movimiento necesita además `mediapipe`, `opencv-python` y un modelo de po
 descargado. `tests/test_game_asset_skills.py` ejecuta los scripts reales (se omite sin Blender).
 La herramienta `unity` acepta además la ruta opcional `ascent` en `run_playtest`
 (escena de la Tierra de Blood Arrows, sin red, `seconds:30`).
+
+## Skills de los puestos del estudio de producción
+
+La biblioteca incluye una skill por puesto de las tres ramas del estudio, escritas con lo
+que funcionó al recorrerlas con los Hoards: qué pieza recibe y cuál entrega cada puesto,
+las llamadas por el Hub (`hub_start_app`, `hub_app_tools`, `hub_call_app`, o
+`POST /api/apps/<id>/call`), cómo se comprueba la salida mirándola, los detalles que
+deben llegar al siguiente puesto y las trampas conocidas. Rama visual:
+`studio-writer-production-brief`, `studio-prospero-character-sheet`,
+`studio-prospero-short-video`, `studio-vulcan-image-to-3d`, `studio-phidias-scenery`,
+`studio-nikias-print-color`, `studio-blender-headless-render`,
+`studio-godot-playable-scene` y `studio-figure-print-and-slice`. Presentación:
+`studio-drucker-engagement-brief`, `studio-writer-report` y
+`studio-cicero-deck-and-rehearsal`. Web: `studio-vitruvius-design-critique` y
+`studio-headless-web-testing`. Las de cadena (`studio-chain-visual`,
+`studio-chain-presentation`, `studio-chain-web`) dan a quien dirige el orden, los
+relevos y adónde vuelve cada defecto. Cada skill de puesto declara su app en `apps`.
+No cubren todavía el paso de la malla inferida a un modelo articulado: la cadena visual
+lo señala como eslabón sin skill. `tests/test_studio_station_skills.py` comprueba que
+cada puesto dice qué recibe y entrega, que cada cadena llega a todos sus puestos y que
+ninguna apunta a una skill inexistente.
 # Faustus — qué añade este fork sobre Odysseus
 
 ## Conversaciones por MCP, rutas de delegación, importador de agentes, Spotify y chat de X
