@@ -29,6 +29,7 @@ The game station of a visual order, one of the three siblings that start from th
 - A prop fused into the character mesh cannot turn; it must arrive as its own GLB. If it does not, send the defect back to the articulation station.
 - Turning the prop as a separate mesh keeps its cut corner; scaling or mirroring it does not.
 - Headless proves logic and collision, not looks. Say so. Looks are judged on stills from `studio-blender-headless-render` with the same GLBs; a capture of the running game needs a window, which is a desktop action reserved to the coordinator.
+- Print values read from the nodes, never constants: the probe printed the map's start angle as the constant `PI`, so only its end angle was really measured. Read `rotation` before injecting the input and print both.
 - Godot imports GLBs into `.godot/` on the first run; without `--import` first, the verify run may time out.
 
 ## Verification
