@@ -5,6 +5,8 @@ version: 1.0.0
 category: planning
 tags: [studio, drucker, brief, engagement, scope, assumptions, client, expediente, encargo, alcance, supuestos, cliente]
 apps: [drucker]
+accepts: [production-order]
+produces: [production-brief]
 status: published
 source: imported
 ---

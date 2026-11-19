@@ -5,6 +5,8 @@ version: 1.0.0
 category: writing
 tags: [studio, writer, report, docx, markdown, sources, citations, export, informe, documento, fuentes, exportar]
 apps: [writer]
+accepts: [research-dossier, production-brief]
+produces: [editable-report]
 status: published
 source: imported
 ---

@@ -5,6 +5,8 @@ version: 1.0.0
 category: engineering
 tags: [studio, prospero, video, image-to-video, ltx, first-last-frame, shot, clip, video-corto, plano, fotograma, escena]
 apps: [prospero]
+accepts: [character-sheet]
+produces: [video-clip]
 status: published
 source: imported
 ---

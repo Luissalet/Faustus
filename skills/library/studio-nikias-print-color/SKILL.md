@@ -5,6 +5,8 @@ version: 1.0.0
 category: engineering
 tags: [studio, nikias, color, 3mf, multicolor, print, palette, filament, color-impresion, colores, figura, impresion-3d]
 apps: [nikias]
+accepts: [closed-print-mesh]
+produces: [coloured-3mf]
 status: published
 source: imported
 ---

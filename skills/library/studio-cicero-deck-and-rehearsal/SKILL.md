@@ -5,6 +5,8 @@ version: 1.0.0
 category: writing
 tags: [studio, cicero, deck, slides, rehearsal, speaker-notes, pptx, pdf, export, diapositivas, ensayo, presentacion, cronometro, notas]
 apps: [cicero]
+accepts: [editable-report, editable-deck]
+produces: [editable-deck, rehearsal-notes, presentation-pptx, presentation-pdf]
 status: published
 source: imported
 ---

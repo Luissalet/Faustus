@@ -5,6 +5,8 @@ version: 1.0.0
 category: engineering
 tags: [studio, vulcan, image-to-3d, triposr, multiview, glb, gltf, mesh, imagen-a-3d, malla, volumen, modelo]
 apps: [vulcan]
+accepts: [character-sheet]
+produces: [reference-mesh]
 status: published
 source: imported
 ---

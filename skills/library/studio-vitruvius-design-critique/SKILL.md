@@ -5,6 +5,8 @@ version: 1.0.0
 category: engineering
 tags: [studio, vitruvius, design, critique, render, assay, web, landing, accessibility, diseno, critica, pagina, web, accesibilidad]
 apps: [vitruvius]
+accepts: [production-brief, web-page]
+produces: [interface-brief, responsive-captures]
 status: published
 source: imported
 ---

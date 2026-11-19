@@ -5,6 +5,8 @@ version: 1.0.0
 category: engineering
 tags: [studio, phidias, scenery, set, remodel, base, blender, glb, obj, escenario, peana, escalera, maqueta, medidas]
 apps: [phidias]
+accepts: [scenery-mesh]
+produces: [remodelled-scenery]
 status: published
 source: imported
 ---

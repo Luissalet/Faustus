@@ -5,6 +5,8 @@ version: 1.0.0
 category: writing
 tags: [studio, production, brief, writer, worldbuilding, character, handoff, expediente, produccion, ficha, personaje, escena, ilustracion, relevo]
 apps: [writer]
+accepts: [production-brief]
+produces: [scene-brief]
 status: published
 source: imported
 ---

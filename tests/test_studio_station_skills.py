@@ -47,6 +47,20 @@ def test_each_station_says_what_it_receives_and_delivers_and_which_app_it_drives
     assert Skill.from_markdown(text).verification
 
 
+def _list(text, key):
+    match = re.search(rf"^{key}:\s*\[(.*?)\]", text, re.M)
+    return [a.strip() for a in match.group(1).split(",") if a.strip()] if match else []
+
+
+@pytest.mark.parametrize("slug", sorted(s for s, apps in STATIONS.items() if apps))
+def test_each_station_of_an_app_names_the_piece_types_it_accepts_and_produces(slug):
+    """The piece types of the Hoards' station catalogue (x-family.production.handoffs), so a step links to its skill."""
+    text = _text(slug)
+    accepts, produces = _list(text, "accepts"), _list(text, "produces")
+    assert accepts and produces, slug
+    assert all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", t) for t in accepts + produces), (accepts, produces)
+
+
 @pytest.mark.parametrize("slug", CHAINS)
 def test_each_chain_names_its_hand_offs_and_defects(slug):
     text = _text(slug)

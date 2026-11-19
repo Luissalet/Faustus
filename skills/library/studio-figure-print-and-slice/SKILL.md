@@ -5,6 +5,8 @@ version: 1.0.0
 category: engineering
 tags: [studio, figure, print, phidias, nikias, vulcan, slicer, stl, 3mf, gcode, figura, peana, laminado, impresion-3d, cierre]
 apps: [phidias, nikias, vulcan]
+accepts: [posed-figure-mesh, closed-print-mesh, coloured-3mf]
+produces: [closed-print-mesh, coloured-3mf, mesh-validation]
 status: published
 source: imported
 ---

@@ -5,6 +5,8 @@ version: 1.0.0
 category: engineering
 tags: [studio, prospero, character-sheet, concept-art, multiview, comfyui, image-generation, hoja-de-personaje, lamina, concepto, multivista, personaje]
 apps: [prospero]
+accepts: [scene-brief, concept-image]
+produces: [concept-image, character-sheet]
 status: published
 source: imported
 ---
