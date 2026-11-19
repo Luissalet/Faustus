@@ -18,7 +18,7 @@ The colour step of the figure branch (`studio-figure-print-and-slice` calls it).
 
 ## Procedure
 
-1. **Reach the station.** `hub_start_app {app:"nikias"}` if down; `hub_app_tools {app:"nikias"}`; calls via `hub_call_app {app:"nikias", tool, arguments, reason}` (HTTP fallback `POST http://127.0.0.1:8810/api/apps/nikias/call`).
+1. **Reach the station.** `hub_app_status {app:"nikias"}`; if it is down, `hub_start_app {app:"nikias"}` and stop it (`hub_stop_app`) at the end. `hub_app_tools {app:"nikias"}` gives the live catalogue; calls are `hub_call_app {app:"nikias", tool, arguments, reason, timeout_s}`. Without the Hub's tools, the same call is `POST http://127.0.0.1:8810/api/apps/nikias/call` with `Authorization: Bearer <token>` (the Hub's `data/mcp-token`; on this machine `E:\Development\IA\Hoards\Faustusables\Hoard Hub\data\mcp-token`) and body `{"tool", "arguments", "timeout_s"}`; the reply carries `ok` and `result`. With the same header, `GET /api/apps/nikias` says whether it runs (its `state` field: `running` or `down`), `POST /api/apps/nikias/start` and `/stop` start and stop it and `GET /api/apps/nikias/tools` lists its tools. Keep each call's arguments and reply as a receipt in the order folder.
 2. **Project.** `project_create {source:<closed STL>, name}`.
 3. **Reference.** `source_add {project_id, path:<coloured GLB>, name}`; keep `source_id`.
 4. **Colour.** `color_start {project_id, mode:"model", colors:<n>, source_id}` with as many colours as the reference has (7 to 9 in the probe). Poll `job_status {job_id}`.

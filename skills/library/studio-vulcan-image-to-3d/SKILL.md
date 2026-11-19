@@ -18,7 +18,7 @@ The volume station of a visual order, in parallel with video once the sheet is a
 
 ## Procedure
 
-1. **Reach the station.** `hub_start_app {app:"vulcan"}` if down; `hub_app_tools {app:"vulcan"}`; calls via `hub_call_app {app:"vulcan", tool, arguments, reason}` (HTTP fallback `POST http://127.0.0.1:8810/api/apps/vulcan/call`, Bearer token from `Hoard Hub/data/mcp-token`).
+1. **Reach the station.** `hub_app_status {app:"vulcan"}`; if it is down, `hub_start_app {app:"vulcan"}` and stop it (`hub_stop_app`) at the end. `hub_app_tools {app:"vulcan"}` gives the live catalogue; calls are `hub_call_app {app:"vulcan", tool, arguments, reason, timeout_s}`. Without the Hub's tools, the same call is `POST http://127.0.0.1:8810/api/apps/vulcan/call` with `Authorization: Bearer <token>` (the Hub's `data/mcp-token`; on this machine `E:\Development\IA\Hoards\Faustusables\Hoard Hub\data\mcp-token`) and body `{"tool", "arguments", "timeout_s"}`; the reply carries `ok` and `result`. With the same header, `GET /api/apps/vulcan` says whether it runs (its `state` field: `running` or `down`), `POST /api/apps/vulcan/start` and `/stop` start and stop it and `GET /api/apps/vulcan/tools` lists its tools. Keep each call's arguments and reply as a receipt in the order folder.
 2. **Module.** `vulcan_modules`. The engines answer 409 `module_disabled` until `vulcan_set_module {module:"daedalus", enabled:true, automatic:false}`. Note the previous state and set it back at the end.
 3. **Engines and GPU.** `daedalus_models_status` says which generators are ready. `hub_gpu_memory` to pick a card that no other job is using.
 4. **Import.** `daedalus_image_import {path}` for each view; keep the returned `image_id`.
