@@ -4,6 +4,8 @@ description: Render stills of a character and set with Blender in background mod
 version: 1.0.0
 category: engineering
 tags: [studio, blender, render, cycles, headless, background, figure-tools, camera, framing, render-sin-ventana, encuadre, iluminacion, amanecer]
+accepts: [rigged_model, remodelled-scenery]
+produces: [render]
 status: published
 source: imported
 ---

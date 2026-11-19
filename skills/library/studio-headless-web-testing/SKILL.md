@@ -4,6 +4,8 @@ description: Test a served web page end to end in a headless browser at several 
 version: 1.0.0
 category: testing
 tags: [studio, playwright, headless, browser, web, testing, e2e, forms, overflow, accessibility, pruebas, navegador-sin-ventana, formulario, movil]
+accepts: [web-page]
+produces: [responsive-captures]
 status: published
 source: imported
 ---
