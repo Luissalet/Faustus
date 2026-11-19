@@ -92,7 +92,11 @@ and `studio-cicero-deck-and-rehearsal`. Web branch:
 chain skills (`studio-chain-visual`, `studio-chain-presentation`,
 `studio-chain-web`) give whoever directs the order of stations, what each
 hand-off carries and where a defect goes back. Station skills name their app
-in `apps`, so each Hoard's shelf can carry its own.
+in `apps`, and each Hoard names them in `skills.slugs` of its
+`faustus-plugin.json` (the limit grew by as many, so no earlier skill left
+the shelf). Station skills of an app also carry `accepts` and `produces`:
+the piece types of that app's `x-family.production.handoffs`, so a step of
+the station catalogue finds its skill.
 
 ## Web motion, media, page design and game production
 
