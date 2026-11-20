@@ -115,9 +115,9 @@ function ChannelRow({ channel, current, onOpen, onMove }: {
   );
 }
 
-export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, rooms, hidden, embedded, onJump, membersOpen }: {
+export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, rooms, hidden, embedded, onJump, membersOpen, pendingDecisions }: {
   guild: AgoraGuild; view: View; onOpen: (view: View) => void; onAction: (action: ListAction, arg?: string) => void;
-  onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean; onJump: () => void; membersOpen: boolean;
+  onMoveChannel: (slug: string, to: ChannelDrop) => void; rooms: GroupState[] | null; hidden: boolean; embedded: boolean; onJump: () => void; membersOpen: boolean; pendingDecisions?: number;
 }) {
   const space = guild.space;
   const muted = Boolean(space.meta.muted);
@@ -201,6 +201,9 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
         </button>
         <ul className="fs-agx-cat__items fs-agx-shortcuts" aria-label={t('Shortcuts')}>
           <Row current={is('view', 'welcome')} icon={Home} label={t('Home')} onClick={() => onOpen({ kind: 'view', id: 'welcome' })} testId="agora-go-home" />
+          <Row current={is('view', 'pending-decisions')} icon={Scale} label={t('Pending decisions')} count={pendingDecisions}
+            title={pendingDecisions ? t('Pending decisions: {count}', { count: pendingDecisions }) : undefined}
+            onClick={() => onOpen({ kind: 'view', id: 'pending-decisions' })} testId="agora-view-pending-decisions" />
           <Row current={is('view', 'inbox')} icon={Inbox} label={t('Inbox')} mentions={attention} title={t('Mentions, answers and questions of the agents')}
             onClick={() => onOpen({ kind: 'view', id: 'inbox' })} testId="agora-go-inbox" />
           <Row current={is('view', 'threads')} icon={MessagesSquare} label={t('Threads')} unread={threadUnread} count={guild.threads.length + guild.waiting.length}
@@ -209,7 +212,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
         </ul>
         <Section id="info" title={t('Information')} folded={folded.has('info')} onFold={fold}>
           <Row current={is('view', 'welcome')} icon={VIEW_ICON.welcome} label={t('welcome')} onClick={() => onOpen({ kind: 'view', id: 'welcome' })} testId="agora-view-welcome" />
-          <Row current={is('view', 'decisions')} icon={VIEW_ICON.decisions} label={t('decisions')} count={guild.views.decisions?.count}
+          <Row current={is('view', 'decisions')} icon={VIEW_ICON.decisions} label={t('Decisions')} count={guild.views.decisions?.count}
             onClick={() => onOpen({ kind: 'view', id: 'decisions' })} testId="agora-view-decisions" />
         </Section>
 

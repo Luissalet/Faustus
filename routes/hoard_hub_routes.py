@@ -9,6 +9,7 @@ nothing else in Faustus depends on the hub being there.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any, Dict, Literal
 
 from fastapi import APIRouter, Request, HTTPException
@@ -206,8 +207,12 @@ def setup_hoard_hub_routes() -> APIRouter:
         return darwin_panel_result(raw)
 
     @router.get('/api/hoard/agora/open')
-    def open_coordination_board(space_id: str = 'ecosystem', embedded: bool = False, live: bool = False):
+    def open_coordination_board(space_id: str = 'ecosystem', embedded: bool = False, live: bool = False, decision: str = ''):
         where = hoard_hub.hub_location()
+        if decision:
+            if not re.fullmatch(r'(?:gate|draft)-[0-9]+', decision):
+                raise HTTPException(status_code=400, detail='Invalid decision link')
+            return RedirectResponse(where['url'].rstrip('/') + '/?' + urlencode({'space_id': space_id, 'decision': decision}) + '#hub/orders')
         args = {'space_id': space_id, **({'embedded': '1'} if embedded else {}), **({'view': 'live'} if live else {})}
         return RedirectResponse(where['url'].rstrip('/') + '/agora/?' + urlencode(args))
 

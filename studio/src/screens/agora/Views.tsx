@@ -1,14 +1,15 @@
 import { ArrowRight, FolderOpen, FolderPlus, Inbox, Lock, MessageCircleQuestion, MessagesSquare, MoreHorizontal, Plus, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import {
-  BOARD_COLUMNS, editTask, getDecisions, getFeed, getInbox, getLocks, getTask, searchAgora, setSpaceMeta,
-  type ActivityItem, type AgoraGuild, type AgoraLock, type AgoraServer, type AgoraTaskRow, type BoardColumn, type Decision, type FeedItem,
+  BOARD_COLUMNS, editTask, getFeed, getInbox, getLocks, getTask, searchAgora, setSpaceMeta,
+  type ActivityItem, type AgoraGuild, type AgoraLock, type AgoraServer, type AgoraTaskRow, type BoardColumn, type FeedItem,
   type PersonInbox, type SearchHit,
 } from '../../adapters/agora';
 import { pickNative } from '../../adapters/composer';
 import { Button, EmptyState, IconButton, Menu, Skeleton } from '../../components';
 import { Rich } from '../rich';
 import { CountBadge } from './ChannelList';
+import { PendingProduction, ProductionHistory, readDecisionLog, type useProductionDecisions } from './ProductionDecisions';
 import { t, tn } from '../../i18n';
 import { AgentAvatar, AgentFace } from './Identity';
 import { LiveSteps } from './Work';
@@ -212,31 +213,57 @@ export function ActivityView({ guild, version, onOpen }: { guild: AgoraGuild; ve
   );
 }
 
-export function DecisionsView({ guild, version, onOpen }: { guild: AgoraGuild; version: string; onOpen: Open }) {
-  const [rows, setRows] = useState<Decision[] | null>(null);
+export function DecisionsView({ guild, version, onOpen, production }: {
+  guild: AgoraGuild; version: string; onOpen: Open; production?: ReturnType<typeof useProductionDecisions>;
+}) {
+  const [log, setLog] = useState<Awaited<ReturnType<typeof readDecisionLog>> | null>(null);
+  const rows = log?.threads;
   const [error, setError] = useState('');
   useEffect(() => {
     const controller = new AbortController();
-    getDecisions(guild.space.id, controller.signal).then((r) => { setRows(r.decisions); setError(''); }).catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
-    return () => controller.abort();
+    let revision = 0;
+    const load = () => {
+      const current = ++revision;
+      const active = () => !controller.signal.aborted && current === revision;
+      void readDecisionLog(guild.space.id, controller.signal).then((next) => {
+        if (active()) { setLog(next); setError(''); }
+      }).catch((e: Error) => { if (active()) setError(e.message); });
+    };
+    const onVisibility = () => { if (!document.hidden) load(); };
+    load();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { controller.abort(); document.removeEventListener('visibilitychange', onVisibility); };
   }, [guild.space.id, version]);
-  if (error) return <p className="fs-notice" data-tone="danger" role="alert">{error}</p>;
-  if (!rows) return <Skeleton label={t('Loading decisions')} count={4} height="64px" />;
-  if (!rows.length) return <EmptyState title={t('No decisions yet')} body={t('A debate or question closed with its resolution in writing lands here: the decision log of this server.')} />;
+  const empty = production && !production.pending.length && !production.pendingError && log && !log.production.length && !log.productionError && rows?.length === 0 && !error;
   return (
-    <div className="fs-agx-feed" data-testid="agora-decisions">
-      {rows.map((row) => (
-        <article key={row.id} className="fs-agx-delivery" data-status="done">
-          <header>
-            <button type="button" className="fs-agx-delivery__title" onClick={() => onOpen({ kind: 'thread', id: String(row.id) })}>{row.title}</button>
-            <span className="fs-agx-tag">{t(THREAD_KIND_LABEL[row.kind] ?? row.kind)}</span>
-            <time>{stamp(row.updated)}</time>
-          </header>
-          <div className="fs-agx-delivery__body"><Rich text={row.resolution || ''} /></div>
-          <p className="fs-agx-delivery__meta">{t('decided by {name}', { name: row.resolved_by || '—' })}</p>
-        </article>
-      ))}
-    </div>
+    <>
+      <PendingProduction state={production} />
+      {error && <p className="fs-notice" data-tone="danger" role="alert">{error}</p>}
+      {(!production || (!rows && !error)) && <Skeleton label={t('Loading decisions')} count={2} height="64px" />}
+      {empty && <EmptyState title={t('No decisions yet')} body={t('A debate or question closed with its resolution in writing lands here: the decision log of this server.')} />}
+      {(!!rows?.length || !!log?.production.length || log?.productionError) && (
+        <section className="fs-agx-production" aria-labelledby="agora-decision-log">
+          <h2 id="agora-decision-log">{t('Decision log')}</h2>
+          {log && <ProductionHistory rows={log.production} error={log.productionError} />}
+          {!!rows?.length && <section aria-labelledby="agora-closed-debates">
+            <h3 id="agora-closed-debates">{t('Resolved debates and questions')}</h3>
+            <div className="fs-agx-feed" data-testid="agora-decisions">
+              {rows.map((row) => (
+                <article key={row.id} className="fs-agx-delivery" data-status="done">
+                  <header>
+                    <button type="button" className="fs-agx-delivery__title" onClick={() => onOpen({ kind: 'thread', id: String(row.id) })}>{row.title}</button>
+                    <span className="fs-agx-tag">{t(THREAD_KIND_LABEL[row.kind] ?? row.kind)}</span>
+                    <time>{stamp(row.updated)}</time>
+                  </header>
+                  <div className="fs-agx-delivery__body"><Rich text={row.resolution || ''} /></div>
+                  <p className="fs-agx-delivery__meta">{t('decided by {name}', { name: row.resolved_by || '—' })}</p>
+                </article>
+              ))}
+            </div>
+          </section>}
+        </section>
+      )}
+    </>
   );
 }
 
