@@ -5,7 +5,7 @@ version: 1.0.0
 category: writing
 tags: [studio, cicero, deck, slides, rehearsal, speaker-notes, pptx, pdf, export, diapositivas, ensayo, presentacion, cronometro, notas]
 apps: [cicero]
-accepts: [editable-report, editable-deck]
+accepts: [editable-report, editable-deck, data-chart, data-table]
 produces: [editable-deck, rehearsal-notes, presentation-pptx, presentation-pdf]
 status: published
 source: imported
@@ -24,6 +24,7 @@ The slides and rehearsal station of a presentation order. For the general method
 2. **Plan the slides** as a JSON list: `layout`, `title`, `subtitle` or body blocks, `notes` (what will be said), and `refs` (source ids). One message per slide.
 3. `visual_catalog {kind:"tables"}` to pick the table layout. `deck_create {title, brief, audience, tone, language:"es", slide_count, reason}`.
 4. **Sources.** `source_add {deck_id, title, text:<report>, kind:"markdown", reason}` for the report, then one `source_add {deck_id, title, text:"<fact>\n\n<url>", reason}` per source. Keep a map from source id to attachment id.
+   Figures from the data station (`studio-nightingale-data-handoff`) are not retyped: `dataset_connect {deck_id, kind:"nightingale", chart_id}` (or `dataset`, `columns`) brings the chart or table as a dataset whose origin keeps Nightingale's dataset, version and fingerprint; after the slide exists, `dataset_bind {deck_id, link_id, slide_id, block_index, mapping:{category_column, series_columns}}` puts it in as an editable chart and cites the snapshot. `dataset_link_control {action:"refresh"}` brings new figures when the data changes.
 5. **Slides.** In order, `slide_add {deck_id, after_id:<previous>, layout, title, ..., notes, sources:[report attachment, ...source attachments], reason}`; append the URLs of the slide's sources to its notes.
 6. **Check.** `deck_get {deck_id, detail:"full"}` and `deck_check {deck_id}`: 0 warnings; "approval pending" items are the person's gate, not an error.
 7. **Rehearsal plan.** `deck_rehearsal {deck_id, duration_minutes, words_per_minute:115, pause_seconds:5, reserve_ratio:0.06}`.

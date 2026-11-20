@@ -24,6 +24,7 @@ STATIONS = {
     "studio-cicero-deck-and-rehearsal": ["cicero"],
     "studio-vitruvius-design-critique": ["vitruvius"],
     "studio-headless-web-testing": [],
+    "studio-nightingale-data-handoff": ["nightingale"],
 }
 CHAINS = ("studio-chain-visual", "studio-chain-presentation", "studio-chain-web")
 _REF = re.compile(r"`([a-z0-9]+(?:-[a-z0-9]+)+)`")
@@ -83,7 +84,7 @@ def test_every_chain_reaches_every_station_of_its_branch():
                                 "studio-prospero-short-video", "studio-vulcan-image-to-3d", "studio-phidias-scenery",
                                 "studio-nikias-print-color", "studio-blender-headless-render",
                                 "studio-godot-playable-scene", "studio-figure-print-and-slice"],
-        "studio-chain-presentation": ["studio-drucker-engagement-brief", "studio-writer-report",
+        "studio-chain-presentation": ["studio-drucker-engagement-brief", "studio-nightingale-data-handoff", "studio-writer-report",
                                       "studio-cicero-deck-and-rehearsal"],
         "studio-chain-web": ["studio-vitruvius-design-critique", "studio-headless-web-testing",
                              "studio-blender-headless-render"],

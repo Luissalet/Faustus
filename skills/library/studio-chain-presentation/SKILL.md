@@ -17,6 +17,7 @@ An order whose deliverables are a report, a deck, a rehearsed talk or all three.
 1. **Order.** Register it (Hub order tools when available, otherwise one Agora task per station). Copy the person's words, the deadline, the length of the talk and the audience.
 2. **Brief** (`studio-drucker-engagement-brief`): `encargo.md` with deliverables and acceptance criteria, and the Drucker engagement id.
 3. **Research.** Collect official sources and write `fuentes.json`: one entry per source with `id`, `title`, `url` and the exact `fact` taken. Fetch pages through Faustus on the Spark (`POST <faustus remote_url>/api/panels/fetch {url, method:"GET", timeout_s:15}`; the Hub's `/api/apps` gives `remote_url`). A company comparison with evidence belongs to Coase (`company-dossier-evidence`), whose `dossiers` module must be switched on first; Writer's link library may be off. State which of these were used.
+   Figures (counts, totals, a chart) come from the data station (`studio-nightingale-data-handoff`): it reads the Hub's tools or the apps directly and hands a chart id or dataset with its provenance.
 4. **Report** (`studio-writer-report`): DOCX and Markdown exported by Writer, claims carrying source ids.
 5. **Slides** (`studio-cicero-deck-and-rehearsal`): one source attachment per entry of `fuentes.json` plus the report; each slide lists its sources.
 6. **Rehearsal** in Cicero: plan, then a timed run under the target with its margin. Hard objections go into the notes of the slide where they will come up.
@@ -26,13 +27,14 @@ An order whose deliverables are a report, a deck, a rehearsed talk or all three.
 
 - Brief to research: the questions the talk must answer and the decision criteria; the research answers those and nothing else.
 - Research to report: `fuentes.json` travels as a file; Writer does not take citations, so ids stay in the text.
+- Data to report and slides: the chart id or dataset, never the numbers; Writer files it with `wh_import_evidence nightingale` and Cicero links it with `dataset_connect kind=nightingale`, both keeping the version and fingerprint.
 - Report to slides: the Markdown export (brackets cleaned) and `fuentes.json` together.
 - Slides to rehearsal: notes are the script; the talk length is checked against the plan before the run.
 - Rehearsal to the objection bank: not connected yet (Hypatia's oral cards need a registered subject); note it as a gap rather than faking it.
 
 ## Defects
 
-A wrong number goes back to research with the slide and the source id; a slide that overflows goes back to the slide station with its image; a talk over time goes back to the plan with the slides that run long.
+A wrong figure goes back to the data station with the chart id and the fingerprint the slide shows; a wrong number from a document goes back to research with the slide and the source id; a slide that overflows goes back to the slide station with its image; a talk over time goes back to the plan with the slides that run long.
 
 ## Pitfalls
 
