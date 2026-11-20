@@ -10126,6 +10126,7 @@ export const es: Record<string, string> = {
   "You allowed it.": "Lo permitiste.",
   "You allowed only this action once.": "Has autorizado sólo esta acción, una vez.",
   "You denied it.": "Lo denegaste.",
+  "Your pending decisions": "Tus decisiones pendientes",
   "You have no pending decisions.": "No tienes decisiones pendientes.",
   "You must read these": "Tienes que leer esto",
   "You stopped it.": "Lo paraste tú.",

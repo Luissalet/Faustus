@@ -31,7 +31,7 @@ import { AgentPageLayer } from '../agent-page/AgentPageLayer';
 const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon }> = {
   live: { label: 'En directo', hint: '', icon: Activity },
   welcome: { label: 'welcome', hint: 'What this server is, the folders it reads and how agents join', icon: BookOpen },
-  'pending-decisions': { label: 'Pending decisions', hint: '', icon: Scale },
+  'pending-decisions': { label: 'Your pending decisions', hint: '', icon: Scale },
   decisions: { label: 'Decisions', hint: 'Pending production decisions and the decisions already recorded', icon: Scale },
   board: { label: 'board', hint: 'Every task of this server by state', icon: Kanban },
   deliveries: { label: 'deliveries', hint: 'What was sent to review, approved or closed, with commits and result', icon: PackageCheck },
@@ -172,7 +172,10 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   const [searchScoped, setSearchScoped] = useState(true);
   const server = servers?.find((s) => s.id === spaceId);
   const ready = guild && guild.space.id === spaceId ? guild : null;
-  const production = useProductionDecisions(spaceId, ready?.version);
+  const { queue, error: pendingError } = useProductionDecisions(ready?.version);
+  const production = queue || pendingError
+    ? { pending: queue?.rows.filter(row => row.space === spaceId) ?? [], pendingError }
+    : undefined;
 
   // A link to the conversation behind a channel (a notification, the inbox) opens the channel itself.
   useEffect(() => {
@@ -279,13 +282,13 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
       {!lockedSpace && (
         servers
           ? <ServerRail servers={servers} current={view.kind === 'view' && view.id === 'inbox' ? '' : spaceId} home={home} onSelect={(id) => (id === spaceId ? open(parseView(recall('agora:last-view:' + id) || 'ch:general')) : selectServer(id))}
-              onAdd={() => setDialog({ kind: 'add-server' })} showHidden={showHidden} onToggleHidden={() => setShowHidden(!showHidden)}
+              pendingCounts={queue?.counts} onAdd={() => setDialog({ kind: 'add-server' })} showHidden={showHidden} onToggleHidden={() => setShowHidden(!showHidden)}
               onInbox={() => open({ kind: 'view', id: 'inbox' })} inboxOpen={view.kind === 'view' && view.id === 'inbox'} />
           : <nav className="fs-agx-rail" aria-label={t('Servers')} />
       )}
       {ready
         ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} onMoveChannel={moveChannel} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)} membersOpen={membersOpen}
-            onJump={() => setDialog({ kind: 'jump' })} pendingDecisions={production?.pending.length} />
+            onJump={() => setDialog({ kind: 'jump' })} pendingDecisions={queue ? queue.counts[spaceId] ?? 0 : undefined} />
         : <aside className="fs-agx-channels"><div className="fs-agx-channels__scroll"><Skeleton label={t('Loading channels')} count={8} height="28px" /></div></aside>}
       <main className="fs-agx-main">
         <header className="fs-agx-main__head">

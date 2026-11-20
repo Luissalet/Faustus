@@ -5,85 +5,77 @@ import { agoraGet, type Decision } from '../../adapters/agora';
 import { locale, t } from '../../i18n';
 import './production-decisions.css';
 
-type Piece = { id: number; title: string; view: string; anchor?: string; previews?: unknown[] };
-type Gate = { id: number; title: string; order: { title: string }; pieces: Piece[]; decisions: { piece_id: number }[] };
-type Variant = { id: number; title: string; status: string; pieces: Piece[] };
-type Draft = { id: number; title: string; order: { title: string }; variants: Variant[] };
 type Summary = { id: number; title: string };
 type RecordRow = {
   id: number; created: number; gate_id: number; note: string; decision: 'keep' | 'cancel'; piece_title: string;
   decided_by?: { id: string; name?: string };
   situation: { decided_by?: string; order?: Summary; gate?: Summary; draft_pass?: Summary; variant?: Summary };
 };
-type PendingRow = { key: string; title: string; order: string; variants: { id: number; title: string; piece?: Piece }[] };
-type State = { space: string; pending: PendingRow[]; pendingError: boolean };
+type Preview = { piece_id: number; title: string; preview: boolean };
+type PendingRow = {
+  key: string; title: string; order: string; space: string; image: Preview | null;
+  variants?: { id: number; title: string; image: Preview | null }[];
+  pieces?: string[];
+};
+type Queue = { rows: PendingRow[]; counts: Record<string, number> };
+export type PendingProductionState = { pending: PendingRow[]; pendingError: boolean };
 
-const firstImage = (pieces: Piece[]) => pieces.find(p => p.previews?.length || p.view === 'image');
-const anchors = ['keyframe_start', 'keyframe_end', 'keyframe', 'animatic', 'composition', 'blocking_color'];
-const decisionImage = (pieces: Piece[]) =>
-  firstImage(anchors.flatMap(anchor => pieces.filter(p => p.anchor === anchor))) ?? firstImage(pieces);
-
-export function useProductionDecisions(space: string, version?: string) {
-  const [state, setState] = useState<State>();
+export function useProductionDecisions(version?: string) {
+  const [queue, setQueue] = useState<Queue>();
+  const [error, setError] = useState(false);
   useEffect(() => {
     if (!version) return;
     const controller = new AbortController();
     let generation = 0;
-    const query = { space_id: space };
-    const load = async () => {
+    async function refresh() {
+      if (document.hidden) return;
       const latest = ++generation;
-      const [gates, drafts] = await Promise.allSettled([
-        agoraGet<{ waiting: Gate[] }>('orders', { ...query, limit: 1 }, controller.signal),
-        agoraGet<{ draft_passes: Draft[] }>('draft_passes', query, controller.signal),
-      ]);
-      if (controller.signal.aborted || latest !== generation) return;
-      const pending: PendingRow[] = [
-        ...(drafts.status === 'fulfilled' ? drafts.value.draft_passes : []).map(draft => ({
-          key: 'draft-' + draft.id, title: draft.title, order: draft.order.title,
-          variants: draft.variants.filter(variant => !['kept', 'discarded'].includes(variant.status)).map(variant => ({
-            id: variant.id, title: variant.title, piece: decisionImage(variant.pieces),
-          })),
-        })),
-        ...(gates.status === 'fulfilled' ? gates.value.waiting : []).map(gate => {
-          const decided = new Set(gate.decisions.map(row => row.piece_id));
-          const piece = firstImage(gate.pieces.filter(candidate => !decided.has(candidate.id)));
-          return { key: 'gate-' + gate.id, title: gate.title, order: gate.order.title, variants: piece ? [{ id: piece.id, title: piece.title, piece }] : [] };
-        }),
-      ];
-      setState({ space, pending, pendingError: gates.status === 'rejected' || drafts.status === 'rejected' });
-    };
-    const refresh = () => { if (!document.hidden) void load(); };
-    void load();
+      const current = () => !controller.signal.aborted && latest === generation;
+      try {
+        const result = await agoraGet<Queue>('pending_decisions', { all_spaces: 1 }, controller.signal);
+        if (current()) { setQueue(result); setError(false); }
+      } catch {
+        if (current()) setError(true);
+      }
+    }
+    void refresh();
+    const interval = window.setInterval(refresh, 8000);
     document.addEventListener('visibilitychange', refresh);
-    return () => { controller.abort(); document.removeEventListener('visibilitychange', refresh); };
-  }, [space, version]);
-  return state?.space === space ? state : undefined;
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [version]);
+  return { queue, error };
 }
 
-function Thumbnail({ piece }: { piece: Piece }) {
+function Thumbnail({ image }: { image: Preview }) {
   const [failed, fail] = useState(false);
-  return failed ? null : <img src={'/api/agora/piece-preview/' + piece.id + (piece.previews?.length ? '?preview=0' : '')}
-    alt={piece.title} loading="lazy" onError={() => fail(true)} />;
+  return failed ? null : <img src={'/api/agora/piece-preview/' + image.piece_id + (image.preview ? '?preview=0' : '')}
+    alt={image.title} loading="lazy" onError={() => fail(true)} />;
 }
 
-export function PendingProduction({ state, dedicated = false }: { state: State | undefined; dedicated?: boolean }) {
+export function PendingProduction({ state, dedicated = false }: { state: PendingProductionState | undefined; dedicated?: boolean }) {
   if (!state) return dedicated ? <p role="status">{t('Loading decisions')}</p> : null;
   if (!state.pending.length && !state.pendingError) return dedicated ? <p>{t('You have no pending decisions.')}</p> : null;
-  return <section className="fs-agx-production" data-testid="agora-pending-decisions" aria-label={t('Pending decisions')}>
-    {!dedicated && <h2>{t('Pending decisions')}</h2>}
+  return <section className="fs-agx-production" data-testid="agora-pending-decisions" aria-label={t('Your pending decisions')}>
+    {!dedicated && <h2>{t('Your pending decisions')}</h2>}
     {state.pending.map(row => (
       <article className="fs-agx-production__gate" key={row.key} data-decision={row.key}>
         <div className="fs-agx-production__heading">
           <div><h3>{row.title}</h3><p>{row.order}</p></div>
-          <a href={'/api/hoard/agora/open?' + new URLSearchParams({ space_id: state.space, decision: row.key })}
+          <a href={'/api/hoard/agora/open?' + new URLSearchParams({ space_id: row.space, decision: row.key })}
             target="_blank" rel="noopener">
             {t('Open decision')} <ExternalLink size={14} aria-hidden="true" />
           </a>
         </div>
-        {row.variants.length > 0 && <ul className="fs-agx-production__previews">
+        {row.image && <div className="fs-agx-production__previews"><Thumbnail key={row.image.piece_id} image={row.image} /></div>}
+        {!!row.pieces?.length && <p className="fs-agx-production__pieces">{row.pieces.join(' ? ')}</p>}
+        {!!row.variants?.length && <ul className="fs-agx-production__previews">
           {row.variants.map(variant => <li key={variant.id}>
-            {variant.piece && <Thumbnail key={variant.piece.id} piece={variant.piece} />}
-            {row.key.startsWith('draft-') && <span>{variant.title}</span>}
+            {variant.image && <Thumbnail key={variant.image.piece_id} image={variant.image} />}
+            <span>{variant.title}</span>
           </li>)}
         </ul>}
       </article>

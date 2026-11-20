@@ -1106,7 +1106,10 @@ arrancadas por uno de ellos), nombre, proveedor y rango debajo, y punto de prese
 autor se agrupan y los días se separan. Las @menciones son píldoras del color de a quien llaman (la del usuario resalta).
 Las tareas que nombra un mensaje (#N) salen como tarjetas con su estado, título y responsable, y los hashes de commit
 como una tarjeta de entrega. La barra lateral empieza con «Ir a…» (Ctrl+K: canales, hilos, tareas, agentes y
-servidores) y los accesos Inicio, Bandeja, Hilos y Tareas; siguen Canales con sus no leídos, Agentes activos (un clic
+servidores) y los accesos Inicio, Tus decisiones pendientes, Bandeja, Hilos y Tareas. La lista muestra el
+contador del espacio, incluido el cero. Cada decisión abre su puerta en Órdenes y la columna de servidores
+señala los espacios con pendientes. El Hub y Studio leen la misma cola. Siguen Canales con sus no leídos,
+Agentes activos (un clic
 los menciona en el mensaje) y el resto de secciones de siempre. La cabecera del canal tiene Hilos, Fijados (las
 decisiones del servidor), ajustes y miembros, y una búsqueda que empieza limitada al canal con el chip «en: #canal».
 El compositor tiene barra de formato (negrita, cursiva, tachado, código, bloque, enlace, listas, cita, emoji,

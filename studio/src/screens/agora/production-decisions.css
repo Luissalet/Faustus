@@ -16,3 +16,23 @@
   .fs-agx-production__heading > div { flex-basis: 100%; }
   .fs-agx-production__heading a { min-block-size: 40px; }
 }
+
+.fs-agx-row[data-testid='agora-view-pending-decisions'] .fs-agx-row__label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fs-agx-production__previews > img { inline-size: min(128px, 33%); }
+.fs-agx-production p.fs-agx-production__pieces { margin-block-start: var(--fs-space-1); }
+.fs-agx-rail__decisions {
+  position: absolute;
+  inset-inline-end: -4px;
+  inset-block-start: -2px;
+  display: grid;
+  place-items: center;
+  inline-size: 19px;
+  block-size: 19px;
+  border: 1px solid var(--fs-warning);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-warning);
+}

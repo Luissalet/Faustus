@@ -49,3 +49,17 @@ def test_studio_refuses_agent_channel_before_contacting_hub(studio, monkeypatch,
     monkeypatch.setattr(agora_routes, "hub_request", unexpected)
     result = studio.post("/api/agora/x/" + operation, headers={INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN}, json={})
     assert result.status_code == 403
+
+def test_studio_reads_shared_pending_decisions_from_hub(studio, monkeypatch):
+    queue = {"ok": True, "rows": [{"key": "draft-2", "space": "test-room"}], "counts": {"test-room": 1}}
+
+    def read(method, path, *, query):
+        assert method == "GET"
+        assert path == "/api/agora/pending_decisions"
+        assert query == {"all_spaces": "1"}
+        return 200, queue, "application/json"
+
+    monkeypatch.setattr(agora_routes, "hub_request", read)
+    result = studio.get("/api/agora/x/pending_decisions?all_spaces=1")
+    assert result.status_code == 200
+    assert result.json() == queue
