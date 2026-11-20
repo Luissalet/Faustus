@@ -40,7 +40,7 @@ def walk(spec_body):
 
     events = []
     run = C.Run.parse({
-        "id": "run-phase0", "kind": "skill", "owner": "luis",
+        "id": "run-phase0", "kind": "skill", "owner": "example-user",
         "project_id": "book", "skill_id": manifest.id,
         "skill_version": manifest.version,
         "execution_fingerprint": spec.fingerprint(),

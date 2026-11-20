@@ -29,8 +29,8 @@ def client(tmp_path, monkeypatch):
     app = FastAPI()
 
     @app.middleware("http")
-    async def _as_luis(request, call_next):
-        request.state.current_user = "luis"
+    async def _as_user(request, call_next):
+        request.state.current_user = "example-user"
         return await call_next(request)
 
     app.include_router(setup_context_engine_routes())
@@ -45,7 +45,7 @@ def _request_body(**over):
     body = {
         "request": {
             "actor": {"agent_id": "tester", "model": "test-model"},
-            "execution": {"owner": "luis", "session_id": "s1", "project_id": "p1"},
+            "execution": {"owner": "example-user", "session_id": "s1", "project_id": "p1"},
             "task": {"intent": "chat", "phase": "act", "query": "hola"},
         },
     }
@@ -76,16 +76,16 @@ def test_pin_rescues_a_fragment_compaction_would_otherwise_fold(tmp_path):
 
         # Without a pin: folded away (this is the pre-fix behaviour).
         out_unpinned, evidence = compact_with_integrity(
-            list(convo), owner_id="luis", session_id="s-pin-1")
+            list(convo), owner_id="example-user", session_id="s-pin-1")
         assert evidence, "expected a fold to happen at all"
         assert not any(m is target or m.get("content") == target["content"]
                        for m in out_unpinned if m.get("role") == "user")
 
         # Pin it, then compact the SAME conversation again — session_id alone
         # is enough for compact_with_integrity to find the pin.
-        compaction_pins.pin_fragment("luis", "s-pin-1", fp, excerpt=target["content"])
+        compaction_pins.pin_fragment("example-user", "s-pin-1", fp, excerpt=target["content"])
         out_pinned, evidence2 = compact_with_integrity(
-            list(convo), owner_id="luis", session_id="s-pin-1")
+            list(convo), owner_id="example-user", session_id="s-pin-1")
         assert any(m.get("content") == target["content"] for m in out_pinned)
     finally:
         store.use_path(None)
@@ -94,18 +94,18 @@ def test_pin_rescues_a_fragment_compaction_would_otherwise_fold(tmp_path):
 def test_compaction_event_is_recorded_and_readable_back(tmp_path):
     store.use_path(str(tmp_path / "ce.db"))
     try:
-        assert compaction_pins.last_event("luis", "s-log-1") is None
+        assert compaction_pins.last_event("example-user", "s-log-1") is None
         convo = _long_convo(10)
-        _, evidence = compact_with_integrity(convo, owner_id="luis", session_id="s-log-1")
+        _, evidence = compact_with_integrity(convo, owner_id="example-user", session_id="s-log-1")
         assert evidence
-        event = compaction_pins.last_event("luis", "s-log-1")
+        event = compaction_pins.last_event("example-user", "s-log-1")
         assert event is not None
         assert event["kind"] == "integrity"
         assert event["folded_count"] > 0
         assert event["evidence_refs"]
         # Scoped: another owner or session sees nothing.
         assert compaction_pins.last_event("otro", "s-log-1") is None
-        assert compaction_pins.last_event("luis", "s-log-other") is None
+        assert compaction_pins.last_event("example-user", "s-log-other") is None
     finally:
         store.use_path(None)
 
@@ -125,7 +125,7 @@ def test_ctx02_pin_and_compaction_log_routes(client):
 
     # Now actually compact with that pin in place, through the real function.
     convo = _long_convo(10)
-    compact_with_integrity(convo, owner_id="luis", session_id="s-route-1")
+    compact_with_integrity(convo, owner_id="example-user", session_id="s-route-1")
 
     r = client.get("/api/context/compaction/s-route-1")
     assert r.status_code == 200
@@ -157,10 +157,10 @@ class _FakeSource(ThreadedSource):
             "l64test:1": ContextCandidate(
                 candidate_id="c1", source_type="memory", source_ref="l64test:1",
                 title="fact one", body="the exact original text of fact one",
-                owner="luis"),
+                owner="example-user"),
             "l64test:other-owner": ContextCandidate(
                 candidate_id="c2", source_type="memory", source_ref="l64test:other-owner",
-                title="not yours", body="should never come back to luis",
+                title="not yours", body="should never come back to example-user",
                 owner="alguien-mas"),
         }
 
@@ -180,7 +180,7 @@ def fake_source():
 
 @pytest.mark.asyncio
 async def test_fetch_ref_reopens_the_exact_fragment(fake_source):
-    ctx_request = ContextRequest.parse({"execution": {"owner": "luis"}})
+    ctx_request = ContextRequest.parse({"execution": {"owner": "example-user"}})
     retrieval = RetrievalRequest(request=ctx_request, explicit_refs=("l64test:1",))
     got = await candidates.fetch_ref("l64test:1", retrieval)
     assert got is not None

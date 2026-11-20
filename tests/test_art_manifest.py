@@ -52,7 +52,7 @@ def own_database(tmp_path, monkeypatch):
 def _occurrence(occ_id="occ_manifest_1", sha256="a" * 64):
     identity.ensure_blob(sha256=sha256, byte_size=10, filename=f"{sha256}.bin")
     value, _ = identity.ensure_occurrence(ArtifactOccurrence.parse({
-        "id": occ_id, "blob_sha256": sha256, "kind": "text", "owner": "luis",
+        "id": occ_id, "blob_sha256": sha256, "kind": "text", "owner": "example-user",
     }))
     return value
 

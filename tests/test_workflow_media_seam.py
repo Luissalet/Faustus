@@ -76,7 +76,7 @@ def test_a_workflow_renders_pauses_for_a_person_and_keeps_the_artifact(world):
     approvals = FakeApprovals()
     engine = WorkflowEngine(default_handlers(approvals=approvals), store)
     run_id = store.create_run(WorkflowDefinition.parse(BRIEF),
-                              owner="luis")["run_id"]
+                              owner="example-user")["run_id"]
 
     # First pass: the trigger runs, the render is queued, and the run pauses on
     # a WAKE TIME rather than holding anything open.

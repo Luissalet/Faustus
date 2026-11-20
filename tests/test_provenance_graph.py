@@ -102,29 +102,29 @@ def _add_memory(workspace):
     """Five items, each one a record a human or the Curator wrote."""
     ids = {}
     ids["rule"] = engine.add_item(
-        RULE, owner="luis", project=workspace, level="procedural",
+        RULE, owner="example-user", project=workspace, level="procedural",
         trust_class="human_explicit", now=NOW,
         evidence=[{"kind": "chat", "session_id": "sess-abc", "excerpt": "the user said so"},
                   {"kind": "file", "ref": "src/provenance_graph.py:42",
                    "excerpt": "the builder refuses a node past the budget"}],
     )["id"]
     ids["dup"] = engine.add_item(
-        RULE_DUP, owner="luis", project=workspace, level="semantic",
+        RULE_DUP, owner="example-user", project=workspace, level="semantic",
         trust_class="agent_assertion", now=NOW,
     )["id"]
     ids["original"] = engine.add_item(
-        ORIGINAL, owner="luis", project=workspace, level="procedural",
+        ORIGINAL, owner="example-user", project=workspace, level="procedural",
         trust_class="agent_assertion", now=NOW,
     )["id"]
     anti = engine.add_item(
-        ANTI, owner="luis", project=workspace, level="procedural",
+        ANTI, owner="example-user", project=workspace, level="procedural",
         trust_class="agent_validated", status="anti_pattern", now=NOW,
     )
     anti["inverted_from"] = ORIGINAL
     engine.save_item(anti)
     ids["anti"] = anti["id"]
     ids["lone"] = engine.add_item(
-        LONE, owner="luis", project=workspace, level="episodic",
+        LONE, owner="example-user", project=workspace, level="episodic",
         trust_class="human_explicit", now=NOW,
     )["id"]
     return ids
@@ -157,7 +157,7 @@ def _build(store, **kw):
     kw.setdefault("project", store.project)
     kw.setdefault("workspace", store.workspace)
     kw.setdefault("now", NOW)
-    return pg.build("luis", **kw)
+    return pg.build("example-user", **kw)
 
 
 def _n(store, key):
@@ -265,7 +265,7 @@ def test_a_file_evidence_span_keeps_the_line_it_named(store):
 def test_an_absolute_path_lands_on_the_same_file_node_as_the_checkpoint_diff(store):
     """A memory span naming the absolute path and a checkpoint naming the
     workspace-relative one are the same file, so they are one node."""
-    engine.add_item("The app entrypoint registers every router", owner="luis",
+    engine.add_item("The app entrypoint registers every router", owner="example-user",
                     project=store.workspace, level="semantic", now=NOW,
                     evidence=[{"kind": "file",
                                "ref": os.path.join(store.workspace, "app.py")}])
@@ -564,7 +564,7 @@ def test_every_source_absent_still_answers_with_a_valid_graph(tmp_path, monkeypa
 def test_build_never_raises_on_nonsense_arguments(store):
     for kwargs in ({"project": "not a dict"}, {"limit_nodes": "many"},
                    {"limit_nodes": 0}, {"limit_nodes": -5}, {"workspace": 12345}):
-        graph = pg.build("luis", now=NOW, **kwargs)
+        graph = pg.build("example-user", now=NOW, **kwargs)
         assert isinstance(graph["nodes"], list) and isinstance(graph["edges"], list)
 
 
@@ -605,7 +605,7 @@ def test_a_stored_evidence_ref_naming_an_indexed_chunk_becomes_a_cites_edge(
         "page_confidence": "exact", "start_line": 3, "end_line": 9,
         "text": "Cut every sentence that only restates the last one.",
     }])
-    engine.add_item("Cut sentences that restate the previous one", owner="luis",
+    engine.add_item("Cut sentences that restate the previous one", owner="example-user",
                     project=store.workspace, level="procedural", now=NOW,
                     evidence=[{"kind": "chat", "ref": f"expert:{slug}#{chunk_id}"}])
 
@@ -625,7 +625,7 @@ def test_a_chunk_no_index_knows_cites_nothing(store, tmp_path, monkeypatch):
     monkeypatch.setattr(experts_svc, "DATA_DIR", str(tmp_path / "experts-data"))
     os.makedirs(experts_svc.expert_dir("brenner-bot"), exist_ok=True)
     experts_svc.save_index("brenner-bot", [])
-    engine.add_item("A rule citing a chunk that does not exist", owner="luis",
+    engine.add_item("A rule citing a chunk that does not exist", owner="example-user",
                     project=store.workspace, level="procedural", now=NOW,
                     evidence=[{"kind": "chat", "ref": "expert:brenner-bot#c0000000000000ff"}])
     graph = _build(store)
@@ -680,7 +680,7 @@ def _client(monkeypatch):
     monkeypatch.setattr(mw, "auth_disabled", lambda: False)
     app = FastAPI()
     app.include_router(setup_provenance_routes())
-    app.state.auth_manager = SimpleNamespace(is_configured=True, is_admin=lambda u: u == "luis")
+    app.state.auth_manager = SimpleNamespace(is_configured=True, is_admin=lambda u: u == "example-user")
 
     class _Stamp(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
@@ -695,7 +695,7 @@ def _client(monkeypatch):
 
 def _get(client, path, workspace, **params):
     params["workspace"] = workspace
-    return client.get(path, params=params, headers={"x-user": "luis"})
+    return client.get(path, params=params, headers={"x-user": "example-user"})
 
 
 def test_graph_endpoint_answers_with_nodes_edges_sources_and_stats(store, monkeypatch):

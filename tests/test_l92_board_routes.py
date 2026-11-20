@@ -21,7 +21,7 @@ from services import projects as projects_mod  # noqa: E402
 from src import constants as constants_mod  # noqa: E402
 from src import project_board  # noqa: E402
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """A brief written as an outline keeps its headings as the report's sections.
 
-Luis's whiplash guide (09-09-2026): 44 bullets under "Tratamiento",
+ExampleUser's whiplash guide (09-09-2026): 44 bullets under "Tratamiento",
 "Ejercicio y progresión", "Pronóstico y seguimiento", "Qué evitar",
 "Algoritmo clínico" and "Tabla final de consulta rápida". Flattened and
 capped at 12, the report covered the first twelve bullets and stopped at
@@ -169,7 +169,7 @@ def test_grouped_headings_lose_their_pasted_lists():
 
 
 
-def test_luis_s_real_whiplash_brief_is_fifteen_sections():
+def test_user_s_real_whiplash_brief_is_fifteen_sections():
     """The brief as he typed it (tests/fixtures/wad_brief_es.txt): 8 top-level
     bullets, six headed groups, and the closing line of seven questions. It
     used to come out as the first 12 bullets."""

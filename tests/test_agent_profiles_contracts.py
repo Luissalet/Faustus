@@ -44,7 +44,7 @@ def _resolution(**over):
         resolution_id="agentres_0123456789abcdef",
         agent=AgentRef(slug="security_reviewer", definition_revision=sha256_digest("def"),
                        source="builtin"),
-        execution_scope=ExecutionScope(owner="luis", project_id="faustus", session_id="s1",
+        execution_scope=ExecutionScope(owner="example-user", project_id="faustus", session_id="s1",
                                        run_id="r1", turn_id="t1"),
         model_route=ModelRoute(model="qwen3-coder:30b", endpoint_id="local", runner="native"),
         completion=CompletionChoice(mode="professional", policy_version="professional_v1",
@@ -156,7 +156,7 @@ def test_identity_ignores_the_id_the_clock_and_the_route_that_got_here():
     twin = _resolution(
         resolution_id="agentres_ffffffffffffffff",
         created_at="2027-01-01T00:00:00Z",
-        execution_scope=ExecutionScope(owner="luis", project_id="faustus",
+        execution_scope=ExecutionScope(owner="example-user", project_id="faustus",
                                        session_id="OTHER", run_id="OTHER", turn_id="OTHER"),
         selection=SelectionTrace(chosen="security_reviewer", reason="pinned by the user"),
         caveats=("a differently worded warning",),

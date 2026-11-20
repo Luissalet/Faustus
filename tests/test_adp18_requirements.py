@@ -33,7 +33,7 @@ from src.requirements import store as req_store  # noqa: E402
 from src.requirements import context as req_context  # noqa: E402
 from src.requirements import evidence as req_evidence  # noqa: E402
 
-OWNER = "luis"
+OWNER = "example-user"
 PROJECT = "proj-1"
 OTHER_PROJECT = "proj-2"
 

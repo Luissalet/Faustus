@@ -23,7 +23,7 @@ def ce_db(tmp_path):
 
 
 def _block(**over):
-    fields = {"type": "project_rules", "scope": "project", "owner": "luis",
+    fields = {"type": "project_rules", "scope": "project", "owner": "example-user",
               "project_id": "p1", "title": "Repo rules", "content": "Never touch migrations.",
               "priority": 50}
     fields.update(over)
@@ -93,7 +93,7 @@ def test_update_refuses_a_field_it_does_not_own(ce_db):
     with pytest.raises(blocks.BlockError) as exc:
         blocks.update_block(created.id, {"owner": "someone_else"})
     assert "owner" in str(exc.value)
-    assert blocks.get_block(created.id).owner == "luis"
+    assert blocks.get_block(created.id).owner == "example-user"
 
 
 def test_delete_takes_the_attachments_with_it(ce_db):
@@ -110,18 +110,18 @@ def test_delete_takes_the_attachments_with_it(ce_db):
 # ── owner isolation ────────────────────────────────────────────────────────
 
 def test_queries_never_cross_owners(ce_db):
-    mine = _block(owner="luis", title="Mine")
+    mine = _block(owner="example-user", title="Mine")
     _block(owner="someone_else", title="Theirs")
 
-    listed = blocks.list_blocks(owner="luis", project_id="p1")
+    listed = blocks.list_blocks(owner="example-user", project_id="p1")
     assert [b.id for b in listed] == [mine.id]
-    assert [b.id for b in blocks.blocks_for(owner="luis", project_id="p1",
+    assert [b.id for b in blocks.blocks_for(owner="example-user", project_id="p1",
                                             intent="code")] == [mine.id]
 
 
 def test_a_project_block_is_not_served_to_another_project(ce_db):
     _block(project_id="p1", always_loaded=True)
-    assert blocks.blocks_for(owner="luis", project_id="p2") == []
+    assert blocks.blocks_for(owner="example-user", project_id="p2") == []
 
 
 # ── the ration on `always_loaded` ──────────────────────────────────────────
@@ -130,7 +130,7 @@ def test_always_loaded_is_capped_by_block_count(ce_db):
     made = [_block(title=f"rule {i}", priority=90 - i, always_loaded=True)
             for i in range(blocks.ALWAYS_LOADED_MAX_BLOCKS + 2)]
 
-    served = blocks.blocks_for(owner="luis", project_id="p1")
+    served = blocks.blocks_for(owner="example-user", project_id="p1")
 
     assert len(served) == blocks.ALWAYS_LOADED_MAX_BLOCKS
     # Kept by priority, highest first; the two lowest are left connectable.
@@ -144,7 +144,7 @@ def test_always_loaded_is_capped_by_characters_before_the_count(ce_db):
     made = [_block(title=f"big {i}", priority=90 - i, always_loaded=True,
                    content=big, max_chars=3000) for i in range(3)]
 
-    served = blocks.blocks_for(owner="luis", project_id="p1")
+    served = blocks.blocks_for(owner="example-user", project_id="p1")
 
     # 3 x 3000 = 9000 > 8000, so the third does not fit even though the block
     # count cap (5) has not been reached.
@@ -156,7 +156,7 @@ def test_audit_reports_the_ration_instead_of_hiding_it(ce_db):
     made = [_block(title=f"rule {i}", priority=90 - i, always_loaded=True)
             for i in range(blocks.ALWAYS_LOADED_MAX_BLOCKS + 1)]
 
-    report = blocks.audit(owner="luis", project_id="p1")
+    report = blocks.audit(owner="example-user", project_id="p1")
 
     assert report["ok"] is False
     assert report["always_loaded"] == blocks.ALWAYS_LOADED_MAX_BLOCKS + 1
@@ -170,7 +170,7 @@ def test_audit_reports_the_ration_instead_of_hiding_it(ce_db):
 
 def test_audit_is_clean_when_nothing_is_wrong(ce_db):
     _block(always_loaded=True)
-    report = blocks.audit(owner="luis", project_id="p1")
+    report = blocks.audit(owner="example-user", project_id="p1")
     assert report["over_ration"] == []
     assert report["oversized"] == []
     assert report["duplicates"] == []
@@ -185,7 +185,7 @@ def test_audit_sees_duplicates_and_oversized_and_contradictions(ce_db):
     _block(type="active_goal", always_loaded=True, title="goal a", content="Ship OAuth")
     _block(type="active_goal", always_loaded=True, title="goal b", content="Ship SSO")
 
-    report = blocks.audit(owner="luis", project_id="p1")
+    report = blocks.audit(owner="example-user", project_id="p1")
 
     assert len(report["duplicates"]) == 1 and len(report["duplicates"][0]["ids"]) == 2
     assert [o["max_chars"] for o in report["oversized"]] == [100]
@@ -198,12 +198,12 @@ def test_audit_sees_duplicates_and_oversized_and_contradictions(ce_db):
 def test_an_expired_attachment_is_not_served_but_the_row_survives(ce_db):
     created = _block(scope="session", always_loaded=False)
     blocks.attach(created.id, session_id="s1", expires_at="2999-01-01T00:00:00Z")
-    assert [b.id for b in blocks.blocks_for(owner="luis", project_id="p1",
+    assert [b.id for b in blocks.blocks_for(owner="example-user", project_id="p1",
                                             session_id="s1")] == [created.id]
 
     blocks.attach(created.id, session_id="s1", expires_at="2020-01-01T00:00:00Z")
 
-    assert blocks.blocks_for(owner="luis", project_id="p1", session_id="s1") == []
+    assert blocks.blocks_for(owner="example-user", project_id="p1", session_id="s1") == []
     rows = blocks.attachments(created.id)
     assert len(rows) == 1 and rows[0]["expired"] is True     # maintenance reaps it, not us
 
@@ -212,11 +212,11 @@ def test_an_attachment_beats_the_ration(ce_db):
     made = [_block(title=f"rule {i}", priority=90 - i, always_loaded=True)
             for i in range(blocks.ALWAYS_LOADED_MAX_BLOCKS + 1)]
     demoted = made[-1]
-    assert demoted.id not in {b.id for b in blocks.blocks_for(owner="luis", project_id="p1")}
+    assert demoted.id not in {b.id for b in blocks.blocks_for(owner="example-user", project_id="p1")}
 
     blocks.attach(demoted.id, agent_id="worker-1")
 
-    served = blocks.blocks_for(owner="luis", project_id="p1", agent_id="worker-1")
+    served = blocks.blocks_for(owner="example-user", project_id="p1", agent_id="worker-1")
     assert demoted.id in {b.id for b in served}
     assert len(served) == blocks.ALWAYS_LOADED_MAX_BLOCKS + 1
 
@@ -243,8 +243,8 @@ def test_intent_connects_matching_types_and_nothing_else(ce_db):
     failures = _block(type="known_failures", title="Traps", always_loaded=False)
     style = _block(type="style_profile", title="Voice", always_loaded=False)
 
-    assert blocks.blocks_for(owner="luis", project_id="p1") == []
-    served = {b.id for b in blocks.blocks_for(owner="luis", project_id="p1",
+    assert blocks.blocks_for(owner="example-user", project_id="p1") == []
+    served = {b.id for b in blocks.blocks_for(owner="example-user", project_id="p1",
                                               intent="code_review")}
     assert served == {failures.id}
     assert style.id not in served
@@ -255,7 +255,7 @@ def test_intent_does_not_readmit_a_block_the_ration_demoted(ce_db):
     made = [_block(type="known_failures", title=f"trap {i}", priority=90 - i,
                    always_loaded=True) for i in range(blocks.ALWAYS_LOADED_MAX_BLOCKS + 1)]
 
-    served = {b.id for b in blocks.blocks_for(owner="luis", project_id="p1",
+    served = {b.id for b in blocks.blocks_for(owner="example-user", project_id="p1",
                                               intent="code")}
 
     assert made[-1].id not in served
@@ -269,7 +269,7 @@ def test_a_credential_in_the_content_is_refused_by_name(ce_db):
         _block(content='api_key: "sk-live-9f2c8ab41d77"')
     assert exc.value.pattern == "api_key"
     assert "api_key" in str(exc.value)
-    assert blocks.list_blocks(owner="luis") == []
+    assert blocks.list_blocks(owner="example-user") == []
 
 
 def test_a_credential_cannot_be_smuggled_in_by_an_update(ce_db):
@@ -297,11 +297,11 @@ def _workspace(tmp_path):
 def test_import_project_memory_only_proposes_by_default(ce_db, tmp_path):
     project = _workspace(tmp_path)
 
-    report = blocks.import_project_memory(project, owner="luis")
+    report = blocks.import_project_memory(project, owner="example-user")
 
     assert report["dry_run"] is True
     assert report["created"] == []
-    assert blocks.list_blocks(owner="luis", project_id="p1") == []
+    assert blocks.list_blocks(owner="example-user", project_id="p1") == []
     assert sorted(p["path"] for p in report["proposed"]) == [
         ".faustus/MEMORY.md", ".faustus/decisions.md"]
     # §7.3: no Markdown note is migrated to always_loaded automatically.
@@ -312,14 +312,14 @@ def test_import_project_memory_only_proposes_by_default(ce_db, tmp_path):
 def test_import_writes_once_and_then_skips_what_it_already_imported(ce_db, tmp_path):
     project = _workspace(tmp_path)
 
-    first = blocks.import_project_memory(project, owner="luis", dry_run=False)
+    first = blocks.import_project_memory(project, owner="example-user", dry_run=False)
     assert len(first["created"]) == 2
-    stored = blocks.list_blocks(owner="luis", project_id="p1")
+    stored = blocks.list_blocks(owner="example-user", project_id="p1")
     assert len(stored) == 2
     assert all(not b.always_loaded for b in stored)
     assert all(b.trust_class == "legacy_import" for b in stored)
 
-    second = blocks.import_project_memory(project, owner="luis", dry_run=False)
+    second = blocks.import_project_memory(project, owner="example-user", dry_run=False)
     assert second["created"] == []
     assert {s["reason"] for s in second["skipped"]} == {"already imported"}
 
@@ -329,7 +329,7 @@ def test_import_refuses_a_note_that_carries_a_credential(ce_db, tmp_path):
     root = tmp_path / "ws" / blocks.PROJECT_MEMORY_DIRNAME
     (root / "env.md").write_text("client_secret=9f2c8ab41d7700ff\n", encoding="utf-8")
 
-    report = blocks.import_project_memory(project, owner="luis", dry_run=False)
+    report = blocks.import_project_memory(project, owner="example-user", dry_run=False)
 
     assert ".faustus/env.md" not in [p["path"] for p in report["proposed"]]
     reasons = {s["path"]: s["reason"] for s in report["skipped"]}
@@ -337,7 +337,7 @@ def test_import_refuses_a_note_that_carries_a_credential(ce_db, tmp_path):
 
 
 def test_import_without_a_workspace_says_so_instead_of_raising(ce_db):
-    report = blocks.import_project_memory({"id": "p1"}, owner="luis")
+    report = blocks.import_project_memory({"id": "p1"}, owner="example-user")
     assert report["proposed"] == []
     assert report["skipped"][0]["reason"] == "project has no workspace bound"
 

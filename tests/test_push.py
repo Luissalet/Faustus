@@ -200,13 +200,13 @@ def test_vapid_exp_is_capped_at_24_hours(isolated_push):
 
 def test_vapid_contact_setting_is_used(isolated_push, monkeypatch):
     monkeypatch.setattr("src.settings.get_setting", lambda key, default=None: (
-        "luis@example.com" if key == "push_contact" else default
+        "user@example.com" if key == "push_contact" else default
     ))
     headers = push.vapid_headers("https://push.example.com/x")
     token_part = headers["Authorization"].split("t=", 1)[1].split(", k=")[0]
     _, claims_b64, _ = token_part.split(".")
     claims = json.loads(_b64u(claims_b64))
-    assert claims["sub"] == "mailto:luis@example.com"
+    assert claims["sub"] == "mailto:user@example.com"
 
 
 # --------------------------------------------------------------------------- #
@@ -236,56 +236,56 @@ def _sub(endpoint="https://push.example.com/ep1", p256dh=None, auth=None):
 
 
 def test_subscribe_persists_and_round_trips(isolated_push):
-    row = push.subscribe("luis", _sub(), device_name="Pixel 8")
-    assert row["owner"] == "luis"
+    row = push.subscribe("example-user", _sub(), device_name="Pixel 8")
+    assert row["owner"] == "example-user"
     assert row["device_name"] == "Pixel 8"
     assert row["failures"] == 0
     assert row["id"]
 
     push._store_cache = None  # force a re-read from disk
-    rows = push.list_subscriptions("luis")
+    rows = push.list_subscriptions("example-user")
     assert len(rows) == 1
     assert rows[0]["endpoint"] == "https://push.example.com/ep1"
 
 
 def test_subscribe_same_endpoint_dedupes_not_duplicates(isolated_push):
-    push.subscribe("luis", _sub(), device_name="Phone A")
-    push.subscribe("luis", _sub(p256dh="q" * 87), device_name="Phone A renamed")
-    rows = push.list_subscriptions("luis")
+    push.subscribe("example-user", _sub(), device_name="Phone A")
+    push.subscribe("example-user", _sub(p256dh="q" * 87), device_name="Phone A renamed")
+    rows = push.list_subscriptions("example-user")
     assert len(rows) == 1
     assert rows[0]["keys"]["p256dh"] == "q" * 87
     assert rows[0]["device_name"] == "Phone A renamed"
 
 
 def test_subscribe_different_owners_do_not_collide(isolated_push):
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     push.subscribe("other", _sub())
-    assert len(push.list_subscriptions("luis")) == 1
+    assert len(push.list_subscriptions("example-user")) == 1
     assert len(push.list_subscriptions("other")) == 1
 
 
 def test_subscribe_rejects_missing_keys(isolated_push):
     with pytest.raises(ValueError):
-        push.subscribe("luis", {"endpoint": "https://push.example.com/x", "keys": {}})
+        push.subscribe("example-user", {"endpoint": "https://push.example.com/x", "keys": {}})
 
 
 def test_unsubscribe_by_endpoint_removes_it(isolated_push):
-    push.subscribe("luis", _sub())
-    assert push.unsubscribe("luis", "https://push.example.com/ep1") is True
-    assert push.list_subscriptions("luis") == []
-    assert push.unsubscribe("luis", "https://push.example.com/ep1") is False
+    push.subscribe("example-user", _sub())
+    assert push.unsubscribe("example-user", "https://push.example.com/ep1") is True
+    assert push.list_subscriptions("example-user") == []
+    assert push.unsubscribe("example-user", "https://push.example.com/ep1") is False
 
 
 def test_unsubscribe_by_id_removes_it(isolated_push):
-    row = push.subscribe("luis", _sub())
-    assert push.unsubscribe("luis", row["id"]) is True
-    assert push.list_subscriptions("luis") == []
+    row = push.subscribe("example-user", _sub())
+    assert push.unsubscribe("example-user", row["id"]) is True
+    assert push.list_subscriptions("example-user") == []
 
 
 def test_unsubscribe_does_not_touch_another_owners_subscription(isolated_push):
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     assert push.unsubscribe("other", "https://push.example.com/ep1") is False
-    assert len(push.list_subscriptions("luis")) == 1
+    assert len(push.list_subscriptions("example-user")) == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -298,7 +298,7 @@ class _FakeResponse:
 
 
 def test_send_success_records_last_ok(isolated_push, monkeypatch):
-    row = push.subscribe("luis", _sub())
+    row = push.subscribe("example-user", _sub())
 
     def fake_post(url, content=None, headers=None, timeout=None):
         assert url == row["endpoint"]
@@ -311,47 +311,47 @@ def test_send_success_records_last_ok(isolated_push, monkeypatch):
     assert result == {"ok": True, "status": 201}
 
     push._store_cache = None
-    stored = push.list_subscriptions("luis")[0]
+    stored = push.list_subscriptions("example-user")[0]
     assert stored["last_ok"] is not None
     assert stored["failures"] == 0
 
 
 def test_send_404_drops_the_subscription(isolated_push, monkeypatch):
-    row = push.subscribe("luis", _sub())
+    row = push.subscribe("example-user", _sub())
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(404))
     result = push.send(row, {"title": "hi"})
     assert result == {"ok": False, "status": 404}
-    assert push.list_subscriptions("luis") == []
+    assert push.list_subscriptions("example-user") == []
 
 
 def test_send_410_drops_the_subscription(isolated_push, monkeypatch):
-    row = push.subscribe("luis", _sub())
+    row = push.subscribe("example-user", _sub())
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(410))
     push.send(row, {"title": "hi"})
-    assert push.list_subscriptions("luis") == []
+    assert push.list_subscriptions("example-user") == []
 
 
 def test_send_429_counts_failure_but_keeps_subscription(isolated_push, monkeypatch):
-    row = push.subscribe("luis", _sub())
+    row = push.subscribe("example-user", _sub())
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(429))
     result = push.send(row, {"title": "hi"})
     assert result == {"ok": False, "status": 429}
     push._store_cache = None
-    stored = push.list_subscriptions("luis")[0]
+    stored = push.list_subscriptions("example-user")[0]
     assert stored["failures"] == 1
 
 
 def test_send_drops_after_max_failures(isolated_push, monkeypatch):
-    row = push.subscribe("luis", _sub())
+    row = push.subscribe("example-user", _sub())
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(500))
     for _ in range(push.MAX_FAILURES):
         push.send(row, {"title": "hi"})
-    assert push.list_subscriptions("luis") == []
+    assert push.list_subscriptions("example-user") == []
 
 
 def test_broadcast_sends_to_every_subscription(isolated_push, monkeypatch):
-    push.subscribe("luis", _sub(endpoint="https://push.example.com/a"))
-    push.subscribe("luis", _sub(endpoint="https://push.example.com/b"))
+    push.subscribe("example-user", _sub(endpoint="https://push.example.com/a"))
+    push.subscribe("example-user", _sub(endpoint="https://push.example.com/b"))
     calls = []
 
     def fake_post(url, content=None, headers=None, timeout=None):
@@ -359,7 +359,7 @@ def test_broadcast_sends_to_every_subscription(isolated_push, monkeypatch):
         return _FakeResponse(201)
 
     monkeypatch.setattr("httpx.post", fake_post)
-    results = push.broadcast("luis", {"title": "hi"})
+    results = push.broadcast("example-user", {"title": "hi"})
     assert len(results) == 2
     assert all(r["ok"] for r in results)
     assert set(calls) == {"https://push.example.com/a", "https://push.example.com/b"}
@@ -381,7 +381,7 @@ def test_broadcast_sends_to_every_subscription(isolated_push, monkeypatch):
 ])
 def test_event_to_push_payload_url_mapping(kind, session_id, expected_url):
     event = {
-        "id": 1, "kind": kind, "owner": "luis", "title": "T", "body": "B",
+        "id": 1, "kind": kind, "owner": "example-user", "title": "T", "body": "B",
         "session_id": session_id, "approval_id": None, "ts": time.time(),
     }
     payload = push.event_to_push_payload(event)
@@ -392,16 +392,16 @@ def test_bus_sink_broadcasts_to_subscribed_owner(isolated_push, monkeypatch):
     # Per-owner targeting is the login-on behaviour; without login every event
     # goes to the local owner's devices (test_single_user_chat_fixes).
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     push.start()
 
     sent = []
     monkeypatch.setattr(push, "broadcast", lambda owner, payload, urgency="normal": sent.append((owner, payload, urgency)))
 
-    N.emit("approval_pending", owner="luis", title="publish", body="do it", session_id="s9")
+    N.emit("approval_pending", owner="example-user", title="publish", body="do it", session_id="s9")
     assert len(sent) == 1
     owner, payload, urgency = sent[0]
-    assert owner == "luis"
+    assert owner == "example-user"
     assert payload["url"] == "/studio?s=s9"
     assert urgency == "high"
 
@@ -415,14 +415,14 @@ def test_bus_sink_ignores_events_for_owners_with_no_subscription(isolated_push, 
 
 
 def test_bus_sink_respects_push_enabled_false(isolated_push, monkeypatch):
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     push.start()
     monkeypatch.setattr("src.settings.get_setting", lambda key, default=None: (
         False if key == "push_enabled" else default
     ))
     sent = []
     monkeypatch.setattr(push, "broadcast", lambda *a, **kw: sent.append(a))
-    N.emit("reminder", owner="luis", title="t", body="b")
+    N.emit("reminder", owner="example-user", title="t", body="b")
     assert sent == []
 
 
@@ -457,7 +457,7 @@ def route_client(isolated_push, monkeypatch):
             request.state.api_token_owner = bearer_owner
         else:
             request.state.api_token = False
-            request.state.current_user = request.headers.get("X-Test-User", "luis")
+            request.state.current_user = request.headers.get("X-Test-User", "example-user")
         return await call_next(request)
 
     app.include_router(setup_push_routes())
@@ -465,18 +465,18 @@ def route_client(isolated_push, monkeypatch):
 
 
 def test_vapid_key_route_bearer(route_client):
-    resp = route_client.get("/api/push/vapid-key", headers={"X-Test-Bearer-Owner": "luis"})
+    resp = route_client.get("/api/push/vapid-key", headers={"X-Test-Bearer-Owner": "example-user"})
     assert resp.status_code == 200
     assert resp.json()["key"] == push.vapid_public_key()
 
 
 def test_vapid_key_route_cookie(route_client):
-    resp = route_client.get("/api/push/vapid-key", headers={"X-Test-User": "luis"})
+    resp = route_client.get("/api/push/vapid-key", headers={"X-Test-User": "example-user"})
     assert resp.status_code == 200
 
 
 def test_subscribe_unsubscribe_subscriptions_route_roundtrip(route_client):
-    headers = {"X-Test-Bearer-Owner": "luis"}
+    headers = {"X-Test-Bearer-Owner": "example-user"}
     body = {
         "subscription": {
             "endpoint": "https://push.example.com/route1",
@@ -512,13 +512,13 @@ def test_subscribe_route_another_owner_cannot_see_it(route_client):
         },
         "device_name": "",
     }
-    route_client.post("/api/push/subscribe", json=body, headers={"X-Test-Bearer-Owner": "luis"})
+    route_client.post("/api/push/subscribe", json=body, headers={"X-Test-Bearer-Owner": "example-user"})
     resp = route_client.get("/api/push/subscriptions", headers={"X-Test-Bearer-Owner": "other"})
     assert resp.json()["subscriptions"] == []
 
 
 def test_test_route_sends_to_callers_subscriptions(route_client, monkeypatch):
-    headers = {"X-Test-Bearer-Owner": "luis"}
+    headers = {"X-Test-Bearer-Owner": "example-user"}
     body = {
         "subscription": {
             "endpoint": "https://push.example.com/route3",
@@ -544,7 +544,7 @@ def test_test_route_sends_to_callers_subscriptions(route_client, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_soft_failure_is_queued_and_retried_until_it_lands(isolated_push, monkeypatch):
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     calls = []
 
     def flaky_post(url, content=None, headers=None, timeout=None):
@@ -552,7 +552,7 @@ def test_soft_failure_is_queued_and_retried_until_it_lands(isolated_push, monkey
         return _FakeResponse(503 if len(calls) == 1 else 201)
 
     monkeypatch.setattr("httpx.post", flaky_post)
-    first = push.broadcast("luis", {"title": "done"}, ttl=3600)
+    first = push.broadcast("example-user", {"title": "done"}, ttl=3600)
     assert first[0]["ok"] is False and first[0]["status"] == 503
     assert len(push._load_retry()) == 1
     assert push.retry_due(now=time.time()) == []          # not due yet
@@ -560,24 +560,24 @@ def test_soft_failure_is_queued_and_retried_until_it_lands(isolated_push, monkey
     assert results and results[0]["ok"] is True
     assert push._load_retry() == []
     push._store_cache = None
-    assert push.list_subscriptions("luis")[0]["failures"] == 0
+    assert push.list_subscriptions("example-user")[0]["failures"] == 0
 
 
 def test_hard_failure_and_expired_ttl_are_not_queued(isolated_push, monkeypatch):
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(410))
-    push.broadcast("luis", {"title": "x"})
+    push.broadcast("example-user", {"title": "x"})
     assert push._load_retry() == []
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(500))
-    push.broadcast("luis", {"title": "x"}, ttl=10)           # first retry (30 s) would be too late
+    push.broadcast("example-user", {"title": "x"}, ttl=10)           # first retry (30 s) would be too late
     assert push._load_retry() == []
 
 
 def test_retry_backs_off_and_gives_up(isolated_push, monkeypatch):
-    push.subscribe("luis", _sub())
+    push.subscribe("example-user", _sub())
     monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(429))
-    push.broadcast("luis", {"title": "x"}, ttl=24 * 3600)
+    push.broadcast("example-user", {"title": "x"}, ttl=24 * 3600)
     now = time.time()
     for delay in push.RETRY_BACKOFF_S[:-1]:
         now += delay + 1

@@ -26,36 +26,36 @@ def store(tmp_path, monkeypatch):
 # ── sensitivity ──────────────────────────────────────────────────────────
 
 def test_sensitivity_defaults_to_normal_and_round_trips(store):
-    item = engine.add_item("the sky is blue", owner="luis")
+    item = engine.add_item("the sky is blue", owner="example-user")
     assert item["sensitivity"] == "normal"
     fetched = engine.get_item(item["id"])
     assert fetched["sensitivity"] == "normal"
 
 
 def test_sensitivity_can_be_set_and_is_validated(store):
-    item = engine.add_item("my address is 123 Main St", owner="luis",
+    item = engine.add_item("my address is 123 Main St", owner="example-user",
                            sensitivity="sensitive")
     assert item["sensitivity"] == "sensitive"
     assert engine.get_item(item["id"])["sensitivity"] == "sensitive"
 
     with pytest.raises(engine.MemoryEngineError):
-        engine.add_item("x", owner="luis", sensitivity="not-a-real-level")
+        engine.add_item("x", owner="example-user", sensitivity="not-a-real-level")
 
 
 def test_secret_items_are_excluded_from_search_and_pack(store):
-    engine.add_item("api key is sk-abc123", owner="luis", trust_class="human_explicit",
+    engine.add_item("api key is sk-abc123", owner="example-user", trust_class="human_explicit",
                     sensitivity="secret")
-    normal = engine.add_item("the deploy runs on Fridays", owner="luis",
+    normal = engine.add_item("the deploy runs on Fridays", owner="example-user",
                              trust_class="human_explicit")
-    hits = engine.search("api key sk-abc123", owner="luis")
+    hits = engine.search("api key sk-abc123", owner="example-user")
     assert all(h["id"] != normal["id"] or True for h in hits)  # sanity: search works
     assert not any("sk-abc123" in h["text"] for h in hits)
 
-    packed = engine.pack_detail(owner="luis", char_budget=4000)
+    packed = engine.pack_detail(owner="example-user", char_budget=4000)
     assert "sk-abc123" not in packed["text"]
 
     # But it still exists for the owner's own listing (dashboard), unchanged.
-    listed = engine.list_items(owner="luis")
+    listed = engine.list_items(owner="example-user")
     assert any("sk-abc123" in i["text"] for i in listed)
 
 
@@ -71,7 +71,7 @@ def test_migration_backfills_sensitivity_for_a_pre_existing_row(store):
     conn = sqlite3.connect(path)
     conn.execute(
         "INSERT INTO items (id, owner, project, level, text, status, trust_class) "
-        "VALUES ('legacy1', 'luis', '', 'semantic', 'an old row', 'active', 'agent_assertion')"
+        "VALUES ('legacy1', 'example-user', '', 'semantic', 'an old row', 'active', 'agent_assertion')"
     )
     conn.commit()
     conn.close()
@@ -82,19 +82,19 @@ def test_migration_backfills_sensitivity_for_a_pre_existing_row(store):
 # ── confirmed / inferred / obsolete, mapped over status/trust_class ────────
 
 def test_confidence_state_confirmed_for_human_explicit_active_item(store):
-    item = engine.add_item("we use pytest", owner="luis", trust_class="human_explicit")
+    item = engine.add_item("we use pytest", owner="example-user", trust_class="human_explicit")
     assert engine.confidence_state(item) == "confirmed"
     assert engine.public_item(item)["confidence_state"] == "confirmed"
 
 
 def test_confidence_state_inferred_for_agent_asserted_item(store):
-    item = engine.add_item("looks like we use pytest", owner="luis",
+    item = engine.add_item("looks like we use pytest", owner="example-user",
                            trust_class="agent_assertion")
     assert engine.confidence_state(item) == "inferred"
 
 
 def test_confidence_state_obsolete_for_deprecated_item_regardless_of_trust(store):
-    item = engine.add_item("we use nose", owner="luis", trust_class="human_explicit",
+    item = engine.add_item("we use nose", owner="example-user", trust_class="human_explicit",
                            status="deprecated")
     assert engine.confidence_state(item) == "obsolete"
 
@@ -105,7 +105,7 @@ def test_status_vocabulary_is_unchanged(store):
     addition, never a replacement."""
     assert engine.STATUSES == ("active", "deprecated", "anti_pattern")
     for status in engine.STATUSES:
-        item = engine.add_item(f"a {status} fact", owner="luis", status=status)
+        item = engine.add_item(f"a {status} fact", owner="example-user", status=status)
         assert item["status"] == status
     assert set(engine.CONFIDENCE_STATES) == {"confirmed", "inferred", "obsolete"}
 
@@ -118,18 +118,18 @@ def test_a_refuted_hypothesis_does_not_return_as_fact_in_a_new_chat(store):
     the MEM-02 tombstone, which already blocks resurrection unless a human
     explicitly restates it — this pins that a fresh session_id (a 'new chat')
     does not bypass the tombstone."""
-    item = engine.add_item("the API is stable", owner="luis", project="proj-a",
+    item = engine.add_item("the API is stable", owner="example-user", project="proj-a",
                            trust_class="agent_assertion")
     engine.forget(item["id"], reason="turned out to be wrong")
-    assert engine.is_tombstoned("the API is stable", owner="luis", project="proj-a",
+    assert engine.is_tombstoned("the API is stable", owner="example-user", project="proj-a",
                                 level="semantic")
 
     with pytest.raises(engine.MemoryEngineError):
-        engine.add_item("the API is stable", owner="luis", project="proj-a",
+        engine.add_item("the API is stable", owner="example-user", project="proj-a",
                         trust_class="agent_assertion", session_id="brand-new-chat-session")
 
     # A human explicitly re-asserting it is a new decision, not a resurrection.
-    restated = engine.add_item("the API is stable", owner="luis", project="proj-a",
+    restated = engine.add_item("the API is stable", owner="example-user", project="proj-a",
                                trust_class="human_explicit", session_id="brand-new-chat-session")
     assert restated["id"] != item["id"]
 
@@ -137,44 +137,44 @@ def test_a_refuted_hypothesis_does_not_return_as_fact_in_a_new_chat(store):
 # ── cross-PROJECT isolation (existing coverage was owner-only) ─────────────
 
 def test_scoped_items_do_not_leak_across_projects_same_owner(store):
-    a = engine.add_item("project A's secret plan", owner="luis", project="proj-a",
+    a = engine.add_item("project A's secret plan", owner="example-user", project="proj-a",
                         trust_class="human_explicit")
-    b = engine.add_item("project B's secret plan", owner="luis", project="proj-b",
+    b = engine.add_item("project B's secret plan", owner="example-user", project="proj-b",
                         trust_class="human_explicit")
 
-    only_a = engine.scoped_items(owner="luis", project="proj-a")
+    only_a = engine.scoped_items(owner="example-user", project="proj-a")
     ids = {i["id"] for i in only_a}
     assert a["id"] in ids
     assert b["id"] not in ids
 
-    only_b = engine.scoped_items(owner="luis", project="proj-b")
+    only_b = engine.scoped_items(owner="example-user", project="proj-b")
     ids_b = {i["id"] for i in only_b}
     assert b["id"] in ids_b
     assert a["id"] not in ids_b
 
 
 def test_search_does_not_leak_across_projects_same_owner(store):
-    engine.add_item("codename Odyssey lives in project A", owner="luis", project="proj-a",
+    engine.add_item("codename Odyssey lives in project A", owner="example-user", project="proj-a",
                     trust_class="human_explicit")
-    engine.add_item("codename Odyssey lives in project B", owner="luis", project="proj-b",
+    engine.add_item("codename Odyssey lives in project B", owner="example-user", project="proj-b",
                     trust_class="human_explicit")
 
-    hits_a = engine.search("codename Odyssey", owner="luis", project="proj-a")
+    hits_a = engine.search("codename Odyssey", owner="example-user", project="proj-a")
     assert all("project B" not in h["text"] for h in hits_a)
     assert any("project A" in h["text"] for h in hits_a)
 
-    hits_b = engine.search("codename Odyssey", owner="luis", project="proj-b")
+    hits_b = engine.search("codename Odyssey", owner="example-user", project="proj-b")
     assert all("project A" not in h["text"] for h in hits_b)
     assert any("project B" in h["text"] for h in hits_b)
 
 
 def test_pack_detail_does_not_leak_across_projects_same_owner(store):
-    engine.add_item("Rule: always run migrations first (proj A)", owner="luis",
+    engine.add_item("Rule: always run migrations first (proj A)", owner="example-user",
                     project="proj-a", level="procedural", trust_class="human_explicit")
-    engine.add_item("Rule: never run migrations first (proj B)", owner="luis",
+    engine.add_item("Rule: never run migrations first (proj B)", owner="example-user",
                     project="proj-b", level="procedural", trust_class="human_explicit")
 
-    packed_a = engine.pack_detail(owner="luis", project="proj-a", char_budget=4000)
+    packed_a = engine.pack_detail(owner="example-user", project="proj-a", char_budget=4000)
     assert "proj A" in packed_a["text"]
     assert "proj B" not in packed_a["text"]
 
@@ -182,11 +182,11 @@ def test_pack_detail_does_not_leak_across_projects_same_owner(store):
 def test_a_project_scoped_item_is_invisible_with_no_project_filter_leak(store):
     """A memory scoped to one project must not appear when another project is
     asked for, even though a GLOBAL (project='') memory legitimately would."""
-    global_item = engine.add_item("global convention: use UTC everywhere", owner="luis",
+    global_item = engine.add_item("global convention: use UTC everywhere", owner="example-user",
                                   trust_class="human_explicit")
-    scoped_item = engine.add_item("proj-a convention: use the staging DB", owner="luis",
+    scoped_item = engine.add_item("proj-a convention: use the staging DB", owner="example-user",
                                   project="proj-a", trust_class="human_explicit")
 
-    seen_in_b = {i["id"] for i in engine.scoped_items(owner="luis", project="proj-b")}
+    seen_in_b = {i["id"] for i in engine.scoped_items(owner="example-user", project="proj-b")}
     assert global_item["id"] in seen_in_b     # global rules apply everywhere
     assert scoped_item["id"] not in seen_in_b  # proj-a's own memory does not

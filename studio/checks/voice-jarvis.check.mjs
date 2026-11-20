@@ -30,7 +30,7 @@ for (const [heard, spoken] of [
   ['Set the timer for twenty minutes please.', 'Set the timer for ten minutes please.'],
   ['Pon el temporizador en veinte minutos por favor.', 'Pon el temporizador en diez minutos por favor.'],
   ['Move Alice before Bob in the list.', 'Move Bob before Alice in the list.'],
-  ['Mueve a Ana antes de Luis en la lista.', 'Mueve a Luis antes de Ana en la lista.'],
+  ['Mueve a Ana antes de Equipo en la lista.', 'Mueve a Equipo antes de Ana en la lista.'],
   ['Yes.', 'Yes.'], ['Sí.', 'Sí.'], ['No.', 'No.'], ['Gracias.', 'Gracias.'],
 ]) assert.equal(isEcho(heard, spoken, 1500, 400), false, `keep real reply: ${heard}`);
 // A complete contiguous tail of playback remains echo, including punctuation variants.

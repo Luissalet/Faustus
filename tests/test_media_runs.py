@@ -109,7 +109,7 @@ def test_cancel_after_engine_completion_does_not_lose_uncollected_output(world):
     assert media_runs.get(run_id)['artifact_ids']
 
 def test_a_render_goes_from_queued_to_an_artifact_with_its_whole_story(world):
-    started = media_runs.start("image.product", ASK, owner="luis",
+    started = media_runs.start("image.product", ASK, owner="example-user",
                                project_id="proj-1", session_id="sess-1")
     assert started["ok"] and started["status"] == "queued"
     run_id = started["run_id"]
@@ -161,7 +161,7 @@ def test_a_render_goes_from_queued_to_an_artifact_with_its_whole_story(world):
         assert row.seed == seed
         assert row.engine == "comfyui"
         assert row.engine_job_id == started["engine_job_id"]
-        assert row.owner == "luis" and row.session_id == "sess-1"
+        assert row.owner == "example-user" and row.session_id == "sess-1"
     finally:
         db.close()
 
@@ -172,7 +172,7 @@ def test_an_artifact_from_a_render_has_no_gaps_in_its_record(world):
     excuse: it knows its model, its backend, its recipe and its inputs."""
     from src.contracts import Artifact
 
-    started = media_runs.start("image.product", ASK, owner="luis")
+    started = media_runs.start("image.product", ASK, owner="example-user")
     world.finish(started["engine_job_id"])
     done = media_runs.poll(started["run_id"])
 
@@ -199,7 +199,7 @@ def test_a_render_survives_the_process_that_started_it(world):
     """The claim of the phase. Nothing in memory carries the render — the row
     has the engine's job id, so a completely fresh look reconciles from the
     engine rather than from what was written before the restart."""
-    started = media_runs.start("image.product", ASK, owner="luis")
+    started = media_runs.start("image.product", ASK, owner="example-user")
     run_id = started["run_id"]
 
     # As if the web process had died here: the row still says `queued`.
@@ -262,7 +262,7 @@ def test_a_render_no_engine_can_take_never_becomes_a_run_at_all(world):
     # An engine holding the WRONG model, which is the case where naming the
     # file matters: the usual cause is one letter, not an empty folder.
     world.checkpoints = ["dreamshaper_8.safetensors"]
-    out = media_runs.start("image.product", ASK, owner="luis")
+    out = media_runs.start("image.product", ASK, owner="example-user")
 
     assert out["ok"] is False
     assert "run_id" not in out, "a request that never reached an engine left a row"
@@ -277,7 +277,7 @@ def test_an_engine_with_no_models_at_all_is_told_where_to_put_one(world):
     differently: an empty folder is answered with the folder, not with a file
     name nobody could have known."""
     world.checkpoints = []
-    out = media_runs.start("image.product", ASK, owner="luis")
+    out = media_runs.start("image.product", ASK, owner="example-user")
 
     assert out["ok"] is False and "run_id" not in out
     assert "models/checkpoints" in out["detail"]
@@ -309,11 +309,11 @@ def test_cancelling_a_finished_render_says_so_rather_than_pretending(world):
 
 
 def test_the_run_list_is_newest_first_and_filters_by_owner(world):
-    media_runs.start("image.product", ASK, owner="luis")
+    media_runs.start("image.product", ASK, owner="example-user")
     media_runs.start("image.product", ASK, owner="ana")
     assert len(media_runs.recent()) == 2
-    mine = media_runs.recent(owner="luis")
-    assert len(mine) == 1 and mine[0]["owner"] == "luis"
+    mine = media_runs.recent(owner="example-user")
+    assert len(mine) == 1 and mine[0]["owner"] == "example-user"
 
 
 def test_two_renders_of_the_same_thing_share_one_stored_file(world):

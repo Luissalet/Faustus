@@ -83,7 +83,7 @@ def test_two_clients_granting_the_same_card_at_once_leave_one_winner_and_a_coher
 ):
     with TestClient(app) as setup_client:
         card_id = setup_client.post(
-            "/api/approvals/request", json={"plan": PLAN, "owner": "luis"},
+            "/api/approvals/request", json={"plan": PLAN, "owner": "example-user"},
         ).json()["approval"]["id"]
 
     # Force the interleaving at the exact point approval_store.decide()'s
@@ -153,7 +153,7 @@ def test_two_clients_denying_after_a_grant_both_get_the_granted_receipt(client):
     produced by an actual race. `by` differs so a bug that let the second
     call overwrite the first would be visible in `decided_by`."""
     card_id = client.post(
-        "/api/approvals/request", json={"plan": PLAN, "owner": "luis"},
+        "/api/approvals/request", json={"plan": PLAN, "owner": "example-user"},
     ).json()["approval"]["id"]
 
     granted = client.post(f"/api/approvals/{card_id}/grant", json={"by": "alice"})
@@ -187,7 +187,7 @@ def test_two_workers_consuming_the_same_exact_tool_approval_get_typed_outcomes()
     store = ToolApprovalStore()
     caps = capabilities_for_action("write_file", '{"path": "x", "content": "y"}')
     pending = store.create(
-        owner="luis", session_id="s1", origin_run_id="r1", tool_name="write_file",
+        owner="example-user", session_id="s1", origin_run_id="r1", tool_name="write_file",
         content='{"path": "x", "content": "y"}', workspace="",
         external_untrusted_context_seen=True, capabilities=caps,
     )
@@ -195,7 +195,7 @@ def test_two_workers_consuming_the_same_exact_tool_approval_get_typed_outcomes()
     def consume():
         return store.consume_with_reason(
             pending.approval_id, decision=TASK_APPROVAL_DECISION,
-            owner="luis", session_id="s1",
+            owner="example-user", session_id="s1",
         )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -215,12 +215,12 @@ def test_two_workers_consuming_the_same_exact_tool_approval_get_typed_outcomes()
     # winner -- proven independently of consume_with_reason's own locking.
     store2 = ToolApprovalStore()
     pending2 = store2.create(
-        owner="luis", session_id="s1", origin_run_id="r1", tool_name="write_file",
+        owner="example-user", session_id="s1", origin_run_id="r1", tool_name="write_file",
         content='{"path": "x", "content": "y"}', workspace="",
         external_untrusted_context_seen=True, capabilities=caps,
     )
     first = store2.consume(pending2.approval_id, decision=TASK_APPROVAL_DECISION,
-                            owner="luis", session_id="s1")
+                            owner="example-user", session_id="s1")
     second = store2.consume(pending2.approval_id, decision=TASK_APPROVAL_DECISION,
-                             owner="luis", session_id="s1")
+                             owner="example-user", session_id="s1")
     assert first is not None and second is None

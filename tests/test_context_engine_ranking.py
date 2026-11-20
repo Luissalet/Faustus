@@ -46,7 +46,7 @@ UNSAFE = "The migration script is not safe to run on production."
 SAFE_REWORDED = "The migration script is safe to run on production servers."
 
 
-def _request(*, owner="luis", project_id="faustus",
+def _request(*, owner="example-user", project_id="faustus",
              query="is the migration safe to run on production", **policy):
     return ContextRequest.parse({
         "request_id": "ctxreq_test",
@@ -63,7 +63,7 @@ def _candidate(ref, body="", **overrides):
         "source_ref": ref,
         "title": ref,
         "body": body,
-        "owner": "luis",
+        "owner": "example-user",
         "project_id": "faustus",
         "observed_at": YESTERDAY,
         "trust_class": "observed",
@@ -264,7 +264,7 @@ def test_diversify_also_caps_one_source_type():
 # ── validation ─────────────────────────────────────────────────────────────
 
 def test_validate_rejects_a_candidate_owned_by_someone_else():
-    request = _request(owner="luis")
+    request = _request(owner="example-user")
     theirs = _candidate("memory:mallory-note", "a private note",
                         source_type="memory", owner="mallory")
 
@@ -301,7 +301,7 @@ def test_an_unreadable_timestamp_is_uncertainty_not_freshness():
     # is what `score()` does when an adapter hands one over anyway.
     broken = ContextCandidate(source_type="document", source_ref="doc:no-clock",
                               title="no clock", body="a note about migrations",
-                              owner="luis", project_id="faustus",
+                              owner="example-user", project_id="faustus",
                               observed_at="yesterday afternoon")
     clocked = _candidate("doc:clocked", "a note about migrations",
                          observed_at="2026-09-02T12:00:00+00:00")

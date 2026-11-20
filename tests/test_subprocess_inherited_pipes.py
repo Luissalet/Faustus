@@ -53,7 +53,7 @@ def test_python_tool_returns_although_a_child_holds_its_output():
         print("parent done", flush=True)
     """)
     started = time.monotonic()
-    result = asyncio.run(PythonTool().execute(code, {"owner": "luis", "session_id": "s-1114"}))
+    result = asyncio.run(PythonTool().execute(code, {"owner": "example-user", "session_id": "s-1114"}))
     elapsed = time.monotonic() - started
     out = str(result.get("output") or "")
     child = int(out.split("child", 1)[1].split()[0])
@@ -74,7 +74,7 @@ def test_bash_background_server_without_redirection_returns():
     py = PY.replace("\\", "/")
     started = time.monotonic()
     result = asyncio.run(BashTool()._on_host(f'"{py}" -c "import time; time.sleep(40)" &\necho launched',
-                                             None, None, "s-1114", caller=pm.Caller(owner="luis", session_id="s-1114")))
+                                             None, None, "s-1114", caller=pm.Caller(owner="example-user", session_id="s-1114")))
     elapsed = time.monotonic() - started
     assert elapsed < 15, elapsed
     assert result.get("exit_code") == 0 and "launched" in str(result.get("output"))
@@ -88,7 +88,7 @@ def test_bash_background_server_without_redirection_returns():
 def test_a_command_that_finishes_normally_keeps_all_its_output():
     from src.agent_tools.subprocess_tools import PythonTool
     code = "import sys\nfor i in range(300):\n    print('line', i)\nsys.stderr.write('done\\n')"
-    result = asyncio.run(PythonTool().execute(code, {"owner": "luis", "session_id": "s-1114"}))
+    result = asyncio.run(PythonTool().execute(code, {"owner": "example-user", "session_id": "s-1114"}))
     out = str(result.get("output") or "")
     assert result.get("exit_code") == 0
     assert "line 299" in out and "done" in out and "may be incomplete" not in out

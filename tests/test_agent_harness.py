@@ -757,7 +757,7 @@ def test_subagent_worker_chat_is_flagged_busy_while_running(monkeypatch):
     run = st.SubagentRun(0, {"name": "worker", "instruction": "read the code"})
     agent_runs._EXTERNAL_BUSY.clear()
     asyncio.run(st._run_subagent(
-        run, endpoint_url="http://x/v1", model="m", headers=None, owner="luis",
+        run, endpoint_url="http://x/v1", model="m", headers=None, owner="example-user",
         workspace=None, workspace_roots=None, max_rounds=3, shared_context="",
         parent_session_id="parent", emit=emit,
     ))

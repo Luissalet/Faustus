@@ -50,7 +50,7 @@ class FakePcHub:
                 path, _, query = self.path.partition("?")
                 if path == "/api/executors":
                     names = query.split("names=", 1)[-1].replace("%2C", ",").split(",")
-                    return self._send({"ok": True, "host": "pc-luis", "executors": {
+                    return self._send({"ok": True, "host": "workstation", "executors": {
                         n: {"installed": n in outer.programs, "path": "C:/bin/" + n if n in outer.programs else ""}
                         for n in names if n}})
                 if path.startswith("/api/executors/runs/"):
@@ -74,7 +74,7 @@ class FakePcHub:
                     if body["argv"][0] not in outer.programs:
                         return self._send({"ok": False, "error": body["argv"][0] + " is not installed on this PC"}, 404)
                     outer.started.append(body)
-                    return self._send({"ok": True, "id": "run1", "host": "pc-luis"})
+                    return self._send({"ok": True, "id": "run1", "host": "workstation"})
                 if self.path.endswith("/cancel"):
                     outer.cancelled.append(self.path)
                     return self._send({"ok": True})
@@ -125,7 +125,7 @@ def test_the_agent_list_says_where_each_runner_lives(pc):
     rows = {r["key"]: r for r in ta.agents()}
     assert rows["faustus"]["where"] == "faustus"
     assert rows["claude"]["installed"] is True and rows["claude"]["where"] == "pc"
-    assert rows["claude"]["where_label"] == "en el PC (pc-luis)"
+    assert rows["claude"]["where_label"] == "en el PC (workstation)"
     assert rows["codex"]["installed"] is False and rows["codex"]["where"] is None
     assert rows["codex"]["where_label"] == "no instalado ni aquí ni en el PC"
 
@@ -156,11 +156,11 @@ def test_handoff_to_a_pc_runner_runs_there_with_the_task_and_returns_the_answer(
 
 
 def test_turns_with_a_pc_runner_start_it_again_each_time_and_do_not_check_the_folder_here(pc):
-    state = ta.set_agent("t2", "claude", workspace="C:/Users/luis/proyecto")
-    assert state["workspace"] == "C:/Users/luis/proyecto"
+    state = ta.set_agent("t2", "claude", workspace="C:/Users/example-user/proyecto")
+    assert state["workspace"] == "C:/Users/example-user/proyecto"
     job = wait("t2", ta.start_turn("t2", "hola")["id"])
     assert job["status"] == "done" and job["resumed"] is False
-    assert pc.hub.started[0]["cwd"] == "C:/Users/luis/proyecto"
+    assert pc.hub.started[0]["cwd"] == "C:/Users/example-user/proyecto"
     wait("t2", ta.start_turn("t2", "otra vez")["id"])
     assert len(pc.hub.started) == 2 and "resume" not in " ".join(pc.hub.started[1]["argv"])
 
@@ -201,7 +201,7 @@ def test_pc_executor_refuses_without_link_and_with_runners_off(pc, monkeypatch):
 def test_pc_executor_reads_a_long_output_in_pieces(pc):
     chunks = []
     result = pc_executors.run_task("claude", "x", on_output=chunks.append, poll_s=0.01)
-    assert result["ok"] and result["where"] == "pc" and result["host"] == "pc-luis"
+    assert result["ok"] and result["where"] == "pc" and result["host"] == "workstation"
     assert "".join(chunks).strip() == "hecho en el PC" and pc.hub.reads[0] == 0
 
 

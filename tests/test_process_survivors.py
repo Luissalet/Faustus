@@ -28,8 +28,8 @@ from src.process_manager import Caller
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Job Object scopes are Windows-only")
 
 PY = sys.executable
-ME = Caller(owner="luis", session_id="s-1105")
-CTX = {"owner": "luis", "session_id": "s-1105"}
+ME = Caller(owner="example-user", session_id="s-1105")
+CTX = {"owner": "example-user", "session_id": "s-1105"}
 
 
 @pytest.fixture
@@ -225,7 +225,7 @@ def test_other_session_cannot_stop_an_adopted_handle(mgr, tmp_path):
     """)
     result = asyncio.run(_run_python_tool(code, tmp_path))
     item = result["still_running"][0]
-    denied = mgr.stop(item["handle"], Caller(owner="luis", session_id="other"))
+    denied = mgr.stop(item["handle"], Caller(owner="example-user", session_id="other"))
     assert denied["ok"] is False and denied["code"] == "not_owner"
     assert _alive(item["pid"])
     mgr.stop(item["handle"], ME)

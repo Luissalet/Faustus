@@ -41,7 +41,7 @@ from src.agent_tools.git_tools import GitCommitTool  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 def _run(args, cwd, check=True):

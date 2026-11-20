@@ -94,7 +94,7 @@ def test_the_tool_itself_returns_the_refusal(monkeypatch):
     """The point of use, for real: the tool, with nothing open."""
     monkeypatch.setattr(document_tools, "_active_document_id", None)
     result = asyncio.run(
-        document_tools.SuggestDocumentTool().execute("anything", {"owner": "luis"})
+        document_tools.SuggestDocumentTool().execute("anything", {"owner": "example-user"})
     )
     assert availability.is_unavailable(result)
     assert result["tool"] == "suggest_document"
@@ -106,7 +106,7 @@ def test_the_tool_runs_when_the_editor_has_a_document(monkeypatch):
     the tool's own business, not an availability answer."""
     monkeypatch.setattr(document_tools, "_active_document_id", "doc-42")
     result = asyncio.run(
-        document_tools.SuggestDocumentTool().execute("no blocks here", {"owner": "luis"})
+        document_tools.SuggestDocumentTool().execute("no blocks here", {"owner": "example-user"})
     )
     assert not availability.is_unavailable(result)
 

@@ -70,7 +70,7 @@ def test_activate_ollama_applies_per_request_options_and_defers_server_scoped(de
     })
     profiles.save_profile(profile)
 
-    result = profiles.activate_profile(profile.id, owner="luis")
+    result = profiles.activate_profile(profile.id, owner="example-user")
 
     assert result["profile_id"] == profile.id
     assert result["scope"] == "next_request"

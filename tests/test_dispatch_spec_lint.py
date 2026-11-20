@@ -126,7 +126,7 @@ def test_in_warn_mode_a_vague_job_runs_and_carries_the_problems(box, mode):
     mode("warn")
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [VAGUE], "workspace": box["ws"]})
+        job = await dispatch.start("example-user", {"tasks": [VAGUE], "workspace": box["ws"]})
         await dispatch.wait(job, 5)
         return job
     job = asyncio.run(run())
@@ -141,7 +141,7 @@ def test_in_warn_mode_a_good_job_carries_no_lint(box, mode):
     mode("warn")
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [GOOD], "workspace": box["ws"], **GOOD_JOB})
+        job = await dispatch.start("example-user", {"tasks": [GOOD], "workspace": box["ws"], **GOOD_JOB})
         await dispatch.wait(job, 5)
         return job
     job = asyncio.run(run())
@@ -151,7 +151,7 @@ def test_in_warn_mode_a_good_job_carries_no_lint(box, mode):
 def test_in_enforce_mode_a_vague_job_is_refused_before_anything_starts(box, mode):
     mode("enforce")
     with pytest.raises(dispatch.SpecNeedsDetail) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": [VAGUE], "workspace": box["ws"]}))
+        asyncio.run(dispatch.start("example-user", {"tasks": [VAGUE], "workspace": box["ws"]}))
     report = err.value.report
     assert report["ok"] is False and report["needs_detail"] and "vague_verbs" in report["codes"]
     assert not box["executed"] and isinstance(err.value, ValueError)
@@ -161,7 +161,7 @@ def test_in_enforce_mode_a_good_job_runs(box, mode):
     mode("enforce")
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [GOOD], "workspace": box["ws"], **GOOD_JOB})
+        job = await dispatch.start("example-user", {"tasks": [GOOD], "workspace": box["ws"], **GOOD_JOB})
         await dispatch.wait(job, 5)
         return job
     assert asyncio.run(run()).status in ("done", "partial")
@@ -171,7 +171,7 @@ def test_with_the_lint_off_nothing_is_checked(box, mode):
     mode("off")
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [VAGUE], "workspace": box["ws"]})
+        job = await dispatch.start("example-user", {"tasks": [VAGUE], "workspace": box["ws"]})
         await dispatch.wait(job, 5)
         return job
     assert asyncio.run(run()).spec_lint is None

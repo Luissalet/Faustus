@@ -526,7 +526,7 @@ def test_the_period_route_needs_a_user_and_returns_the_state(cfg, monkeypatch):
     cfg(budget_gpu_daily_seconds=20)
     c = _client(monkeypatch)
     assert c.get("/api/budget/period").status_code == 401
-    r = c.get("/api/budget/period", headers={"x-test-user": "luis"})
+    r = c.get("/api/budget/period", headers={"x-test-user": "example-user"})
     assert r.status_code == 200
     body = r.json()
     assert body["enabled"] is True and body["gpu"]["target"] == 20 and "breaker" in body and "cooldowns" in body
@@ -541,9 +541,9 @@ def test_the_breaker_and_the_cooldowns_are_reset_by_an_admin_only(cfg, monkeypat
     assert plain.post("/api/budget/period/breaker/reset", headers={"x-test-user": "eve"}).status_code == 403
     assert ub.is_open()
     c = _client(monkeypatch)
-    r = c.post("/api/budget/period/breaker/reset", headers={"x-test-user": "luis"})
+    r = c.post("/api/budget/period/breaker/reset", headers={"x-test-user": "example-user"})
     assert r.status_code == 200 and r.json()["breaker"]["open"] is False and not ub.is_open()
-    r = c.post("/api/budget/period/cooldowns/clear", json={"endpoint": "openrouter.ai"}, headers={"x-test-user": "luis"})
+    r = c.post("/api/budget/period/cooldowns/clear", json={"endpoint": "openrouter.ai"}, headers={"x-test-user": "example-user"})
     assert r.json()["cleared"] == 1 and r.json()["cooldowns"] == []
 
 
@@ -573,7 +573,7 @@ def test_dispatch_refuses_a_job_when_the_local_gpu_window_is_spent(box, cfg):
     cfg(budget_gpu_daily_seconds=20)
     pb.record_usage("local", kind="local", gpu_seconds=40.0)
     with pytest.raises(pb.BudgetPaused) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": ["add apply_tax"], "workspace": box["ws"]}))
+        asyncio.run(dispatch.start("example-user", {"tasks": ["add apply_tax"], "workspace": box["ws"]}))
     info = err.value.info
     assert info["status"] == "budget_paused" and info["point"] == "dispatch" and info["pause_until"]
     assert not box["executed"]                       # nothing started, no worker was spent
@@ -594,11 +594,11 @@ def test_an_interactive_turn_holds_an_unattended_job_but_never_a_manual_one(box,
     from src import dispatch
     monkeypatch.setattr("src.interactive_gate._has_active_chat_stream", lambda: True)
     with pytest.raises(pb.BudgetPaused) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": ["x"], "workspace": box["ws"], "unattended": True}))
+        asyncio.run(dispatch.start("example-user", {"tasks": ["x"], "workspace": box["ws"], "unattended": True}))
     assert err.value.info["kind"] == "interactive"
 
     async def manual():
-        job = await dispatch.start("luis", {"tasks": ["x"], "workspace": box["ws"]})
+        job = await dispatch.start("example-user", {"tasks": ["x"], "workspace": box["ws"]})
         # The job snapshots the workspace first; under a loaded xdist run that
         # alone took 5.7 s, the old 5 s wait gave up and asyncio.run cancelled
         # the job. wait() returns as soon as the job ends, so a wide bound
@@ -613,7 +613,7 @@ def test_an_open_breaker_refuses_unattended_jobs_with_breaker_open(box, cfg):
     cfg(unattended_failure_breaker=1)
     ub.record("night_shift", False, "boom")
     with pytest.raises(pb.BudgetPaused) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": ["x"], "workspace": box["ws"], "unattended": True}))
+        asyncio.run(dispatch.start("example-user", {"tasks": ["x"], "workspace": box["ws"], "unattended": True}))
     assert err.value.info["status"] == "breaker_open"
 
 

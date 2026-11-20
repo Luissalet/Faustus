@@ -39,7 +39,7 @@ def test_a_remote_endpoint_is_not_gated(monkeypatch):
         return "proceed"
     monkeypatch.setattr("src.vram_admission.admit", _admit)
     outcome = {"ok": True, "error": ""}
-    assert _events(chat_routes._vram_admission_events(REMOTE, "gpt-4o", "luis", outcome)) == []
+    assert _events(chat_routes._vram_admission_events(REMOTE, "gpt-4o", "example-user", outcome)) == []
     assert outcome["ok"] and not called
 
 
@@ -52,7 +52,7 @@ def test_the_gate_s_progress_is_streamed_and_the_turn_goes_on(monkeypatch):
         return "proceed"
     monkeypatch.setattr("src.vram_admission.admit", _admit)
     outcome = {"ok": True, "error": ""}
-    events = _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    events = _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "example-user", outcome))
     assert [e["type"] for e in events] == ["vram_admission", "vram_admission"]
     assert events[0]["data"]["phase"] == "vram_blocked" and events[0]["data"]["ticket"] == "t1"
     assert events[1]["data"]["phase"] == "unloading_model"
@@ -62,13 +62,13 @@ def test_the_gate_s_progress_is_streamed_and_the_turn_goes_on(monkeypatch):
 def test_a_cancelled_load_ends_the_turn_with_the_reason(monkeypatch):
     async def _admit(url, model, *, owner="", on_progress=None, **k):
         on_progress({"phase": "error", "message": f"Load of {model} cancelled: it does not fit in VRAM."})
-        raise AdmissionCancelled(f"Load of {model} cancelled by luis: it does not fit in VRAM next to what is loaded.")
+        raise AdmissionCancelled(f"Load of {model} cancelled by example-user: it does not fit in VRAM next to what is loaded.")
     monkeypatch.setattr("src.vram_admission.admit", _admit)
     outcome = {"ok": True, "error": ""}
-    events = _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    events = _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "example-user", outcome))
     assert events[-1]["data"]["phase"] == "error"
     assert outcome["ok"] is False
-    assert "cancelled by luis" in outcome["error"]
+    assert "cancelled by example-user" in outcome["error"]
 
 
 def test_a_broken_gate_never_costs_the_turn(monkeypatch):
@@ -76,7 +76,7 @@ def test_a_broken_gate_never_costs_the_turn(monkeypatch):
         raise RuntimeError("ollama is on fire")
     monkeypatch.setattr("src.vram_admission.admit", _admit)
     outcome = {"ok": True, "error": ""}
-    _events(chat_routes._vram_admission_events(LOCAL, "m", "luis", outcome))
+    _events(chat_routes._vram_admission_events(LOCAL, "m", "example-user", outcome))
     assert outcome["ok"]
 
 
@@ -89,7 +89,7 @@ def test_waited_s_reaches_the_outcome_when_the_gate_measured_a_wait(monkeypatch)
         return "proceed"
     monkeypatch.setattr("src.vram_admission.admit", _admit)
     outcome = {"ok": True, "error": ""}
-    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "example-user", outcome))
     assert outcome["waited_s"] == 1.5
 
 
@@ -98,7 +98,7 @@ def test_waited_s_absent_from_outcome_when_the_gate_never_filled_it_in(monkeypat
         return "proceed"  # e.g. mode="off": no door, nothing measured
     monkeypatch.setattr("src.vram_admission.admit", _admit)
     outcome = {"ok": True, "error": ""}
-    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "example-user", outcome))
     assert "waited_s" not in outcome
 
 
@@ -106,10 +106,10 @@ def test_waited_s_recorded_even_when_the_load_is_cancelled(monkeypatch):
     async def _admit(url, model, *, owner="", on_progress=None, waited_out=None, **k):
         if waited_out is not None:
             waited_out["waited_s"] = 3.2
-        raise AdmissionCancelled(f"Load of {model} cancelled by luis: it does not fit in VRAM.")
+        raise AdmissionCancelled(f"Load of {model} cancelled by example-user: it does not fit in VRAM.")
     monkeypatch.setattr("src.vram_admission.admit", _admit)
     outcome = {"ok": True, "error": ""}
-    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "example-user", outcome))
     assert outcome["ok"] is False
     assert outcome["waited_s"] == 3.2
 

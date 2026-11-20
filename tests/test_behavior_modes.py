@@ -40,8 +40,8 @@ def test_all_eight_builtins_load_and_validate():
         assert isinstance(mode.checks, dict)
 
 
-def test_adversarial_keeps_luis_rules_literally():
-    """Luis's own three rules must survive verbatim in the shipped prompt —
+def test_adversarial_keeps_user_rules_literally():
+    """ExampleUser's own three rules must survive verbatim in the shipped prompt —
     this module must never rewrite `config/behavior_modes/*.json`."""
     mode = behavior_modes.load_builtin()["adversarial"]
     assert "Never start with agreement" in mode.prompt

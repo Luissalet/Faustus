@@ -107,7 +107,7 @@ def _write_pdf(path, pages):
 
 
 def test_profile_roundtrips_through_expert_md(store):
-    made = _corrector(model="qwen2.5:14b", temperature=0.15, top_p=0.9, owner="luis")
+    made = _corrector(model="qwen2.5:14b", temperature=0.15, top_p=0.9, owner="example-user")
     assert made["slug"] == "corrector-narrativo"
 
     raw = open(experts.profile_path(made["slug"]), encoding="utf-8").read()
@@ -118,7 +118,7 @@ def test_profile_roundtrips_through_expert_md(store):
     assert loaded == made
     assert loaded["rubric"] == ["Ritmo de escena", "Diálogo", "Coherencia de POV"]
     assert loaded["temperature"] == 0.15 and loaded["top_p"] == 0.9
-    assert loaded["enabled"] is True and loaded["owner"] == "luis"
+    assert loaded["enabled"] is True and loaded["owner"] == "example-user"
     # The corpus folder exists from creation, so a drop-in works immediately.
     assert os.path.isdir(experts.corpus_dir(made["slug"]))
 
@@ -183,10 +183,10 @@ def test_a_corrupt_expert_md_is_moved_aside_and_rebuilt(store):
 
 
 def test_owner_filtering_keeps_ownerless_experts_visible(store):
-    experts.create_expert("Mine", owner="luis")
+    experts.create_expert("Mine", owner="example-user")
     experts.create_expert("Theirs", owner="someone-else")
     experts.create_expert("Unstamped")
-    slugs = [e["slug"] for e in experts.list_experts("luis")]
+    slugs = [e["slug"] for e in experts.list_experts("example-user")]
     assert slugs == ["mine", "unstamped"]
     assert len(experts.list_experts()) == 3
 
@@ -679,7 +679,7 @@ def client(store, monkeypatch):
     from core.middleware import require_admin
     from routes import expert_routes
 
-    monkeypatch.setattr(expert_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(expert_routes, "effective_user", lambda request: "example-user")
     app = FastAPI()
     app.include_router(expert_routes.setup_expert_routes())
     app.dependency_overrides[require_admin] = lambda: None
@@ -696,7 +696,7 @@ def test_api_creates_reads_patches_and_deletes(client, store):
     })
     assert created.status_code == 200
     expert = created.json()["expert"]
-    assert expert["slug"] == "corrector-narrativo" and expert["owner"] == "luis"
+    assert expert["slug"] == "corrector-narrativo" and expert["owner"] == "example-user"
     assert expert["rubric"] == ["Ritmo", "Diálogo"]
 
     listed = client.get("/api/experts").json()

@@ -32,7 +32,7 @@ from src.fanout.plan import FanoutCandidate, FanoutPlan  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 def _git(args, cwd):

@@ -588,11 +588,11 @@ def test_mcp_list_marks_an_expired_fact_and_add_reports_the_lease(monkeypatch, t
 
 THIRD_PARTY_PLACE = [
     "User's sister lives in Berlin.",
-    "Luis's sister lives in Berlin",
+    "ExampleUser's sister lives in Berlin",
     "The user's brother lives in Paris",
     "El hermano del usuario vive en Berlin",
     "Su hermana vive en Berlin",
-    "La hermana de Luis vive en Berlin",
+    "La hermana del usuario vive en Berlin",
     "User's mother lives in Lima",
 ]
 THIRD_PARTY_JOB = [

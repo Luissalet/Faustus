@@ -287,7 +287,7 @@ async def _run_job(fake_tool, monkeypatch, *, verify="none"):
     fake_tool["result"] = {"output": "r", "exit_code": 0, "lock_conflicts": [], "dropped_tasks": 0,
                            "subagents": [_worker_report(mutations=["old.py", "ghost.py"],
                                                         final_text="All 7 tests pass.")]}
-    job = await dispatch.start("luis", {"tasks": ["add apply_tax; pytest must pass"], "workspace": str(ws),
+    job = await dispatch.start("example-user", {"tasks": ["add apply_tax; pytest must pass"], "workspace": str(ws),
                                         "verify": verify})
     await dispatch.wait(job, 5)
     return job

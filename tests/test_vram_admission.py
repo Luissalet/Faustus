@@ -144,7 +144,7 @@ def blocked(monkeypatch):
     return state
 
 
-async def _answer_later(action, names=None, by="luis"):
+async def _answer_later(action, names=None, by="example-user"):
     """The click, arriving while admit() is waiting.
 
     Polled on a real wall-clock deadline, not a fixed count of event-loop
@@ -168,7 +168,7 @@ def test_unload_then_load_waits_for_the_eviction(blocked):
     events = []
 
     async def run():
-        gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="luis", on_progress=events.append,
+        gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="example-user", on_progress=events.append,
                                             mode="ask", timeout=5))
         await _answer_later("unload", [Q8["name"]])
         return await gate
@@ -245,7 +245,7 @@ def test_ask_mode_still_lets_a_person_explicitly_unload_a_pinned_model(blocked):
     va.pin_model(ROOT, Q8["name"])
     try:
         async def run():
-            gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="luis", mode="ask", timeout=5))
+            gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="example-user", mode="ask", timeout=5))
             await _answer_later("unload", [Q8["name"]])
             return await gate
 
@@ -349,7 +349,7 @@ def test_a_model_that_fits_never_asks(monkeypatch):
 
 
 def test_resolve_only_accepts_resident_names_and_known_actions(blocked):
-    t = va.open_ticket(ROOT, Q4["name"], va.assess(ROOT, Q4["name"]), owner="luis")
+    t = va.open_ticket(ROOT, Q4["name"], va.assess(ROOT, Q4["name"]), owner="example-user")
     with pytest.raises(ValueError):
         va.resolve(t.id, action="unload", names=["not-loaded:latest"])   # nothing resident picked
     with pytest.raises(ValueError):
@@ -419,7 +419,7 @@ def test_waited_out_measured_through_an_ask_and_unload_round_trip(blocked):
     out = {}
 
     async def run():
-        gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="luis", mode="ask", timeout=5,
+        gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="example-user", mode="ask", timeout=5,
                                             waited_out=out))
         await _answer_later("unload", [Q8["name"]])
         return await gate

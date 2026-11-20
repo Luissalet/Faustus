@@ -62,7 +62,7 @@ class FakeVectors:
 
 
 def _rule(text="Always run the project tests before claiming done", **kw):
-    kw.setdefault("owner", "luis")
+    kw.setdefault("owner", "example-user")
     kw.setdefault("level", "procedural")
     kw.setdefault("trust_class", "human_explicit")
     kw.setdefault("now", NOW)
@@ -175,9 +175,9 @@ def test_an_id8_prefix_resolves_but_an_ambiguous_one_does_not(store):
 
 def test_scope_includes_the_unscoped_ones(store):
     _rule("Global rule", owner="", project="")
-    _rule("Mine here", owner="luis", project="/repo")
+    _rule("Mine here", owner="example-user", project="/repo")
     _rule("Someone else's", owner="ana", project="/repo")
-    texts = {i["text"] for i in engine.scoped_items("luis", "/repo")}
+    texts = {i["text"] for i in engine.scoped_items("example-user", "/repo")}
     assert texts == {"Global rule", "Mine here"}
 
 
@@ -186,7 +186,7 @@ def test_scope_includes_the_unscoped_ones(store):
 
 def test_search_renormalises_the_lexical_lane_when_vectors_are_absent(store):
     item = _rule("Prefer edit_file over rewriting the whole module")
-    hits = engine.search("edit_file rewriting", "luis", "", now=NOW)
+    hits = engine.search("edit_file rewriting", "example-user", "", now=NOW)
     assert len(hits) == 1
     hit = hits[0]
     assert hit["degraded"] is True and hit["semantic"] == 0.0
@@ -219,7 +219,7 @@ def test_a_missing_vector_store_is_a_degradation_and_never_an_error(store, monke
 
     engine.set_vector_store(Exploding())
     item = _rule("Prefer edit_file over rewriting the whole module")   # add() explodes
-    hits = engine.search("edit_file", "luis", "", now=NOW)
+    hits = engine.search("edit_file", "example-user", "", now=NOW)
     assert hits and hits[0]["degraded"] is True and hits[0]["id"] == item["id"]
     assert engine.delete_item(item["id"]) is True                      # remove() explodes
 
@@ -228,7 +228,7 @@ def test_the_semantic_lane_is_used_at_full_weight_when_present(store):
     engine.reset_vector_store()
     quiet = _rule("An entirely unrelated note about coffee", level="semantic")
     engine.set_vector_store(FakeVectors({quiet["id"]: 1.0}))
-    hits = engine.search("coffee", "luis", "", now=NOW)
+    hits = engine.search("coffee", "example-user", "", now=NOW)
     assert hits[0]["degraded"] is False
     assert hits[0]["semantic"] == 1.0
     expected = engine.W_LEXICAL * hits[0]["lexical"] + engine.W_SEMANTIC * 1.0
@@ -244,7 +244,7 @@ def test_semantic_lane_keeps_best_score_for_duplicate_vector_hits(store):
                     {"memory_id": item["id"], "score": 0.2}]
 
     engine.set_vector_store(DuplicateVectors())
-    hits = engine.search("duplicate vector matches", "luis", "", now=NOW)
+    hits = engine.search("duplicate vector matches", "example-user", "", now=NOW)
     assert hits[0]["semantic"] == 0.9
 
 
@@ -254,7 +254,7 @@ def test_the_graph_lane_joins_on_evidence_refs(store):
                    evidence=[{"kind": "file", "ref": "src/cart.py"},
                              {"kind": "dispatch", "ref": "OBJ-7"}])
     hits = {h["id"]: h for h in engine.search("what changed in src/cart.py for OBJ-7",
-                                              "luis", "", now=NOW)}
+                                              "example-user", "", now=NOW)}
     assert hits[linked["id"]]["graph"] > 0
     assert plain["id"] not in hits or hits[plain["id"]]["graph"] == 0.0
 
@@ -265,11 +265,11 @@ def test_graph_lane_distinguishes_same_basename_in_different_paths(store):
     test = _rule("Cart test implementation", level="semantic",
                  evidence=[{"kind": "file", "ref": "tests/cart.py"}])
 
-    exact = {hit["id"]: hit for hit in engine.search("src/cart.py", "luis", "", now=NOW)}
+    exact = {hit["id"]: hit for hit in engine.search("src/cart.py", "example-user", "", now=NOW)}
     assert exact[source["id"]]["graph"] > 0
     assert test["id"] not in exact or exact[test["id"]]["graph"] == 0.0
 
-    basename = {hit["id"]: hit for hit in engine.search("cart.py", "luis", "", now=NOW)}
+    basename = {hit["id"]: hit for hit in engine.search("cart.py", "example-user", "", now=NOW)}
     assert basename[source["id"]]["graph"] > 0
     assert basename[test["id"]]["graph"] > 0
 
@@ -277,7 +277,7 @@ def test_graph_lane_distinguishes_same_basename_in_different_paths(store):
 def test_graph_lane_matches_windows_and_posix_evidence_paths(store):
     item = _rule("Cart implementation", level="semantic",
                  evidence=[{"kind": "file", "ref": r".\src\cart.py"}])
-    hits = {hit["id"]: hit for hit in engine.search("src/cart.py", "luis", "", now=NOW)}
+    hits = {hit["id"]: hit for hit in engine.search("src/cart.py", "example-user", "", now=NOW)}
     assert hits[item["id"]]["graph"] > 0
 
 
@@ -293,10 +293,10 @@ def test_evidence_dependents_are_exact_and_owner_scoped(store):
     _rule("Another owner's source", owner="ana", project="atlas",
           evidence=[{"kind": "file", "ref": "src/cart.py"}])
 
-    matches = engine.evidence_dependents("src/cart.py", owner="luis",
+    matches = engine.evidence_dependents("src/cart.py", owner="example-user",
                                          project="atlas", kind="file")
     assert [item["id"] for item in matches] == [target["id"]]
-    all_projects = engine.evidence_dependents("src/cart.py", owner="luis", kind="file")
+    all_projects = engine.evidence_dependents("src/cart.py", owner="example-user", kind="file")
     assert {item["id"] for item in all_projects} == {target["id"], other_project["id"]}
 
 
@@ -304,13 +304,13 @@ def test_evidence_dependents_require_explicit_owner_and_ref(store):
     with pytest.raises(engine.MemoryEngineError):
         engine.evidence_dependents("src/cart.py", owner="")
     with pytest.raises(engine.MemoryEngineError):
-        engine.evidence_dependents("", owner="luis")
+        engine.evidence_dependents("", owner="example-user")
 
 
 def test_retrieval_touches_only_the_items_it_surfaced(store):
     hit = _rule("Prefer edit_file over rewriting the whole module")
     miss = _rule("Completely different subject matter here")
-    engine.search("edit_file", "luis", "", now=NOW)
+    engine.search("edit_file", "example-user", "", now=NOW)
     assert engine.get_item(hit["id"])["access_count"] >= 1
     assert engine.get_item(miss["id"])["access_count"] == 0
 
@@ -324,9 +324,9 @@ def test_pack_puts_rules_first_then_memories_then_anti_patterns(store):
     anti = _rule("Rewrite whole files with bash heredocs")
     for i in range(3):
         engine.add_feedback(anti["id"], "harmful", ref=f"sess-{i}", now=NOW)
-    curator.curate("luis", "", now=NOW)
+    curator.curate("example-user", "", now=NOW)
 
-    block = engine.pack("luis", "", "deploy script", now=NOW)
+    block = engine.pack("example-user", "", "deploy script", now=NOW)
     assert block.index(engine.PACK_RULES_HEADER) < block.index(engine.PACK_MEMORIES_HEADER)
     assert block.index(engine.PACK_MEMORIES_HEADER) < block.index(engine.PACK_ANTI_HEADER)
     assert "- [" in block and "] Always run the project tests" in block
@@ -340,8 +340,8 @@ def test_pack_puts_rules_first_then_memories_then_anti_patterns(store):
 def test_pack_is_byte_identical_for_the_same_store_and_clock(store):
     for i in range(6):
         _rule(f"Rule number {i} about testing and deploying")
-    first = engine.pack("luis", "", "testing", now=NOW)
-    second = engine.pack("luis", "", "testing", now=NOW)
+    first = engine.pack("example-user", "", "testing", now=NOW)
+    second = engine.pack("example-user", "", "testing", now=NOW)
     assert first == second and first
 
 
@@ -349,22 +349,22 @@ def test_pack_respects_a_hard_character_budget(store):
     for i in range(40):
         _rule(f"Rule number {i} about testing, deploying and {'padding ' * 8}")
     for budget in (120, 400, 1800):
-        block = engine.pack("luis", "", "testing", budget, now=NOW)
+        block = engine.pack("example-user", "", "testing", budget, now=NOW)
         assert len(block) <= budget, budget
-    assert engine.pack("luis", "", "testing", 0, now=NOW) == ""
+    assert engine.pack("example-user", "", "testing", 0, now=NOW) == ""
 
 
 def test_pack_is_empty_when_nothing_qualifies(store):
-    assert engine.pack("luis", "", "anything", now=NOW) == ""
+    assert engine.pack("example-user", "", "anything", now=NOW) == ""
     stale = _rule("A working note that has long expired", level="working")
     engine.save_item({**engine.get_item(stale["id"]), "updated_at": _ago(30)})
-    assert engine.pack("luis", "", "working note", now=NOW) == ""
+    assert engine.pack("example-user", "", "working note", now=NOW) == ""
 
 
 def test_pack_reports_the_ids_it_injected(store):
     a = _rule("Always run the project tests before claiming done")
     b = _rule("The deploy script lives in ops/deploy.sh", level="semantic")
-    detail = engine.pack_detail("luis", "", "deploy script", now=NOW)
+    detail = engine.pack_detail("example-user", "", "deploy script", now=NOW)
     assert set(detail["ids"]) == {a["id"], b["id"]}
     assert all(f"[{i[:8]}]" in detail["text"] for i in detail["ids"])
 
@@ -372,7 +372,7 @@ def test_pack_reports_the_ids_it_injected(store):
 def test_packing_does_not_claim_that_the_prompt_used_every_candidate(store):
     item = _rule("The deploy script lives in ops/deploy.sh", level="semantic")
 
-    detail = engine.pack_detail("luis", "", "deploy script", now=NOW)
+    detail = engine.pack_detail("example-user", "", "deploy script", now=NOW)
     assert item["id"] in detail["ids"]
     assert engine.get_item(item["id"])["access_count"] == 0
 
@@ -387,11 +387,11 @@ def test_three_distinct_refs_promote_a_candidate_to_established(store):
     item = _rule()
     for i in range(2):
         engine.add_feedback(item["id"], "helpful", ref=f"sess-{i}", now=NOW)
-    curator.curate("luis", "", now=NOW)
+    curator.curate("example-user", "", now=NOW)
     assert engine.get_item(item["id"])["maturity"] == "candidate"
 
     engine.add_feedback(item["id"], "helpful", ref="sess-2", now=NOW)
-    report = curator.curate("luis", "", now=NOW)
+    report = curator.curate("example-user", "", now=NOW)
     assert engine.get_item(item["id"])["maturity"] == "established"
     assert report["promoted"] == 1
 
@@ -400,7 +400,7 @@ def test_eight_clean_refs_promote_established_to_proven(store):
     item = _rule()
     for i in range(8):
         engine.add_feedback(item["id"], "helpful", ref=f"sess-{i}", now=NOW)
-    curator.curate("luis", "", now=NOW)
+    curator.curate("example-user", "", now=NOW)
     assert engine.get_item(item["id"])["maturity"] == "proven"
 
 
@@ -410,19 +410,19 @@ def test_proven_needs_a_harmful_ratio_under_twenty_percent(store):
         engine.add_feedback(item["id"], "helpful", ref=f"sess-{i}", now=NOW)
     for i in range(2):                       # 2/10 = 20%, not < 20%
         engine.add_feedback(item["id"], "harmful", ref=f"bad-{i}", now=NOW)
-    curator.curate("luis", "", now=NOW)
+    curator.curate("example-user", "", now=NOW)
     assert engine.get_item(item["id"])["maturity"] == "established"
 
 
 def test_a_faded_item_is_deprecated_by_score(store):
     item = _rule("A working note nobody ever used again", level="working")
     engine.save_item({**engine.get_item(item["id"]), "updated_at": _ago(30)})
-    report = curator.curate("luis", "", now=NOW)
+    report = curator.curate("example-user", "", now=NOW)
     stored = engine.get_item(item["id"])
     assert stored["status"] == "deprecated" and stored["maturity"] == "deprecated"
     assert report["demoted"] == 1 and report["total_active"] == 0
     # Idempotent: a second run does not re-count the same demotion.
-    assert curator.curate("luis", "", now=NOW)["demoted"] == 0
+    assert curator.curate("example-user", "", now=NOW)["demoted"] == 0
 
 
 def test_a_procedural_rule_with_recent_help_survives_a_bad_score(store):
@@ -438,7 +438,7 @@ def test_a_procedural_rule_with_recent_help_survives_a_bad_score(store):
     stored["helpful"] = _events(1, 100, ref_prefix="ancient-")
     engine.save_item(stored)
 
-    curator.curate("luis", "", now=NOW)
+    curator.curate("example-user", "", now=NOW)
     assert engine.get_item(saved["id"])["status"] == "active"
     assert engine.get_item(doomed["id"])["status"] == "deprecated"
 
@@ -451,7 +451,7 @@ def test_a_mostly_harmful_rule_is_inverted_not_deleted(store):
     engine.add_feedback(item["id"], "helpful", ref="good-1", now=NOW)
     for i in range(3):                       # 3/4 = 75% harmful, n >= 3
         engine.add_feedback(item["id"], "harmful", ref=f"bad-{i}", now=NOW)
-    report = curator.curate("luis", "", now=NOW)
+    report = curator.curate("example-user", "", now=NOW)
 
     stored = engine.get_item(item["id"])
     assert report["inverted"] == 1
@@ -461,7 +461,7 @@ def test_a_mostly_harmful_rule_is_inverted_not_deleted(store):
     assert stored["maturity"] == "candidate"
     # The original survives inside the evidence too, never silently lost.
     assert any("inverted from" in (e.get("excerpt") or "") for e in stored["evidence"])
-    assert "AVOID: Rewrite whole files" in engine.pack("luis", "", "heredocs", now=NOW)
+    assert "AVOID: Rewrite whole files" in engine.pack("example-user", "", "heredocs", now=NOW)
 
 
 def test_inversion_needs_both_the_ratio_and_three_events(store):
@@ -475,7 +475,7 @@ def test_inversion_needs_both_the_ratio_and_three_events(store):
     for i in range(3):
         engine.add_feedback(mostly_good["id"], "harmful", ref=f"bad-{i}", now=NOW)
 
-    assert curator.curate("luis", "", now=NOW)["inverted"] == 0
+    assert curator.curate("example-user", "", now=NOW)["inverted"] == 0
     assert engine.get_item(two_bad["id"])["status"] != "anti_pattern"
     assert engine.get_item(mostly_good["id"])["status"] != "anti_pattern"
 
@@ -484,8 +484,8 @@ def test_inversion_happens_once(store):
     item = _rule("Rewrite whole files with bash heredocs")
     for i in range(3):
         engine.add_feedback(item["id"], "harmful", ref=f"bad-{i}", now=NOW)
-    assert curator.curate("luis", "", now=NOW)["inverted"] == 1
-    assert curator.curate("luis", "", now=NOW)["inverted"] == 0
+    assert curator.curate("example-user", "", now=NOW)["inverted"] == 1
+    assert curator.curate("example-user", "", now=NOW)["inverted"] == 0
     assert engine.get_item(item["id"])["text"].count("AVOID:") == 1
 
 
@@ -500,7 +500,7 @@ def test_dedupe_keeps_the_better_item_and_merges_the_events(store):
     engine.add_feedback(drop["id"], "harmful", ref="drop-bad", now=NOW)
     engine.add_evidence(drop["id"], [{"kind": "file", "ref": "Makefile"}])
 
-    report = curator.curate("luis", "", now=NOW)
+    report = curator.curate("example-user", "", now=NOW)
     assert report["deduped"] == 1
     assert engine.get_item(drop["id"]) is None
     survivor = engine.get_item(keep["id"])
@@ -512,9 +512,9 @@ def test_dedupe_keeps_the_better_item_and_merges_the_events(store):
 def test_dedupe_also_catches_near_duplicates_and_is_idempotent(store):
     first = _rule("Always run the project tests before claiming a task done")
     engine.add_item("Always run the project tests before claiming a task done now",
-                    owner="luis", level="procedural", now=NOW)
-    assert curator.curate("luis", "", now=NOW)["deduped"] == 1
-    assert curator.curate("luis", "", now=NOW)["deduped"] == 0
+                    owner="example-user", level="procedural", now=NOW)
+    assert curator.curate("example-user", "", now=NOW)["deduped"] == 1
+    assert curator.curate("example-user", "", now=NOW)["deduped"] == 0
     assert engine.get_item(first["id"]) is not None
 
 
@@ -527,7 +527,7 @@ def test_curator_preserves_critical_difference_in_similar_rules(store, before, a
     new = _rule(f"{prefix} {after} times")
     assert curator.get_text_similarity(old["text"], new["text"]) > engine.DEDUPE_SIMILARITY
 
-    assert curator.curate("luis", "", now=NOW)["deduped"] == 0
+    assert curator.curate("example-user", "", now=NOW)["deduped"] == 0
     assert engine.get_item(old["id"]) is not None
     assert engine.get_item(new["id"]) is not None
 
@@ -537,10 +537,10 @@ def test_an_anti_pattern_deprecates_the_active_rule_it_contradicts(store):
     inverted = _rule(text)
     for i in range(3):
         engine.add_feedback(inverted["id"], "harmful", ref=f"bad-{i}", now=NOW)
-    curator.curate("luis", "", now=NOW)          # inverts it
+    curator.curate("example-user", "", now=NOW)          # inverts it
 
     reasserted = _rule(text)                     # the agent asserts it again
-    report = curator.curate("luis", "", now=NOW)
+    report = curator.curate("example-user", "", now=NOW)
     assert report["conflicts"] == 1
     assert engine.get_item(inverted["id"])["status"] == "anti_pattern"
     assert engine.get_item(reasserted["id"])["status"] == "deprecated"
@@ -558,7 +558,7 @@ def test_deprecated_items_are_pruned_after_ninety_untouched_days(store):
                  "updated_at": _ago(10), "last_accessed": _ago(10)})
     engine.save_item(warm)
 
-    report = curator.curate("luis", "", now=NOW)
+    report = curator.curate("example-user", "", now=NOW)
     assert report["pruned"] == 1
     assert engine.get_item(item["id"]) is None
     assert engine.get_item(fresh["id"]) is not None
@@ -566,7 +566,7 @@ def test_deprecated_items_are_pruned_after_ninety_untouched_days(store):
 
 def test_the_curator_report_has_every_counter(store):
     _rule()
-    report = curator.curate("luis", "", now=NOW)
+    report = curator.curate("example-user", "", now=NOW)
     assert set(report) == {"deduped", "conflicts", "inverted", "promoted",
                            "demoted", "pruned", "total_active"}
     assert report["total_active"] == 1
@@ -575,7 +575,7 @@ def test_the_curator_report_has_every_counter(store):
 def test_safe_curate_swallows_a_broken_store(store, monkeypatch):
     monkeypatch.setattr(engine, "scoped_items",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("banana")))
-    report = curator.safe_curate("luis", "")
+    report = curator.safe_curate("example-user", "")
     assert report["total_active"] == 0 and "banana" in report["error"]
 
 
@@ -585,7 +585,7 @@ def test_safe_curate_swallows_a_broken_store(store, monkeypatch):
 def test_a_passing_turn_credits_the_rules_it_was_shown(store):
     rule = _rule()
     fact = _rule("The deploy script lives in ops/deploy.sh", level="semantic")
-    detail = engine.pack_detail("luis", "", "deploy script", now=NOW)
+    detail = engine.pack_detail("example-user", "", "deploy script", now=NOW)
     engine.note_injected("sess-42", detail["ids"])
     assert set(engine.peek_injected("sess-42")) == {rule["id"], fact["id"]}
 
@@ -709,17 +709,17 @@ def test_a_corrupt_database_is_moved_aside_and_recreated(store):
 
 def test_pack_never_raises_into_the_prompt_path(store, monkeypatch):
     _rule()
-    assert engine.pack("luis", "", "tests", now=NOW)
+    assert engine.pack("example-user", "", "tests", now=NOW)
     monkeypatch.setattr(engine, "scoped_items",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("banana")))
-    assert engine.pack("luis", "", "tests", now=NOW) == ""
+    assert engine.pack("example-user", "", "tests", now=NOW) == ""
 
 
 def test_pack_survives_a_database_that_cannot_be_opened(store, monkeypatch):
     _rule()
     monkeypatch.setattr(engine, "DATA_DIR", "\0 not a directory")
-    assert engine.pack("luis", "", "tests", now=NOW) == ""
-    assert engine.stats("luis")["total"] == 0
+    assert engine.pack("example-user", "", "tests", now=NOW) == ""
+    assert engine.stats("example-user")["total"] == 0
 
 
 def test_note_injected_never_raises(store):
@@ -743,7 +743,7 @@ async def test_tool_add_search_feedback_and_list(store, monkeypatch):
 
     desc, result = await _execute_tool_block_impl(
         _block({"action": "add", "text": "Prefer edit_file over write_file for edits"}),
-        session_id="sess-1", owner="luis")
+        session_id="sess-1", owner="example-user")
     assert desc == "memory_rules: add"
     added = result["added"]
     # An agent assertion is worth half a human's word, and it says so.
@@ -752,20 +752,20 @@ async def test_tool_add_search_feedback_and_list(store, monkeypatch):
     assert len(added["id"]) == 8
 
     desc, result = await _execute_tool_block_impl(
-        _block({"action": "search", "query": "edit_file"}), session_id="sess-1", owner="luis")
+        _block({"action": "search", "query": "edit_file"}), session_id="sess-1", owner="example-user")
     assert desc == "memory_rules: search"
     assert result["results"][0]["id"] == added["id"] and result["degraded"] is True
 
     desc, result = await _execute_tool_block_impl(
         _block({"action": "feedback", "id": added["id"], "kind": "helpful",
-                "reason": "it was right"}), session_id="sess-1", owner="luis")
+                "reason": "it was right"}), session_id="sess-1", owner="example-user")
     assert desc == "memory_rules: feedback"
     assert result["updated"]["score"] > added["score"]
     stored = engine.get_item(added["full_id"])
     assert stored["helpful"][0]["ref"] == "sess-1"       # attributed to the turn
 
     desc, result = await _execute_tool_block_impl(
-        _block({"action": "list"}), session_id="sess-1", owner="luis")
+        _block({"action": "list"}), session_id="sess-1", owner="example-user")
     assert desc == "memory_rules: list"
     assert [r["id"] for r in result["items"]] == [added["id"]] and result["total"] == 1
 
@@ -777,7 +777,7 @@ async def test_tool_scopes_new_rules_to_the_session_project(store, monkeypatch):
                         lambda sid, owner=None: {"workspace": "/repo/covernet"})
     _, result = await _execute_tool_block_impl(
         _block({"action": "add", "text": "This project pins numpy", "level": "semantic"}),
-        session_id="sess-1", owner="luis")
+        session_id="sess-1", owner="example-user")
     assert engine.get_item(result["added"]["full_id"])["project"] == "/repo/covernet"
 
 
@@ -793,7 +793,7 @@ async def test_tool_rejects_garbage_without_raising(store, monkeypatch):
                     json.dumps({"action": "feedback", "id": "zzzzzzzz", "kind": "helpful"}),
                     json.dumps({"action": "feedback", "id": "", "kind": "sideways"})):
         block = ToolBlock(tool_type="memory_rules", content=content)
-        _, result = await _execute_tool_block_impl(block, session_id="s", owner="luis")
+        _, result = await _execute_tool_block_impl(block, session_id="s", owner="example-user")
         assert result["exit_code"] == 1 and result["error"], content
 
 
@@ -853,7 +853,7 @@ def test_the_budget_setting_is_what_pack_gets(store, monkeypatch):
     values = {"agent_learned_memory": True, "agent_learned_memory_chars": 200}
     monkeypatch.setattr("src.settings.get_setting",
                         lambda key, default=None: values.get(key, default))
-    assert len(engine.pack("luis", "", "rule", engine.injection_budget(), now=NOW)) <= 200
+    assert len(engine.pack("example-user", "", "rule", engine.injection_budget(), now=NOW)) <= 200
 
 
 # ── prompt injection + the turn-end hook, as the agent loop calls them ──
@@ -864,7 +864,7 @@ def test_the_prompt_block_carries_the_rules_and_records_the_ids(store):
     them: pack_detail() into an untrusted context message, note_injected()
     against the session, then the harness verdict at the end of the turn."""
     rule = _rule()
-    detail = engine.pack_detail("luis", "", "run the tests", engine.injection_budget())
+    detail = engine.pack_detail("example-user", "", "run the tests", engine.injection_budget())
     assert rule["id"] in detail["ids"]
 
     from src.prompt_security import untrusted_context_message
@@ -889,7 +889,7 @@ def test_build_system_prompt_injects_the_block_behind_its_setting(store, monkeyp
         agent_loop._cached_base_prompt_key = None
         return agent_loop._build_system_prompt(
             list(messages), "test-model", None, None,
-            owner="luis", relevant_tools={"read_file"}, session_id="sess-prompt")[0]
+            owner="example-user", relevant_tools={"read_file"}, session_id="sess-prompt")[0]
 
     on = {"agent_learned_memory": True, "agent_learned_memory_chars": 1800}
     monkeypatch.setattr("src.settings.get_setting",
@@ -918,7 +918,7 @@ def test_a_broken_store_costs_the_block_not_the_prompt(store, monkeypatch):
     agent_loop._cached_base_prompt_key = None
     built = agent_loop._build_system_prompt(
         [{"role": "user", "content": "hello"}], "test-model", None, None,
-        owner="luis", relevant_tools={"read_file"}, session_id="sess-x")[0]
+        owner="example-user", relevant_tools={"read_file"}, session_id="sess-x")[0]
     assert built and any(m.get("role") == "user" for m in built)
 
 
@@ -932,7 +932,7 @@ def client(store, monkeypatch):
     from core.middleware import require_admin
     from routes import memory_engine_routes
 
-    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "example-user")
     app = FastAPI()
     app.include_router(memory_engine_routes.setup_memory_engine_routes())
     app.dependency_overrides[require_admin] = lambda: None
@@ -1000,7 +1000,7 @@ def test_api_pack_is_the_exact_block_the_model_would_see(client, store):
     client.post("/api/memory-engine/items",
                 json={"text": "This repo pins numpy to 1.26", "project": "/repo"})
     body = client.get("/api/memory-engine/pack?query=tests").json()
-    assert body["pack"] == engine.pack("luis", None, "tests", body["budget"])
+    assert body["pack"] == engine.pack("example-user", None, "tests", body["budget"])
     assert engine.PACK_RULES_HEADER in body["pack"]
     assert body["ids"] and body["chars"] == len(body["pack"])
     assert body["enabled"] is True and body["degraded"] is False

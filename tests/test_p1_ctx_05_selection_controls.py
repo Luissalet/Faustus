@@ -36,7 +36,7 @@ def ce_store(tmp_path):
         store.use_path(None)
 
 
-def _request(*, owner="luis", project_id="faustus", excluded_refs=(),
+def _request(*, owner="example-user", project_id="faustus", excluded_refs=(),
             excluded_prefixes=(), explicit_refs=()):
     return ContextRequest.parse({
         "request_id": "ctxreq_test",
@@ -51,7 +51,7 @@ def _request(*, owner="luis", project_id="faustus", excluded_refs=(),
 def _candidate(ref, **overrides):
     payload = {
         "candidate_id": f"cand::{ref}", "source_type": "file", "source_ref": ref,
-        "title": ref, "body": "some retrievable text", "owner": "luis",
+        "title": ref, "body": "some retrievable text", "owner": "example-user",
         "project_id": "faustus", "observed_at": "2026-09-09T12:00:00Z",
         "trust_class": "observed", "authority": "agent_claim",
     }
@@ -92,37 +92,37 @@ def test_exclusion_never_touches_an_unrelated_ref():
 # ── the store: scope isolation ──────────────────────────────────────────────
 
 def test_session_exclusion_does_not_leak_to_another_session(ce_store):
-    selection.set_control("luis", selection.KIND_EXCLUDE, "file:a.md",
+    selection.set_control("example-user", selection.KIND_EXCLUDE, "file:a.md",
                           project_id="faustus", session_id="s1")
-    here = selection.policy_overrides("luis", project_id="faustus", session_id="s1")
-    other = selection.policy_overrides("luis", project_id="faustus", session_id="s2")
+    here = selection.policy_overrides("example-user", project_id="faustus", session_id="s1")
+    other = selection.policy_overrides("example-user", project_id="faustus", session_id="s2")
     assert "file:a.md" in here["excluded_refs"]
     assert "file:a.md" not in other["excluded_refs"]
 
 
 def test_project_exclusion_reaches_every_session_of_that_project(ce_store):
-    selection.set_control("luis", selection.KIND_EXCLUDE, "file:b.md", project_id="faustus")
-    s1 = selection.policy_overrides("luis", project_id="faustus", session_id="s1")
-    s2 = selection.policy_overrides("luis", project_id="faustus", session_id="s2")
-    other_project = selection.policy_overrides("luis", project_id="other", session_id="s1")
+    selection.set_control("example-user", selection.KIND_EXCLUDE, "file:b.md", project_id="faustus")
+    s1 = selection.policy_overrides("example-user", project_id="faustus", session_id="s1")
+    s2 = selection.policy_overrides("example-user", project_id="faustus", session_id="s2")
+    other_project = selection.policy_overrides("example-user", project_id="other", session_id="s1")
     assert "file:b.md" in s1["excluded_refs"]
     assert "file:b.md" in s2["excluded_refs"]
     assert "file:b.md" not in other_project["excluded_refs"]
 
 
 def test_unset_control_removes_it_and_nothing_else(ce_store):
-    selection.set_control("luis", selection.KIND_EXCLUDE, "file:c.md", project_id="faustus")
-    selection.set_control("luis", selection.KIND_EXCLUDE, "file:d.md", project_id="faustus")
-    assert selection.unset_control("luis", selection.KIND_EXCLUDE, "file:c.md",
+    selection.set_control("example-user", selection.KIND_EXCLUDE, "file:c.md", project_id="faustus")
+    selection.set_control("example-user", selection.KIND_EXCLUDE, "file:d.md", project_id="faustus")
+    assert selection.unset_control("example-user", selection.KIND_EXCLUDE, "file:c.md",
                                    project_id="faustus") is True
-    overrides = selection.policy_overrides("luis", project_id="faustus")
+    overrides = selection.policy_overrides("example-user", project_id="faustus")
     assert "file:c.md" not in overrides["excluded_refs"]
     assert "file:d.md" in overrides["excluded_refs"]
 
 
 def test_pin_is_a_separate_kind_from_exclude(ce_store):
-    selection.set_control("luis", selection.KIND_PIN, "file:e.md", project_id="faustus")
-    overrides = selection.policy_overrides("luis", project_id="faustus")
+    selection.set_control("example-user", selection.KIND_PIN, "file:e.md", project_id="faustus")
+    overrides = selection.policy_overrides("example-user", project_id="faustus")
     assert "file:e.md" in overrides["pinned_refs"]
     assert "file:e.md" not in overrides["excluded_refs"]
 
@@ -132,23 +132,23 @@ def test_pin_is_a_separate_kind_from_exclude(ce_store):
 def test_end_to_end_through_build_request(ce_store):
     from src.context_engine.wiring import build_request
 
-    selection.set_control("luis", selection.KIND_EXCLUDE, "file:secret.md",
+    selection.set_control("example-user", selection.KIND_EXCLUDE, "file:secret.md",
                           project_id="proj1", session_id="sess1")
-    selection.set_control("luis", selection.KIND_PIN, "file:pinned.md",
+    selection.set_control("example-user", selection.KIND_PIN, "file:pinned.md",
                           project_id="proj1", session_id="sess1")
 
-    request = build_request(owner="luis", session_id="sess1", model="gpt-x",
+    request = build_request(owner="example-user", session_id="sess1", model="gpt-x",
                             project_id="proj1",
                             messages=[{"role": "user", "content": "hello"}])
     assert "file:secret.md" in request.policy.excluded_refs
     assert "file:pinned.md" in request.explicit_refs
 
-    verdict = validate(_candidate("file:secret.md", owner="luis", project_id="proj1"),
+    verdict = validate(_candidate("file:secret.md", owner="example-user", project_id="proj1"),
                        request, now=NOW)
     assert verdict.ok is False and verdict.reason == "user_excluded"
 
     # A DIFFERENT session for the same owner/project never sees sess1's
     # session-scoped exclusion.
-    other = build_request(owner="luis", session_id="sess2", model="gpt-x",
+    other = build_request(owner="example-user", session_id="sess2", model="gpt-x",
                           project_id="proj1", messages=[{"role": "user", "content": "hi"}])
     assert "file:secret.md" not in other.policy.excluded_refs

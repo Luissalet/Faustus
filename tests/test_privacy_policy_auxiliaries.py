@@ -104,7 +104,7 @@ class TestChromaClientPrivacyGate:
         monkeypatch.setenv("CHROMADB_HOST", "localhost")
         monkeypatch.setenv("CHROMADB_PORT", "8100")
         monkeypatch.setattr(pp, "get_privacy_profile", lambda project=None, owner=None: pp.PROFILE_LOCAL_ONLY)
-        # Luis's machine may well have something listening locally; what this
+        # ExampleUser's machine may well have something listening locally; what this
         # test is about is the gate, so the connection itself is made to fail.
         import chromadb
 

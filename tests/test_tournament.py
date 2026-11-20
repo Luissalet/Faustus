@@ -570,7 +570,7 @@ def _fake_llm(answer="an answer with several words in it"):
 
 
 async def test_a_started_run_finishes_persists_and_can_be_read_back():
-    run_obj = await tournament.start("luis", {"prompt": "a task", "models": ["a:9b", "b:8b"],
+    run_obj = await tournament.start("example-user", {"prompt": "a task", "models": ["a:9b", "b:8b"],
                                               "rounds": 1}, llm_call=_fake_llm())
     assert run_obj.status in ("queued", "running")
     assert await tournament.wait(run_obj, 5)
@@ -587,7 +587,7 @@ async def test_a_started_run_finishes_persists_and_can_be_read_back():
 
 
 async def test_a_run_that_was_running_at_a_restart_reads_back_as_interrupted():
-    run_obj = await tournament.start("luis", {"prompt": "t", "models": ["a:9b", "b:8b"]},
+    run_obj = await tournament.start("example-user", {"prompt": "t", "models": ["a:9b", "b:8b"]},
                                      llm_call=_fake_llm())
     run_obj.status = "running"
     run_obj._persist()
@@ -599,12 +599,12 @@ async def test_a_run_that_was_running_at_a_restart_reads_back_as_interrupted():
 
 
 async def test_the_listing_is_owner_scoped_and_names_the_winner():
-    mine = await tournament.start("luis", {"prompt": "mine", "models": ["a:9b", "b:8b"],
+    mine = await tournament.start("example-user", {"prompt": "mine", "models": ["a:9b", "b:8b"],
                                            "rounds": 1}, llm_call=_fake_llm())
     theirs = await tournament.start("eve", {"prompt": "theirs", "models": ["a:9b", "b:8b"],
                                             "rounds": 1}, llm_call=_fake_llm())
     assert await tournament.wait(mine, 5) and await tournament.wait(theirs, 5)
-    rows = tournament.list_runs("luis")
+    rows = tournament.list_runs("example-user")
     assert [r["prompt"] for r in rows] == ["mine"]
     assert rows[0]["winner"] and rows[0]["ranking"] == "judge"
     assert len(tournament.list_runs(None)) == 2      # single-user mode sees everything
@@ -617,7 +617,7 @@ async def test_cancelling_a_run_keeps_what_it_had_and_settles_it():
     async def call(messages, model):
         await gate.wait()
         return "an answer"
-    run_obj = await tournament.start("luis", {"prompt": "t", "models": ["a:9b", "b:8b"],
+    run_obj = await tournament.start("example-user", {"prompt": "t", "models": ["a:9b", "b:8b"],
                                               "rounds": 3}, llm_call=call)
     await asyncio.sleep(0.02)
     assert tournament.cancel(run_obj) is True
@@ -634,7 +634,7 @@ async def test_start_validates_the_body_before_it_spends_a_gpu():
                  {"prompt": "t", "models": ["one:1b"]},
                  {"prompt": "t", "models": ["a:1b", "b:2b"], "rounds": "many"}]:
         with pytest.raises(tournament.TournamentError):
-            await tournament.start("luis", body, llm_call=_fake_llm())
+            await tournament.start("example-user", body, llm_call=_fake_llm())
 
 
 async def test_the_settings_switch_and_the_model_cap_are_read_from_settings(monkeypatch):
@@ -663,7 +663,7 @@ def _close_clients():
             pass
 
 
-def _client(monkeypatch, *, user="luis"):
+def _client(monkeypatch, *, user="example-user"):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from core.middleware import require_admin
@@ -734,7 +734,7 @@ def test_cancel_over_http(monkeypatch):
         return "an answer"
     app = FastAPI()
     app.dependency_overrides[require_admin] = lambda: None
-    monkeypatch.setattr(tr, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(tr, "effective_user", lambda request: "example-user")
     monkeypatch.setattr(tournament, "default_llm_call", lambda owner=None, **kw: slow)
     app.include_router(tr.setup_tournament_routes())
     with TestClient(app) as c:

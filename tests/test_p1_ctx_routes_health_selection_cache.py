@@ -22,8 +22,8 @@ def client(tmp_path, monkeypatch):
     app = FastAPI()
 
     @app.middleware("http")
-    async def _as_luis(request, call_next):
-        request.state.current_user = "luis"
+    async def _as_user(request, call_next):
+        request.state.current_user = "example-user"
         return await call_next(request)
 
     app.include_router(setup_context_engine_routes())
@@ -69,14 +69,14 @@ def test_reconstruct_task_route(client):
 
 def test_cache_invalidate_only_touches_this_owners_scope(client):
     ws = cache.working_set()
-    ws.put("luis|p1", "candidates:file:a.txt", "luis-cached")
+    ws.put("example-user|p1", "candidates:file:a.txt", "example_user-cached")
     ws.put("otro|p1", "candidates:file:a.txt", "otro-cached")
 
     out = client.post("/api/context/cache/invalidate", json={"project_id": "p1"})
     assert out.status_code == 200, out.text
     assert out.json()["dropped"] >= 1
 
-    assert ws.get("luis|p1", "candidates:file:a.txt") is None
+    assert ws.get("example-user|p1", "candidates:file:a.txt") is None
     assert ws.get("otro|p1", "candidates:file:a.txt") == "otro-cached"
 
 

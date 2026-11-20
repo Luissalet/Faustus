@@ -46,7 +46,7 @@ from src.context_engine.contracts import (  # noqa: E402
     ContextRequest, ContextTask,
 )
 
-OWNER = "luis"
+OWNER = "example-user"
 BODY = ("# Product requirements\n"
         "\n"
         "The exporter must emit TOON.\n"

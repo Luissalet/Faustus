@@ -15,13 +15,13 @@ def isolated(tmp_path, monkeypatch):
 
 
 def test_spelling_scope_boundaries_literals_and_no_cascades():
-    store.put_vocabulary("fausto", "Faustus", owner="luis")
-    store.put_vocabulary("Faustus", "Faustus Core", owner="luis")
-    store.put_vocabulary("fausto", "Fausto Project", owner="luis", project="p1")
-    assert store.apply_vocabulary('fausto -12 15% no borres "fausto" C:/fausto/a.py fausto.py faustoso', "luis") == 'Faustus -12 15% no borres "fausto" C:/fausto/a.py fausto.py faustoso'
-    assert store.apply_vocabulary("fausto", "luis", "p1") == "Fausto Project"
+    store.put_vocabulary("fausto", "Faustus", owner="example-user")
+    store.put_vocabulary("Faustus", "Faustus Core", owner="example-user")
+    store.put_vocabulary("fausto", "Fausto Project", owner="example-user", project="p1")
+    assert store.apply_vocabulary('fausto -12 15% no borres "fausto" C:/fausto/a.py fausto.py faustoso', "example-user") == 'Faustus -12 15% no borres "fausto" C:/fausto/a.py fausto.py faustoso'
+    assert store.apply_vocabulary("fausto", "example-user", "p1") == "Fausto Project"
     assert store.apply_vocabulary("fausto", "other", "p1") == "fausto"
-    assert store.apply_vocabulary("fausto", "luis", "p2") == "Faustus"
+    assert store.apply_vocabulary("fausto", "example-user", "p2") == "Faustus"
 
 
 @pytest.mark.parametrize("a,b", [("doce", "12"), ("-12", "12"), ("no", "sí"), ("foo.py/a", "Bar"), ("a", "")])
@@ -31,18 +31,18 @@ def test_vocabulary_is_not_a_numeric_or_negation_rewrite(a, b):
 
 
 def test_correction_learns_name_but_keeps_original_and_owner():
-    entry = store.remember("Visita fausto -12", "Visita fausto -12", owner="luis", project="p1", status="paste_failed")
-    result = store.correct(entry, "Visita Faustus -12", owner="luis")
+    entry = store.remember("Visita fausto -12", "Visita fausto -12", owner="example-user", project="p1", status="paste_failed")
+    result = store.correct(entry, "Visita Faustus -12", owner="example-user")
     assert result["learned"][0]["replacement"] == "Faustus"
-    assert store.history("luis", "p1")[0]["raw_text"] == "Visita fausto -12"
+    assert store.history("example-user", "p1")[0]["raw_text"] == "Visita fausto -12"
     assert store.history("other", "p1") == []
     assert not store.delete_history(entry, "other")
     with pytest.raises(KeyError):
         store.correct(entry, "Secret", owner="other")
-    assert store.apply_vocabulary("fausto", "luis", "p1") == "Faustus"
-    assert store.apply_vocabulary("fausto", "luis") == "fausto"
-    assert store.delete_vocabulary(result["learned"][0]["id"], "luis")
-    assert store.apply_vocabulary("fausto", "luis", "p1") == "fausto"
+    assert store.apply_vocabulary("fausto", "example-user", "p1") == "Faustus"
+    assert store.apply_vocabulary("fausto", "example-user") == "fausto"
+    assert store.delete_vocabulary(result["learned"][0]["id"], "example-user")
+    assert store.apply_vocabulary("fausto", "example-user", "p1") == "fausto"
 
 
 @pytest.mark.parametrize("a,b", [("No borres 12 notas", "Borra 13 notas"), ("mañana voy a pasear", "hoy me quedo descansando"), ("un gato", "el perro")])
@@ -53,10 +53,10 @@ def test_rewrites_numbers_and_negations_are_not_learned(a, b):
 @pytest.mark.asyncio
 async def test_editor_fidelity_check_precedes_explicit_vocabulary():
     from services.stt.natural_dictation import polish
-    store.put_vocabulary("fausto", "Faustus", owner="luis")
+    store.put_vocabulary("fausto", "Faustus", owner="example-user")
     async def complete(**kw):
         return json.dumps({"text": "Fausto cuesta 12"})  # invention: wrong sign
-    result = await polish("fausto cuesta -12", owner="luis", complete=complete,
+    result = await polish("fausto cuesta -12", owner="example-user", complete=complete,
                           resolve=lambda *a, **k: ("http://127.0.0.1:1/v1", "fixture", {}))
     assert result["text"] == "Faustus cuesta -12"
     assert result["reason"] == "non_faithful_edit"
@@ -70,7 +70,7 @@ def api(monkeypatch, text="Eh visita fausto"):
     app = FastAPI()
     @app.middleware("http")
     async def identity(request: Request, call_next):
-        request.state.current_user = "luis"
+        request.state.current_user = "example-user"
         return await call_next(request)
     app.include_router(routes.setup_dictation_routes(SimpleNamespace(available=True, transcribe=lambda *a, **k: text)))
     return TestClient(app, base_url="http://testclient")
@@ -84,7 +84,7 @@ def test_global_pipeline_polishes_saves_before_paste_and_recovers_on_os_error(mo
         calls.append((text, kw))
         return {"text": "Visita Faustus", "raw_text": text, "status": "edited"}
     def paste(text, **kw):
-        assert store.history("luis")[0]["text"] == text
+        assert store.history("example-user")[0]["text"] == text
         raise OSError("Target closed")
     monkeypatch.setattr(natural_dictation, "polish", polish)
     monkeypatch.setattr(dp, "paste_text", paste)
@@ -95,7 +95,7 @@ def test_global_pipeline_polishes_saves_before_paste_and_recovers_on_os_error(mo
         rows = c.get("/api/dictation/history").json()["entries"]
         assert rows[0]["status"] == "paste_failed"
         assert rows[0]["raw_text"] == "Eh visita fausto"
-        assert calls[0][1]["owner"] == "luis"
+        assert calls[0][1]["owner"] == "example-user"
         c.patch("/api/dictation/history/" + rows[0]["id"], json={"text": "Visita Faustus", "learn": False}).raise_for_status()
         assert c.delete("/api/dictation/history/" + rows[0]["id"]).json()["deleted"]
 

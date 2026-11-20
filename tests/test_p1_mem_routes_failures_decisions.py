@@ -26,7 +26,7 @@ def client(store, monkeypatch):
     from core.middleware import require_admin
     from routes import memory_engine_routes
 
-    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "example-user")
     app = FastAPI()
     app.include_router(memory_engine_routes.setup_memory_engine_routes())
     app.dependency_overrides[require_admin] = lambda: None

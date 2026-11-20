@@ -142,7 +142,7 @@ def test_guard_anchor_prefers_the_first_due_instant():
     ("success", "done", "one step failed", "partial"),
     ("partial", "half", None, "partial"),
     ("error", None, "ConnectionError: boom", "failed"),
-    ("error", None, "IMAP authentication failed for luis@x", "blocked-login"),
+    ("error", None, "IMAP authentication failed for user@example.com", "blocked-login"),
     ("error", None, "HTTP 401 Unauthorized", "blocked-login"),
     ("aborted", None, "Server restarted while task was running", "failed"),
     ("skipped", "nothing new", None, "ok"),
@@ -435,7 +435,7 @@ async def test_a_real_run_ends_with_a_closed_status_and_uses_up_its_period(db, c
     s = db.SessionLocal()
     try:
         s.add(db.ScheduledTask(
-            id=t, owner="luis", name=t, task_type="action", action="noop_for_test",
+            id=t, owner="example-user", name=t, task_type="action", action="noop_for_test",
             schedule="daily", scheduled_time="09:00", trigger_type="schedule",
             next_run=datetime(2026, 10, 10, 9, 0, 0), status="active",
             output_target="none", notifications_enabled=False))
@@ -633,28 +633,28 @@ async def test_manage_tasks_accepts_and_reports_the_guards(db):
     made = await do_manage_tasks(json.dumps({
         "action": "create", "name": "tool-made", "prompt": "do it", "schedule": "weekly",
         "scheduled_time": "08:00", "scheduled_day": 0, "timezone": "Europe/Madrid",
-        "window_minutes": 90, "period_key": "iso_week"}), owner="luis")
+        "window_minutes": 90, "period_key": "iso_week"}), owner="example-user")
     assert made["exit_code"] == 0, made
     task_id = made["task_id"]
     g = ts.get_task_schedule_guard(task_id)
     assert (g["window_minutes"], g["period_key"]) == (90, "iso_week")
 
-    listed = await do_manage_tasks(json.dumps({"action": "list"}), owner="luis")
+    listed = await do_manage_tasks(json.dumps({"action": "list"}), owner="example-user")
     line = [l for l in listed["response"].splitlines() if task_id in l][0]
     assert "window 90 min" in line and "once per iso_week" in line
 
     edited = await do_manage_tasks(json.dumps({"action": "edit", "task_id": task_id,
-                                               "window_minutes": 0, "period_key": "month"}), owner="luis")
+                                               "window_minutes": 0, "period_key": "month"}), owner="example-user")
     assert edited["exit_code"] == 0, edited
     g = ts.get_task_schedule_guard(task_id)
     assert (g["window_minutes"], g["period_key"]) == (None, "month")
 
     bad = await do_manage_tasks(json.dumps({"action": "edit", "task_id": task_id,
-                                            "period_key": "decade"}), owner="luis")
+                                            "period_key": "decade"}), owner="example-user")
     assert bad["exit_code"] == 1 and "period_key" in bad["error"]
     ev = await do_manage_tasks(json.dumps({"action": "create", "name": "x", "prompt": "p",
                                            "trigger_type": "event", "trigger_event": "session_created",
-                                           "trigger_count": 1, "window_minutes": 10}), owner="luis")
+                                           "trigger_count": 1, "window_minutes": 10}), owner="example-user")
     assert ev["exit_code"] == 1
 
     s = db.SessionLocal()
@@ -665,7 +665,7 @@ async def test_manage_tasks_accepts_and_reports_the_guards(db):
         s.commit()
     finally:
         s.close()
-    hist = await do_manage_tasks(json.dumps({"action": "history", "task_id": task_id}), owner="luis")
+    hist = await do_manage_tasks(json.dumps({"action": "history", "task_id": task_id}), owner="example-user")
     assert hist["exit_code"] == 0
     assert hist["runs"][0]["closed_status"] == "skipped-period"
     assert "already ran" in hist["runs"][0]["reason"]

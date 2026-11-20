@@ -44,28 +44,28 @@ def store(tmp_path, monkeypatch):
 
 
 def test_a_card_starts_pending_and_covers_nothing(store):
-    card = approval_store.request(PLAN, owner="luis")
+    card = approval_store.request(PLAN, owner="example-user")
     assert card.status == "pending"
-    assert approval_store.check(PLAN, owner="luis")["ok"] is False
+    assert approval_store.check(PLAN, owner="example-user")["ok"] is False
     assert approval_store.check(PLAN)["reason"] == "no_approval"
 
 
 def test_granting_needs_a_name_and_the_name_is_kept(store):
-    card = approval_store.request(PLAN, owner="luis")
+    card = approval_store.request(PLAN, owner="example-user")
     assert approval_store.decide(card.id, granted=True, by="")["reason"] == "no_decider"
 
-    out = approval_store.decide(card.id, granted=True, by="luis")
+    out = approval_store.decide(card.id, granted=True, by="example-user")
     assert out["ok"] is True
-    assert out["approval"]["decided_by"] == "luis"
-    assert approval_store.check(PLAN, owner="luis")["ok"] is True
+    assert out["approval"]["decided_by"] == "example-user"
+    assert approval_store.check(PLAN, owner="example-user")["ok"] is True
 
 
 def test_one_new_recipient_stops_it_and_names_the_field(store):
-    card = approval_store.request(PLAN, owner="luis")
-    approval_store.decide(card.id, granted=True, by="luis")
+    card = approval_store.request(PLAN, owner="example-user")
+    approval_store.decide(card.id, granted=True, by="example-user")
 
     drifted = {**PLAN, "recipients": ["ana@example.com", "bob@example.com"]}
-    verdict = approval_store.check(drifted, owner="luis")
+    verdict = approval_store.check(drifted, owner="example-user")
     assert verdict["ok"] is False
     assert verdict["reason"] == "plan_changed"
     assert [c["field"] for c in verdict["changes"]] == ["recipients"]
@@ -81,24 +81,24 @@ def test_one_new_recipient_stops_it_and_names_the_field(store):
     ("detail", "Send it to Ana and post it publicly."),
 ])
 def test_every_field_the_masterplan_names_stops_the_run(store, field, value):
-    card = approval_store.request(PLAN, owner="luis")
-    approval_store.decide(card.id, granted=True, by="luis")
-    verdict = approval_store.check({**PLAN, field: value}, owner="luis")
+    card = approval_store.request(PLAN, owner="example-user")
+    approval_store.decide(card.id, granted=True, by="example-user")
+    verdict = approval_store.check({**PLAN, field: value}, owner="example-user")
     assert verdict["ok"] is False
     assert [c["field"] for c in verdict["changes"]] == [field]
 
 
 def test_a_denied_card_is_not_a_granted_one(store):
-    card = approval_store.request(PLAN, owner="luis")
-    approval_store.decide(card.id, granted=False, by="luis", reason="wrong recipient")
-    assert approval_store.check(PLAN, owner="luis")["ok"] is False
+    card = approval_store.request(PLAN, owner="example-user")
+    approval_store.decide(card.id, granted=False, by="example-user", reason="wrong recipient")
+    assert approval_store.check(PLAN, owner="example-user")["ok"] is False
     assert approval_store.get(card.id).status == "denied"
     assert approval_store.get(card.id).reason == "wrong recipient"
 
 
 def test_a_yes_is_spent_once_and_two_runs_cannot_share_it(store):
-    card = approval_store.request(PLAN, owner="luis")
-    approval_store.decide(card.id, granted=True, by="luis")
+    card = approval_store.request(PLAN, owner="example-user")
+    approval_store.decide(card.id, granted=True, by="example-user")
 
     first = approval_store.consume(card.id, PLAN)
     assert first == {"ok": True, "reason": "consumed", "uses_left": 0, "status": "consumed"}
@@ -106,14 +106,14 @@ def test_a_yes_is_spent_once_and_two_runs_cannot_share_it(store):
     second = approval_store.consume(card.id, PLAN)
     assert second["ok"] is False
     assert second["reason"] == "status_consumed"
-    assert approval_store.check(PLAN, owner="luis")["ok"] is False
+    assert approval_store.check(PLAN, owner="example-user")["ok"] is False
 
 
 def test_consuming_re_checks_the_plan_rather_than_trusting_an_earlier_check(store):
     """A `check()` a second ago is not evidence at the moment of acting."""
-    card = approval_store.request(PLAN, owner="luis")
-    approval_store.decide(card.id, granted=True, by="luis")
-    assert approval_store.check(PLAN, owner="luis")["ok"] is True
+    card = approval_store.request(PLAN, owner="example-user")
+    approval_store.decide(card.id, granted=True, by="example-user")
+    assert approval_store.check(PLAN, owner="example-user")["ok"] is True
 
     out = approval_store.consume(card.id, {**PLAN, "recipients": ["mallory@example.com"]})
     assert out["ok"] is False
@@ -122,8 +122,8 @@ def test_consuming_re_checks_the_plan_rather_than_trusting_an_earlier_check(stor
 
 
 def test_a_deadline_is_absolute_and_not_renewed_by_looking(store):
-    card = approval_store.request(PLAN, owner="luis", ttl_seconds=1)
-    approval_store.decide(card.id, granted=True, by="luis")
+    card = approval_store.request(PLAN, owner="example-user", ttl_seconds=1)
+    approval_store.decide(card.id, granted=True, by="example-user")
     stored = approval_store.get(card.id)
     assert stored.expires_at and stored.expires_at > stored.requested_at
 
@@ -132,25 +132,25 @@ def test_a_deadline_is_absolute_and_not_renewed_by_looking(store):
 
 
 def test_expiring_stale_cards_is_idempotent(store):
-    approval_store.request(PLAN, owner="luis", ttl_seconds=1)
-    approval_store.request({**PLAN, "detail": "another"}, owner="luis", ttl_seconds=None)
+    approval_store.request(PLAN, owner="example-user", ttl_seconds=1)
+    approval_store.request({**PLAN, "detail": "another"}, owner="example-user", ttl_seconds=None)
     assert approval_store.expire_stale(now="2099-01-01T00:00:00Z") == 1
     assert approval_store.expire_stale(now="2099-01-01T00:00:00Z") == 0
-    assert len(approval_store.pending(owner="luis")) == 1     # the one with no deadline
+    assert len(approval_store.pending(owner="example-user")) == 1     # the one with no deadline
 
 
 def test_deciding_a_card_twice_explains_rather_than_fails(store):
-    card = approval_store.request(PLAN, owner="luis")
-    approval_store.decide(card.id, granted=True, by="luis")
+    card = approval_store.request(PLAN, owner="example-user")
+    approval_store.decide(card.id, granted=True, by="example-user")
     again = approval_store.decide(card.id, granted=False, by="someone-else")
     assert again["ok"] is False
     assert again["reason"] == "already_granted"
-    assert "luis" in again["detail"]
+    assert "example-user" in again["detail"]
     assert approval_store.get(card.id).status == "granted"
 
 
 def test_an_unknown_card_is_not_found_and_not_an_exception(store):
-    assert approval_store.decide("apr_nope", granted=True, by="luis")["reason"] == "not_found"
+    assert approval_store.decide("apr_nope", granted=True, by="example-user")["reason"] == "not_found"
     assert approval_store.consume("apr_nope", PLAN)["reason"] == "not_found"
     assert approval_store.get("apr_nope") is None
 
@@ -196,4 +196,4 @@ def test_the_stamped_internal_user_is_refused_too():
 def test_a_person_still_gets_through_with_auth_disabled(monkeypatch):
     from core import middleware
     monkeypatch.setattr(middleware, "auth_disabled", lambda: True)
-    assert middleware.require_human(_request(user="luis")) is None
+    assert middleware.require_human(_request(user="example-user")) is None

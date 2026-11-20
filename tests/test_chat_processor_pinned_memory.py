@@ -155,13 +155,13 @@ def test_total_memory_injection_is_capped_at_five_across_pinned_and_recalled():
 # ── Spanish function words must not count as relevance (seen live 12-09-2026) ──
 
 def test_spanish_function_word_alone_does_not_recall_an_unrelated_memory():
-    """"Di solo: seis" pulled in "A Luis le gusta el café solo por la mañana"
+    """"Di solo: seis" pulled in "A ExampleUser le gusta el café solo por la mañana"
     because "solo" was a rare content token; the 27B model then answered
     about the memory block instead of saying "seis"."""
     rows = [
         {
             "id": "coffee",
-            "text": "A Luis le gusta el café solo por la mañana.",
+            "text": "A ExampleUser le gusta el café solo por la mañana.",
             "category": "preference",
             "pinned": False,
             "timestamp": 1,
@@ -179,18 +179,18 @@ def test_spanish_function_word_alone_does_not_recall_an_unrelated_memory():
 def test_accented_content_words_still_match():
     from src.chat_processor import _content_tokens
 
-    assert _content_tokens("A Luis le gusta el café solo por la mañana.") == ["luis", "gusta", "café", "mañana"]
+    assert _content_tokens("A ExampleUser le gusta el café solo por la mañana.") == ["example-user", "gusta", "café", "mañana"]
     rows = [
         {
             "id": "coffee",
-            "text": "A Luis le gusta el café solo por la mañana.",
+            "text": "A ExampleUser le gusta el café solo por la mañana.",
             "category": "preference",
             "pinned": False,
             "timestamp": 1,
         },
     ]
     preface, _, _ = _processor(rows).build_context_preface(
-        message="¿Cómo le gusta el café a Luis?",
+        message="¿Cómo le gusta el café a ExampleUser?",
         session=SimpleNamespace(),
         use_rag=False,
         use_memory=True,

@@ -107,7 +107,7 @@ def test_a_fenced_scheduler_worker_does_not_execute_or_write_a_result(db, monkey
     task_row = row(db, "t_fence")
     result, success = asyncio.run(sch_b._execute_action(task_row))
     assert success is True and result == "pong"
-    assert calls == ["luis"], "worker B's effect did not run exactly once"
+    assert calls == ["example-user"], "worker B's effect did not run exactly once"
 
     # Worker A wakes up: its OWN generation check must already say no, before
     # ever reaching the action.
@@ -115,7 +115,7 @@ def test_a_fenced_scheduler_worker_does_not_execute_or_write_a_result(db, monkey
     assert sch_a._still_owner_or_fenced("t_fence") is False
     with pytest.raises(ts_mod.TaskFenced):
         asyncio.run(sch_a._execute_action(task_row))
-    assert calls == ["luis"], "a fenced worker A must not produce a second effect"
+    assert calls == ["example-user"], "a fenced worker A must not produce a second effect"
 
     # And the full path agrees: dispatched through _execute_task_locked, A's
     # attempt is fenced at the very first checkpoint (before task_type
@@ -138,7 +138,7 @@ def test_a_fenced_scheduler_worker_does_not_execute_or_write_a_result(db, monkey
         db.TaskRun.id == run_id_a).first()
     assert after_run.status == "fenced", after_run.status
     assert "another worker took over" in (after_run.error or "")
-    assert calls == ["luis"], "the fenced full-path attempt must not execute the action"
+    assert calls == ["example-user"], "the fenced full-path attempt must not execute the action"
 
     after_task = row(db, "t_fence")
     assert after_task.next_run == before.next_run, (
@@ -175,7 +175,7 @@ def test_a_fenced_workflow_worker_does_not_open_a_second_card_or_write_a_result(
 
     d = wf({"id": "gate", "type": "human_approval",
            "config": {"action": "deliver", "detail": "send the report"}})
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="example-user")["run_id"]
     store.set_run_status(run_id, "running")
     node = d.node("gate")
 
@@ -203,13 +203,13 @@ def test_a_fenced_workflow_worker_does_not_open_a_second_card_or_write_a_result(
         "a reclaimed row must bump the generation, exactly like a fresh one")
 
     approvals = FakeApprovals()
-    handler = approval_handler(approvals, owner="luis")
+    handler = approval_handler(approvals, owner="example-user")
 
     # Worker B's own effect: the context is built exactly like
     # engine.py._run_node builds it, cancel_requested closed over B's own
     # worker_id/attempt/generation.
     context_b = {
-        "run_id": run_id, "owner": "luis", "previous": {},
+        "run_id": run_id, "owner": "example-user", "previous": {},
         "cancel_requested": lambda: not store.claim_active(
             run_id, "gate", worker_id="workerB", attempt=2,
             generation=claim_b["lease_generation"]),
@@ -237,7 +237,7 @@ def test_a_fenced_workflow_worker_does_not_open_a_second_card_or_write_a_result(
     # fenced result, and the handler must never call `approvals.request`
     # again.
     context_a = {
-        "run_id": run_id, "owner": "luis", "previous": {},
+        "run_id": run_id, "owner": "example-user", "previous": {},
         "cancel_requested": lambda: not store.claim_active(
             run_id, "gate", worker_id="workerA", attempt=1,
             generation=claim_a["lease_generation"]),

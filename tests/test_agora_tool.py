@@ -70,7 +70,7 @@ def test_help_lists_what_each_tool_does_as_the_hub_offers_it(hub):
 
 def test_an_action_goes_to_the_hub_under_its_name_as_faustus(hub):
     calls, _ = hub
-    out = run(AgoraTool(write=True), {"action": "channel_post", "args": {"channel": "general", "body": "hola", "agent": "luis"}})
+    out = run(AgoraTool(write=True), {"action": "channel_post", "args": {"channel": "general", "body": "hola", "agent": "example-user"}})
     assert out["exit_code"] == 0 and out["untrusted_content"] is True
     sent = calls[-1]
     assert sent["path"] == "/api/agent/call" and sent["body"]["tool"] == "hub_agora_channel_post"

@@ -38,7 +38,7 @@ def client(store, monkeypatch):
     from core.middleware import require_admin
     from routes import memory_engine_routes
 
-    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "example-user")
     app = FastAPI()
     app.include_router(memory_engine_routes.setup_memory_engine_routes())
     app.dependency_overrides[require_admin] = lambda: None
@@ -61,7 +61,7 @@ def test_forget_tombstones_the_item_and_it_stops_resurrecting(client, store):
     # Same owner/project/level the route created the item with (it defaults
     # level to "procedural") — the tombstone key is scoped by all three.
     with pytest.raises(engine.MemoryEngineError, match="forgotten"):
-        engine.add_item("Never rebase main", owner="luis", level="procedural",
+        engine.add_item("Never rebase main", owner="example-user", level="procedural",
                         trust_class="agent_assertion")
 
 

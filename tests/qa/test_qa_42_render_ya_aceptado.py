@@ -24,14 +24,14 @@ pytestmark = pytest.mark.qa_state("green")
 
 
 def test_reconnecting_finds_the_existing_job_instead_of_resubmitting(world):
-    out = media_runs.start("image.product", ASK, owner="luis")
+    out = media_runs.start("image.product", ASK, owner="example-user")
     assert out["ok"] is True
     run_id = out["run_id"]
     assert len(world.submitted) == 1  # exactly one generation was ever queued
 
     # "Connection lost after submit": the client forgot run_id and must find
     # the job again through what it does know - the owner.
-    found = [r for r in media_runs.recent(owner="luis") if r["id"] == run_id]
+    found = [r for r in media_runs.recent(owner="example-user") if r["id"] == run_id]
     assert found, "the client could not find its own already-accepted job"
 
     world.start_running(out["engine_job_id"])

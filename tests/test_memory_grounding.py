@@ -29,7 +29,7 @@ def client(store, monkeypatch):
     from core.middleware import require_admin
     from routes import memory_grounding_routes
 
-    monkeypatch.setattr(memory_grounding_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(memory_grounding_routes, "effective_user", lambda request: "example-user")
     app = FastAPI()
     app.include_router(memory_grounding_routes.setup_memory_grounding_routes())
     app.dependency_overrides[require_admin] = lambda: None
@@ -164,10 +164,10 @@ def test_check_item_quote_and_name_matched_case_and_accent_insensitively():
 def test_lint_flags_item_whose_claim_outruns_its_evidence(store):
     item = engine.add_item(
         "Revenue grew 19% to $1,000,000 on September 19, 2026.",
-        owner="luis", trust_class="human_explicit",
+        owner="example-user", trust_class="human_explicit",
         evidence=[{"kind": "chat", "excerpt": "revenue grew nicely this quarter"}],
     )
-    report = grounding.lint(owner="luis")
+    report = grounding.lint(owner="example-user")
     ids = {f["id"] for f in report["findings"]}
     assert item["id"] in ids
     finding = next(f for f in report["findings"] if f["id"] == item["id"])
@@ -177,32 +177,32 @@ def test_lint_flags_item_whose_claim_outruns_its_evidence(store):
 def test_lint_does_not_flag_a_well_grounded_item(store):
     engine.add_item(
         "Revenue grew 19% to $1,000,000.",
-        owner="luis", trust_class="human_explicit",
+        owner="example-user", trust_class="human_explicit",
         evidence=[{"kind": "chat", "excerpt": "revenue grew 19% to $1,000,000 this quarter"}],
     )
-    report = grounding.lint(owner="luis")
+    report = grounding.lint(owner="example-user")
     assert report["findings"] == []
 
 
 def test_lint_counts_items_without_evidence_as_unverifiable_not_flagged(store):
     engine.add_item("Revenue grew 19% to $1,000,000 on September 19, 2026.",
-                    owner="luis", trust_class="human_explicit")
-    report = grounding.lint(owner="luis")
+                    owner="example-user", trust_class="human_explicit")
+    report = grounding.lint(owner="example-user")
     assert report["findings"] == []
     assert report["unverifiable"] == 1
 
 
 def test_lint_sorts_findings_by_missing_count_descending(store):
     small = engine.add_item(
-        "Grew 19%.", owner="luis", trust_class="human_explicit",
+        "Grew 19%.", owner="example-user", trust_class="human_explicit",
         evidence=[{"kind": "chat", "excerpt": "nothing about growth here"}],
     )
     big = engine.add_item(
         "Grew 19% to $1,000,000 on September 19, 2026, per Ada Lovelace.",
-        owner="luis", trust_class="human_explicit",
+        owner="example-user", trust_class="human_explicit",
         evidence=[{"kind": "chat", "excerpt": "nothing about growth here"}],
     )
-    report = grounding.lint(owner="luis")
+    report = grounding.lint(owner="example-user")
     ids_in_order = [f["id"] for f in report["findings"]]
     assert ids_in_order.index(big["id"]) < ids_in_order.index(small["id"])
 
@@ -230,7 +230,7 @@ def test_lint_never_raises_on_a_broken_store(monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(engine_mod, "list_items", _boom)
-    report = grounding.lint(owner="luis")
+    report = grounding.lint(owner="example-user")
     assert report["findings"] == []
 
 
@@ -238,7 +238,7 @@ def test_lint_never_raises_on_a_broken_store(monkeypatch):
 
 def test_route_returns_owner_scoped_report(client):
     engine.add_item(
-        "Grew 19% to $1,000,000.", owner="luis", trust_class="human_explicit",
+        "Grew 19% to $1,000,000.", owner="example-user", trust_class="human_explicit",
         evidence=[{"kind": "chat", "excerpt": "no numbers here"}],
     )
     engine.add_item(

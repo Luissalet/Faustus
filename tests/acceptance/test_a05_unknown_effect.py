@@ -98,7 +98,7 @@ async def _turn_generator(hang_started: asyncio.Event):
                       content=json.dumps({"path": "notes/a05.txt", "content": "hi"}))
     hang_started.set()
     await execute_tool_block(
-        block, session_id=SESSION_ID, owner="luis", workspace="",
+        block, session_id=SESSION_ID, owner="example-user", workspace="",
         security_context=NO_TOOL_SECURITY_CONTEXT, call_id=CALL_ID,
     )
     yield 'data: {"delta": "done"}\n\n'  # never reached -- the call above hangs
@@ -220,7 +220,7 @@ async def test_a_read_only_tool_never_writes_a_tool_effect_event(monkeypatch):
     async def gen():
         block = ToolBlock(tool_type="read_file", content=json.dumps({"path": "x.txt"}))
         await execute_tool_block(
-            block, session_id=SESSION_ID, owner="luis", workspace="",
+            block, session_id=SESSION_ID, owner="example-user", workspace="",
             security_context=NO_TOOL_SECURITY_CONTEXT, call_id="call_read",
         )
         yield 'data: {"delta": "done"}\n\n'

@@ -280,7 +280,7 @@ def test_the_gate_opens_one_card_and_waits_on_it(store):
     assert sent == []
 
     approvals.cards["apr_1"]["status"] = "granted"
-    approvals.cards["apr_1"]["decided_by"] = "luis"
+    approvals.cards["apr_1"]["decided_by"] = "example-user"
     out = engine.resume(run_id, "gate")
 
     assert out["status"] == "completed"
@@ -294,9 +294,9 @@ def test_the_card_belongs_to_whoever_owns_the_run(store):
     approvals = FakeApprovals()
     d = wf({"id": "gate", "type": "human_approval", "config": {"action": "deliver"}})
     WorkflowEngine(default_handlers(approvals=approvals), store).advance(
-        store.create_run(d, owner="luis")["run_id"])
+        store.create_run(d, owner="example-user")["run_id"])
     assert approvals.requests == 1
-    assert approvals.opened_with[0]["owner"] == "luis"
+    assert approvals.opened_with[0]["owner"] == "example-user"
 
 
 def test_waiting_a_long_time_does_not_burn_through_the_attempt_counter(store):
@@ -307,7 +307,7 @@ def test_waiting_a_long_time_does_not_burn_through_the_attempt_counter(store):
     approvals = FakeApprovals()
     d = wf({"id": "gate", "type": "human_approval", "config": {"action": "deliver"}})
     engine = WorkflowEngine(default_handlers(approvals=approvals), store)
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="example-user")["run_id"]
     engine.advance(run_id)
 
     for _ in range(40):

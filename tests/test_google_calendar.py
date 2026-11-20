@@ -91,7 +91,7 @@ def google_client_env(monkeypatch):
     monkeypatch.delenv("GOOGLE_CALENDAR_OAUTH_REDIRECT_URI", raising=False)
 
 
-def _make_account(prefs, owner="tester", account_id="acct-g1", email="luis@gmail.com",
+def _make_account(prefs, owner="tester", account_id="acct-g1", email="user@example.com",
                    access_token="ya29.live", refresh_token="1//refresh",
                    expiry=None, status="ok", selected_calendars=None, sync_tokens=None):
     acc = {
@@ -207,7 +207,7 @@ async def test_callback_redirects_to_studio_integrations_route():
     token_resp.json.return_value = {"access_token": "ya29.t", "refresh_token": "1//r", "expires_in": 3600}
     userinfo_resp = mock.MagicMock()
     userinfo_resp.is_success = True
-    userinfo_resp.json.return_value = {"email": "luis@gmail.com"}
+    userinfo_resp.json.return_value = {"email": "user@example.com"}
 
     state = make_oauth_state("calendar", "tester")
     with mock.patch("httpx.post", return_value=token_resp), \
@@ -228,7 +228,7 @@ async def test_callback_saves_account_encrypted_and_never_returns_plaintext(pref
     token_resp.json.return_value = {"access_token": raw_access, "refresh_token": raw_refresh, "expires_in": 3600}
     userinfo_resp = mock.MagicMock()
     userinfo_resp.is_success = True
-    userinfo_resp.json.return_value = {"email": "luis@gmail.com"}
+    userinfo_resp.json.return_value = {"email": "user@example.com"}
 
     state = make_oauth_state("calendar", "tester")
     with mock.patch("httpx.post", return_value=token_resp), \
@@ -251,7 +251,7 @@ async def test_callback_saves_account_encrypted_and_never_returns_plaintext(pref
     assert result["configured"] is True
     assert len(result["accounts"]) == 1
     acct = result["accounts"][0]
-    assert acct["email"] == "luis@gmail.com"
+    assert acct["email"] == "user@example.com"
     assert "access_token" not in acct
     assert "refresh_token" not in acct
     import json as _json

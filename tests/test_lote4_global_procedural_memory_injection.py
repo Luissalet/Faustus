@@ -44,7 +44,7 @@ def test_scoped_items_returns_global_procedural_rule_for_any_owner(store):
         trust_class="human_explicit",
         confidence=0.9,
     )
-    for owner in ("luis", "some-other-user", "anyone"):
+    for owner in ("example-user", "some-other-user", "anyone"):
         items = engine.scoped_items(owner=owner, project=None)
         texts = [i["text"] for i in items]
         assert GLOBAL_RULE_TEXT in texts, (
@@ -61,7 +61,7 @@ def test_pack_detail_injects_global_rule_into_agent_mode_prompt_block(store):
         trust_class="human_explicit",
         confidence=0.9,
     )
-    detail = engine.pack_detail(owner="luis", project="", query="", char_budget=2000)
+    detail = engine.pack_detail(owner="example-user", project="", query="", char_budget=2000)
     assert "cursor" in detail["text"]
     assert GLOBAL_RULE_TEXT.split(":")[0] in detail["text"] or GLOBAL_RULE_TEXT in detail["text"]
     assert detail["ids"], "global rule should have been included and its id reported"

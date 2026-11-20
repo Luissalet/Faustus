@@ -26,7 +26,7 @@ def task(owner="faustus-a", revision=2, **extra):
             "status": "in_progress", "thread_id": 90, "submission_revision": revision, **extra}
 
 
-@pytest.mark.parametrize("actor", ["luis", "claude", "cursor", "faustus/claude", None, "faustus-a\n"])
+@pytest.mark.parametrize("actor", ["example-user", "claude", "cursor", "faustus/claude", None, "faustus-a\n"])
 def test_actor_cannot_impersonate_another_participant(bound, actor):
     _, b = bound
     with pytest.raises(CoordinationError):
@@ -165,7 +165,7 @@ def test_read_only_policy_remains_stronger_than_binding(bound, operation, args):
         authorize(bound[1], operation, args, task=task(), read_only=True)
 
 
-@pytest.mark.parametrize("forbidden", [{"agent": "luis"}, {"force": True}, {"force": False},
+@pytest.mark.parametrize("forbidden", [{"agent": "example-user"}, {"force": True}, {"force": False},
                                         {"exempt": "docs"}, {"connector_id": "evil"}])
 def test_unknown_authority_fields_are_not_silently_dropped(bound, forbidden):
     with pytest.raises(CoordinationError):

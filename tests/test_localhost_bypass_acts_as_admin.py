@@ -102,7 +102,7 @@ def test_bypass_puts_the_first_admin_on_the_request_for_loopback_only(tmp_path):
 
 
         async def main():
-            users = {"viewer": {"is_admin": False}, "luis": {"is_admin": True}, "other": {"is_admin": True}}
+            users = {"viewer": {"is_admin": False}, "example-user": {"is_admin": True}, "other": {"is_admin": True}}
             print("RESULT=" + json.dumps({
                 "loopback": await _case(users, "127.0.0.1"),
                 "loopback_v6": await _case(users, "::1"),
@@ -123,8 +123,8 @@ def test_bypass_puts_the_first_admin_on_the_request_for_loopback_only(tmp_path):
     assert line is not None, result.stdout
     got = json.loads(line[len("RESULT="):])
     # the first ADMIN in creation order, not the first user
-    assert got["loopback"] == {"status": 200, "user": "luis"}
-    assert got["loopback_v6"] == {"status": 200, "user": "luis"}
+    assert got["loopback"] == {"status": 200, "user": "example-user"}
+    assert got["loopback_v6"] == {"status": 200, "user": "example-user"}
     # no admin yet: the first user; no users at all: nothing to act as
     assert got["first_user_when_no_admin"] == {"status": 200, "user": "solo"}
     assert got["no_users"]["user"] in (None, "<unset>")

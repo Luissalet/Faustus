@@ -154,9 +154,9 @@ def test_metadata_read_default(tmp_path):
 
 def test_metadata_write(tmp_path):
     src = _make_pdf(tmp_path / "doc.pdf", 1)
-    result = pdf_ops.metadata(src, {"title": "Hola", "author": "Luis"})
+    result = pdf_ops.metadata(src, {"title": "Hola", "author": "ExampleUser"})
     assert result["metadata"]["title"] == "Hola"
-    assert result["metadata"]["author"] == "Luis"
+    assert result["metadata"]["author"] == "ExampleUser"
     reread = pdf_ops.metadata(result["output"])
     assert reread["metadata"]["title"] == "Hola"
 

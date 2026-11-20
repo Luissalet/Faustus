@@ -22,7 +22,7 @@ import pytest
 pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("code_mode_host_runtime")]
 
 FAKE_TOOL = "fake_gated_tool"
-OWNER = "luis"
+OWNER = "example-user"
 SESSION = "code-mode-approval-session"
 
 

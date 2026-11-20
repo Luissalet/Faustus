@@ -73,7 +73,7 @@ class FakeApi:
         return {"data": {"event_id": "e-" + body["message_id"]}}
 
     async def me(self):
-        return {"id": ME, "username": "luis"}
+        return {"id": ME, "username": "example-user"}
 
     async def call(self, method, path, json_body=None, params=None):
         self.posted.append((method, path, json_body))
@@ -89,7 +89,7 @@ def bridge(tmp_path, monkeypatch):
         turns.append(req)
         return turn_mod.TurnResult(text=f"respuesta a {req.text}")
 
-    monkeypatch.setattr(turn_mod, "resolve_owner", lambda c="": "luis")
+    monkeypatch.setattr(turn_mod, "resolve_owner", lambda c="": "example-user")
     monkeypatch.setattr(turn_mod, "session_exists", lambda sid, owner="": True)
     monkeypatch.setattr(turn_mod, "create_session", lambda owner, name, model="": "sess-x")
     monkeypatch.setattr(xb, "xdk_available", lambda: True)

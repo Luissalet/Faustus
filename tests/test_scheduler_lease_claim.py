@@ -75,7 +75,7 @@ def add_task(dbm, task_id, *, due, target="session", schedule="daily",
     session = dbm.SessionLocal()
     try:
         session.add(dbm.ScheduledTask(
-            id=task_id, owner="luis", name=task_id, task_type="llm",
+            id=task_id, owner="example-user", name=task_id, task_type="llm",
             prompt="say something", schedule=schedule,
             scheduled_time=scheduled_time, trigger_type="schedule",
             next_run=due, status="active", output_target=target))

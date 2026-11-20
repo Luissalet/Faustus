@@ -88,7 +88,7 @@ def test_a_failed_validation_distinguishes_generated_from_reviewed(own_database_
     from src.contracts.blob import ArtifactOccurrence
     occ, _ = identity.ensure_occurrence(ArtifactOccurrence.parse({
         "id": "occ_qa39_generated", "blob_sha256": "c" * 64, "kind": "dataset",
-        "owner": "luis",
+        "owner": "example-user",
     }))
     identity.record_manifest_version(
         occ.id, state="generated",

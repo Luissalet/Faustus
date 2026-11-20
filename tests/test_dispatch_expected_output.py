@@ -71,7 +71,7 @@ def test_the_other_verify_options_are_unchanged_by_the_new_one():
 
 def _job(expected):
     return dispatch.DispatchJob(
-        "luis", {"tasks": [{"name": "w1", "instruction": "add apply_tax"}]},
+        "example-user", {"tasks": [{"name": "w1", "instruction": "add apply_tax"}]},
         "/ws", "http://x/v1", "m", None, "Workers", verify="pytest -q",
         expected_output=expected)
 

@@ -133,7 +133,7 @@ def _item(ref, body, revision="", **kw):
 
 def _packet(items_by_section, packet_id="ctxpkt_a"):
     return ContextPacket(
-        packet_id=packet_id, request_id="req1", owner="luis", session_id="s1", model="m",
+        packet_id=packet_id, request_id="req1", owner="example-user", session_id="s1", model="m",
         window=ContextBudget(max_tokens=4096, input_budget=2000),
         sections=tuple(ContextSection(kind=kind, items=tuple(items))
                        for kind, items in items_by_section.items()))
@@ -236,7 +236,7 @@ def live(monkeypatch):
 
 async def _deliver():
     messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "how do I lint?"}]
-    request = wiring.build_request(owner="luis", session_id="s1", model="m", workspace="/repo",
+    request = wiring.build_request(owner="example-user", session_id="s1", model="m", workspace="/repo",
                                    messages=messages, agent_mode=True)
     delivery = await wiring.deliver_round(request=request, messages=messages,
                                           context_length=4096, window_known=True)
@@ -301,7 +301,7 @@ async def test_a_packet_dropped_from_the_final_prompt_is_reported_absent(live):
 
 async def test_a_reused_packet_keeps_its_audit(live):
     messages, first = await _deliver()
-    request = wiring.build_request(owner="luis", session_id="s1", model="m", workspace="/repo",
+    request = wiring.build_request(owner="example-user", session_id="s1", model="m", workspace="/repo",
                                    messages=messages, agent_mode=True)
     second = await wiring.deliver_round(request=request, messages=messages, context_length=4096,
                                         window_known=True, round_index=1, previous=first)
@@ -350,7 +350,7 @@ def _cand(ref, body, section):
 def _req():
     return ContextRequest(
         request_id="ctxreq_a", actor=ContextActor(agent_id="a", role="engineer", model="m"),
-        execution=ContextExecution(owner="luis", session_id="s1", project_id="p1",
+        execution=ContextExecution(owner="example-user", session_id="s1", project_id="p1",
                                    workspace="/repo", turn_id="t1"),
         task=ContextTask(intent="", phase="act", query="fix the failing lint in src/app.py"),
         policy=ContextPolicy(), consumer="agent", created_at="2026-09-01T12:00:00Z")

@@ -10,11 +10,11 @@ from src import meeting_requirements as mr
 
 MEETING = """## Transcript
 [00:01:05] Ana: Necesitamos que la caja admita un conector USB-C.
-[00:02:10] Luis: Podríamos hacer la tapa transparente, pero encarece.
+[00:02:10] ExampleUser: Podríamos hacer la tapa transparente, pero encarece.
 [00:03:30] Ana: ¿La entrega puede ser antes del día 20?
-[00:04:02] Luis: Te envío el render el viernes.
+[00:04:02] ExampleUser: Te envío el render el viernes.
 [00:05:15] Ana: Decidimos usar PETG para la caja.
-[00:06:00] Luis: Hace buen día hoy.
+[00:06:00] ExampleUser: Hace buen día hoy.
 - Ana: Quizá también una versión en negro.
 """
 
@@ -28,8 +28,8 @@ def isolated(tmp_path, monkeypatch):
 def test_extract_kinds_speakers_and_times():
     items = mr.extract(MEETING)
     kinds = [(i["kind"], i["speaker"], i["time"]) for i in items]
-    assert kinds == [("requirement", "Ana", "00:01:05"), ("proposal", "Luis", "00:02:10"), ("question", "Ana", "00:03:30"),
-                     ("promise", "Luis", "00:04:02"), ("decision", "Ana", "00:05:15"), ("proposal", "Ana", "")]
+    assert kinds == [("requirement", "Ana", "00:01:05"), ("proposal", "ExampleUser", "00:02:10"), ("question", "Ana", "00:03:30"),
+                     ("promise", "ExampleUser", "00:04:02"), ("decision", "Ana", "00:05:15"), ("proposal", "Ana", "")]
     assert all(not i["firm"] for i in items if i["kind"] in ("proposal", "question"))
     assert mr.counts(items) == {"decision": 1, "promise": 1, "requirement": 1, "proposal": 2, "question": 1}
 

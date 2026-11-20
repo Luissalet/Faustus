@@ -43,7 +43,7 @@ def _admin_and_no_probes(monkeypatch):
     monkeypatch.setattr(cookbook_routes, "require_admin", lambda request: None)
     # Pin the tmux launch path on every platform: on a real Windows host
     # `model_serve` would otherwise take `_launch_local_detached` (a real
-    # detached process — seen on Luis's machine, 12-09-2026) and the
+    # detached process — seen on ExampleUser's machine, 12-09-2026) and the
     # `fake_launch` shell stub would never see the launch. Same trick
     # `tests/test_cookbook_hf_token_grant.py` uses.
     monkeypatch.setattr(cookbook_routes, "IS_WINDOWS", False)

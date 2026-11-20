@@ -14,13 +14,13 @@ def test_adding_the_same_fact_again_returns_the_saved_one(monkeypatch, tmp_path)
     monkeypatch.setattr(ai, "_memory_manager", manager)
     monkeypatch.setattr(ai, "_memory_vector", None)
 
-    first = asyncio.run(ai.do_manage_memory("add\nEl cumpleaños es el 14 de marzo.\nfact", owner="luis"))
-    again = asyncio.run(ai.do_manage_memory("add\nel cumpleaños es el 14 de marzo\nfact", owner="luis"))
+    first = asyncio.run(ai.do_manage_memory("add\nEl cumpleaños es el 14 de marzo.\nfact", owner="example-user"))
+    again = asyncio.run(ai.do_manage_memory("add\nel cumpleaños es el 14 de marzo\nfact", owner="example-user"))
     other_owner = asyncio.run(ai.do_manage_memory("add\nEl cumpleaños es el 14 de marzo.\nfact", owner="ana"))
 
     assert first["results"].startswith("Memory added")
     assert again.get("duplicate") is True and again["memory_id"] == first["memory_id"]
     assert other_owner["results"].startswith("Memory added")
     texts = [(m.get("owner"), m["text"]) for m in manager.load_all()]
-    assert texts.count(("luis", "El cumpleaños es el 14 de marzo.")) == 1
+    assert texts.count(("example-user", "El cumpleaños es el 14 de marzo.")) == 1
     assert len(texts) == 2

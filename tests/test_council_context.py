@@ -104,7 +104,7 @@ def ledger():
 
 @pytest.fixture
 def session():
-    return CouncilSession.parse({"id": "council_1", "owner": "luis", "policy": "debate",
+    return CouncilSession.parse({"id": "council_1", "owner": "example-user", "policy": "debate",
                                  "project_id": "proj", "workspace": "D:/repo",
                                  "phase": "critique"})
 

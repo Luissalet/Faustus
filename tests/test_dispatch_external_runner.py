@@ -129,7 +129,7 @@ def test_a_job_with_no_runner_is_byte_identical_to_today(box):
                      "exit_code": 0, "output": "report"}
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": ["add apply_tax"], "workspace": box["ws"],
+        job = await dispatch.start("example-user", {"tasks": ["add apply_tax"], "workspace": box["ws"],
                                             "verify": "none"})
         assert await dispatch.wait(job, 10)
         return job
@@ -162,7 +162,7 @@ def test_an_external_agent_runs_inside_the_harness_and_the_proof_says_it_was_ung
     box["register"]("fake", AGENT)
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "add apply_tax", "runner": "fake"}],
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "add apply_tax", "runner": "fake"}],
                                             "workspace": box["ws"], "verify": "none"})
         assert await dispatch.wait(job, 30)
         return job
@@ -212,7 +212,7 @@ def test_the_external_agents_own_output_is_read_for_a_state_and_it_is_not_killed
     box["register"]("limited", RATE_LIMITED_AGENT)
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "work", "runner": "limited"}],
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "work", "runner": "limited"}],
                                             "workspace": box["ws"], "verify": "none"})
         assert await dispatch.wait(job, 30)
         return job
@@ -232,7 +232,7 @@ def test_an_external_agent_that_fails_makes_the_job_partial_not_a_lie(box):
     box["register"]("broken", FAILING_AGENT)
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "x", "runner": "broken"}],
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "x", "runner": "broken"}],
                                             "workspace": box["ws"], "verify": "none"})
         assert await dispatch.wait(job, 30)
         return job
@@ -252,7 +252,7 @@ def test_a_job_can_mix_a_local_worker_and_an_external_one(box):
                      "exit_code": 0, "output": "report"}
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "write notes"},
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "write notes"},
                                                       {"instruction": "add apply_tax", "runner": "fake"}],
                                             "workspace": box["ws"], "verify": "none", "parallel": False})
         assert await dispatch.wait(job, 30)
@@ -276,7 +276,7 @@ def test_cancelling_a_job_kills_the_external_agent_and_still_says_it_ran(box):
     box["register"]("hang", "import time\ntime.sleep(120)\n")
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "hang", "runner": "hang"}],
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "hang", "runner": "hang"}],
                                             "workspace": box["ws"], "verify": "none"})
         # Wait for the observable start marker instead of assuming a loaded
         # Windows CI worker launches the process within 400 ms.
@@ -313,7 +313,7 @@ def test_the_setting_off_refuses_with_the_reason(box, monkeypatch):
     box["register"]("fake", AGENT)
     monkeypatch.setattr(reg, "enabled", lambda: False)
     with pytest.raises(ValueError) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": [{"instruction": "x", "runner": "fake"}],
+        asyncio.run(dispatch.start("example-user", {"tasks": [{"instruction": "x", "runner": "fake"}],
                                             "workspace": box["ws"]}))
     message = str(err.value)
     assert "agent_external_runners" in message and "off" in message
@@ -324,13 +324,13 @@ def test_the_setting_off_refuses_with_the_reason(box, monkeypatch):
 def test_an_unknown_runner_fails_cleanly_and_starts_nothing(box):
     box["register"]("fake", AGENT)
     with pytest.raises(ValueError) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": [{"instruction": "x", "runner": "ghost"},
+        asyncio.run(dispatch.start("example-user", {"tasks": [{"instruction": "x", "runner": "ghost"},
                                                       {"instruction": "the other worker"}],
                                             "workspace": box["ws"]}))
     assert "unknown agent runner: 'ghost'" in str(err.value)
     # the job's OTHER worker was not spent on a result that could not be complete
     assert box["delegated"] == []
-    assert dispatch.list_jobs("luis") == []
+    assert dispatch.list_jobs("example-user") == []
 
 
 def test_a_runner_that_is_not_installed_names_its_install_command(box):
@@ -339,7 +339,7 @@ def test_a_runner_that_is_not_installed_names_its_install_command(box):
         install="ollama launch absent", argv=("definitely-not-a-real-binary-xyz", "{task}"),
         detect=("absent",))
     with pytest.raises(ValueError) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": [{"instruction": "x", "runner": "absent"}],
+        asyncio.run(dispatch.start("example-user", {"tasks": [{"instruction": "x", "runner": "absent"}],
                                             "workspace": box["ws"]}))
     assert "not installed" in str(err.value) and "ollama launch absent" in str(err.value)
     assert box["delegated"] == []
@@ -349,7 +349,7 @@ def test_an_agent_with_no_recorded_invocation_is_refused_not_guessed_at(box):
     box["runners"]["cline"] = reg.Runner(key="cline", label="Cline", kind="cli", licence="open",
                                          argv=(), detect=("cline",))
     with pytest.raises(ValueError) as err:
-        asyncio.run(dispatch.start("luis", {"tasks": [{"instruction": "x", "runner": "cline"}],
+        asyncio.run(dispatch.start("example-user", {"tasks": [{"instruction": "x", "runner": "cline"}],
                                             "workspace": box["ws"]}))
     assert reg.NOT_RUNNABLE_NOTE in str(err.value)
 
@@ -546,7 +546,7 @@ def spy(box, monkeypatch):
 
 def _run_one(box, **body):
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "add apply_tax",
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "add apply_tax",
                                                        "runner": "claudeish"}],
                                             "workspace": box["ws"], "verify": "none", **body})
         assert await dispatch.wait(job, 30)
@@ -565,7 +565,7 @@ def test_dispatch_hands_the_worker_everything_the_gate_needs(spy):
     assert call["run_id"] == f"{job.id}-0"
     # Everything this agent may write.
     assert call["workspace_roots"] == [job.workspace]
-    assert call["owner"] == "luis"
+    assert call["owner"] == "example-user"
     # A dispatched job is a background asyncio task: nobody can answer a
     # CAUTION prompt, so the gate must refuse rather than ask.
     assert call["attended"] is False
@@ -576,7 +576,7 @@ def test_dispatch_hands_the_worker_everything_the_gate_needs(spy):
 
 def test_two_tasks_on_one_runner_get_two_run_ids(spy):
     async def run():
-        job = await dispatch.start("luis", {"tasks": [
+        job = await dispatch.start("example-user", {"tasks": [
             {"instruction": "one", "runner": "claudeish"},
             {"instruction": "two", "runner": "claudeish"},
         ], "workspace": spy["ws"], "verify": "none"})
@@ -681,7 +681,7 @@ def test_the_fix_round_prefers_the_run_that_touched_the_failing_file():
 
 def test_a_task_carrying_a_handle_is_continued_not_restarted(spy):
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "fix it",
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "fix it",
                                                        "runner": "claudeish"}],
                                             "workspace": spy["ws"], "verify": "none"})
         assert await dispatch.wait(job, 30)

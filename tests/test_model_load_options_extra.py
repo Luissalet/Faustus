@@ -1,6 +1,6 @@
 """The per-model `extra` block: more Ollama request options, validated by name.
 
-Luis asked for a place to add "additional commands" for Ollama. What Ollama
+ExampleUser asked for a place to add "additional commands" for Ollama. What Ollama
 takes per request is a fixed list of `options`; llama-server flags are not
 among them, and the error must say so instead of silently dropping them.
 """

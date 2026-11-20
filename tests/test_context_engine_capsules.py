@@ -22,7 +22,7 @@ def ce_db(tmp_path):
 
 
 def _capsule(**over):
-    fields = {"owner": "luis", "project_id": "p1", "objective": "Implement OAuth"}
+    fields = {"owner": "example-user", "project_id": "p1", "objective": "Implement OAuth"}
     fields.update(over)
     return capsules.ensure("run_1", **fields)
 
@@ -37,9 +37,9 @@ def test_ensure_creates_once_and_then_loads(ce_db):
 
     # A worker calling ensure() with its own wording must not rewrite the
     # coordinator's objective.
-    again = capsules.ensure("run_1", owner="luis", objective="something else")
+    again = capsules.ensure("run_1", owner="example-user", objective="something else")
     assert again.objective == "Implement OAuth"
-    assert capsules.load("run_1", owner="luis") == first
+    assert capsules.load("run_1", owner="example-user") == first
 
 
 def test_capsule_round_trips_through_its_own_contract(ce_db):
@@ -49,9 +49,9 @@ def test_capsule_round_trips_through_its_own_contract(ce_db):
         {"op": "record_decision", "value": "DEC-4"},
         {"op": "claim", "value": "src/auth/github.py", "holder": "worker-1"},
         {"op": "add_evidence", "value": "changeset:9f2c"},
-    ], actor="builder", owner="luis")
+    ], actor="builder", owner="example-user")
 
-    loaded = capsules.load("run_1", owner="luis")
+    loaded = capsules.load("run_1", owner="example-user")
     assert capsules.Capsule.parse(loaded.to_dict()) == loaded
 
 
@@ -71,12 +71,12 @@ def test_deltas_on_a_capsule_that_does_not_exist_are_refused(ce_db):
 def test_delete_removes_the_capsule_and_keeps_the_log(ce_db):
     _capsule()
     capsules.apply_deltas("run_1", [{"op": "set_state", "value": "driver finished"}],
-                          actor="builder", owner="luis")
+                          actor="builder", owner="example-user")
 
-    assert capsules.delete("run_1", owner="luis") is True
-    assert capsules.load("run_1", owner="luis") is None
+    assert capsules.delete("run_1", owner="example-user") is True
+    assert capsules.load("run_1", owner="example-user") is None
     assert capsules.log("run_1")            # append-only means append-only
-    assert capsules.delete("run_1", owner="luis") is False
+    assert capsules.delete("run_1", owner="example-user") is False
 
 
 # ── typed deltas ───────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ def test_an_unknown_op_is_rejected_by_name_without_losing_the_batch(ce_db):
         {"op": "add_next_action", "value": "resolve OBJ-17"},
         {"op": "obliterate", "value": "everything"},
         {"op": "record_decision", "value": "DEC-4"},
-    ], actor="builder", owner="luis")
+    ], actor="builder", owner="example-user")
 
     assert [entry["op"] for entry in result["applied"]] == [
         "add_next_action", "record_decision"]
@@ -110,22 +110,22 @@ def test_a_malformed_delta_is_rejected_not_guessed_at(ce_db):
         {"op": "add_next_action", "value": "ok", "holdr": "x"},  # typo'd key
         {"op": "set_verdict", "value": "probably"},             # not a verdict
         "not even an object",
-    ], actor="builder", owner="luis")
+    ], actor="builder", owner="example-user")
 
     assert result["applied"] == []
     assert len(result["rejected"]) == 6
     assert "holdr" in result["rejected"][3]["reason"]
     assert "probably" in result["rejected"][4]["reason"]
-    assert capsules.load("run_1", owner="luis").revision == 1
+    assert capsules.load("run_1", owner="example-user").revision == 1
 
 
 def test_completing_an_action_takes_it_off_the_next_list(ce_db):
     _capsule()
     capsules.apply_deltas("run_1", [{"op": "add_next_action", "value": "resolve OBJ-17"}],
-                          actor="builder", owner="luis")
+                          actor="builder", owner="example-user")
 
     result = capsules.apply_deltas("run_1", [{"op": "complete", "value": "resolve OBJ-17"}],
-                                   actor="builder", owner="luis")
+                                   actor="builder", owner="example-user")
 
     assert result["capsule"]["completed"] == ["resolve OBJ-17"]
     assert result["capsule"]["next_actions"] == []
@@ -136,16 +136,16 @@ def test_claims_and_releases_and_questions(ce_db):
     capsules.apply_deltas("run_1", [
         {"op": "claim", "value": "src/auth/github.py"},          # holder defaults to actor
         {"op": "open_question", "value": "refresh token rotation"},
-    ], actor="worker-1", owner="luis")
-    loaded = capsules.load("run_1", owner="luis")
+    ], actor="worker-1", owner="example-user")
+    loaded = capsules.load("run_1", owner="example-user")
     assert loaded.claims == {"src/auth/github.py": "worker-1"}
     assert loaded.open_questions == ("refresh token rotation",)
 
     capsules.apply_deltas("run_1", [
         {"op": "release", "value": "src/auth/github.py"},
         {"op": "close_question", "value": "Refresh   Token Rotation"},
-    ], actor="worker-1", owner="luis")
-    loaded = capsules.load("run_1", owner="luis")
+    ], actor="worker-1", owner="example-user")
+    loaded = capsules.load("run_1", owner="example-user")
     assert loaded.claims == {}
     assert loaded.open_questions == ()
 
@@ -155,32 +155,32 @@ def test_claims_and_releases_and_questions(ce_db):
 def test_concurrent_deltas_detect_a_stale_revision(ce_db):
     base = _capsule()
     capsules.apply_deltas("run_1", [{"op": "set_phase", "value": "act"}],
-                          actor="worker-1", expected_revision=base.revision, owner="luis")
+                          actor="worker-1", expected_revision=base.revision, owner="example-user")
 
     with pytest.raises(capsules.CapsuleConflict) as exc:
         capsules.apply_deltas("run_1", [{"op": "set_phase", "value": "review"}],
                               actor="worker-2", expected_revision=base.revision,
-                              owner="luis")
+                              owner="example-user")
 
     assert exc.value.revision == base.revision + 1
     assert exc.value.expected == base.revision
     assert isinstance(exc.value, ValueError)
-    assert capsules.load("run_1", owner="luis").phase == "act"   # the loser wrote nothing
+    assert capsules.load("run_1", owner="example-user").phase == "act"   # the loser wrote nothing
 
 
 def test_expected_revision_must_be_a_number(ce_db):
     _capsule()
     with pytest.raises(capsules.CapsuleError):
         capsules.apply_deltas("run_1", [{"op": "set_phase", "value": "act"}],
-                              actor="builder", expected_revision="1", owner="luis")
+                              actor="builder", expected_revision="1", owner="example-user")
 
 
 def test_an_idempotent_batch_does_not_move_the_revision(ce_db):
     _capsule()
     first = capsules.apply_deltas("run_1", [{"op": "record_decision", "value": "DEC-4"}],
-                                  actor="builder", owner="luis")
+                                  actor="builder", owner="example-user")
     second = capsules.apply_deltas("run_1", [{"op": "record_decision", "value": "DEC-4"}],
-                                   actor="builder", owner="luis")
+                                   actor="builder", owner="example-user")
 
     # Re-recording something already recorded must not invalidate somebody
     # else's expected_revision for nothing.
@@ -198,7 +198,7 @@ def test_compacting_twice_does_not_duplicate_decisions_or_actions(ce_db):
         {"op": "add_evidence", "value": "changeset:9f2c"},
         {"op": "complete", "value": "route contract approved"},
     ]
-    capsules.apply_deltas("run_1", batch, actor="compactor", owner="luis")
+    capsules.apply_deltas("run_1", batch, actor="compactor", owner="example-user")
     # The second compaction re-states the same facts with different spacing and
     # casing, which is exactly what a re-summarising model produces.
     capsules.apply_deltas("run_1", [
@@ -206,9 +206,9 @@ def test_compacting_twice_does_not_duplicate_decisions_or_actions(ce_db):
         {"op": "record_decision", "value": "dec-4: Refresh tokens rotate weekly"},
         {"op": "add_evidence", "value": "changeset:9f2c"},
         {"op": "complete", "value": "Route contract approved"},
-    ], actor="compactor", owner="luis")
+    ], actor="compactor", owner="example-user")
 
-    loaded = capsules.load("run_1", owner="luis")
+    loaded = capsules.load("run_1", owner="example-user")
     assert loaded.next_actions == ("resolve OBJ-17",)
     assert loaded.decisions == ("DEC-4: refresh tokens rotate weekly",)
     assert loaded.evidence == ("changeset:9f2c",)
@@ -226,11 +226,11 @@ def test_a_restart_rebuilds_the_state_from_the_store(ce_db):
         {"op": "set_verdict", "value": "partial"},
         {"op": "claim", "value": "src/auth/github.py", "holder": "worker-1"},
         {"op": "add_evidence", "value": "changeset:9f2c", "source_revision": 12},
-    ], actor="builder", owner="luis")
+    ], actor="builder", owner="example-user")
 
     # There is nothing to invalidate: the store opens a new connection per call,
     # so this read is the same read a freshly started process would do.
-    revived = capsules.load("run_1", owner="luis")
+    revived = capsules.load("run_1", owner="example-user")
 
     assert revived.phase == "review"
     assert revived.current_state == "driver finished the first ChangeSet"
@@ -244,10 +244,10 @@ def test_source_revision_must_be_a_whole_number(ce_db):
     _capsule()
     result = capsules.apply_deltas(
         "run_1", [{"op": "set_phase", "value": "act", "source_revision": "twelve"}],
-        actor="builder", owner="luis")
+        actor="builder", owner="example-user")
     assert result["applied"] == []
     assert "source_revision" in result["rejected"][0]["reason"]
-    assert capsules.load("run_1", owner="luis").phase == "plan"
+    assert capsules.load("run_1", owner="example-user").phase == "plan"
 
 
 # ── §22: an uncertain effect is not repeated ───────────────────────────────
@@ -258,9 +258,9 @@ def test_an_uncertain_effect_is_announced_in_the_render(ce_db, verdict):
     capsules.apply_deltas("run_1", [
         {"op": "set_verdict", "value": verdict},
         {"op": "add_next_action", "value": "re-run the migration"},
-    ], actor="builder", owner="luis")
+    ], actor="builder", owner="example-user")
 
-    rendered = capsules.render(capsules.load("run_1", owner="luis"))
+    rendered = capsules.render(capsules.load("run_1", owner="example-user"))
 
     assert capsules.UNCERTAIN_EFFECT_NOTE in rendered
     assert f'last_verified_state: "{verdict}"' in rendered
@@ -273,12 +273,12 @@ def test_an_uncertain_effect_is_announced_in_the_render(ce_db, verdict):
 def test_a_verified_capsule_carries_no_warning(ce_db):
     _capsule()
     capsules.apply_deltas("run_1", [{"op": "set_verdict", "value": "verified"}],
-                          actor="builder", owner="luis")
+                          actor="builder", owner="example-user")
 
-    rendered = capsules.render(capsules.load("run_1", owner="luis"))
+    rendered = capsules.render(capsules.load("run_1", owner="example-user"))
 
     assert capsules.UNCERTAIN_EFFECT_NOTE not in rendered
-    assert capsules.load("run_1", owner="luis").uncertain() is False
+    assert capsules.load("run_1", owner="example-user").uncertain() is False
 
 
 # ── §22: broken references are marked, not deleted ─────────────────────────
@@ -295,8 +295,8 @@ def test_validate_marks_broken_references_and_deletes_nothing(ce_db, tmp_path):
         {"op": "add_evidence", "value": "file:src/here.py"},
         {"op": "add_evidence", "value": "file:src/vanished.py"},
         {"op": "add_evidence", "value": "changeset:9f2c"},
-    ], actor="builder", owner="luis")
-    capsule = capsules.load("run_1", owner="luis")
+    ], actor="builder", owner="example-user")
+    capsule = capsules.load("run_1", owner="example-user")
 
     report = capsules.validate(capsule, workspace=str(workspace))
 
@@ -306,15 +306,15 @@ def test_validate_marks_broken_references_and_deletes_nothing(ce_db, tmp_path):
     # A reference this module does not own is unchecked, not missing.
     assert [u["ref"] for u in report["unchecked"]] == ["changeset:9f2c"]
     # Nothing was removed: the capsule is exactly as it was.
-    assert capsules.load("run_1", owner="luis") == capsule
+    assert capsules.load("run_1", owner="example-user") == capsule
 
 
 def test_validate_without_a_workspace_checks_nothing_and_says_so(ce_db):
     _capsule()
     capsules.apply_deltas("run_1", [{"op": "claim", "value": "src/here.py"}],
-                          actor="worker-1", owner="luis")
+                          actor="worker-1", owner="example-user")
 
-    report = capsules.validate(capsules.load("run_1", owner="luis"))
+    report = capsules.validate(capsules.load("run_1", owner="example-user"))
 
     assert report["ok"] is True
     assert report["stale_claims"] == []
@@ -329,9 +329,9 @@ def test_validate_is_clean_when_every_reference_still_resolves(ce_db, tmp_path):
     capsules.apply_deltas("run_1", [
         {"op": "claim", "value": "src/here.py", "holder": "worker-1"},
         {"op": "add_evidence", "value": "src/here.py"},
-    ], actor="builder", owner="luis")
+    ], actor="builder", owner="example-user")
 
-    report = capsules.validate(capsules.load("run_1", owner="luis"),
+    report = capsules.validate(capsules.load("run_1", owner="example-user"),
                                workspace=str(workspace))
     assert report["stale_claims"] == []
     assert report["missing_evidence"] == []
@@ -346,7 +346,7 @@ def test_every_batch_leaves_a_row_saying_who_and_what(ce_db):
     capsules.apply_deltas("run_1", [
         {"op": "record_decision", "value": "DEC-4"},
         {"op": "obliterate", "value": "everything"},
-    ], actor="worker-1", owner="luis")
+    ], actor="worker-1", owner="example-user")
 
     entries = capsules.log("run_1")
 
@@ -362,7 +362,7 @@ def test_the_log_is_newest_first_and_bounded(ce_db):
     _capsule()
     for i in range(3):
         capsules.apply_deltas("run_1", [{"op": "add_next_action", "value": f"step {i}"}],
-                              actor=f"worker-{i}", owner="luis")
+                              actor=f"worker-{i}", owner="example-user")
 
     assert [e["actor"] for e in capsules.log("run_1")] == ["worker-2", "worker-1", "worker-0"]
     assert len(capsules.log("run_1", limit=1)) == 1
@@ -377,9 +377,9 @@ def test_render_is_compact_and_omits_what_is_empty(ce_db):
         {"op": "record_decision", "value": "DEC-4"},
         {"op": "claim", "value": "src\\auth\\github.py", "holder": "worker-1"},
         {"op": "set_verdict", "value": "verified"},
-    ], actor="builder", owner="luis")
+    ], actor="builder", owner="example-user")
 
-    rendered = capsules.render(capsules.load("run_1", owner="luis"))
+    rendered = capsules.render(capsules.load("run_1", owner="example-user"))
 
     assert rendered.startswith("schema_version: 1\n")
     assert 'objective: "Implement OAuth"' in rendered
@@ -394,9 +394,9 @@ def test_render_is_compact_and_omits_what_is_empty(ce_db):
 def test_a_capsule_becomes_a_valid_context_candidate(ce_db):
     _capsule()
     capsules.apply_deltas("run_1", [{"op": "set_verdict", "value": "partial"}],
-                          actor="builder", owner="luis")
+                          actor="builder", owner="example-user")
 
-    candidate = capsules.as_candidate(capsules.load("run_1", owner="luis"))
+    candidate = capsules.as_candidate(capsules.load("run_1", owner="example-user"))
 
     assert ContextCandidate.parse(candidate.to_dict()) == candidate
     assert candidate.source_type == "capsule"
@@ -410,9 +410,9 @@ def test_a_capsule_becomes_a_valid_context_candidate(ce_db):
 def test_a_verified_capsule_is_offered_as_a_proved_result(ce_db):
     _capsule()
     capsules.apply_deltas("run_1", [{"op": "set_verdict", "value": "verified"}],
-                          actor="builder", owner="luis")
+                          actor="builder", owner="example-user")
 
-    candidate = capsules.as_candidate(capsules.load("run_1", owner="luis"))
+    candidate = capsules.as_candidate(capsules.load("run_1", owner="example-user"))
 
     assert candidate.trust_class == "proved"
     assert candidate.authority == "proved_result"

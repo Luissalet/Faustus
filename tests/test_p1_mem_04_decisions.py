@@ -30,7 +30,7 @@ def store(tmp_path, monkeypatch):
 def test_record_decision_keeps_alternatives_and_artifacts(store):
     item = decisions.record_decision(
         "Use SQLite over Postgres for the context store",
-        owner="luis", project="faustus",
+        owner="example-user", project="faustus",
         alternatives=["Postgres", "DuckDB"],
         artifact_refs=["src/context_engine/store.py"],
         scope="architecture",
@@ -44,17 +44,17 @@ def test_record_decision_keeps_alternatives_and_artifacts(store):
 def test_decision_survives_a_model_swap_and_a_new_session(store):
     """The acceptance criterion itself: no transcript, no session, just the
     decision and its reason, found by an entirely different session."""
-    decisions.record_decision("Pin the tokenizer to cl100k_base", owner="luis",
+    decisions.record_decision("Pin the tokenizer to cl100k_base", owner="example-user",
                               project="faustus", session_id="session-with-model-A")
 
     # A "new session" (and implicitly a different model, since nothing here
     # is keyed by model at all) looks the project up fresh.
-    found = decisions.list_decisions(owner="luis", project="faustus")
+    found = decisions.list_decisions(owner="example-user", project="faustus")
     assert any("cl100k_base" in d["text"] for d in found)
 
 
 def test_invalidating_keeps_the_row_and_the_reason(store):
-    item = decisions.record_decision("Use REST instead of GraphQL", owner="luis",
+    item = decisions.record_decision("Use REST instead of GraphQL", owner="example-user",
                                      project="faustus")
     updated = decisions.invalidate_decision(
         item["id"], "GraphQL became necessary once mobile needed partial queries",
@@ -69,21 +69,21 @@ def test_invalidating_keeps_the_row_and_the_reason(store):
 
 
 def test_invalidated_decision_is_excluded_from_the_default_view_but_not_the_full_one(store):
-    item = decisions.record_decision("Use REST instead of GraphQL", owner="luis",
+    item = decisions.record_decision("Use REST instead of GraphQL", owner="example-user",
                                      project="faustus")
     decisions.invalidate_decision(item["id"], "premise changed")
 
-    current = decisions.list_decisions(owner="luis", project="faustus")
+    current = decisions.list_decisions(owner="example-user", project="faustus")
     assert all(d["id"] != item["id"] for d in current)
 
-    full = decisions.list_decisions(owner="luis", project="faustus",
+    full = decisions.list_decisions(owner="example-user", project="faustus",
                                     include_invalidated=True)
     assert any(d["id"] == item["id"] for d in full)
 
 
 def test_decisions_are_isolated_per_project(store):
-    decisions.record_decision("Use SQLite", owner="luis", project="proj-a")
-    found_b = decisions.list_decisions(owner="luis", project="proj-b")
+    decisions.record_decision("Use SQLite", owner="example-user", project="proj-a")
+    found_b = decisions.list_decisions(owner="example-user", project="proj-b")
     assert found_b == []
 
 

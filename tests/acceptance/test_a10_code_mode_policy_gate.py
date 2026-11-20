@@ -53,7 +53,7 @@ async def _direct_bash_rm_result():
     _desc, result = await execute_tool_block(
         block,
         session_id="a10-session",
-        owner="luis",
+        owner="example-user",
         workspace=None,
         disabled_tools=set(),
         tool_policy=None,
@@ -77,7 +77,7 @@ async def test_destructive_tool_call_from_generated_code_hits_the_same_gate_as_a
         "bash",
         {"command": "rm -rf /tmp/a10_target"},
         session_id="a10-session",
-        owner="luis",
+        owner="example-user",
         workspace=None,
         workspace_roots=None,
         disabled_tools=set(),
@@ -107,7 +107,7 @@ async def test_destructive_tool_call_from_generated_code_hits_the_same_gate_as_a
         "r = tools.call('bash', {'command': 'rm -rf /tmp/a10_target'})\n"
         "print(r)\n"
     )
-    run_result = await run_code_mode(code, session_id="a10-session", owner="luis")
+    run_result = await run_code_mode(code, session_id="a10-session", owner="example-user")
 
     assert run_result.get("exit_code") == 0, run_result
     assert "Destructive command" in run_result.get("output", "")
@@ -135,7 +135,7 @@ async def test_disabled_tool_is_unreachable_from_generated_code(request):
         "write_file",
         {"path": "notes.txt", "content": "hi"},
         session_id="a10-session",
-        owner="luis",
+        owner="example-user",
         workspace=None,
         workspace_roots=None,
         disabled_tools={"write_file"},

@@ -262,7 +262,7 @@ def _patch_common(monkeypatch):
     # preset, which is exactly the ambiguity tests/test_agent_loop_tool_preflight.py
     # avoids the same way.
     monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
-    # The approval gate reads the REAL tool_approval_mode setting (Luis's
+    # The approval gate reads the REAL tool_approval_mode setting (ExampleUser's
     # machine says "ask"): with it, bash and delegate_agents stop at
     # "Waiting for an exact user approval" and the budget never charges.
     import src.tool_capabilities as _tc

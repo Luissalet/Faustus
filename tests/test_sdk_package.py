@@ -28,7 +28,7 @@ _BANNED_THIRD_PARTY_NAMES = (
     "ollama", "mistral", "gpt-4", "gpt-3", "groq",
 )
 
-# "copilot" alone is the generic feature name Luis explicitly requested for
+# "copilot" alone is the generic feature name ExampleUser explicitly requested for
 # the Hoard clients. The branded product names above remain disallowed.
 
 

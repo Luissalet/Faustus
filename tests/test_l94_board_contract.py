@@ -60,7 +60,7 @@ from routes import board_routes  # noqa: E402
 from services import projects as projects_mod  # noqa: E402
 from src import constants as constants_mod  # noqa: E402
 
-OWNER = "luis"
+OWNER = "example-user"
 
 _REPO = Path(__file__).resolve().parent.parent
 _CHECK = _REPO / "studio" / "checks" / "l94-board-contract.check.mjs"

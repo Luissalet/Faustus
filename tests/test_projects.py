@@ -262,11 +262,11 @@ def test_project_instructions_are_prepended_to_the_preset():
     original = projects_mod.instructions_for_session
     projects_mod.instructions_for_session = lambda sid, owner=None: "<project_context>P</project_context>"
     try:
-        out = project_system_prompt(_Sess(), "luis", "PRESET")
+        out = project_system_prompt(_Sess(), "example-user", "PRESET")
         assert out.startswith("<project_context>P</project_context>")
         assert out.endswith("PRESET")
         # No preset at all -> just the project block, no stray blank lines.
-        assert project_system_prompt(_Sess(), "luis", None) == "<project_context>P</project_context>"
+        assert project_system_prompt(_Sess(), "example-user", None) == "<project_context>P</project_context>"
     finally:
         projects_mod.instructions_for_session = original
 
@@ -281,8 +281,8 @@ def test_chat_without_a_project_is_left_exactly_as_before():
     original = projects_mod.instructions_for_session
     projects_mod.instructions_for_session = lambda sid, owner=None: ""
     try:
-        assert project_system_prompt(_Sess(), "luis", "PRESET") == "PRESET"
-        assert project_system_prompt(_Sess(), "luis", None) is None
+        assert project_system_prompt(_Sess(), "example-user", "PRESET") == "PRESET"
+        assert project_system_prompt(_Sess(), "example-user", None) is None
     finally:
         projects_mod.instructions_for_session = original
 
@@ -303,7 +303,7 @@ def test_a_broken_store_costs_context_not_the_message():
 
     projects_mod.instructions_for_session = _boom
     try:
-        assert project_system_prompt(_Sess(), "luis", "PRESET") == "PRESET"
+        assert project_system_prompt(_Sess(), "example-user", "PRESET") == "PRESET"
     finally:
         projects_mod.instructions_for_session = original
 
@@ -318,7 +318,7 @@ def test_project_workspace_is_revetted_at_use_time(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "src.tool_security.owner_is_admin_or_single_user", lambda owner: True
     )
-    monkeypatch.setattr(chat_routes, "get_current_user", lambda request: "luis")
+    monkeypatch.setattr(chat_routes, "get_current_user", lambda request: "example-user")
     monkeypatch.setattr(
         "services.projects.workspace_for_session", lambda sid, owner=None: gone
     )

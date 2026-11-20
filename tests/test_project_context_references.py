@@ -13,7 +13,7 @@ from src.project_context.references import (
     TurnReference, TurnReferenceRegistry, note_created, registry,
 )
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 
 

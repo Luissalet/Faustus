@@ -21,7 +21,7 @@ from src import settings as settings_mod  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 SESSION = "sess_ABC-123!!"
 
 

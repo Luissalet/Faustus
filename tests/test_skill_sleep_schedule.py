@@ -72,7 +72,7 @@ class Rig:
 
     def __init__(self, clock: Clock):
         self.clock = clock
-        self.skills = [{"name": "alpha", "owner": "luis", "status": "published"}]
+        self.skills = [{"name": "alpha", "owner": "example-user", "status": "published"}]
         self.evidence = {"alpha": _evidence()}
         self.blocked: str | None = None
         self.proposed: list[str] = []
@@ -165,10 +165,10 @@ def test_runs_once_per_day_then_again_the_next_day(cfg):
 
     # The skill got a proposal tonight; the cooldown keeps tomorrow's pass off it,
     # so give the next day a different skill to prove the day itself re-opens.
-    rig.skills.append({"name": "beta", "owner": "luis", "status": "published"})
+    rig.skills.append({"name": "beta", "owner": "example-user", "status": "published"})
     rig.evidence["beta"] = _evidence()
     clock.to("2026-10-09T03:00:00")
-    sp.save_proposal({"id": "old", "skill_id": "alpha", "owner": "luis", "status": "pending",
+    sp.save_proposal({"id": "old", "skill_id": "alpha", "owner": "example-user", "status": "pending",
                       "created_at": clock().timestamp()})
     assert run(ss.tick(deps=rig.deps()))["status"] == "ran"
     assert rig.proposed == ["alpha", "beta"]
@@ -286,7 +286,7 @@ def test_a_machine_busy_for_the_whole_window_misses_the_day(cfg):
 def test_busy_check_runs_again_between_skills_and_stops_a_pass_midway(cfg):
     clock = Clock(datetime(2026, 10, 8, 3, 0))
     rig = Rig(clock)
-    rig.skills.append({"name": "beta", "owner": "luis", "status": "published"})
+    rig.skills.append({"name": "beta", "owner": "example-user", "status": "published"})
     rig.evidence["beta"] = _evidence(n_neg=3)
     probes = []
 
@@ -354,11 +354,11 @@ def test_no_endpoint_is_a_reason_not_a_model_load(monkeypatch):
 def test_select_candidates_wants_failure_evidence_and_respects_the_cooldown():
     now = 1_000_000.0
     skills = [
-        {"name": "fails", "owner": "luis", "status": "published"},
-        {"name": "fine", "owner": "luis", "status": "published"},
-        {"name": "thin", "owner": "luis", "status": "published"},
-        {"name": "drafty", "owner": "luis", "status": "draft"},
-        {"name": "recent", "owner": "luis", "status": "published"},
+        {"name": "fails", "owner": "example-user", "status": "published"},
+        {"name": "fine", "owner": "example-user", "status": "published"},
+        {"name": "thin", "owner": "example-user", "status": "published"},
+        {"name": "drafty", "owner": "example-user", "status": "draft"},
+        {"name": "recent", "owner": "example-user", "status": "published"},
         {"name": "errs", "owner": "*", "status": "published"},
         {"name": "x1", "owner": "", "status": "published"},
         {"name": "x2", "owner": "", "status": "published"},
@@ -370,8 +370,8 @@ def test_select_candidates_wants_failure_evidence_and_respects_the_cooldown():
         "errs": [{"user_reaction": "neutral", "tool_errors": ["boom"]}, {"user_reaction": "neutral", "tool_errors": []}],
         "x1": _evidence(n_neg=1), "x2": _evidence(n_neg=1), "x3": _evidence(n_neg=1),
     }
-    proposals = {"p": {"skill_id": "recent", "owner": "luis", "created_at": now - 2 * 86400},
-                 "old": {"skill_id": "fine", "owner": "luis", "created_at": now - 30 * 86400}}
+    proposals = {"p": {"skill_id": "recent", "owner": "example-user", "created_at": now - 2 * 86400},
+                 "old": {"skill_id": "fine", "owner": "example-user", "created_at": now - 30 * 86400}}
     calls = []
 
     def ev(name, **kw):
@@ -383,7 +383,7 @@ def test_select_candidates_wants_failure_evidence_and_respects_the_cooldown():
     assert names[0] == "fails" and len(names) == ss.MAX_SKILLS_PER_RUN
     assert "fine" not in names and "thin" not in names and "drafty" not in names and "recent" not in names
     assert ("errs", None) in calls            # the global-owner sentinel means "no owner filter"
-    assert ("fails", "luis") in calls
+    assert ("fails", "example-user") in calls
 
 
 def test_a_pass_only_proposes(cfg, monkeypatch):
@@ -566,7 +566,7 @@ def test_the_real_guard_does_not_mistake_the_running_pass_for_an_overlap(monkeyp
 def test_every_proposal_is_preceded_by_a_guard_check(cfg):
     clock = Clock(datetime(2026, 10, 8, 3, 0))
     rig = Rig(clock)
-    rig.skills.append({"name": "beta", "owner": "luis", "status": "published"})
+    rig.skills.append({"name": "beta", "owner": "example-user", "status": "published"})
     rig.evidence["beta"] = _evidence(n_neg=3)
     order: list[str] = []
     deps = rig.deps()
@@ -732,7 +732,7 @@ def blocker(**kw):
 
 deps = ss.Deps(
     now=lambda: datetime(2026, 10, 8, 3, 0),
-    skills=lambda: [{"name": "alpha", "owner": "luis", "status": "published"}],
+    skills=lambda: [{"name": "alpha", "owner": "example-user", "status": "published"}],
     evidence=lambda n, **kw: [{"user_reaction": "negative", "tool_errors": [], "id": "n"},
                               {"user_reaction": "positive", "tool_errors": [], "id": "p"}],
     propose=propose, blocker=blocker,

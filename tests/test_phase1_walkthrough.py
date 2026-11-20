@@ -79,7 +79,7 @@ def test_a_manifest_becomes_a_container_and_the_output_becomes_a_row(stage):
 
     collected = artifact_store.collect(
         result, source_dir=decision.spec.artifacts_dir,
-        owner="luis", project_id="book",
+        owner="example-user", project_id="book",
         skill_id=MANIFEST.id, skill_version=MANIFEST.version,
         provenance={"recipe": "report.v1", "recipe_version": "1.0.0"},
         store_dir=stage["store"])
@@ -100,7 +100,7 @@ def test_a_manifest_becomes_a_container_and_the_output_becomes_a_row(stage):
         assert blob.sha256 == art.sha256
         row = artifact_catalog.get(db, art.id)
         assert row is not None
-        assert (row.owner, row.project_id) == ("luis", "book")
+        assert (row.owner, row.project_id) == ("example-user", "book")
         assert (row.run_id, row.backend, row.skill_id) == \
                ("phase1-1", "docker_workspace", "document.report")
         assert row.model is None            # nothing here knew a model; it says so

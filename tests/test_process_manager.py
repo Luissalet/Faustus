@@ -19,7 +19,7 @@ from src import process_manager as pm
 from src.process_manager import Caller, ProcessManager
 
 PY = sys.executable
-ME = Caller(owner="luis", session_id="s1")
+ME = Caller(owner="example-user", session_id="s1")
 
 
 def _argv(script: str):
@@ -142,7 +142,7 @@ def test_closing_the_calling_event_loop_does_not_stop_the_process(mgr):
 def test_cancelling_the_tool_call_task_does_not_stop_the_process(mgr, monkeypatch):
     from src.agent_tools.process_tools import ProcessReadTool, ProcessStartTool
     monkeypatch.setattr(pm, "manager", lambda: mgr)
-    ctx = {"owner": "luis", "session_id": "s1"}
+    ctx = {"owner": "example-user", "session_id": "s1"}
 
     async def scenario():
         start = await ProcessStartTool().execute(
@@ -177,18 +177,18 @@ def test_stdin_round_trip_and_close(mgr):
 
 def test_another_session_or_owner_cannot_use_the_handle(mgr):
     r = mgr.start(argv=_argv(_ECHO), caller=ME, yield_ms=100)
-    for other in (Caller(owner="luis", session_id="s2"), Caller(owner="eve", session_id="s1")):
+    for other in (Caller(owner="example-user", session_id="s2"), Caller(owner="eve", session_id="s1")):
         for result in (mgr.read(r["handle"], other), mgr.write_stdin(r["handle"], other, data="x\n"),
                        mgr.stop(r["handle"], other)):
             assert result["ok"] is False and result["code"] == "not_owner"
     assert mgr.read(r["handle"], ME)["state"] == "running"
-    assert mgr.list(Caller(owner="luis", session_id="s2"))["handles"] == []
+    assert mgr.list(Caller(owner="example-user", session_id="s2"))["handles"] == []
 
 
 def test_permission_is_rechecked_on_every_write(mgr):
     r = mgr.start(argv=_argv(_ECHO), caller=ME, yield_ms=100)
     assert mgr.write_stdin(r["handle"], ME, data="a\n")["ok"]
-    disabled = Caller(owner="luis", session_id="s1", disabled_tools=frozenset({"process_write_stdin"}))
+    disabled = Caller(owner="example-user", session_id="s1", disabled_tools=frozenset({"process_write_stdin"}))
     assert mgr.write_stdin(r["handle"], disabled, data="b\n")["code"] == "tool_disabled"
     mgr.settings[pm.SETTING_ENABLED] = False
     assert mgr.write_stdin(r["handle"], ME, data="c\n")["code"] == "disabled"
@@ -290,7 +290,7 @@ def test_a_recycled_pid_is_not_signalled(mgr):
     try:
         mgr._load()
         mgr._records["ph_recycled"] = {
-            "handle": "ph_recycled", "kind": "managed", "state": "orphaned", "owner": "luis",
+            "handle": "ph_recycled", "kind": "managed", "state": "orphaned", "owner": "example-user",
             "session_id": "s1", "pid": bystander.pid, "pid_created_at": time.time() - 99999,
             "pgid": None, "started_at": time.time() - 99999, "tail": ""}
         result = mgr.stop("ph_recycled", ME)
@@ -315,7 +315,7 @@ def test_max_runtime_ends_the_process_with_a_reason(mgr):
 
 def test_cancel_for_session_stops_only_that_sessions_handles(mgr):
     mine = mgr.start(argv=_argv("import time;time.sleep(300)"), caller=ME, yield_ms=0)
-    other_caller = Caller(owner="luis", session_id="s2")
+    other_caller = Caller(owner="example-user", session_id="s2")
     other = mgr.start(argv=_argv("import time;time.sleep(300)"), caller=other_caller, yield_ms=0)
     stopped = mgr.cancel_for_session("s1")
     assert [row["handle"] for row in stopped] == [mine["handle"]]
@@ -396,7 +396,7 @@ def test_a_background_job_is_listed_read_and_stopped_through_its_handle(mgr, bg,
     assert rows[handle]["kind"] == "bg_job" and rows[handle]["state"] == "running"
     read = mgr.read(handle, ME)
     assert "first" in read["output"] and read["buffer_source"] == "job_log_file"
-    assert mgr.read(handle, Caller(owner="luis", session_id="other"))["code"] == "not_owner"
+    assert mgr.read(handle, Caller(owner="example-user", session_id="other"))["code"] == "not_owner"
     assert mgr.write_stdin(handle, ME, data="x")["code"] == "no_stdin"
     stop = mgr.stop(handle, ME)
     assert stop["signalled"] is True and stop["state"] == "stopped"
@@ -436,7 +436,7 @@ def test_tools_round_trip(mgr, monkeypatch):
     from src.agent_tools.process_tools import (
         ProcessListTool, ProcessReadTool, ProcessStartTool, ProcessStopTool, ProcessWriteStdinTool)
     monkeypatch.setattr(pm, "manager", lambda: mgr)
-    ctx = {"owner": "luis", "session_id": "s1"}
+    ctx = {"owner": "example-user", "session_id": "s1"}
 
     async def scenario():
         start = await ProcessStartTool().execute({"argv": _argv(_ECHO), "yield_ms": 200}, ctx)
@@ -447,7 +447,7 @@ def test_tools_round_trip(mgr, monkeypatch):
         assert "got:hi" in read["output"]
         listed = await ProcessListTool().execute({}, ctx)
         assert handle in listed["output"]
-        foreign = await ProcessReadTool().execute({"handle": handle}, {"owner": "luis", "session_id": "zz"})
+        foreign = await ProcessReadTool().execute({"handle": handle}, {"owner": "example-user", "session_id": "zz"})
         assert foreign["exit_code"] == 1 and "another session" in foreign["error"]
         missing = await ProcessStopTool().execute({}, ctx)
         assert missing["exit_code"] == 1
@@ -463,5 +463,5 @@ def test_the_handle_store_is_written_atomically_and_holds_no_output_beyond_the_t
     data = json.loads((tmp_path / "handles.json").read_text())
     rec = data[r["handle"]]
     assert len(rec["tail"]) <= pm.TAIL_PERSIST_BYTES and rec["output_total_bytes"] > 100000
-    assert rec["owner"] == "luis" and rec["env_policy"].startswith("native_host_environment")
+    assert rec["owner"] == "example-user" and rec["env_policy"].startswith("native_host_environment")
     assert rec["command"] and rec["state"] == "exited"

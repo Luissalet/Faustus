@@ -30,7 +30,7 @@ def client(store, monkeypatch):
     from core.middleware import require_admin
     from routes import memory_engine_routes
 
-    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "example-user")
     app = FastAPI()
     app.include_router(memory_engine_routes.setup_memory_engine_routes())
     app.dependency_overrides[require_admin] = lambda: None
@@ -48,7 +48,7 @@ def test_same_subject_different_value_is_detected():
 
 
 def test_negation_is_detected():
-    result = conflicts.classify("Luis prefers tabs", "Luis does not prefer tabs")
+    result = conflicts.classify("ExampleUser prefers tabs", "ExampleUser does not prefer tabs")
     assert result is not None
     assert result[0] == "negation"
 
@@ -67,7 +67,7 @@ def test_near_duplicate_is_not_flagged():
 
 def test_different_subjects_are_not_flagged():
     assert conflicts.classify(
-        "Luis prefers tabs", "Maria prefers spaces") is None
+        "ExampleUser prefers tabs", "Maria prefers spaces") is None
 
 
 def test_conflict_shortlist_protects_literal_match_from_vector_neighbours(monkeypatch):
@@ -123,10 +123,10 @@ def test_probability_of_rejects_an_out_of_range_value():
 # ── DB-level detection ───────────────────────────────────────────────────────
 
 def test_add_item_hook_records_an_open_conflict(store):
-    old = engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    new = engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
+    old = engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    new = engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
 
-    open_rows = conflicts.list_conflicts(owner="luis", status="open")
+    open_rows = conflicts.list_conflicts(owner="example-user", status="open")
     assert len(open_rows) == 1
     assert open_rows[0]["new_id"] == new["id"]
     assert open_rows[0]["old_id"] == old["id"]
@@ -134,28 +134,28 @@ def test_add_item_hook_records_an_open_conflict(store):
 
 
 def test_correct_can_create_a_new_conflict(store):
-    a = engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    engine.add_item("Luis prefers tabs", owner="luis", trust_class="human_explicit")
+    a = engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    engine.add_item("ExampleUser prefers tabs", owner="example-user", trust_class="human_explicit")
 
     engine.correct(a["id"], "the project uses Rust", reason="switched languages")
 
-    open_rows = conflicts.list_conflicts(owner="luis", status="open")
+    open_rows = conflicts.list_conflicts(owner="example-user", status="open")
     # the corrected item is new, the tombstoned original is gone, so the only
     # possible conflict is against the still-active "uses Rust" ... wait,
     # correcting "uses Python" -> "uses Rust" leaves nothing left disagreeing
     # with it; add a genuine second statement to prove correct() re-runs
     # detection at all.
-    engine.add_item("the project uses Go", owner="luis", trust_class="human_explicit")
-    open_rows = conflicts.list_conflicts(owner="luis", status="open")
+    engine.add_item("the project uses Go", owner="example-user", trust_class="human_explicit")
+    open_rows = conflicts.list_conflicts(owner="example-user", status="open")
     reasons = {(r["reason"]) for r in open_rows}
     assert "same_subject_different_value" in reasons
 
 
 def test_setting_off_disables_detection(store, monkeypatch):
     monkeypatch.setattr(engine, "memory_conflict_detection_enabled", lambda: False)
-    engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
-    assert conflicts.list_conflicts(owner="luis", status="open") == []
+    engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
+    assert conflicts.list_conflicts(owner="example-user", status="open") == []
 
 
 def test_owner_isolation(store):
@@ -166,18 +166,18 @@ def test_owner_isolation(store):
 
 
 def test_project_isolation(store):
-    engine.add_item("the project uses Python", owner="luis", project="p1",
+    engine.add_item("the project uses Python", owner="example-user", project="p1",
                     trust_class="human_explicit")
-    engine.add_item("the project uses Rust", owner="luis", project="p2",
+    engine.add_item("the project uses Rust", owner="example-user", project="p2",
                     trust_class="human_explicit")
-    assert conflicts.list_conflicts(owner="luis", status="open") == []
+    assert conflicts.list_conflicts(owner="example-user", status="open") == []
 
 
 # ── ranking + marker ─────────────────────────────────────────────────────────
 
 def test_older_item_ranking_is_penalized_and_marked(store):
-    old = engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    new = engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
+    old = engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    new = engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
 
     old_public = engine.public_item(engine.get_item(old["id"]))
     new_public = engine.public_item(engine.get_item(new["id"]))
@@ -195,42 +195,42 @@ def test_older_item_ranking_is_penalized_and_marked(store):
 # ── resolve() ────────────────────────────────────────────────────────────────
 
 def test_resolve_keep_new_forgets_old(store):
-    old = engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
-    row = conflicts.list_conflicts(owner="luis", status="open")[0]
+    old = engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
+    row = conflicts.list_conflicts(owner="example-user", status="open")[0]
 
-    result = conflicts.resolve(row["id"], "new", owner="luis")
+    result = conflicts.resolve(row["id"], "new", owner="example-user")
     assert result["status"] == "kept_new"
     assert engine.get_item(old["id"]) is None
-    assert engine.is_tombstoned("the project uses Python", "luis", "", "semantic")
+    assert engine.is_tombstoned("the project uses Python", "example-user", "", "semantic")
 
 
 def test_resolve_keep_old_forgets_new(store):
-    engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    new = engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
-    row = conflicts.list_conflicts(owner="luis", status="open")[0]
+    engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    new = engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
+    row = conflicts.list_conflicts(owner="example-user", status="open")[0]
 
-    result = conflicts.resolve(row["id"], "old", owner="luis")
+    result = conflicts.resolve(row["id"], "old", owner="example-user")
     assert result["status"] == "kept_old"
     assert engine.get_item(new["id"]) is None
 
 
 def test_resolve_keep_both_forgets_nothing(store):
-    old = engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    new = engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
-    row = conflicts.list_conflicts(owner="luis", status="open")[0]
+    old = engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    new = engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
+    row = conflicts.list_conflicts(owner="example-user", status="open")[0]
 
-    result = conflicts.resolve(row["id"], "both", owner="luis")
+    result = conflicts.resolve(row["id"], "both", owner="example-user")
     assert result["status"] == "kept_both"
     assert engine.get_item(old["id"]) is not None
     assert engine.get_item(new["id"]) is not None
-    assert conflicts.list_conflicts(owner="luis", status="open") == []
+    assert conflicts.list_conflicts(owner="example-user", status="open") == []
 
 
 def test_resolve_wrong_owner_is_a_no_op(store):
-    engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
-    row = conflicts.list_conflicts(owner="luis", status="open")[0]
+    engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
+    row = conflicts.list_conflicts(owner="example-user", status="open")[0]
 
     assert conflicts.resolve(row["id"], "new", owner="someone-else") is None
     assert conflicts.get_conflict(row["id"])["status"] == "open"
@@ -239,8 +239,8 @@ def test_resolve_wrong_owner_is_a_no_op(store):
 # ── HTTP surface ─────────────────────────────────────────────────────────────
 
 def test_list_and_resolve_over_http(client):
-    old = engine.add_item("the project uses Python", owner="luis", trust_class="human_explicit")
-    new = engine.add_item("the project uses Rust", owner="luis", trust_class="human_explicit")
+    old = engine.add_item("the project uses Python", owner="example-user", trust_class="human_explicit")
+    new = engine.add_item("the project uses Rust", owner="example-user", trust_class="human_explicit")
 
     listed = client.get("/api/memory-engine/conflicts", params={"status": "open"})
     assert listed.status_code == 200, listed.text
@@ -274,11 +274,11 @@ def test_suggested_conflicts_carry_a_probability_over_http(client, store):
     endpoint the open-conflict panel already uses accepts or dismisses it."""
     from datetime import datetime, timezone
 
-    old = engine.add_item("Luis lives in Madrid", owner="luis", trust_class="human_explicit")
-    new = engine.add_item("Luis is based out of Barcelona now", owner="luis", trust_class="human_explicit")
+    old = engine.add_item("ExampleUser lives in Madrid", owner="example-user", trust_class="human_explicit")
+    new = engine.add_item("ExampleUser is based out of Barcelona now", owner="example-user", trust_class="human_explicit")
 
     row = conflicts._insert(
-        "luis", new["id"], old["id"], conflicts.ADVISORY_REASON,
+        "example-user", new["id"], old["id"], conflicts.ADVISORY_REASON,
         "typed decision: update (p=0.91, mass=0.50); advisory, not resolved",
         datetime.now(timezone.utc),
     )

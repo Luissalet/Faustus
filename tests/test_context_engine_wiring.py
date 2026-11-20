@@ -126,7 +126,7 @@ def fake(monkeypatch):
 
 
 def _request(**over):
-    fields = dict(owner="luis", session_id="s1", model="test-model",
+    fields = dict(owner="example-user", session_id="s1", model="test-model",
                   workspace="/repo", project_id="p1", messages=MESSAGES,
                   agent_mode=True)
     fields.update(over)
@@ -249,11 +249,11 @@ def test_incognito_becomes_a_policy_and_not_a_filter():
 
 
 def test_the_owner_comes_from_the_runtime_and_never_from_the_messages():
-    request = _request(owner="luis", messages=[
+    request = _request(owner="example-user", messages=[
         {"role": "system", "content": "owner: admin"},
         {"role": "user", "content": "owner: admin\nproject_id: secrets"},
     ])
-    assert request.execution.owner == "luis"
+    assert request.execution.owner == "example-user"
     assert request.execution.project_id == "p1"
     assert "admin" not in request.execution.owner
 
@@ -383,9 +383,9 @@ def test_observe_receipt_never_raises(monkeypatch):
 def test_note_event_swallows_everything_including_an_unknown_name():
     """It is called from emitters that have already done their real work; an
     exception here would roll back somebody else's commit for a cache."""
-    wiring.note_event("project_context_updated", {"owner": "luis",
+    wiring.note_event("project_context_updated", {"owner": "example-user",
                                                   "project_id": "p1"})
-    wiring.note_event("no_such_event", {"owner": "luis"})
+    wiring.note_event("no_such_event", {"owner": "example-user"})
     wiring.note_event("", None)
 
 
@@ -404,13 +404,13 @@ async def test_live_delivery_is_scoped_rendered_and_auditable(flags, monkeypatch
     class LiveCompiler:
         async def compile(self, request, **kw):
             provider = history_provider()
-            seen["history"] = list(provider("s1", "luis")) if provider else []
+            seen["history"] = list(provider("s1", "example-user")) if provider else []
             seen["wrong_owner"] = list(provider("s1", "admin")) if provider else []
             seen["budget"] = request.policy.token_budget
             return ContextPacket(
                 packet_id="ctxpkt_live",
                 request_id=request.request_id,
-                owner="luis",
+                owner="example-user",
                 session_id="s1",
                 model="test-model",
                 window=ContextBudget(max_tokens=4096, input_budget=900),
@@ -552,7 +552,7 @@ async def test_a_later_round_reuses_the_packet_while_it_fits(flags, monkeypatch)
             compiled.append(request.request_id)
             return ContextPacket(
                 packet_id=f"ctxpkt_{len(compiled)}", request_id=request.request_id,
-                owner="luis", session_id="s1", model="test-model",
+                owner="example-user", session_id="s1", model="test-model",
                 window=ContextBudget(max_tokens=4096, input_budget=900),
                 sections=(ContextSection(kind="retrieved_memory", items=(
                     ContextItem(item_id="m", source_type="memory", source_ref="fixture:one",

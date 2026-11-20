@@ -160,8 +160,8 @@ def test_no_folder_and_no_id_is_simply_no_project(db, store, workspace):
 
 def test_another_owner_gets_nothing(db, store, workspace):
     """Not an error and not a redacted name — just no project."""
-    project = store.create("Faustus", folder="Faustus", workspace=workspace, owner="luis")
-    _add_session(db, "s1", folder="Faustus", project_id=project["id"], owner="luis")
+    project = store.create("Faustus", folder="Faustus", workspace=workspace, owner="example-user")
+    _add_session(db, "s1", folder="Faustus", project_id=project["id"], owner="example-user")
 
     assert projects_mod.project_for_session("s1", "otro") is None
     ctx = projects_mod.project_context_for_session("s1", "otro")
@@ -180,10 +180,10 @@ def test_it_never_raises_even_with_a_broken_database(db, store, monkeypatch):
 
 
 def test_the_execution_context_carries_the_scope(db, store, workspace):
-    project = store.create("Faustus", folder="Faustus", workspace=workspace, owner="luis")
-    _add_session(db, "s1", folder="Faustus", project_id=project["id"], owner="luis")
+    project = store.create("Faustus", folder="Faustus", workspace=workspace, owner="example-user")
+    _add_session(db, "s1", folder="Faustus", project_id=project["id"], owner="example-user")
 
-    ctx = projects_mod.project_context_for_session("s1", "luis")
+    ctx = projects_mod.project_context_for_session("s1", "example-user")
     assert ctx.project_id == project["id"]
     assert ctx.project_name == "Faustus"
     assert ctx.workspace == project["workspace"]
@@ -219,8 +219,8 @@ def test_create_session_persists_folder_mode_and_project(db, store, workspace):
 
 
 def test_set_session_project_validates_ownership(db, store, workspace):
-    project = store.create("Faustus", folder="Faustus", workspace=workspace, owner="luis")
-    _add_session(db, "s1", folder="Otra", owner="luis")
+    project = store.create("Faustus", folder="Faustus", workspace=workspace, owner="example-user")
+    _add_session(db, "s1", folder="Otra", owner="example-user")
 
     from core.session_manager import SessionManager
     manager = SessionManager()
@@ -228,7 +228,7 @@ def test_set_session_project_validates_ownership(db, store, workspace):
     assert manager.set_session_project("s1", project["id"], owner="otro") is False
     assert _row(db, "s1").project_id is None
 
-    assert manager.set_session_project("s1", project["id"], owner="luis") is True
+    assert manager.set_session_project("s1", project["id"], owner="example-user") is True
     assert _row(db, "s1").project_id == project["id"]
 
     assert manager.set_session_project("ghost", project["id"]) is False

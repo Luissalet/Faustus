@@ -175,10 +175,10 @@ def test_task_scheduler_hook_uses_result_first_line_as_body():
     from src.task_scheduler import notify_task_finished
 
     notify_task_finished(
-        task_name="Weather report", owner="luis", task_id="t1",
+        task_name="Weather report", owner="example-user", task_id="t1",
         status="success", result="18°C, light rain\n(Open-Meteo)",
     )
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     assert len(rows) == 1
     assert rows[0]["kind"] == "task_finished"
     assert rows[0]["title"] == "Weather report"
@@ -189,30 +189,30 @@ def test_task_scheduler_hook_uses_result_first_line_as_body():
 def test_task_scheduler_hook_falls_back_to_error_then_status():
     from src.task_scheduler import notify_task_finished
 
-    notify_task_finished(task_name="Mail digest", owner="luis", task_id="t2",
+    notify_task_finished(task_name="Mail digest", owner="example-user", task_id="t2",
                           status="error", result="", error="SMTP timeout")
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     assert rows[0]["body"] == "SMTP timeout"
 
-    notify_task_finished(task_name="No-op task", owner="luis", task_id="t3",
+    notify_task_finished(task_name="No-op task", owner="example-user", task_id="t3",
                           status="success", result="", error="")
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     assert rows[-1]["body"] == "success"
 
 
 def test_task_scheduler_hook_skips_quiet_housekeeping_and_strips_markdown():
     from src.task_scheduler import notify_task_finished
 
-    notify_task_finished(task_name="Chat Sessions Tidy", owner="luis", task_id="t4",
+    notify_task_finished(task_name="Chat Sessions Tidy", owner="example-user", task_id="t4",
                          status="success", result="Cleaned 0 sessions (folder sort skipped).",
                          action="tidy_sessions")
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     assert rows == []
-    notify_task_finished(task_name="Chat Sessions Tidy", owner="luis", task_id="t5",
+    notify_task_finished(task_name="Chat Sessions Tidy", owner="example-user", task_id="t5",
                          status="error", error="db locked", action="tidy_sessions")
-    notify_task_finished(task_name="Tiempo", owner="luis", task_id="t6", status="success",
+    notify_task_finished(task_name="Tiempo", owner="example-user", task_id="t6", status="success",
                          result="**Tiempo en Móstoles** — hoy ### nublado\nmás")
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     assert [r["body"] for r in rows] == ["db locked", "Tiempo en Móstoles — hoy nublado"]
 
 
@@ -225,7 +225,7 @@ def test_task_scheduler_hook_never_raises_on_a_broken_bus(monkeypatch):
     # Must not raise — the scheduler's own finalization must never fail
     # because a notification could not be sent.
     task_scheduler.notify_task_finished(
-        task_name="x", owner="luis", task_id="t1", status="success",
+        task_name="x", owner="example-user", task_id="t1", status="success",
     )
 
 
@@ -239,11 +239,11 @@ def test_approvals_hook_notifies_pending_with_plan_action_as_title():
         "recipients": ["youtube:channel-1"],
     })
     card = Approval.parse({
-        "id": "apr_1", "plan": plan.to_dict(), "status": "pending", "owner": "luis",
+        "id": "apr_1", "plan": plan.to_dict(), "status": "pending", "owner": "example-user",
     })
     _notify_approval("approval_pending", card, session_id="s1")
 
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     assert rows[0]["kind"] == "approval_pending"
     assert rows[0]["title"] == "publish"
     assert rows[0]["body"] == "Publish the September clip."
@@ -257,20 +257,20 @@ def test_approvals_hook_notifies_a_real_decision_only():
     granted_result = {
         "ok": True, "reason": "granted",
         "approval": {
-            "id": "apr_1", "owner": "luis",
+            "id": "apr_1", "owner": "example-user",
             "plan": {"action": "publish", "detail": "Publish the clip."},
         },
     }
     _notify_decision("apr_1", "granted", granted_result)
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     assert len(rows) == 1
     assert rows[0]["kind"] == "approval_resolved"
     assert rows[0]["body"] == "granted: Publish the clip."
 
     # A lost race (already decided) must NOT produce a second notification.
-    lost_race = {"ok": False, "reason": "already_granted", "approval": {"owner": "luis"}}
+    lost_race = {"ok": False, "reason": "already_granted", "approval": {"owner": "example-user"}}
     _notify_decision("apr_1", "granted", lost_race)
-    rows2, _ = N.list_events(owner="luis", since_id=0)
+    rows2, _ = N.list_events(owner="example-user", since_id=0)
     assert len(rows2) == 1  # unchanged
 
 
@@ -287,10 +287,10 @@ def test_dispatch_reminder_emits_reminder_kind(monkeypatch):
 
     _asyncio.run(note_routes.dispatch_reminder(
         title="Buy milk", note_body="from the corner shop", note_id="note-1",
-        owner="luis", queue_browser=True,
+        owner="example-user", queue_browser=True,
     ))
 
-    rows, _ = N.list_events(owner="luis", since_id=0)
+    rows, _ = N.list_events(owner="example-user", since_id=0)
     reminders = [r for r in rows if r["kind"] == "reminder"]
     assert len(reminders) == 1
     assert reminders[0]["title"] == "Buy milk"

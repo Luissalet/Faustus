@@ -195,7 +195,7 @@ def test_write_marker_preserves_an_existing_checkpoint(data_dir):
     the marker's status/error update would silently drop the checkpoint,
     and a run that failed after 3 good rounds would offer no Resume at all."""
     h = _handler()
-    entry = {"query": "q", "status": "running", "started_at": 1.0, "owner": "luis", "max_rounds": 6}
+    entry = {"query": "q", "status": "running", "started_at": 1.0, "owner": "example-user", "max_rounds": 6}
     h._write_marker("rp-cp", entry)
     checkpoint = {"rounds_done": 3, "findings": [_finding("a")], "queries_done": ["a"],
                   "report_parts": [], "evolving_report": "draft", "sources": {"version": 1, "sources": []},
@@ -215,7 +215,7 @@ def test_write_marker_preserves_an_existing_checkpoint(data_dir):
 def test_write_checkpoint_never_tramples_a_saved_report(data_dir):
     h = _handler()
     path = data_dir / "rp-done.json"
-    path.write_text('{"query": "q", "status": "done", "result": "# Report", "owner": "luis"}', encoding="utf-8")
+    path.write_text('{"query": "q", "status": "done", "result": "# Report", "owner": "example-user"}', encoding="utf-8")
 
     h._write_checkpoint("rp-done", {"rounds_done": 1, "findings": [], "queries_done": [],
                                      "report_parts": [], "evolving_report": "", "sources": {}, "updated_at": 0})
@@ -225,7 +225,7 @@ def test_write_checkpoint_never_tramples_a_saved_report(data_dir):
 
 def test_list_interrupted_reports_a_checkpoint_summary_for_resume(data_dir):
     h = _handler()
-    entry = {"query": "q", "status": "running", "started_at": 1.0, "owner": "luis", "max_rounds": 6}
+    entry = {"query": "q", "status": "running", "started_at": 1.0, "owner": "example-user", "max_rounds": 6}
     h._write_marker("rp-with-cp", entry)
     h._write_checkpoint("rp-with-cp", {
         "rounds_done": 3, "findings": [_finding("a"), _finding("b")], "queries_done": ["a", "b"],
@@ -235,7 +235,7 @@ def test_list_interrupted_reports_a_checkpoint_summary_for_resume(data_dir):
     h._write_marker("rp-without-cp", {**entry, "status": "running"})
     h.recover_interrupted()
 
-    items = {i["session_id"]: i for i in h.list_interrupted("luis")}
+    items = {i["session_id"]: i for i in h.list_interrupted("example-user")}
     assert items["rp-with-cp"]["checkpoint"] == {"rounds_done": 3, "sources": 2, "report_parts": 1}
     assert "checkpoint" not in items["rp-without-cp"]
 

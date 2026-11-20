@@ -27,7 +27,7 @@ from src.project_context.service import (
     unrouted_events,
 )
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 SECRET_TITLE = "Q3 restructuring memo"
 

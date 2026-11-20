@@ -5,7 +5,7 @@ Regression found while implementing this: `_outline_sections` grouped every
 bullet under a heading into ONE string ("Heading: a; b; c…") and
 `_clean_subquestions` then hard-truncated any entry longer than
 `_MAX_SUBQUESTION_CHARS` (700) — silently dropping the tail of a long list.
-Luis's real whiplash guide has headings with more than 700 characters of
+ExampleUser's real whiplash guide has headings with more than 700 characters of
 bullets under them (docs/spec/v2/MAPA_REUTILIZACION.md, RES-01 row). The fix
 (`_group_chunks`) splits an overlong group across "Heading (cont.)" chunks
 instead of truncating.

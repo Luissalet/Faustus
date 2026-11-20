@@ -190,7 +190,7 @@ def test_start_incremental_refresh_noop_when_fresh(tmp_path, monkeypatch):
     (tmp_path / f"{sid}.json").write_text(json.dumps({
         "query": "q",
         "status": "done",
-        "owner": "luis",
+        "owner": "example-user",
         "result": report,
         "raw_report": report,
         "completed_at": now.timestamp(),
@@ -217,7 +217,7 @@ def test_start_incremental_refresh_noop_when_fresh(tmp_path, monkeypatch):
 
     handler.start_research = fake_start  # type: ignore[method-assign]
     out = handler.start_incremental_refresh(
-        sid, "luis",
+        sid, "example-user",
         resolve_endpoint=lambda _m: ("http://x", "m", {}),
         max_age_days=7,
     )
@@ -251,7 +251,7 @@ def test_start_incremental_refresh_seeds_prior_and_skips_fresh_urls(
     (tmp_path / f"{sid}.json").write_text(json.dumps({
         "query": "topic X",
         "status": "done",
-        "owner": "luis",
+        "owner": "example-user",
         "result": report,
         "raw_report": report,
         "completed_at": now.timestamp(),
@@ -279,7 +279,7 @@ def test_start_incremental_refresh_seeds_prior_and_skips_fresh_urls(
 
     handler.start_research = fake_start  # type: ignore[method-assign]
     out = handler.start_incremental_refresh(
-        sid, "luis",
+        sid, "example-user",
         resolve_endpoint=lambda _m: ("http://x", "m", {}),
         max_age_days=7,
         new_session_id="rp-incrnew0001",
@@ -403,7 +403,7 @@ def test_save_result_writes_section_ledger(tmp_path, monkeypatch):
         "result": report,
         "raw_report": report,
         "started_at": 1.0,
-        "owner": "luis",
+        "owner": "example-user",
         "researcher": researcher,
     }
     handler._save_result(sid, entry)

@@ -80,7 +80,7 @@ def test_talos_is_asked_through_the_hub_and_a_disabled_module_is_explained(monke
 def test_the_recipe_is_tried_on_a_second_case():
     r = sr.propose(OWNER, draft(), MAPPING)["recipe"]
     params = {p["name"]: p["example"] for p in r["params"]}
-    second = {k: ("F-2026-207" if str(v) == "F-2026-118" else (str(v).replace("ana", "luis") if isinstance(v, str) else v)) for k, v in params.items()}
+    second = {k: ("F-2026-207" if str(v) == "F-2026-118" else (str(v).replace("ana", "example-user") if isinstance(v, str) else v)) for k, v in params.items()}
     tried = derivation_ops.run_recipe(OWNER, {"action": "try", "recipe_id": r["id"], "params": second})
     assert not tried.get("error"), tried
     assert "F-2026-118" not in str(tried.get("steps") or tried)

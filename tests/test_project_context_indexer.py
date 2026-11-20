@@ -11,7 +11,7 @@ from src.project_context.models import (
 from src.project_context.service import ProjectContextService
 
 
-OWNER = "luis"
+OWNER = "example-user"
 PROJECT = {"id": "prj_1", "owner": OWNER, "name": "Faustus", "enabled": True}
 
 

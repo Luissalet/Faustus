@@ -254,9 +254,9 @@ def test_a_deleted_note_is_not_stored_twice(data):
 
 def test_undoing_a_delete_when_the_text_came_back_does_not_duplicate(data):
     mgr = memmod.MemoryManager(str(data))
-    mgr.save([mgr.add_entry("Luis vive en Madrid", owner=OWNER)])
+    mgr.save([mgr.add_entry("La oficina está en Madrid", owner=OWNER)])
     mgr.save([])
-    mgr.save([mgr.add_entry("luis  vive en madrid", owner=OWNER)])        # same text, another id
+    mgr.save([mgr.add_entry("la oficina  está en madrid", owner=OWNER)])        # same text, another id
     delete = [c for c in mj.list_changes(OWNER, store="facts") if c["op"] == "delete"][0]
     with pytest.raises(mj.UndoConflict) as caught:
         mj.undo(delete["id"], OWNER)

@@ -95,7 +95,7 @@ def test_a_render_runs_end_to_end_over_http(client):
     started = http.post("/api/media/runs",
                         json={"workflow": "image.product",
                               "inputs": {"prompt": "a ceramic mug"},
-                              "owner": "luis"}).json()
+                              "owner": "example-user"}).json()
     assert started["ok"] and started["status"] == "queued"
     run_id = started["run_id"]
 
@@ -107,7 +107,7 @@ def test_a_render_runs_end_to_end_over_http(client):
     assert done["status"] == "completed"
     assert done["artifacts"][0]["provenance"]["model_license"]
 
-    listed = http.get("/api/media/runs?owner=luis").json()
+    listed = http.get("/api/media/runs?owner=example-user").json()
     assert listed["count"] == 1 and listed["runs"][0]["id"] == run_id
     assert http.get(f"/api/media/runs/{run_id}").json()["run"]["status"] == "completed"
 

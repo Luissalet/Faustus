@@ -37,8 +37,8 @@ def client(tmp_path, monkeypatch):
     app = FastAPI()
 
     @app.middleware("http")
-    async def _as_luis(request, call_next):
-        request.state.current_user = "luis"
+    async def _as_user(request, call_next):
+        request.state.current_user = "example-user"
         return await call_next(request)
 
     app.include_router(setup_context_engine_routes())
@@ -53,7 +53,7 @@ def _request_body(**over):
     body = {
         "request": {
             "actor": {"agent_id": "tester", "model": "test-model"},
-            "execution": {"owner": "luis", "session_id": "s1", "project_id": "p1"},
+            "execution": {"owner": "example-user", "session_id": "s1", "project_id": "p1"},
             "task": {"intent": "chat", "phase": "act", "query": "buenos dias"},
         },
     }
@@ -70,12 +70,12 @@ def test_the_body_cannot_choose_the_owner(client):
                       json=_request_body(execution={"owner": "otro",
                                                     "session_id": "s1"}))
     assert out.status_code == 200, out.text
-    assert out.json()["owner"] == "luis"
+    assert out.json()["owner"] == "example-user"
 
     # And the ledger row it left behind is the session owner's, not "otro"'s.
     listed = client.get("/api/context/packets").json()
     assert listed["packets"], listed
-    assert {row["owner"] for row in listed["packets"]} == {"luis"}
+    assert {row["owner"] for row in listed["packets"]} == {"example-user"}
 
 
 def test_a_packet_row_carries_no_bodies_and_the_manifest_carries_no_text(client):
@@ -214,7 +214,7 @@ def test_the_listing_only_shows_this_owners_rows(client):
 
     listed = client.get("/api/context/blocks").json()
     assert [b["title"] for b in listed["blocks"]] == ["Mine"]
-    assert listed["owner"] == "luis"
+    assert listed["owner"] == "example-user"
 
 
 def test_another_owners_row_is_a_404_not_a_403(client):

@@ -25,7 +25,7 @@ from src import alternatives  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 
 

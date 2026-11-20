@@ -56,7 +56,7 @@ function repo(over) {
     ahead: 0,
     behind: 0,
     dirty: { staged: 0, unstaged: 0, untracked: 0 },
-    user: { name: 'Luissalet', email: 'l@x' },
+    user: { name: 'sample-maintainer', email: 'l@x' },
     remotes: [{ name: 'origin', fetch_url: 'x', push_url: 'x' }],
     ...over,
   };
@@ -103,7 +103,7 @@ function repo(over) {
       branch: 'master',
       ahead: 0,
       behind: 0,
-      identity: { id: 'i1', label: 'Luissalet', github_login: 'Luissalet' },
+      identity: { id: 'i1', label: 'sample-maintainer', github_login: 'sample-maintainer' },
       policy: { effective: { use_branch: true, branch_prefix: 'agent/', commit: true, commit_message_prefix: '', push: false, push_set_upstream: false }, overridden: false },
     }),
   ];

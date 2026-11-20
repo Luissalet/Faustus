@@ -57,7 +57,7 @@ def env(tmp_path, monkeypatch):
             request.state.api_token_owner = bearer_owner
         else:
             request.state.api_token = False
-            request.state.current_user = request.headers.get("X-Test-User", "luis")
+            request.state.current_user = request.headers.get("X-Test-User", "example-user")
         return await call_next(request)
 
     app.include_router(setup_mobile_routes())
@@ -84,10 +84,10 @@ def _mint_token(SessionLocal, owner: str, raw_token: str = "ody_" + "a" * 40) ->
 
 def test_bootstrap_cookie_path(env):
     client, _ = env
-    resp = client.get("/api/mobile/bootstrap", headers={"X-Test-User": "luis"})
+    resp = client.get("/api/mobile/bootstrap", headers={"X-Test-User": "example-user"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["me"] == "luis"
+    assert body["me"] == "example-user"
     assert body["server_name"] == "Faustus"
     assert set(body["capabilities"]) == {
         "chat", "calendar", "notes", "approvals", "whatsapp", "cards",
@@ -101,9 +101,9 @@ def test_bootstrap_bearer_path_uses_token_owner_not_current_user(env):
     sandboxed "api" pseudo-user) — this router must read `api_token_owner`
     instead, never fall through to a cookie-shaped check."""
     client, _ = env
-    resp = client.get("/api/mobile/bootstrap", headers={"X-Test-Bearer-Owner": "luis"})
+    resp = client.get("/api/mobile/bootstrap", headers={"X-Test-Bearer-Owner": "example-user"})
     assert resp.status_code == 200
-    assert resp.json()["me"] == "luis"
+    assert resp.json()["me"] == "example-user"
 
 
 def test_bearer_with_no_owner_stamped_is_refused(env):
@@ -126,10 +126,10 @@ def test_bearer_with_no_owner_stamped_is_refused(env):
 
 def test_notifications_since_id_and_owner_scoping(env):
     client, _ = env
-    N.emit("turn_finished", owner="luis", title="mine", body="hello")
+    N.emit("turn_finished", owner="example-user", title="mine", body="hello")
     N.emit("turn_finished", owner="someone_else", title="not mine", body="hi")
 
-    resp = client.get("/api/mobile/notifications", headers={"X-Test-User": "luis"})
+    resp = client.get("/api/mobile/notifications", headers={"X-Test-User": "example-user"})
     body = resp.json()
     assert len(body["items"]) == 1
     assert body["items"][0]["title"] == "mine"
@@ -137,7 +137,7 @@ def test_notifications_since_id_and_owner_scoping(env):
 
     resp2 = client.get(
         f"/api/mobile/notifications?since_id={body['last_id']}",
-        headers={"X-Test-User": "luis"},
+        headers={"X-Test-User": "example-user"},
     )
     assert resp2.json()["items"] == []
 
@@ -150,14 +150,14 @@ def test_sessions_compact_shape(env):
     try:
         db.add(DbSession(
             id="s1", name="Weather chat", endpoint_url="http://x", model="qwen3",
-            owner="luis", mode="agent",
+            owner="example-user", mode="agent",
         ))
         db.add(DbChatMessage(id="m1", session_id="s1", role="user", content="what's the weather"))
         db.commit()
     finally:
         db.close()
 
-    resp = client.get("/api/mobile/sessions", headers={"X-Test-User": "luis"})
+    resp = client.get("/api/mobile/sessions", headers={"X-Test-User": "example-user"})
     assert resp.status_code == 200
     rows = resp.json()["sessions"]
     assert len(rows) == 1
@@ -174,13 +174,13 @@ def test_sessions_only_shows_the_callers_own(env):
     client, SessionLocal = env
     db = SessionLocal()
     try:
-        db.add(DbSession(id="mine", name="Mine", endpoint_url="x", model="m", owner="luis"))
+        db.add(DbSession(id="mine", name="Mine", endpoint_url="x", model="m", owner="example-user"))
         db.add(DbSession(id="theirs", name="Theirs", endpoint_url="x", model="m", owner="someone_else"))
         db.commit()
     finally:
         db.close()
 
-    resp = client.get("/api/mobile/sessions", headers={"X-Test-User": "luis"})
+    resp = client.get("/api/mobile/sessions", headers={"X-Test-User": "example-user"})
     ids = {row["id"] for row in resp.json()["sessions"]}
     assert ids == {"mine"}
 
@@ -191,14 +191,14 @@ def test_messages_returned_oldest_first_newest_last(env):
     client, SessionLocal = env
     db = SessionLocal()
     try:
-        db.add(DbSession(id="s1", name="Chat", endpoint_url="x", model="m", owner="luis"))
+        db.add(DbSession(id="s1", name="Chat", endpoint_url="x", model="m", owner="example-user"))
         db.add(DbChatMessage(id="m1", session_id="s1", role="user", content="first"))
         db.add(DbChatMessage(id="m2", session_id="s1", role="assistant", content="second"))
         db.commit()
     finally:
         db.close()
 
-    resp = client.get("/api/mobile/session/s1/messages", headers={"X-Test-User": "luis"})
+    resp = client.get("/api/mobile/session/s1/messages", headers={"X-Test-User": "example-user"})
     assert resp.status_code == 200
     msgs = resp.json()["messages"]
     assert [m["content"] for m in msgs] == ["first", "second"]
@@ -214,7 +214,7 @@ def test_messages_for_another_owners_session_is_404(env):
     finally:
         db.close()
 
-    resp = client.get("/api/mobile/session/s1/messages", headers={"X-Test-User": "luis"})
+    resp = client.get("/api/mobile/session/s1/messages", headers={"X-Test-User": "example-user"})
     assert resp.status_code == 404
 
 
@@ -223,7 +223,7 @@ def test_messages_carries_tool_calls_summary_when_present(env):
     import json as _json
     db = SessionLocal()
     try:
-        db.add(DbSession(id="s1", name="Chat", endpoint_url="x", model="m", owner="luis"))
+        db.add(DbSession(id="s1", name="Chat", endpoint_url="x", model="m", owner="example-user"))
         db.add(DbChatMessage(
             id="m1", session_id="s1", role="assistant", content="done",
             meta_data=_json.dumps({"tool_events": [{"tool": "web_search"}, {"tool": "read_file"}]}),
@@ -232,7 +232,7 @@ def test_messages_carries_tool_calls_summary_when_present(env):
     finally:
         db.close()
 
-    resp = client.get("/api/mobile/session/s1/messages", headers={"X-Test-User": "luis"})
+    resp = client.get("/api/mobile/session/s1/messages", headers={"X-Test-User": "example-user"})
     msg = resp.json()["messages"][0]
     assert msg["tool_calls_summary"] == "used: web_search, read_file"
 
@@ -250,8 +250,8 @@ def test_ws_auth_failure_closes_4401(env):
 
 def test_ws_hello_on_valid_token(env):
     client, SessionLocal = env
-    raw = _mint_token(SessionLocal, owner="luis")
-    N.emit("turn_finished", owner="luis", title="before connect", body="")
+    raw = _mint_token(SessionLocal, owner="example-user")
+    N.emit("turn_finished", owner="example-user", title="before connect", body="")
 
     with client.websocket_connect(f"/api/mobile/ws?token={raw}") as ws:
         hello = ws.receive_json()
@@ -261,12 +261,12 @@ def test_ws_hello_on_valid_token(env):
 
 def test_ws_pushes_a_live_event_to_the_right_owner(env):
     client, SessionLocal = env
-    raw = _mint_token(SessionLocal, owner="luis")
+    raw = _mint_token(SessionLocal, owner="example-user")
 
     with client.websocket_connect(f"/api/mobile/ws?token={raw}") as ws:
         hello = ws.receive_json()
         assert hello["type"] == "hello"
-        N.emit("approval_pending", owner="luis", title="Approve X", body="wants to do X")
+        N.emit("approval_pending", owner="example-user", title="Approve X", body="wants to do X")
         frame = ws.receive_json()
         assert frame["type"] == "event"
         assert frame["event"]["kind"] == "approval_pending"
@@ -275,7 +275,7 @@ def test_ws_pushes_a_live_event_to_the_right_owner(env):
 
 def test_ws_authenticates_via_header_too(env):
     client, SessionLocal = env
-    raw = _mint_token(SessionLocal, owner="luis")
+    raw = _mint_token(SessionLocal, owner="example-user")
     with client.websocket_connect(
         "/api/mobile/ws", headers={"Authorization": f"Bearer {raw}"},
     ) as ws:

@@ -20,26 +20,26 @@ def _fact(owner, evidence, project="atlas"):
 
 def test_retraction_forgets_unsupported_claim_and_preserves_other_owner(store):
     source = {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."}
-    mine = _fact("luis", [source])
+    mine = _fact("example-user", [source])
     other = _fact("ana", [source])
 
-    report = engine.retract_evidence("src/config.py", owner="luis", kind="file",
+    report = engine.retract_evidence("src/config.py", owner="example-user", kind="file",
                                      project="atlas")
 
     assert report["forgotten_ids"] == [mine["id"]]
     assert engine.get_item(mine["id"]) is None
     assert engine.get_item(other["id"]) is not None
     with pytest.raises(engine.MemoryEngineError):
-        _fact("luis", [source])
+        _fact("example-user", [source])
 
 
 def test_retraction_keeps_independently_supported_claim(store):
-    item = _fact("luis", [
+    item = _fact("example-user", [
         {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."},
         {"kind": "chat", "ref": "session-2", "excerpt": "Threshold is 42."},
     ])
 
-    report = engine.retract_evidence("src/config.py", owner="luis", kind="file")
+    report = engine.retract_evidence("src/config.py", owner="example-user", kind="file")
 
     assert report["retained_ids"] == [item["id"]]
     assert report["forgotten_ids"] == []
@@ -48,27 +48,27 @@ def test_retraction_keeps_independently_supported_claim(store):
 
 
 def test_plan_is_read_only_and_agrees_with_retraction(store):
-    item = _fact("luis", [
+    item = _fact("example-user", [
         {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."},
         {"kind": "chat", "ref": "session-2", "excerpt": "Threshold is 42."},
     ])
     before = engine.get_item(item["id"])
-    plan = engine.plan_evidence_retraction("src/config.py", owner="luis", kind="file")
+    plan = engine.plan_evidence_retraction("src/config.py", owner="example-user", kind="file")
     assert plan["entries"] == [{"id": item["id"], "action": "retain",
                                 "remaining_evidence_count": 1}]
     assert engine.get_item(item["id"]) == before
-    applied = engine.retract_evidence("src/config.py", owner="luis", kind="file")
+    applied = engine.retract_evidence("src/config.py", owner="example-user", kind="file")
     assert applied["retained_ids"] == [item["id"]]
 
 
 def test_retraction_does_not_touch_other_project_or_evidence_kind(store):
     source = {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."}
-    other_project = _fact("luis", [source], project="zephyr")
-    other_kind = _fact("luis", [
+    other_project = _fact("example-user", [source], project="zephyr")
+    other_kind = _fact("example-user", [
         {"kind": "dispatch", "ref": "src/config.py", "excerpt": "Threshold is 42."}
     ])
 
-    report = engine.retract_evidence("src/config.py", owner="luis", kind="file",
+    report = engine.retract_evidence("src/config.py", owner="example-user", kind="file",
                                      project="atlas")
     assert report["forgotten_ids"] == []
     assert engine.get_item(other_project["id"]) is not None
@@ -76,18 +76,18 @@ def test_retraction_does_not_touch_other_project_or_evidence_kind(store):
 
 
 def test_retraction_forgets_claim_when_remaining_excerpt_does_not_support_it(store):
-    item = _fact("luis", [
+    item = _fact("example-user", [
         {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."},
         {"kind": "chat", "ref": "session-2", "excerpt": "The threshold changed."},
     ])
 
-    report = engine.retract_evidence("src/config.py", owner="luis", kind="file")
+    report = engine.retract_evidence("src/config.py", owner="example-user", kind="file")
     assert report["forgotten_ids"] == [item["id"]]
     assert engine.get_item(item["id"]) is None
 
 
 def test_retraction_does_not_treat_unrelated_excerpt_as_generic_support(store):
-    item = engine.add_item("Use the reliable workflow.", owner="luis",
+    item = engine.add_item("Use the reliable workflow.", owner="example-user",
                            project="atlas", trust_class="agent_assertion",
                            evidence=[
                                {"kind": "file", "ref": "guide.md",
@@ -96,7 +96,7 @@ def test_retraction_does_not_treat_unrelated_excerpt_as_generic_support(store):
                                 "excerpt": "Another topic entirely."},
                            ])
 
-    report = engine.retract_evidence("guide.md", owner="luis", kind="file")
+    report = engine.retract_evidence("guide.md", owner="example-user", kind="file")
     assert report["forgotten_ids"] == [item["id"]]
 
 
@@ -106,14 +106,14 @@ def test_admin_route_previews_and_retracts_only_current_owner(store, monkeypatch
     from core.middleware import require_admin, require_human
     from routes import memory_engine_routes
 
-    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "example-user")
     app = FastAPI()
     app.include_router(memory_engine_routes.setup_memory_engine_routes())
     app.dependency_overrides[require_admin] = lambda: None
     app.dependency_overrides[require_human] = lambda: None
     client = TestClient(app)
     source = {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."}
-    mine = _fact("luis", [source])
+    mine = _fact("example-user", [source])
     other = _fact("ana", [source])
 
     preview = client.get("/api/memory-engine/evidence/dependents",

@@ -72,7 +72,7 @@ def _mirror(ns, job_id: str, status: str = "running", ws: str = "") -> None:
     ws = ws or str(ns.tmp / "ws")
     os.makedirs(ws, exist_ok=True)
     (d / f"{job_id}.json").write_text(json.dumps({
-        "id": job_id, "owner": "luis", "status": status, "workspace": ws, "created": time.time(),
+        "id": job_id, "owner": "example-user", "status": status, "workspace": ws, "created": time.time(),
         "started": time.time(), "title": "Workers", "verify": "none", "runners": ["fake"],
         "tasks": [{"instruction": "add apply_tax", "runner": "fake", "name": "taxer"}],
     }), encoding="utf-8")
@@ -148,7 +148,7 @@ def test_a_dispatched_external_run_leaves_its_log_and_record(runs, monkeypatch):
     ws.mkdir()
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": [{"instruction": "look", "runner": "fake"}],
+        job = await dispatch.start("example-user", {"tasks": [{"instruction": "look", "runner": "fake"}],
                                             "workspace": str(ws), "verify": "none"})
         assert await dispatch.wait(job, 30)
         return job

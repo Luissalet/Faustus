@@ -3,9 +3,9 @@ from src.pii_redaction import redact_pii
 
 
 def test_email_redacted():
-    text, counts = redact_pii("Contact me at luis.gomez@example.com for details.")
+    text, counts = redact_pii("Contact me at user@example.com for details.")
     assert "[EMAIL]" in text
-    assert "luis.gomez@example.com" not in text
+    assert "user@example.com" not in text
     assert counts == {"EMAIL": 1}
 
 

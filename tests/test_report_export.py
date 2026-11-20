@@ -90,7 +90,7 @@ def research_json(**overrides):
         "category": "health",
         "started_at": 1772000000.0,
         "completed_at": 1772000182.4,
-        "owner": "luis",
+        "owner": "example-user",
     }
     data.update(overrides)
     return data

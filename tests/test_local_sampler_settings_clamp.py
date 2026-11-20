@@ -34,7 +34,7 @@ def settings_api(monkeypatch):
     monkeypatch.setattr(auth_routes, "_save_settings", lambda new: stored.clear() or stored.update(new))
 
     auth_manager, get_settings, set_settings = _settings_endpoints()
-    auth_manager.get_username_for_token.return_value = "luis"
+    auth_manager.get_username_for_token.return_value = "example-user"
     auth_manager.is_admin.return_value = True
 
     request = SimpleNamespace(cookies={}, client=SimpleNamespace(host="127.0.0.1"))

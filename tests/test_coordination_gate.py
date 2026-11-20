@@ -28,7 +28,7 @@ def test_binding_lifts_only_the_exact_native_operation(gate):
     assert ctx.decision_for("coordination_poll", {}).allowed
     assert ctx.decision_for("coordination_post", {"thread_id": 32, "body": "Useful work update"}).allowed
     assert not ctx.decision_for("coordination_post", {"thread_id": 99, "body": "x"}).allowed
-    assert not ctx.decision_for("coordination_post", {"thread_id": 32, "body": "x", "agent": "luis"}).allowed
+    assert not ctx.decision_for("coordination_post", {"thread_id": 32, "body": "x", "agent": "example-user"}).allowed
     assert not ctx.decision_for("mcp__hub__hub_agora_sync", {"agent": "faustus-a"}).allowed
     assert not ctx.decision_for("bash", "node --test tests/work.test.mjs").allowed
     assert not ctx.decision_for("manage_settings", {"action": "set", "key": "tool_approval_mode", "value": "full"}).allowed
@@ -103,7 +103,7 @@ def test_native_authority_failures_are_repairable_without_broad_approval(gate, m
     monkeypatch.setattr("src.tool_capabilities.tool_approval_mode", lambda: "full" if full else "ask")
     ctx.external_untrusted_context_seen = outside_seen
     for args in ({"thread_id": 32, "body": ""},
-                 {"thread_id": 32, "body": "x", "agent": "luis"},
+                 {"thread_id": 32, "body": "x", "agent": "example-user"},
                  {"thread_id": 99, "body": "x"}):
         decision = ctx.decision_for("coordination_post", args)
         assert not decision.allowed and not decision.approval_required

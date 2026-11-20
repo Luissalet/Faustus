@@ -1,6 +1,6 @@
 """Lote 91 (OBJ-7) -- src.tool_index_examples and its wiring into tool_index.
 
-Luis: "un usuario no debería saberse de memoria todas las tools; 'dime
+ExampleUser: "un usuario no debería saberse de memoria todas las tools; 'dime
 nosequé para el proyecto X' tiene que bastar." This covers three things:
 
 1. `EXAMPLES` (src/tool_index_examples.py) has a natural-language entry for

@@ -33,7 +33,7 @@ async def _call(args):
     import src.tool_execution as te
     return await te._execute_tool_block_impl(
         ToolBlock(tool_type="verify_claim", content=json.dumps(args)),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
 
 
 # ── the wiring ──────────────────────────────────────────────────────────────
@@ -171,7 +171,7 @@ async def test_junk_arguments_are_a_readable_error_not_a_crash():
     for content in ("", "not json at all", "[1, 2, 3]", '"a string"', "null", "{"):
         desc, result = await te._execute_tool_block_impl(
             ToolBlock(tool_type="verify_claim", content=content),
-            session_id="s1", owner="luis")
+            session_id="s1", owner="example-user")
         assert desc == "verify_claim" and result["exit_code"] == 1
         assert isinstance(result["error"], str) and result["error"]
 

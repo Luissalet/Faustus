@@ -33,7 +33,7 @@ from src.tool_capabilities import ToolRunSecurityContext, capabilities_for_actio
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 SESSION = "sess-l87"
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])

@@ -1,6 +1,6 @@
 """Faustus runs where the project runs (14-09-2026).
 
-Five failures, all server-side, seen in Luis's own chats of that morning on a
+Five failures, all server-side, seen in ExampleUser's own chats of that morning on a
 Windows folder — read out of `data/app.db`, not reproduced from a guess:
 
 1. the sandbox refused every command ("start Docker") or, with the daemon up,
@@ -419,7 +419,7 @@ def grants(tmp_path, monkeypatch):
 
 
 def test_a_folder_grant_outlives_the_chat_and_covers_its_subtree(grants, tmp_path):
-    """Luis: «que se quede así siempre en el proyecto, no se me resetee en cada
+    """ExampleUser: «que se quede así siempre en el proyecto, no se me resetee en cada
     chat nuevo». The chat scope died with the chat; this one is on disk."""
     ws = tmp_path / "Proyectos" / "Silhouettes"
     (ws / "sub").mkdir(parents=True)

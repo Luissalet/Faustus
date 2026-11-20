@@ -44,7 +44,7 @@ def test_recent_events_keeps_structural_fields_only(isolated_data_dir):
          # Personal content that must NEVER survive the allowlist, even
          # though a real replay-log line carries exactly these fields:
          "text": "my social security number is 123-45-6789",
-         "delta": "the secret prompt content", "tool_args": {"path": "/home/luis/secret.txt"}},
+         "delta": "the secret prompt content", "tool_args": {"path": "/home/example-user/secret.txt"}},
     ])
     events = sb.recent_events()
     assert len(events) == 1
@@ -52,7 +52,7 @@ def test_recent_events_keeps_structural_fields_only(isolated_data_dir):
     dumped = json.dumps(events)
     assert "social security" not in dumped
     assert "secret prompt" not in dumped
-    assert "/home/luis" not in dumped
+    assert "/home/example-user" not in dumped
 
 
 def test_recent_events_handles_missing_runs_dir(isolated_data_dir):

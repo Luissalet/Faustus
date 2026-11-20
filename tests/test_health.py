@@ -165,7 +165,7 @@ def test_a_failed_dispatched_job_in_the_last_hour_is_the_dispatch_signal(box, mo
     from src import dispatch
     dispatch.reset_for_tests()
     try:
-        job = dispatch.DispatchJob("luis", {"tasks": []}, "/tmp/ws", "", "m", None, "Workers")
+        job = dispatch.DispatchJob("example-user", {"tasks": []}, "/tmp/ws", "", "m", None, "Workers")
         job.status, job.finished = "error", __import__("time").time()
         dispatch._jobs[job.id] = job
         comps = _by_name(_usage()["health"])
@@ -186,7 +186,7 @@ def test_recent_counts_never_touches_the_disk(monkeypatch):
     monkeypatch.setattr(dispatch, "_load", lambda job_id: (_ for _ in ()).throw(AssertionError("read the disk")))
     assert dispatch.recent_counts(3600.0) == {"jobs": 0, "done": 0, "partial": 0, "failed": 0,
                                               "cancelled": 0, "live": 0}
-    job = dispatch.DispatchJob("luis", {"tasks": []}, "/tmp/ws", "", "m", None, "Workers")
+    job = dispatch.DispatchJob("example-user", {"tasks": []}, "/tmp/ws", "", "m", None, "Workers")
     job.status, job.finished = "done", 10.0
     dispatch._jobs[job.id] = job
     assert dispatch.recent_counts(3600.0, now=20.0)["done"] == 1
