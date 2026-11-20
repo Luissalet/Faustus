@@ -71,7 +71,7 @@ export function PendingProduction({ state, dedicated = false }: { state: Pending
           </a>
         </div>
         {row.image && <div className="fs-agx-production__previews"><Thumbnail key={row.image.piece_id} image={row.image} /></div>}
-        {!!row.pieces?.length && <p className="fs-agx-production__pieces">{row.pieces.join(' ? ')}</p>}
+        {!!row.pieces?.length && <p className="fs-agx-production__pieces">{row.pieces.join(' · ')}</p>}
         {!!row.variants?.length && <ul className="fs-agx-production__previews">
           {row.variants.map(variant => <li key={variant.id}>
             {variant.image && <Thumbnail key={variant.image.piece_id} image={variant.image} />}
