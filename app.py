@@ -489,6 +489,11 @@ if AUTH_ENABLED:
                 return await call_next(request)
             if _is_auth_exempt(path):
                 return await call_next(request)
+            production_choice = (request.method == "POST" and path.startswith("/api/agora/x/")
+                                 and is_production_choice(path.removeprefix("/api/agora/x/")))
+            if production_choice and request.headers.get("Authorization"):
+                return JSONResponse({"ok": False, "error": "Only the person's page can decide a production gate"},
+                                    status_code=403)
             # In-process internal-tool token bypass. Used by the agent
             # tool layer when it HTTP-loopbacks to admin-gated routes
             # (no admin cookie available in that context). Restricted to
@@ -516,7 +521,7 @@ if AUTH_ENABLED:
             # _is_trusted_loopback so LOCALHOST_BYPASS can't be abused over a
             # Cloudflare tunnel / reverse proxy. Keep LOCALHOST_BYPASS=false for
             # network-exposed deployments regardless.
-            if LOCALHOST_BYPASS and _is_trusted_loopback(request):
+            if LOCALHOST_BYPASS and not production_choice and _is_trusted_loopback(request):
                 # The bypass means "this loopback caller is the operator":
                 # act as the first admin. Without a user on the request every
                 # route with its own `get_current_user` check (email state,
@@ -1680,7 +1685,7 @@ app.include_router(setup_plugin_marketplace_routes())
 from routes.hoard_hub_routes import setup_hoard_hub_routes
 app.include_router(setup_hoard_hub_routes())
 # The Agora as servers and channels: the hub's spaces proxied for Studio, written as the person signed in.
-from routes.agora_routes import setup_agora_routes
+from routes.agora_routes import is_production_choice, setup_agora_routes
 app.include_router(setup_agora_routes())
 from routes.sparks_routes import setup_sparks_routes
 app.include_router(setup_sparks_routes())

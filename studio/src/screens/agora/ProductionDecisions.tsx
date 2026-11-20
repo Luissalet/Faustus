@@ -1,7 +1,6 @@
-import { ExternalLink } from 'lucide-react';
-import { useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AgoraPersonContext } from './util';
-import { agoraGet, type Decision } from '../../adapters/agora';
+import { agoraGet, agoraPost, type Decision } from '../../adapters/agora';
 import { locale, t } from '../../i18n';
 import './production-decisions.css';
 
@@ -11,18 +10,30 @@ type RecordRow = {
   decided_by?: { id: string; name?: string };
   situation: { decided_by?: string; order?: Summary; gate?: Summary; draft_pass?: Summary; variant?: Summary };
 };
-type Preview = { piece_id: number; title: string; preview: boolean };
-type PendingRow = {
-  key: string; title: string; order: string; space: string; image: Preview | null;
-  variants?: { id: number; title: string; image: Preview | null }[];
-  pieces?: string[];
+type PendingRow = { key: string; space: string };
+type Queue = { rows: PendingRow[]; counts: Record<string, number>; order_base?: string | null };
+export type PendingProductionState = {
+  pending: PendingRow[]; pendingError: boolean; orderBase?: string | null; refresh: () => void;
 };
-type Queue = { rows: PendingRow[]; counts: Record<string, number> };
-export type PendingProductionState = { pending: PendingRow[]; pendingError: boolean };
+
+type Cards = {
+  renderDecisionCards(container: HTMLElement, rows: PendingRow[], options: {
+    lang: string; source: (path: string) => string | null; orderHref: (row: PendingRow) => string | null;
+    post: (operation: string, body: Record<string, unknown>) => Promise<unknown>; refresh: () => void;
+  }): void;
+};
+const cardModule = '/api/agora/decision-assets/production_decisions_card.js';
+
+function pieceSource(path: string) {
+  const match = /^\/api\/agora\/piece_file\/(\d+)(\?preview=\d+)?$/.exec(path);
+  return match ? '/api/agora/piece-content/' + match[1] + (match[2] ?? '') : null;
+}
 
 export function useProductionDecisions(version?: string) {
   const [queue, setQueue] = useState<Queue>();
   const [error, setError] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
   useEffect(() => {
     if (!version) return;
     const controller = new AbortController();
@@ -46,41 +57,40 @@ export function useProductionDecisions(version?: string) {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [version]);
-  return { queue, error };
-}
-
-function Thumbnail({ image }: { image: Preview }) {
-  const [failed, fail] = useState(false);
-  return failed ? null : <img src={'/api/agora/piece-preview/' + image.piece_id + (image.preview ? '?preview=0' : '')}
-    alt={image.title} loading="lazy" onError={() => fail(true)} />;
+  }, [version, revision]);
+  return { queue, error, refresh };
 }
 
 export function PendingProduction({ state, dedicated = false }: { state: PendingProductionState | undefined; dedicated?: boolean }) {
+  const cards = useRef<HTMLDivElement>(null);
+  const [cardError, setCardError] = useState(false);
+  const lang = locale().startsWith('es') ? 'es' : 'en';
+  useEffect(() => {
+    const container = cards.current;
+    if (!state || !container || !state.pending.length && !container.hasChildNodes()) return;
+    let current = true;
+    void (import(/* @vite-ignore */ cardModule) as Promise<Cards>).then(({ renderDecisionCards }) => {
+      if (!current) return;
+      renderDecisionCards(container, state.pending, {
+        lang, source: pieceSource,
+        orderHref: row => state.orderBase
+          ? state.orderBase + '/?' + new URLSearchParams({ space_id: row.space, decision: row.key }) + '#hub/orders'
+          : null,
+        post: agoraPost,
+        refresh: state.refresh,
+      });
+      setCardError(false);
+    }).catch(() => { if (current) setCardError(true); });
+    return () => { current = false; };
+  }, [state, lang]);
   if (!state) return dedicated ? <p role="status">{t('Loading decisions')}</p> : null;
-  if (!state.pending.length && !state.pendingError) return dedicated ? <p>{t('You have no pending decisions.')}</p> : null;
+  if (!dedicated && !state.pending.length && !state.pendingError) return null;
   return <section className="fs-agx-production" data-testid="agora-pending-decisions" aria-label={t('Your pending decisions')}>
     {!dedicated && <h2>{t('Your pending decisions')}</h2>}
-    {state.pending.map(row => (
-      <article className="fs-agx-production__gate" key={row.key} data-decision={row.key}>
-        <div className="fs-agx-production__heading">
-          <div><h3>{row.title}</h3><p>{row.order}</p></div>
-          <a href={'/api/hoard/agora/open?' + new URLSearchParams({ space_id: row.space, decision: row.key })}
-            target="_blank" rel="noopener">
-            {t('Open decision')} <ExternalLink size={14} aria-hidden="true" />
-          </a>
-        </div>
-        {row.image && <div className="fs-agx-production__previews"><Thumbnail key={row.image.piece_id} image={row.image} /></div>}
-        {!!row.pieces?.length && <p className="fs-agx-production__pieces">{row.pieces.join(' · ')}</p>}
-        {!!row.variants?.length && <ul className="fs-agx-production__previews">
-          {row.variants.map(variant => <li key={variant.id}>
-            {variant.image && <Thumbnail key={variant.image.piece_id} image={variant.image} />}
-            <span>{variant.title}</span>
-          </li>)}
-        </ul>}
-      </article>
-    ))}
-    {state.pendingError && <p className="fs-notice" data-tone="warning" role="status">{t('Some pending decisions could not be loaded.')}</p>}
+    <div ref={cards} />
+    {state.pendingError || cardError
+      ? <p className="fs-notice" data-tone="warning" role="status">{t('Some pending decisions could not be loaded.')}</p>
+      : !state.pending.length && <p role="status">{t('You have no pending decisions.')}</p>}
   </section>;
 }
 

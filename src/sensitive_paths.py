@@ -69,7 +69,7 @@ CREDENTIAL_DIRS: tuple = (
     ("windows", "system32", "config"),
 )
 # File names that are credentials wherever they live.
-CREDENTIAL_FILES = frozenset({".netrc", "_netrc", ".git-credentials", ".pgpass", ".pypirc"})
+CREDENTIAL_FILES = frozenset({".netrc", "_netrc", ".git-credentials", ".pgpass", ".pypirc", "agora-person-mcp-token"})
 # Browser password / cookie / key databases, when under a browser profile.
 BROWSER_SECRET_FILES = frozenset({
     "login data", "login data for account", "cookies", "web data", "local state",

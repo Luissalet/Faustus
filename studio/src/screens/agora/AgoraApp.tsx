@@ -172,9 +172,10 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   const [searchScoped, setSearchScoped] = useState(true);
   const server = servers?.find((s) => s.id === spaceId);
   const ready = guild && guild.space.id === spaceId ? guild : null;
-  const { queue, error: pendingError } = useProductionDecisions(ready?.version);
+  const { queue, error: pendingError, refresh: refreshDecisions } = useProductionDecisions(ready?.version);
   const production = queue || pendingError
-    ? { pending: queue?.rows.filter(row => row.space === spaceId) ?? [], pendingError }
+    ? { pending: queue?.rows.filter(row => row.space === spaceId) ?? [], pendingError,
+        orderBase: queue?.order_base, refresh: refreshDecisions }
     : undefined;
 
   // A link to the conversation behind a channel (a notification, the inbox) opens the channel itself.
