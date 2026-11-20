@@ -309,6 +309,8 @@ class Client:
         inbox = await self.remote("inbox", {"agent": self.binding.actor, "peek": True, "mine_only": False, "since_id": since})
         board = await self.remote("board", {})
         scope_tasks = {t["id"] for t in board.get("tasks", ()) if str(t.get("repo") or "").casefold() in self.binding.repos}
+        person_id = (board.get("person") or {}).get("id") or next(
+            (row["id"] for row in board.get("agents", []) if row.get("kind") == "human"), None)
         page = []
         all_messages = inbox.get("messages", [])
         if not isinstance(all_messages, list):
@@ -317,7 +319,7 @@ class Client:
             if not isinstance(original, dict):
                 raise CoordinationError("invalid coordination inbox message")
             item = dict(original)
-            item["relevant"] = (self.binding.actor in (item.get("mentions") or []) or item.get("author") == "luis"
+            item["relevant"] = (self.binding.actor in (item.get("mentions") or []) or (person_id is not None and item.get("author") == person_id)
                                 or item.get("task_owner") == self.binding.actor or item.get("task_id") in scope_tasks)
             if not threads or item.get("thread_id") in threads:
                 page.append(item)

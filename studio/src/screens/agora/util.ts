@@ -1,5 +1,6 @@
+import { createContext } from 'react';
 import { locale, t } from '../../i18n';
-import type { AgoraGuild, AgoraMember, BoardColumn, Presence, Target } from '../../adapters/agora';
+import type { AgoraGuild, AgoraMember, AgoraPerson, BoardColumn, Presence, Target } from '../../adapters/agora';
 
 /** What the main pane shows: `ch:<slug>`, `v:<view>`, `t:<thread id>`, `room:<id>` or `room:new`. */
 export type ViewKind = 'channel' | 'view' | 'thread' | 'room';
@@ -36,14 +37,20 @@ export const ROLE_ORDER = ['person', 'claude', 'codex', 'cursor', 'faustus', 'ot
 export const ROLE_LABEL: Record<string, string> = {
   person: 'You', claude: 'Claude', codex: 'Codex', cursor: 'Cursor', faustus: 'Faustus', other: 'Others',
 };
-export function roleOf(agent: string | null | undefined): string {
+export const AgoraPersonContext = createContext<AgoraPerson | undefined>(undefined);
+
+export function guildPerson(guild: AgoraGuild | null | undefined) {
+  return guild?.person ?? guild?.members.find((member) => member.role === 'person');
+}
+
+export function roleOf(agent: string | null | undefined, personId?: string): string {
   const id = String(agent || '').toLowerCase();
-  if (id === 'luis') return 'person';
+  if (id && id === personId) return 'person';
   if (id === 'system') return 'system';
   for (const role of ['claude', 'codex', 'cursor', 'faustus']) if (id === role || id.startsWith(role + '-')) return role;
   return 'other';
 }
-export const agentColor = (agent: string | null | undefined) => ROLE_COLORS[roleOf(agent)] ?? ROLE_COLORS.other;
+export const agentColor = (agent: string | null | undefined, personId?: string) => ROLE_COLORS[roleOf(agent, personId)] ?? ROLE_COLORS.other;
 export function agentInitials(agent: string | null | undefined): string {
   const parts = String(agent || '?').split(/[-_.\s]+/).filter(Boolean);
   const first = parts[0]?.[0] ?? '?';

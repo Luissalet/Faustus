@@ -54,7 +54,9 @@ export interface AgoraSpaceInfo {
   id: string; title: string; description: string; project_id: string; workspace: string; revision: number; members: number;
   created_by: string; meta: { icon: string; color: string; folders: string[]; position: number | null; hidden: boolean; muted?: boolean };
 }
+export interface AgoraPerson { id: string; name: string }
 export interface AgoraGuild {
+  person?: AgoraPerson;
   ok: boolean; version: string; viewer: string | null; space: AgoraSpaceInfo; channels: AgoraChannel[];
   views: Record<string, { count?: number; counts?: Record<string, number> }>;
   threads: AgoraThreadRow[]; waiting: AgoraWaiting[]; tasks: Record<BoardColumn, AgoraTaskRow[]>;
@@ -151,7 +153,18 @@ export async function agoraPost<T>(op: string, body: Record<string, unknown>): P
 
 export const getServers = (signal?: AbortSignal) =>
   agoraGet<{ servers: AgoraServer[]; version: string; default_space_id: string }>('servers', undefined, signal);
-export const getGuild = (space: string, signal?: AbortSignal) => agoraGet<AgoraGuild>('guild', { space_id: space, done_limit: 30 }, signal);
+export async function getGuild(space: string, signal?: AbortSignal): Promise<AgoraGuild> {
+  const guild = await agoraGet<AgoraGuild>('guild', { space_id: space, done_limit: 30 }, signal);
+  if (guild.person || guild.members.some(member => member.role === 'person')) return guild;
+  try {
+    // The configured person may never have posted in this server.
+    const { person } = await agoraGet<{ person: AgoraPerson }>('person', undefined, signal);
+    return { ...guild, person };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return guild.viewer ? { ...guild, person: { id: guild.viewer, name: guild.viewer } } : guild;
+  }
+}
 
 export async function pulse(since: string, signal?: AbortSignal): Promise<{ version: string; changed: boolean }> {
   return unwrap(await fetch('/api/agora/pulse' + query({ since, wait_s: 20 }), {
@@ -341,7 +354,9 @@ export interface PersonInbox {
 /** What waits for the person in every server: questions, mentions and submissions without a reviewer. */
 /** `heard` leaves out the servers the person silenced: what is worth a notification, not all that waits. */
 export const getInbox = (signal?: AbortSignal, heard = false) =>
-  agoraGet<PersonInbox>('inbox', { agent: 'luis', all_spaces: 1, peek: 1, mine_only: 1, limit: 40, ...(heard ? { skip_muted: 1 } : {}) }, signal);
+  fetch('/api/agora/person-inbox' + query({ heard: heard || undefined }), {
+    signal, credentials: 'same-origin', headers: { Accept: 'application/json', [CLIENT_VERSION_HEADER]: CLIENT_API_VERSION },
+  }).then(unwrap<PersonInbox>);
 
 /** `s` names the size served, so a browser never shows an older, heavier copy it kept. */
 /** `soft`: an app with no icon answers «no content» instead of «not found», for a picture that has letters to fall back on. */

@@ -1,3 +1,4 @@
+import { AgoraPersonContext } from './agora/util';
 import { t } from '../i18n';
 import { Check, ChevronDown, Code2, Copy, CornerDownLeft, ImageOff, Play } from 'lucide-react';
 import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
@@ -21,6 +22,11 @@ import { UiBlock } from '../components/UiBlock';
  * switch.
  */
 
+function Mention({ id, children }: { id: string; children: ReactNode }) {
+  const person = useContext(AgoraPersonContext);
+  return <span className="fs-rich__mention" data-mention={id} data-person-mention={Boolean(person && (id === person.id || id === 'person')) || undefined}>{children}</span>;
+}
+
 /** A run of plain text; with the blur on, its secrets become reveal-on-click buttons. */
 function plain(text: string, key: string): ReactNode[] {
   const mentions = (value: string, prefix: string): ReactNode[] => {
@@ -30,7 +36,7 @@ function plain(text: string, key: string): ReactNode[] {
     for (const match of value.matchAll(pattern)) {
       const start = match.index!;
       if (start > end) out.push(value.slice(end, start));
-      out.push(<span className="fs-rich__mention" data-mention={match[0].slice(1).toLowerCase()} key={`${prefix}-${start}`}>{match[0]}</span>);
+      out.push(<Mention id={match[0].slice(1).toLowerCase()} key={`${prefix}-${start}`}>{match[0]}</Mention>);
       end = start + match[0].length;
     }
     if (end < value.length) out.push(value.slice(end));

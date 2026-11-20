@@ -22,7 +22,7 @@ import { AddServerDialog, AgoraNotifyDialog, EditServerDialog, NewChannelDialog,
 import { ServerRail } from './ServerRail';
 import { FollowedThreads } from '../agora-threads/FollowedThreads';
 import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, LocksView, SearchView, ThreadsView, WelcomeView } from './Views';
-import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, ROLE_COLORS, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
+import { AGORA_WAITING_CHANGED, AgoraPersonContext, findTaskByThread, guildPerson, parseView, recall, remember, ROLE_COLORS, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
 import { PendingProduction, useProductionDecisions } from './ProductionDecisions';
 import './agora-app.css';
 import { AgoraLive } from './AgoraLive';
@@ -275,6 +275,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   return (
     <div className="fs-agx" data-members={membersOpen || undefined} data-channels={channelsOpen || undefined} data-embedded={embedded || undefined}
       data-rail={lockedSpace ? undefined : true} data-testid="agora-app" style={ROLE_VARS}>
+      <AgoraPersonContext.Provider value={guildPerson(ready)}>
       {!lockedSpace && (
         servers
           ? <ServerRail servers={servers} current={view.kind === 'view' && view.id === 'inbox' ? '' : spaceId} home={home} onSelect={(id) => (id === spaceId ? open(parseView(recall('agora:last-view:' + id) || 'ch:general')) : selectServer(id))}
@@ -376,6 +377,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
         </>
       )}
       {notice && <Toast>{notice.tone === 'warn' ? <X size={12} aria-hidden="true" /> : <Check size={12} aria-hidden="true" />} {notice.text}</Toast>}
+      </AgoraPersonContext.Provider>
     </div>
   );
 }

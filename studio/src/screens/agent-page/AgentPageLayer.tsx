@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { AgoraPersonContext } from '../agora/util';
 import { AgentPage } from './AgentPage';
 import './agent-page.css';
 
@@ -9,8 +10,8 @@ export function openAgentPage(agentId: string): void {
 }
 
 /** The id to put in `data-agent-id` for an author: agents have a page, the person and the system do not. */
-export const pageOf = (author: string | null | undefined): string | undefined =>
-  author && author !== 'luis' && author !== 'system' && author !== 'hub' ? author : undefined;
+export const pageOf = (author: string | null | undefined, personId?: string): string | undefined =>
+  author && author !== personId && author !== 'system' && author !== 'hub' ? author : undefined;
 
 export interface AgentPageLayerProps {
   space: string;
@@ -24,6 +25,7 @@ export interface AgentPageLayerProps {
  * closes on Escape or a click outside, giving the focus back to what had it.
  */
 export function AgentPageLayer({ space, onOpenDm, onOpenTask }: AgentPageLayerProps) {
+  const person = useContext(AgoraPersonContext);
   const [agentId, setAgentId] = useState<string | null>(null);
   const origin = useRef<HTMLElement | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
@@ -32,6 +34,7 @@ export function AgentPageLayer({ space, onOpenDm, onOpenTask }: AgentPageLayerPr
 
   useEffect(() => {
     const open = (id: string) => {
+      if (!pageOf(id.toLowerCase(), person?.id)) return;
       if (!/^[a-z][a-z0-9_.-]{1,40}$/i.test(id)) return;
       origin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setAgentId(id.toLowerCase());
@@ -44,7 +47,7 @@ export function AgentPageLayer({ space, onOpenDm, onOpenTask }: AgentPageLayerPr
     window.addEventListener(AGENT_PAGE_EVENT, onEvent);
     document.addEventListener('click', onClick);
     return () => { window.removeEventListener(AGENT_PAGE_EVENT, onEvent); document.removeEventListener('click', onClick); };
-  }, []);
+  }, [person?.id]);
 
   useEffect(() => {
     if (!agentId) return undefined;

@@ -1,5 +1,5 @@
 import { ArrowRight, FolderOpen, FolderPlus, Inbox, Lock, MessageCircleQuestion, MessagesSquare, MoreHorizontal, Plus, Search, Trash2, X } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
+import { useContext, useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import {
   BOARD_COLUMNS, editTask, getFeed, getInbox, getLocks, getTask, searchAgora, setSpaceMeta,
   type ActivityItem, type AgoraGuild, type AgoraLock, type AgoraServer, type AgoraTaskRow, type BoardColumn, type FeedItem,
@@ -13,15 +13,16 @@ import { PendingProduction, ProductionHistory, readDecisionLog, type useProducti
 import { t, tn } from '../../i18n';
 import { AgentAvatar, AgentFace } from './Identity';
 import { LiveSteps } from './Work';
-import { ago, agentColor, COLUMN_LABEL, STATUS_LABEL, stamp, THREAD_KIND_LABEL, type View } from './util';
+import { ago, agentColor, AgoraPersonContext, COLUMN_LABEL, guildPerson, STATUS_LABEL, stamp, THREAD_KIND_LABEL, type View } from './util';
 import '../studio.css';
 
 type Open = (view: View, space?: string) => void;
 type Notify = (text: string, tone?: 'ok' | 'warn') => void;
 
 function Who({ id }: { id: string | null | undefined }) {
+  const person = useContext(AgoraPersonContext);
   if (!id) return null;
-  return <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id) } as CSSProperties} title={id}><AgentFace id={id} size={11} /></span>;
+  return <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id, person?.id) } as CSSProperties} title={id}><AgentFace id={id} size={11} /></span>;
 }
 
 /* ── Board ── */
@@ -190,16 +191,17 @@ export function DeliveriesView({ guild, version, onOpen, reviews = false }: { gu
 
 export function ActivityView({ guild, version, onOpen }: { guild: AgoraGuild; version: string; onOpen: Open }) {
   const feed = useFeed<ActivityItem>(guild.space.id, 'activity', version);
+  const person = guildPerson(guild);
   if (feed.error) return <p className="fs-notice" data-tone="danger" role="alert">{feed.error}</p>;
   if (!feed.items) return <Skeleton label={t('Loading activity')} count={6} height="48px" />;
   if (!feed.items.length) return <EmptyState title={t('No activity yet')} body={t('Every message of this server, newest first, with the thread it belongs to.')} />;
   return (
     <div className="fs-agx-feed" data-testid="agora-activity">
       {feed.items.map((item) => (
-        <article key={item.id} className="fs-agx-activity" style={{ '--agx-c': agentColor(item.author) } as CSSProperties}>
+        <article key={item.id} className="fs-agx-activity" style={{ '--agx-c': agentColor(item.author, person?.id) } as CSSProperties}>
           <AgentAvatar id={item.author} />
           <div>
-            <header><strong>{item.author}</strong>
+            <header><strong>{item.author === person?.id ? person.name : item.author}</strong>
               <button type="button" className="fs-agx-link" onClick={() => onOpen({ kind: 'thread', id: String(item.thread_id) })}>
                 {item.task_id ? '#' + item.task_id + ' ' : t(THREAD_KIND_LABEL[item.thread_kind] ?? item.thread_kind) + ' · '}{item.thread_title}
               </button>
@@ -404,7 +406,7 @@ export function SearchView({ guild, servers, query, onQuery, onOpen, within, onW
         </article>
       ))}
       {shown?.messages.map((message) => (
-        <article key={'m' + message.id} className="fs-agx-activity" style={{ '--agx-c': agentColor(message.author) } as CSSProperties}>
+        <article key={'m' + message.id} className="fs-agx-activity" style={{ '--agx-c': agentColor(message.author, guildPerson(guild)?.id) } as CSSProperties}>
           <AgentAvatar id={message.author} />
           <div>
             <header><strong>{message.author}</strong>

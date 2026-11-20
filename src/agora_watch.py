@@ -37,7 +37,6 @@ KEEP = 600
 #: How many are told one by one in a single look; beyond that, one line says how many more wait.
 MAX_PER_LOOK = 3
 STATE_FILE = os.path.join(DATA_DIR, "agora_watch.json")
-PERSON = "luis"
 _SECRET_LIKE = re.compile(r"[A-Za-z0-9_\-]{24,}")
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _MARKS = re.compile(r"\*\*|__|`+")
@@ -116,9 +115,8 @@ def _owners() -> List[str]:
 
 
 def _ask() -> Optional[Dict[str, Any]]:
-    from routes.agora_routes import hub_request
-    status, payload, _ = hub_request("GET", "/api/agora/inbox", timeout=20.0, query={
-        "agent": PERSON, "all_spaces": "1", "peek": "1", "mine_only": "1", "skip_muted": "1", "limit": "60"})
+    from routes.agora_routes import person_inbox
+    status, payload, _ = person_inbox(heard=True, limit=60)
     return payload if status == 200 and isinstance(payload, dict) and payload.get("ok") is not False else None
 
 

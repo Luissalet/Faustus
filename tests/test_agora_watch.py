@@ -14,7 +14,7 @@ def inbox(*, pending=(), escalated=()):
     return {"ok": True, "pending": list(pending), "escalated": list(escalated), "reviews": []}
 
 
-def mention(mid, *, space="atlas", thread=7, age=60, body="@luis mira esto", author="codex-docs", title="general"):
+def mention(mid, *, space="atlas", thread=7, age=60, body="@example-user mira esto", author="codex-docs", title="general"):
     return {"id": mid, "space_id": space, "thread_id": thread, "author": author, "body": body, "thread_title": title,
             "created": NOW - age}
 
@@ -41,7 +41,7 @@ def test_the_first_look_takes_note_and_tells_nothing(watch):
 
 def test_a_new_mention_and_a_new_question_are_told_once_with_their_place(watch):
     agora_watch.look(NOW)                                      # nothing there: from now on, what comes is news
-    watch["inbox"] = inbox(pending=[mention(5, body="@luis   **mira**\n[esto](http://x), token `sk_live_ABCDEFGHIJKLMNOPQRSTUVWX`")],
+    watch["inbox"] = inbox(pending=[mention(5, body="@example-user   **mira**\n[esto](http://x), token `sk_live_ABCDEFGHIJKLMNOPQRSTUVWX`")],
                            escalated=[{"id": 9, "space_id": "vulcan", "title": "¿Publicamos ya?", "question": "¿Sí o no?",
                                        "escalated_by": "claude", "updated": NOW - 30}])
     assert agora_watch.look(NOW) == (2, 2)
@@ -50,14 +50,14 @@ def test_a_new_mention_and_a_new_question_are_told_once_with_their_place(watch):
     assert question["title"] == "Ágora · claude · ¿Publicamos ya?" and question["body"] == "¿Sí o no?"
     assert question["data"]["url"] == "/agora?space_id=vulcan&c=t%3A9" and question["data"]["thread_id"] == 9
     assert said["kind"] == "agora_mention" and said["title"] == "Ágora · codex-docs · general"
-    assert said["body"] == "@luis mira esto, token [redacted]"                 # one line, no marks, nothing shaped like a secret
+    assert said["body"] == "@example-user mira esto, token [redacted]"                 # one line, no marks, nothing shaped like a secret
     assert said["data"] == {"space_id": "atlas", "thread_id": 7, "message_id": 5, "url": "/agora?space_id=atlas&c=t%3A7"}
 
     assert agora_watch.look(NOW + 60) == (0, 2)                # still waiting, already told
     assert len(watch["told"]) == 2
 
     # the message that carries a question also names the person: one notification, the question
-    watch["inbox"] = inbox(pending=[mention(11, space="vulcan", thread=20, body="@luis ¿sí o no?")],
+    watch["inbox"] = inbox(pending=[mention(11, space="vulcan", thread=20, body="@example-user ¿sí o no?")],
                            escalated=[{"id": 20, "space_id": "vulcan", "title": "Otra", "question": "¿sí o no?", "updated": NOW}])
     assert agora_watch.look(NOW + 120) == (1, 1)
     assert watch["told"][-1]["kind"] == "agora_question" and watch["told"][-1]["title"] == "Ágora · Otra"
@@ -125,13 +125,15 @@ def test_the_question_asked_of_the_hub_is_the_persons_inbox_as_a_peek(monkeypatc
     asked = {}
 
     def fake(method, path, *, query=None, timeout=30.0, **_):
+        if path == "/api/agora/person":
+            return 200, {"person": {"id": "review-owner", "name": "Workspace Reviewer"}}, "application/json"
         asked.update(method=method, path=path, query=query)
         return 200, {"ok": True, "pending": [], "escalated": []}, "application/json"
 
     from routes import agora_routes
     monkeypatch.setattr(agora_routes, "hub_request", fake)
     assert agora_watch._ask() == {"ok": True, "pending": [], "escalated": []}
-    assert asked["path"] == "/api/agora/inbox" and asked["query"]["agent"] == "luis" and asked["query"]["peek"] == "1"
+    assert asked["path"] == "/api/agora/inbox" and asked["query"]["agent"] == "review-owner" and asked["query"]["peek"] == "1"
     assert asked["query"]["skip_muted"] == "1"                 # a server the person silenced is left out by the hub
     monkeypatch.setattr(agora_routes, "hub_request", lambda *a, **k: (None, None, ""))
     assert agora_watch._ask() is None

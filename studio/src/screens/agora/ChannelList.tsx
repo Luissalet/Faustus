@@ -11,7 +11,7 @@ import { speakerName } from '../../adapters/group';
 import { IconButton, Menu } from '../../components';
 import { t, tn } from '../../i18n';
 import { AgentAvatar, AgentFace, roleLine } from './Identity';
-import { agentColor, COLUMN_LABEL, composerBus, isOnline, recall, remember, THREAD_KIND_LABEL, viewKey, type View } from './util';
+import { agentColor, guildPerson, COLUMN_LABEL, composerBus, isOnline, recall, remember, THREAD_KIND_LABEL, viewKey, type View } from './util';
 
 export type ListAction = 'add-agent' | 'edit-server' | 'folders' | 'new-channel' | 'new-thread' | 'new-task' | 'new-room' | 'mark-read' | 'toggle-hidden' | 'toggle-pin' | 'toggle-muted' | 'notify' | 'open-project' | 'council' | 'classic';
 
@@ -158,7 +158,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
       tone={task.status === 'blocked' || task.status === 'changes' ? 'warn' : task.status === 'dropped' ? 'muted' : task.status === 'approved' ? 'ok' : undefined}
       title={'#' + task.id + ' · ' + task.title + (task.owner ? ' · ' + task.owner : '') + (task.waiting_on.length ? ' · ' + t('waits for') + ' ' + task.waiting_on.map((i) => '#' + i).join(', ') : '')}
       onClick={() => task.thread_id && onOpen({ kind: 'thread', id: String(task.thread_id) })} testId={'agora-task-' + task.id}
-      lead={task.owner ? <span className="fs-agx-mini" style={{ '--agx-c': agentColor(task.owner) } as CSSProperties} title={task.owner}><AgentFace id={task.owner} size={11} /></span> : undefined} />
+      lead={task.owner ? <span className="fs-agx-mini" style={{ '--agx-c': agentColor(task.owner, guildPerson(guild)?.id) } as CSSProperties} title={task.owner}><AgentFace id={task.owner} size={11} /></span> : undefined} />
   );
 
   const menu = [
@@ -235,7 +235,7 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
               <button type="button" className="fs-agx-row fs-agx-agentrow" onClick={() => composerBus.insert('@' + member.id + ' ')}
                 title={t('Mention {name} in the message', { name: member.id }) + (member.doing ? ' · ' + member.doing : '')} data-testid={'agora-sidebar-agent-' + member.id}>
                 <AgentAvatar id={member.id} presence={member.presence} size="sm" />
-                <span className="fs-agx-agentrow__text"><span className="fs-agx-row__label">{member.id}</span><small>{roleLine(member.id, member)}</small></span>
+                <span className="fs-agx-agentrow__text"><span className="fs-agx-row__label">{member.role === 'person' ? member.name : member.id}</span><small>{roleLine(member.id, member)}</small></span>
               </button>
             </li>
           ))}

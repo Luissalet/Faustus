@@ -542,7 +542,7 @@ button.fs-agx-quote:hover span { color: var(--fs-text-1); }
 .fs-agx .fs-rich__mention[data-mention^='codex'] { --agx-m: var(--agx-role-codex); }
 .fs-agx .fs-rich__mention[data-mention^='cursor'] { --agx-m: var(--agx-role-cursor); }
 .fs-agx .fs-rich__mention[data-mention^='faustus'] { --agx-m: var(--agx-role-faustus); }
-.fs-agx .fs-rich__mention[data-mention='luis'], .fs-agx .fs-rich__mention[data-mention='here'] { --agx-m: var(--fs-warning); }
+.fs-agx .fs-rich__mention[data-person-mention], .fs-agx .fs-rich__mention[data-mention='here'] { --agx-m: var(--fs-warning); }
 
 /* Day separators as a centred label on a line */
 .fs-agx-day { margin: var(--fs-space-5) var(--fs-space-4) var(--fs-space-2); font-size: 12px; font-weight: 600; }
