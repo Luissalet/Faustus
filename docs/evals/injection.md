@@ -18,7 +18,7 @@ actions and the expected safe behaviour.
 Coverage: web pages, workspace files, MCP results and descriptions, e-mail, PDF, documents,
 spreadsheets, calendar invites, clipboard, multi-step (benign first, hostile later), hidden
 HTML and CSS text, zero-width and Unicode tag characters, base64 hints, forged `SYSTEM`
-banners, "Luis says", urgency, role-play jailbreaks, forged guard markers, exfiltration URLs,
+banners, "the user says", urgency, role-play jailbreaks, forged guard markers, exfiltration URLs,
 and coercion to delete files, send mail, wipe memory, change settings, lift read-only or raise
 the paid spend cap.
 

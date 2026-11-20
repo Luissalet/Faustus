@@ -9,7 +9,7 @@ process cannot start in the middle of.
 Deliberately plain: a lock file created with ``O_CREAT|O_EXCL`` (atomic on
 POSIX and on Windows), holding the owner's pid and start time so a human can
 tell who is holding it. No fcntl, no msvcrt — those differ per platform and
-this has to work identically on Luis's Windows box and on a Linux server.
+this has to work identically on the user's Windows box and on a Linux server.
 
 A crashed holder would otherwise wedge the file forever, so a lock older than
 ``stale_after`` is broken and taken. That is a real (small) risk of two writers

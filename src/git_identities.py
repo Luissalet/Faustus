@@ -1,9 +1,9 @@
 """git_identities.py -- OBJ-4 (Lote 82): which SSH account a repo talks to.
 
 On this app's real target setup, "account" is not a login -- it's an alias
-in ``~/.ssh/config`` paired with a private key (``Host Luissalet`` ->
-``id_ed25519_bookhoard``, alongside ``github-lsaletec`` and
-``github-mlgpigeon``, all pointing at ``github.com``). Switching a repo's
+in ``~/.ssh/config`` paired with a private key (``Host sample-maintainer`` ->
+``id_ed25519_bookhoard``, alongside ``github-work`` and
+``github-personal``, all pointing at ``github.com``). Switching a repo's
 "account" means rewriting its remote's host to a different alias -- git and
 ssh do the rest, because ssh itself picks the key from the ``Host`` block
 that matches. There is no separate "login" concept to model.

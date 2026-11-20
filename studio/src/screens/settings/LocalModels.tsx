@@ -852,7 +852,7 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
       {/* 21-09-2026: with Ollama closed, this screen led with "Ollama
           unreachable" and the engine that actually serves the default model
           was a stopped row further down — the person is left looking for a
-          way to start it (Luis: «no está encontrando el qwen 3.8 de
+          way to start it (the user: «no está encontrando el qwen 3.8 de
           llama-server»). Say it where the eye lands, with the button on it. */}
       {(() => {
         const stopped = (engines ?? []).find(

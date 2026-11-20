@@ -14,7 +14,7 @@ un job programado — **la receta no se programa ni se ejecuta al instalarse**.
 
 La receta guía a un agente para revisar las respuestas de reclutadores a
 candidaturas de empleo y, cuando corresponde, anotar una entrevista en el
-calendario. Con `create_missing` (por defecto `true`, a petición de Luis)
+calendario. Con `create_missing` (por defecto `true`, a petición del usuario)
 crea en Jobhunter's Hoard la candidatura de un empleador que responde pero
 de quien no había ninguna candidatura registrada — compañía/título leídos
 del correo — dejando esos casos para revisión manual solo si

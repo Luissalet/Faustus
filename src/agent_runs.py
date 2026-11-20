@@ -245,7 +245,7 @@ _MODEL_STATE_TTL_S = 4.0
 async def model_state(run: "_Run") -> Optional[Dict[str, Any]]:
     """What the run's model is doing right now, from Ollama's /api/ps.
 
-    "Waiting for the model" with the model loaded read as a hang (Luis,
+    "Waiting for the model" with the model loaded read as a hang (the user,
     09-09-2026: 35 GB in VRAM and PCIe spill at 01:28). The three states
     that look identical from the browser are different problems: not
     resident yet (loading, 13-34 s cold), resident and fully on the GPU

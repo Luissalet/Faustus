@@ -26,7 +26,7 @@ to be about the workspace rather than about the person:
   * a statement explicitly scoped to "right now".
 
 "User's pipeline converts PNG to STL", "User prefers millimetres", "User's
-GitHub account is Luissalet" all pass untouched, which is the point: a
+GitHub account is sample-maintainer" all pass untouched, which is the point: a
 guard that eats good facts is worse than the problem it solves.
 """
 

@@ -14,7 +14,7 @@ and two things are built on top:
   dimension (same text, different section) or ``reordered`` inside its own
   dimension. The prose ``approach`` is compared sentence by sentence.
 * **decision log** — who decided what and why, attached to a version, so the
-  history reads "v3: dropped the cache (Luis: the API already caches)".
+  history reads "v3: dropped the cache (the user: the API already caches)".
 """
 from __future__ import annotations
 

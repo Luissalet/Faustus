@@ -1,6 +1,6 @@
 # Navigation by working context
 
-Luis requested this reorganisation on 17 October 2026: the permanent Tools
+The user requested this reorganisation on 17 October 2026: the permanent Tools
 inventory and flat settings list made capabilities difficult to find. The rail
 now contains Home, Studio, Projects, Library, Automations, Activity and Hoards.
 Personal/work context, Settings and search share its footer. The sphere is

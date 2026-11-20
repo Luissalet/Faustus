@@ -1305,7 +1305,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
 
         # Written, closed, then reopened by path: on Windows a file that is
         # still open cannot be opened again by python-docx ("Package not
-        # found"), which is what the first run on Luis's machine reported.
+        # found"), which is what the first run on the user's machine reported.
         tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
         try:
             tmp.write(await file.read())

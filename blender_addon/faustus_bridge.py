@@ -3,7 +3,7 @@
 No socket server or polling loop is duplicated here. Blender Lab owns transport
 and main-thread execution; Faustus owns recipes, persistent jobs and review sheets.
 """
-bl_info = {"name": "Faustus", "author": "Luissalet", "version": (1, 2, 0),
+bl_info = {"name": "Faustus", "author": "Faustus", "version": (1, 2, 0),
            "blender": (5, 1, 0), "location": "View3D > Sidebar > Faustus",
            "description": "Edit the open scene with the local Faustus copilot", "category": "3D View"}
 

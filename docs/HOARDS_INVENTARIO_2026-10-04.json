@@ -174,7 +174,7 @@
       "id": "argus",
       "name": "Argus's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Argus's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Argus's Hoard\\faustus-plugin.json",
       "capabilities": [
         "screen-history",
         "ocr",
@@ -215,7 +215,7 @@
       "id": "atlas",
       "name": "Atlas's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Atlas's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Atlas's Hoard\\faustus-plugin.json",
       "capabilities": [
         "shared-storage",
         "projects",
@@ -254,7 +254,7 @@
       "id": "babel",
       "name": "Babel's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Babel's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Babel's Hoard\\faustus-plugin.json",
       "capabilities": [
         "api-lookup",
         "code-check",
@@ -290,7 +290,7 @@
       "id": "borges",
       "name": "Borges's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Borges's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Borges's Hoard\\faustus-plugin.json",
       "capabilities": [
         "library",
         "documents",
@@ -340,7 +340,7 @@
       "id": "cassandra",
       "name": "Cassandra's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Cassandra's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Cassandra's Hoard\\faustus-plugin.json",
       "capabilities": [
         "service-status",
         "health-checks",
@@ -397,7 +397,7 @@
       "id": "cicero",
       "name": "Cicero's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Cicero's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Cicero's Hoard\\faustus-plugin.json",
       "capabilities": [
         "presentation-decks",
         "source-documents",
@@ -443,7 +443,7 @@
       "id": "cookhoard",
       "name": "CookHoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\CookHoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\CookHoard\\faustus-plugin.json",
       "capabilities": [
         "recipes",
         "cooking steps",
@@ -503,7 +503,7 @@
       "id": "daguerre",
       "name": "Daguerre's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Daguerre's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Daguerre's Hoard\\faustus-plugin.json",
       "capabilities": [
         "photo search",
         "visual similarity",
@@ -539,7 +539,7 @@
       "id": "diskhoard",
       "name": "DiskHoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Disk Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Disk Hoard\\faustus-plugin.json",
       "capabilities": [
         "disk-usage",
         "scan",
@@ -588,7 +588,7 @@
       "id": "dorian",
       "name": "Dorian's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Dorian's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Dorian's Hoard\\faustus-plugin.json",
       "capabilities": [
         "personal-context",
         "reflection",
@@ -623,7 +623,7 @@
       "id": "echo",
       "name": "Echo's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Echo's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Echo's Hoard\\faustus-plugin.json",
       "capabilities": [
         "clipboard-history",
         "search",
@@ -659,7 +659,7 @@
       "id": "funes",
       "name": "Funes's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Funes's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Funes's Hoard\\faustus-plugin.json",
       "capabilities": [
         "activity timeline",
         "day summaries",
@@ -703,7 +703,7 @@
       "id": "galton",
       "name": "Galton's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Galton's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Galton's Hoard\\faustus-plugin.json",
       "capabilities": [
         "model-benchmarks",
         "model-evaluation",
@@ -754,7 +754,7 @@
       "id": "gamerhoard",
       "name": "GamerHoard",
       "kind": "mcp-only",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\GamerHoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\GamerHoard\\faustus-plugin.json",
       "capabilities": [
         "games",
         "library",
@@ -796,7 +796,7 @@
       "id": "gepetto",
       "name": "Gepetto's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Gepetto's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Gepetto's Hoard\\faustus-plugin.json",
       "capabilities": [
         "projects",
         "analysis",
@@ -830,7 +830,7 @@
       "id": "heron",
       "name": "Heron's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Heron's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Heron's Hoard\\faustus-plugin.json",
       "capabilities": [
         "parametric-cad",
         "measured-solids",
@@ -873,7 +873,7 @@
       "id": "hoardhub",
       "name": "Hoard Hub",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\HoardLink\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\HoardLink\\faustus-plugin.json",
       "capabilities": [
         "app-inventory",
         "app-status",
@@ -930,7 +930,7 @@
       "id": "homehoard",
       "name": "HomeHoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\HomeHoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\HomeHoard\\faustus-plugin.json",
       "capabilities": [
         "household-inventory",
         "item-location",
@@ -973,7 +973,7 @@
       "id": "hypatia",
       "name": "Hypatia's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Hypatia's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Hypatia's Hoard\\faustus-plugin.json",
       "capabilities": [
         "exam-prep",
         "question-bank",
@@ -1030,7 +1030,7 @@
       "id": "jobhunter",
       "name": "Jobhunter's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\JobHunter's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\JobHunter's Hoard\\faustus-plugin.json",
       "capabilities": [
         "contexts",
         "jobs",
@@ -1065,7 +1065,7 @@
       "id": "kafka",
       "name": "Kafka's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Kafka's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Kafka's Hoard\\faustus-plugin.json",
       "capabilities": [
         "paperwork",
         "documents",
@@ -1132,7 +1132,7 @@
       "id": "laplace",
       "name": "Laplace's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Laplace's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Laplace's Hoard\\faustus-plugin.json",
       "capabilities": [
         "arithmetic",
         "symbolic-math",
@@ -1169,7 +1169,7 @@
       "id": "ledger",
       "name": "Ledger's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Ledger's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Ledger's Hoard\\faustus-plugin.json",
       "capabilities": [
         "accounts",
         "entries",
@@ -1223,7 +1223,7 @@
       "id": "links",
       "name": "Links Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Links Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Links Hoard\\faustus-plugin.json",
       "capabilities": [
         "bookmarks",
         "read-later",
@@ -1273,7 +1273,7 @@
       "id": "lumiere",
       "name": "Lumiere's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Lumiere's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Lumiere's Hoard\\faustus-plugin.json",
       "capabilities": [
         "video-editing",
         "multitrack-timeline",
@@ -1363,7 +1363,7 @@
       "id": "mercator",
       "name": "Mercator's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Mercator's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Mercator's Hoard\\faustus-plugin.json",
       "capabilities": [
         "project-metrics",
         "user-growth",
@@ -1429,7 +1429,7 @@
       "id": "midas",
       "name": "Midas's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Midas's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Midas's Hoard\\faustus-plugin.json",
       "capabilities": [
         "market-data-snapshots",
         "provider-search",
@@ -1478,7 +1478,7 @@
       "id": "nightingale",
       "name": "Nightingale's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Nightingale's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Nightingale's Hoard\\faustus-plugin.json",
       "capabilities": [
         "ingest",
         "transform",
@@ -1521,7 +1521,7 @@
       "id": "people",
       "name": "People's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\People's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\People's Hoard\\faustus-plugin.json",
       "capabilities": [
         "people",
         "aliases",
@@ -1573,7 +1573,7 @@
       "id": "phileas",
       "name": "Phileas's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Phileas's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Phileas's Hoard\\faustus-plugin.json",
       "capabilities": [
         "shipment-tracking",
         "parcel-tracking",
@@ -1642,7 +1642,7 @@
       "id": "platos",
       "name": "Plato's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Plato's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Plato's Hoard\\faustus-plugin.json",
       "capabilities": [
         "documents",
         "editor",
@@ -1677,7 +1677,7 @@
       "id": "prospero",
       "name": "Prospero's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Prospero's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Prospero's Hoard\\faustus-plugin.json",
       "capabilities": [
         "image generation",
         "video editing",
@@ -1743,7 +1743,7 @@
       "id": "pygmalion",
       "name": "Pygmalion's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Pygmalion's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Pygmalion's Hoard\\faustus-plugin.json",
       "capabilities": [
         "fine-tuning",
         "lora",
@@ -1802,7 +1802,7 @@
       "id": "scheherazade",
       "name": "Scheherazade's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Scheherazade's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Scheherazade's Hoard\\faustus-plugin.json",
       "capabilities": [
         "storytelling",
         "world-state",
@@ -1838,7 +1838,7 @@
       "id": "tantalus",
       "name": "Tantalus's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Tantalus's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Tantalus's Hoard\\faustus-plugin.json",
       "capabilities": [
         "restock-watch",
         "price-tracking",
@@ -1918,7 +1918,7 @@
       "id": "vitruvius",
       "name": "Vitruvius's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Vitruvius's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Vitruvius's Hoard\\faustus-plugin.json",
       "capabilities": [
         "design-criterion-library",
         "design-rules",
@@ -1978,7 +1978,7 @@
       "id": "vulcan",
       "name": "Vulcan's Hoard",
       "kind": "app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Vulcan's Hoard\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Vulcan's Hoard\\faustus-plugin.json",
       "capabilities": [
         "3d-models",
         "stl",
@@ -2037,7 +2037,7 @@
       "id": "writer",
       "name": "Writer's Hoard",
       "kind": "window-app",
-      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Writers hoard desktop\\faustus-plugin.json",
+      "manifest": "C:\\Users\\example-user\\Desktop\\Proyectos independientes\\Writers hoard desktop\\faustus-plugin.json",
       "capabilities": [
         "documents",
         "notes",

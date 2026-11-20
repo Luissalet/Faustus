@@ -1025,7 +1025,7 @@ export function AskCard({
  * one click per option when one answer is wanted, a checklist with "Send"
  * when several may apply (`multi`), and always a line to write your own
  * answer, because the option the person needs is often the one the model
- * did not think of (Luis, 10-09-2026: "varias opciones para elegir y una
+ * did not think of (el usuario, 10-09-2026: "varias opciones para elegir y una
  * para que escribas tú, o una checklist").
  */
 function QuestionCard({

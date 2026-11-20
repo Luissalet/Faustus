@@ -31,7 +31,7 @@ them (`metadata.turn_id` of the reply).
 
 ```json
 {"changes": [{"id": "a6c3...", "ts": 1791644650.1, "owner": "admin", "store": "facts", "op": "create",
-  "item_id": "5f1e...", "label": "Luis prefers green tea in the afternoon", "before_label": "",
+  "item_id": "5f1e...", "label": "the user prefers green tea in the afternoon", "before_label": "",
   "session_id": "dce9fd75-...", "run_id": "...", "turn_id": "dce9fd75-...:1791644649000",
   "source": "ai_agent", "undone": false}], "count": 1, "stores": ["facts", "rules", "instincts", "notes"]}
 ```

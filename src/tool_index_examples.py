@@ -1,6 +1,6 @@
 """Natural-language examples per tool, for the tool index (OBJ-7, lote 91).
 
-Luis's framing: "un usuario no debería saberse de memoria todas las tools;
+the user's framing: "un usuario no debería saberse de memoria todas las tools;
 'dime nosequé para el proyecto X' tiene que bastar." This module holds no
 logic — it is a data table, ``EXAMPLES``, mapping each registered tool name
 to a handful of colloquial requests (Spanish and English, mixed) that a real

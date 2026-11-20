@@ -2,7 +2,7 @@
 
 The "Allow this task to continue?" card had two lasting answers: for this
 task, for this chat. Both die with the chat, so every new conversation in
-the same project asked again — Luis, 14-09-2026: «que se quede así siempre
+the same project asked again — the user, 14-09-2026: «que se quede así siempre
 en el proyecto, no se me resetee en cada chat nuevo». This is the third
 answer: **for this workspace folder**, kept on disk under the owner and the
 folder's real path, honoured by every later chat whose workspace is that

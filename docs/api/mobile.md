@@ -96,7 +96,7 @@ All `require_admin`-equivalent (`_mobile_owner`, see above) unless noted.
 {
   "version": "…",
   "server_name": "Faustus",
-  "me": "luis",
+  "me": "example-user",
   "capabilities": {"chat": true, "calendar": true, "notes": true,
                     "approvals": true, "whatsapp": true, "cards": true},
   "counts": {"sessions": 12, "pending_approvals": 1, "active_turns": 0}
@@ -110,7 +110,7 @@ new field to check for.
 ### `GET /api/mobile/notifications?since_id=&limit=50`
 
 ```json
-{"items": [{"id": 42, "kind": "turn_finished", "owner": "luis",
+{"items": [{"id": 42, "kind": "turn_finished", "owner": "example-user",
             "title": "Weather chat", "body": "18°C, light rain in…",
             "data": {}, "session_id": "s1", "approval_id": null,
             "ts": 1758000000.0}],

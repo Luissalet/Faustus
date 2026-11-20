@@ -15,7 +15,7 @@ import { t } from '../../i18n';
 
 /**
  * Alta desde preset: one field per `preset.placeholders`, pre-filled from
- * `preset.defaults` only — the preset itself never carries a path of Luis's
+ * `preset.defaults` only — the preset itself never carries a path of the user's
  * own machine (CONTRATO_CONECTORES principle 7), so there is nothing here
  * to scrub. Editing an existing connector reuses the same fields; the
  * preset id never changes after creation.

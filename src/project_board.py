@@ -1,6 +1,6 @@
 """project_board.py — the project work board (issues), Lote 92 / OBJ-6.
 
-Luis's own framing (BOARD_RESEARCH.md): a user should not have to know that
+the user's own framing (BOARD_RESEARCH.md): a user should not have to know that
 Faustus keeps two markdown files (`PENDIENTES.md`, `OBJETIVOS.md`) — "what's
 pending on this project" belongs in a small, queryable store, not prose the
 agent re-reads in full every turn. This module is that store: a per-project

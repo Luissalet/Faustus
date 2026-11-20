@@ -11,7 +11,7 @@ import { Field, Select, Toggle, Text as FieldText } from '../settings/fields';
 import { t } from '../../i18n';
 
 /**
- * OBJ-4 / Lote 89 — Luis: "prueba también a mergear la rama desde ahí, no
+ * OBJ-4 / Lote 89 — el usuario: "prueba también a mergear la rama desde ahí, no
  * solo crearla. necesitamos mergearla." "Merge into <current branch>": pick
  * a source branch (local or remote), choose fast-forward-when-possible vs.
  * always a merge commit, an optional message, Merge.

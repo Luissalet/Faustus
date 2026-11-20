@@ -375,7 +375,7 @@ _COVERAGE_STOPWORDS = frozenset({
 # end of a sentence rather than a word — that lookbehind is what keeps "el
 # grupo 1) tuvo menos dolor" from being read as a list.
 _INLINE_ENUM_RE = re.compile(r"(?:^|(?<=[?!.:;\uff1f]))\s*\(?(\d{1,2})[.)]\s+")
-# 12 used to be the cap, and it silently cut a real outline: Luis's whiplash
+# 12 used to be the cap, and it silently cut a real outline: the user's whiplash
 # guide (09-09-2026) has 44 bullets under six headings; the report covered
 # the first twelve and stopped at "Movilidad cervical". Outlines are now
 # grouped by their headings first (_outline_sections), which brings that
@@ -439,7 +439,7 @@ def _group_chunks(heading: str, items: List[str]) -> List[str]:
 
     `_clean_subquestions` hard-truncates any entry longer than that cap —
     which, before this function existed, silently dropped the tail of a long
-    list instead of giving it its own section (RES-01: Luis's 44-bullet
+    list instead of giving it its own section (RES-01: the user's 44-bullet
     whiplash guide has headings with more bullets than fit in 700 characters).
     A single item that alone exceeds the cap is left for that truncation to
     handle; splitting cannot rescue one oversized bullet, only a long list of
@@ -2670,7 +2670,7 @@ class DeepResearcher:
     # FINAL REPORT
     # ------------------------------------------------------------------
     # A report is one generation of max_report_tokens. A question with many
-    # sub-questions (Luis's WAD guide: ~30 bullets) does not fit: the 09-09 run
+    # sub-questions (the user's WAD guide: ~30 bullets) does not fit: the 09-09 run
     # covered 14 of them in 8192 tokens and stopped at "Movilidad cervical".
     # Past this many sections the report is written in parts of this size.
     SECTIONS_PER_PART = 6

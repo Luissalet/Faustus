@@ -182,7 +182,7 @@ _ASKS_TO_REMEMBER = re.compile(
 _MEMORY_CATEGORIES = ("fact", "event", "contact", "preference")
 # Words the model adds when it turns "my X" into a third-person memory.
 _MEMORY_FRAMING = frozenset({
-    "usuario", "usuaria", "user", "users", "persona", "person", "luis",
+    "usuario", "usuaria", "user", "users", "persona", "person",
     "suyo", "suya", "suyos", "suyas", "their", "theirs", "them", "they",
     "esta", "este", "estos", "estas", "tiene", "tienen", "prefiere", "prefers",
     "likes", "gusta", "gustan", "favorito", "favorita", "favourite", "favorite",
