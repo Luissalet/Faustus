@@ -145,12 +145,12 @@ responde 404).
 ```jsonc
 {
   "repos": [{
-    "id": "a1b2c3d4e5f6", "path": "/home/luis/code/faustus", "name": "faustus",
+    "id": "a1b2c3d4e5f6", "path": "/home/example-user/code/faustus", "name": "faustus",
     "project_id": "p1", "project_name": "Faustus",
     // uno por cada proyecto que enlaza esta misma ruta real -- normalmente
     // uno solo; project_id/project_name arriba son siempre projects[0].
     "projects": [{"id": "p1", "name": "Faustus"}],
-    "root_folder": "/home/luis/code/faustus",
+    "root_folder": "/home/example-user/code/faustus",
     "parent_repo_id": null,
     "branch": "master", "detached": false, "head_sha": "abc123...",
     "upstream": "origin/master", "ahead": 0, "behind": 2,
@@ -158,9 +158,9 @@ responde 404).
     "conflicts": 0,          // entradas sin fusionar (subconjunto de dirty)
     "watched": false,        // true si sólo lo encontró una carpeta vigilada (radar)
     // Los 4 campos siguientes -- ausentes con `?light=1` (ver Rendimiento arriba):
-    "user": {"name": "Luis", "email": "luis@example.com"},
+    "user": {"name": "the user", "email": "user@example.com"},
     "remotes": [{"name": "origin", "fetch_url": "git@github.com:...", "push_url": "git@github.com:..."}],
-    "identity": {"id": "sshcfg:...", "label": "Luissalet", "github_login": "Luissalet"},
+    "identity": {"id": "sshcfg:...", "label": "sample-maintainer", "github_login": "sample-maintainer"},
     "policy": {"effective": {"...": "..."}, "overridden": false}
   }],
   "git_version": "2.43.0"
@@ -195,7 +195,7 @@ y el botón Rescan esperan.
   "attention_count": 1,
   "counts": {"conflicts": 0, "uncommitted": 1, "unpushed": 1, "no_upstream": 0, "local_only": 0, "behind": 0, "detached": 0},
   "total": 24,
-  "watch_roots": ["C:\\Users\\luis\\Proyectos"],
+  "watch_roots": ["C:\\Users\\example-user\\Proyectos"],
   "git_version": "2.43.0", "scanned_at": 1758701234.5, "stale": false,
   "summary": "1 of 24 repositories need attention: faustus (master): 4 uncommitted, 2 unpushed"
 }
@@ -271,7 +271,7 @@ actual, o `null` cuando no hay más. `ref=all` recorre `--all`; por defecto,
   "commits": [{
     "sha": "abc123...", "short": "abc123",
     "parents": ["def456..."],
-    "author": "Luis", "email": "luis@example.com", "date": "2026-09-10T12:00:00Z",
+    "author": "el usuario", "email": "user@example.com", "date": "2026-09-10T12:00:00Z",
     "message": "Fix the thing", "body": "Longer explanation.\n",
     "refs": ["HEAD -> master", "origin/master", "tag: v1"]
   }],
@@ -339,7 +339,7 @@ Todas devuelven, además de lo indicado, `"repo"` (ver arriba).
   `user.name`/`user.email` configurados. Usa siempre la identidad del repo,
   nunca la sobrescribe.
 - `POST .../merge {"branch", "ff": "auto"|"only"|"no", "message"?, "keep_conflicts": false}`
-  (Lote 89 -- Luis: "prueba también a mergear la rama desde ahí, no solo
+  (Lote 89 -- el usuario: "prueba también a mergear la rama desde ahí, no solo
   crearla") → `{"ok": true, "sha", "fast_forward": bool, "conflicts": []}`.
   `ff`: `"auto"` (por defecto -- fast-forward cuando se puede, si no un
   commit de merge, el comportamiento nativo de `git merge`), `"only"`
@@ -381,7 +381,7 @@ mutación) gana además dos campos, calculados por `routes/git_routes.py`
 ```jsonc
 {
   // ...los campos ya descritos arriba, más:
-  "identity": {"id": "sshcfg:...", "label": "Luissalet", "github_login": "Luissalet"},
+  "identity": {"id": "sshcfg:...", "label": "sample-maintainer", "github_login": "sample-maintainer"},
   // null si el remoto `origin` es https, o no coincide con ningún alias conocido
   "policy": {"effective": {"use_branch": false, "branch_prefix": "faustus/",
                           "commit": false, "commit_message_prefix": "faustus: ",
@@ -396,10 +396,12 @@ se bloquea por la red; `github_login` es el que ya esté en caché, o `null`.
 
 ## Identidades SSH (`src/git_identities.py`)
 
-Implementación: `src/git_identities.py`. En la máquina real de Luis,
+El indicador del bucle de agentes compara la autoría declarada con `FAUSTUS_GIT_AUTHOR` o con el `user.name` efectivo del repositorio de Faustus. Si no hay un nombre configurado, la comparación queda sin confirmar.
+
+Implementación: `src/git_identities.py`. En una instalación con varias cuentas,
 "cuenta" no es un login -- es un alias de `~/.ssh/config` emparejado con una
-clave (`Host Luissalet` → `id_ed25519_bookhoard`, junto a `github-lsaletec` y
-`github-mlgpigeon`, los tres apuntando a `github.com`). Cambiar de cuenta en
+clave (`Host sample-maintainer` → `id_ed25519_bookhoard`, junto a `github-work` y
+`github-personal`, los tres apuntando a `github.com`). Cambiar de cuenta en
 un repo es reescribir el host del remoto a otro alias; ssh elige la clave
 correcta solo con el `Host` que hace match -- no hay un "login" que gestionar
 aparte.
@@ -441,7 +443,7 @@ source: "ssh_config"|"manual"|"gh"}`.
 
 ```
 GET  /api/git/identities
-     → {"identities": [...], "ssh_config_path": "/home/luis/.ssh/config", "ssh_dir": "/home/luis/.ssh"}
+     → {"identities": [...], "ssh_config_path": "/home/example-user/.ssh/config", "ssh_dir": "/home/example-user/.ssh"}
 
 POST /api/git/identities
      {"label", "ssh_host"?, "hostname"="github.com", "identity_file",
@@ -496,8 +498,8 @@ PUT  /api/git/repos/{repo_id}/identity
 Para "crear un repo y subir cosas" hace falta el lado GitHub del remoto antes
 de poder hacer `git push`. Esta pieza es un wrapper fino y testeable sobre
 tres subcomandos de la CLI `gh` -- nunca la API REST de GitHub directamente,
-nunca un token propio: usa la sesión de `gh` que Luis ya tiene autenticada
-(`gh auth status` → cuentas `Luissalet` (activa) y `Mlgpigeon`, protocolo
+nunca un token propio: usa la sesión de `gh` que el usuario ya tiene autenticada
+(`gh auth status` → cuentas `sample-maintainer` (activa) y `sample-secondary`, protocolo
 ssh). Todo corre a través de un único punto de entrada inyectable,
 `git_github._run_gh` (nunca `shell=True`, argv real, `stdin=DEVNULL` para que
 un `gh` no interactivo jamás se quede esperando un prompt) -- los tests
@@ -714,7 +716,7 @@ rutas del panel: `git.dirty`, `git.diverged`, `git.rejected`,
 
 ### Lenguaje natural (Lote 90)
 
-Luis (literal): *"que no tenga que ser todo tan explícito… en vez de 'con la
+El usuario (literal): *"que no tenga que ser todo tan explícito… en vez de 'con la
 herramienta X en el directorio X' simplemente 'dime nosequé para el proyecto
 X'. Un usuario no debería saberse de memoria todas las tools de Faustus."*
 "¿en qué rama está el repo del proyecto?", "mergea la rama pruebas en main y
@@ -757,7 +759,7 @@ compacta que dice al modelo qué es "el repo":
 
 ```
 ## Repositories in this project
-- faustus: master +0/-2 3d (Luissalet)
+- faustus: master +0/-2 3d (sample-maintainer)
 - other-repo: main +1/-0 0d
 ```
 

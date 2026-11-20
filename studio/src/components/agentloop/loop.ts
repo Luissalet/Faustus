@@ -78,7 +78,6 @@ export const KIND_PRACTICES: Record<WorkKind, string[]> = {
 /** The code checklist, kept for callers that read it directly. */
 export const PRACTICES: [string, string][] = KIND_PRACTICES.code.map((id) => [id, PRACTICE_LABEL[id]]);
 
-const EXPECTED_AUTHOR = 'luissalet';
 const TESTS = /\b(pytest|py\.test|unittest|vitest|jest|tox|(?:npm|pnpm|yarn)(?: run)? (?:test|check)|go test|cargo test|node --test)\b/i;
 const BROWSER = /playwright|puppeteer|chromium|headless|browser/i;
 const DOCS = /\b(FAUSTUS|README(?:\.es)?|AGENTS)\.md\b/i;
@@ -241,7 +240,7 @@ const domain = (url: string): string => {
 
 type Marks = Map<string, { state: PracticeState; evidence: string }>;
 
-function codeMarks(calls: Call[]): Marks {
+function codeMarks(calls: Call[], author?: string): Marks {
   const found: Marks = new Map();
   const mark = (id: string, state: PracticeState, evidence: string) => {
     const prev = found.get(id)?.state;
@@ -261,7 +260,8 @@ function codeMarks(calls: Call[]): Marks {
       const m = AUTHOR.exec(command);
       const who = (m?.[1] || m?.[2] || m?.[3] || '').trim();
       if (TRAILER.test(command)) mark('commit', 'fail', 'trailer: ' + command);
-      else if (who) mark('commit', who.toLowerCase().startsWith(EXPECTED_AUTHOR) ? 'ok' : 'fail', 'author ' + who);
+      else if (who && author) mark('commit', who.toLowerCase() === author.toLowerCase() ? 'ok' : 'fail', 'author ' + who);
+      else if (who) mark('commit', 'unknown', 'author ' + who);
       else mark('commit', 'unknown', command);
     }
     if (DELIVERY.test(text) && ok !== false) mark('agora', 'ok', text);
@@ -337,12 +337,12 @@ function opsMarks(calls: Call[]): Marks {
   return found;
 }
 
-export function judgePractices(calls: Call[], opts: { answer?: string; prompt?: string; kind?: WorkKind; seenUrls?: string[]; final?: boolean } = {}): Practice[] {
+export function judgePractices(calls: Call[], opts: { answer?: string; prompt?: string; kind?: WorkKind; seenUrls?: string[]; final?: boolean; author?: string } = {}): Practice[] {
   const answer = opts.answer ?? '';
   const prompt = opts.prompt ?? '';
   const kind = opts.kind ?? classify(calls);
   const skip = new Set<string>();
-  const found: Marks = kind === 'code' ? codeMarks(calls)
+  const found: Marks = kind === 'code' ? codeMarks(calls, opts.author)
     : kind === 'research' ? researchMarks(calls, answer, opts.seenUrls ?? [])
       : kind === 'files' ? filesMarks(calls, prompt, skip)
         : kind === 'ops' ? opsMarks(calls) : new Map();
@@ -382,7 +382,7 @@ function stepsOf(turn: Turn): LoopStep[] {
   return out.slice(-80);
 }
 
-export function loopOfTurn(turn: Turn, startedAt?: number, now = Date.now(), wroteSinceResult = true, prompt = ''): LoopView {
+export function loopOfTurn(turn: Turn, startedAt?: number, now = Date.now(), wroteSinceResult = true, prompt = '', author?: string): LoopView {
   const last = turn.steps[turn.steps.length - 1];
   const running = [...turn.steps].reverse().find((s) => s.state === 'running');
   let phase: LoopPhase = 'plan';
@@ -406,7 +406,7 @@ export function loopOfTurn(turn: Turn, startedAt?: number, now = Date.now(), wro
     kind,
     steps: stepsOf(turn),
     practices: judgePractices(calls, {
-      answer: turn.text, prompt, kind, final: !turn.streaming,
+      answer: turn.text, prompt, kind, author, final: !turn.streaming,
       seenUrls: (turn.sources ?? []).map((s) => s.url),
     }),
   };
