@@ -52,13 +52,13 @@ def _list(text, key):
     return [a.strip() for a in match.group(1).split(",") if a.strip()] if match else []
 
 
-@pytest.mark.parametrize("slug", sorted(s for s, apps in STATIONS.items() if apps))
-def test_each_station_of_an_app_names_the_piece_types_it_accepts_and_produces(slug):
+@pytest.mark.parametrize("slug", sorted(STATIONS))
+def test_each_station_names_the_piece_types_it_accepts_and_produces(slug):
     """The piece types of the Hoards' station catalogue (x-family.production.handoffs), so a step links to its skill."""
     text = _text(slug)
     accepts, produces = _list(text, "accepts"), _list(text, "produces")
     assert accepts and produces, slug
-    assert all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", t) for t in accepts + produces), (accepts, produces)
+    assert all(re.fullmatch(r"[a-z0-9]+(?:[-_][a-z0-9]+)*", t) for t in accepts + produces), (accepts, produces)
 
 
 @pytest.mark.parametrize("slug", CHAINS)

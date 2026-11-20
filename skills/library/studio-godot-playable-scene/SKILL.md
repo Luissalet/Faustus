@@ -4,6 +4,8 @@ description: Assemble a small playable scene in Godot from GLB pieces (set with 
 version: 1.0.0
 category: testing
 tags: [studio, godot, game, playable, headless, glb, collision, input, escena-jugable, juego, colision, prueba]
+accepts: [rigged_model, remodelled-scenery]
+produces: [playable_scene]
 status: published
 source: imported
 ---
