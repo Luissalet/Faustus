@@ -23,6 +23,7 @@ import { ServerRail } from './ServerRail';
 import { FollowedThreads } from '../agora-threads/FollowedThreads';
 import { ActivityView, BoardView, DecisionsView, DeliveriesView, InboxView, LocksView, SearchView, ThreadsView, WelcomeView } from './Views';
 import { AGORA_WAITING_CHANGED, findTaskByThread, parseView, recall, remember, ROLE_COLORS, THREAD_KIND_LABEL, viewKey, viewTarget, type View } from './util';
+import { PendingProduction, useProductionDecisions } from './ProductionDecisions';
 import './agora-app.css';
 import { AgoraLive } from './AgoraLive';
 import { AgentPageLayer } from '../agent-page/AgentPageLayer';
@@ -30,7 +31,8 @@ import { AgentPageLayer } from '../agent-page/AgentPageLayer';
 const VIEW_META: Record<string, { label: string; hint: string; icon: LucideIcon }> = {
   live: { label: 'En directo', hint: '', icon: Activity },
   welcome: { label: 'welcome', hint: 'What this server is, the folders it reads and how agents join', icon: BookOpen },
-  decisions: { label: 'decisions', hint: 'Debates and questions closed with their resolution in writing', icon: Scale },
+  'pending-decisions': { label: 'Pending decisions', hint: '', icon: Scale },
+  decisions: { label: 'Decisions', hint: 'Pending production decisions and the decisions already recorded', icon: Scale },
   board: { label: 'board', hint: 'Every task of this server by state', icon: Kanban },
   deliveries: { label: 'deliveries', hint: 'What was sent to review, approved or closed, with commits and result', icon: PackageCheck },
   reviews: { label: 'reviews', hint: 'What waits for a reviewer or for changes', icon: GitPullRequest },
@@ -170,6 +172,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
   const [searchScoped, setSearchScoped] = useState(true);
   const server = servers?.find((s) => s.id === spaceId);
   const ready = guild && guild.space.id === spaceId ? guild : null;
+  const production = useProductionDecisions(spaceId, ready?.version);
 
   // A link to the conversation behind a channel (a notification, the inbox) opens the channel itself.
   useEffect(() => {
@@ -281,7 +284,7 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
       )}
       {ready
         ? <ChannelList guild={ready} view={view} onOpen={open} onAction={onAction} onMoveChannel={moveChannel} rooms={rooms} hidden={Boolean(server?.hidden)} embedded={Boolean(lockedSpace)} membersOpen={membersOpen}
-            onJump={() => setDialog({ kind: 'jump' })} />
+            onJump={() => setDialog({ kind: 'jump' })} pendingDecisions={production?.pending.length} />
         : <aside className="fs-agx-channels"><div className="fs-agx-channels__scroll"><Skeleton label={t('Loading channels')} count={8} height="28px" /></div></aside>}
       <main className="fs-agx-main">
         <header className="fs-agx-main__head">
@@ -332,14 +335,15 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
               {view.id === 'deliveries' && <DeliveriesView guild={ready} version={ready.version} onOpen={open} />}
               {view.id === 'reviews' && <DeliveriesView guild={ready} version={ready.version} onOpen={open} reviews />}
               {view.id === 'activity' && <ActivityView guild={ready} version={ready.version} onOpen={open} />}
-              {view.id === 'decisions' && <DecisionsView guild={ready} version={ready.version} onOpen={open} />}
+              {view.id === 'pending-decisions' && <PendingProduction state={production} dedicated />}
+              {view.id === 'decisions' && <DecisionsView guild={ready} version={ready.version} onOpen={open} production={production} />}
               {view.id === 'locks' && <LocksView version={ready.version} />}
               {view.id === 'inbox' && <InboxView servers={servers ?? []} version={ready.version} onOpen={open} />}
               {view.id === 'search' && <SearchView guild={ready} servers={servers ?? []} query={params.get('q') || ''} onQuery={(q) => setQuery(q)} onOpen={open}
                 within={params.get('in')} onWithin={(slug) => setQuery(params.get('q') || '', slug)} />}
               {view.id === 'threads' && <><FollowedThreads space={spaceId} version={ready.version} onOpen={(id) => open({ kind: 'thread', id: String(id) })} /><ThreadsView guild={ready} onOpen={open} onNew={() => setDialog({ kind: 'new-thread' })} /></>}
-              {!['live', 'board', 'deliveries', 'reviews', 'activity', 'decisions', 'locks', 'inbox', 'search', 'threads'].includes(view.id) && (
-                <WelcomeView guild={ready} onEdit={() => setDialog({ kind: 'edit-server' })} notify={notify} onRefresh={refresh} />
+              {!['live', 'board', 'deliveries', 'reviews', 'activity', 'decisions', 'pending-decisions', 'locks', 'inbox', 'search', 'threads'].includes(view.id) && (
+                <><PendingProduction state={production} /><WelcomeView guild={ready} onEdit={() => setDialog({ kind: 'edit-server' })} notify={notify} onRefresh={refresh} /></>
               )}
             </div>
           )}

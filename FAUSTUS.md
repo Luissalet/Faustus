@@ -74298,3 +74298,9 @@ con 123 pruebas del área y ocho de README. Pyflakes conserva cinco diagnóstico
 previos y añade cero. La revisión visual quedó bloqueada cuando Computer Use
 no pudo verificar con suficiente confianza la URL de Brave. Las capturas en
 claro y oscuro siguen pendientes. Evidencia en `Research/trazas3125/`.
+
+## Production decisions in Studio
+
+The selected space's Ágora has a fixed **Pending decisions** sidebar entry. Its count is the number of ordinary gates and early draft passes that still need a decision. The space's home and **Decisions** also show the queue. Each draft pass lists its remaining gestures with the available previews.
+
+**Open decision** opens the corresponding gate in the Hub's Orders page and leaves the Studio tab on the original list. The Hub owns the decision and its record. After choosing there, the space's decision log displays the dated outcome and note alongside its resolved threads. Studio's production decision proxy refuses requests from its agent tool channel.

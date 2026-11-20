@@ -33,7 +33,7 @@ from typing import Any, Dict, Optional, Tuple
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from core.middleware import require_admin
+from core.middleware import is_agent_channel, require_admin
 from src import hub_link
 
 PERSON_SURFACE = "faustus-studio"
@@ -196,6 +196,20 @@ def setup_agora_routes() -> APIRouter:
         return Response(content=blob, media_type=ctype.split(";")[0], headers={
             "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400"})
 
+    @router.get("/api/agora/piece-preview/{piece_id}")
+    async def piece_preview(piece_id: int, request: Request, preview: Optional[int] = None):
+        require_admin(request)
+        query = {"preview": str(preview)} if preview is not None else None
+        status, blob, ctype = await asyncio.to_thread(
+            hub_request, "GET", f"/api/agora/piece_file/{piece_id}", query=query, raw=True, timeout=10.0)
+        media_type = ctype.split(";", 1)[0].lower()
+        if status != 200 or not blob or not media_type.startswith("image/"):
+            return Response(status_code=404)
+        image, image_type = await asyncio.to_thread(small_icon, blob, media_type)
+        return Response(content=image, media_type=image_type, headers={
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=60"})
+
     @router.get("/api/agora/x/{path:path}")
     async def read(path: str, request: Request):
         require_admin(request)
@@ -208,6 +222,8 @@ def setup_agora_routes() -> APIRouter:
     @router.post("/api/agora/x/{path:path}")
     async def write(path: str, request: Request):
         require_admin(request)
+        if path.rstrip("/") in {"gate_decide", "draft_decide"} and is_agent_channel(request):
+            return JSONResponse({"ok": False, "error": "Only the person decides a production gate"}, status_code=403)
         if not _PATH.match(path):
             return JSONResponse({"ok": False, "error": "unknown Agora operation"}, status_code=404)
         try:
