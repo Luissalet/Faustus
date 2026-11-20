@@ -9,7 +9,7 @@ import { pickNative } from '../../adapters/composer';
 import { Button, EmptyState, IconButton, Menu, Skeleton } from '../../components';
 import { Rich } from '../rich';
 import { CountBadge } from './ChannelList';
-import { PendingProduction, ProductionHistory, readDecisionLog, type useProductionDecisions } from './ProductionDecisions';
+import { PendingProduction, ProductionHistory, readDecisionLog, type PendingProductionState } from './ProductionDecisions';
 import { t, tn } from '../../i18n';
 import { AgentAvatar, AgentFace } from './Identity';
 import { LiveSteps } from './Work';
@@ -216,7 +216,7 @@ export function ActivityView({ guild, version, onOpen }: { guild: AgoraGuild; ve
 }
 
 export function DecisionsView({ guild, version, onOpen, production }: {
-  guild: AgoraGuild; version: string; onOpen: Open; production?: ReturnType<typeof useProductionDecisions>;
+  guild: AgoraGuild; version: string; onOpen: Open; production?: PendingProductionState;
 }) {
   const [log, setLog] = useState<Awaited<ReturnType<typeof readDecisionLog>> | null>(null);
   const rows = log?.threads;

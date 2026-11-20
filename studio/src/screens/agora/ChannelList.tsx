@@ -35,8 +35,8 @@ export function CountBadge({ n, mentions = false }: { n: number; mentions?: bool
   );
 }
 
-function Row({ current, icon: Icon, label, onClick, unread = 0, mentions = 0, count, tone, title, lead, testId }: {
-  current: boolean; icon: LucideIcon; label: string; onClick: () => void; unread?: number; mentions?: number; count?: number;
+function Row({ current, icon: Icon, label, onClick, unread = 0, mentions = 0, count, showZeroCount = false, tone, title, lead, testId }: {
+  current: boolean; icon: LucideIcon; label: string; onClick: () => void; unread?: number; mentions?: number; count?: number; showZeroCount?: boolean;
   tone?: 'alert' | 'muted' | 'ok' | 'warn'; title?: string; lead?: ReactNode; testId?: string;
 }) {
   return (
@@ -48,7 +48,7 @@ function Row({ current, icon: Icon, label, onClick, unread = 0, mentions = 0, co
         {lead}
         {mentions > 0 && <CountBadge n={mentions} mentions />}
         {mentions === 0 && unread > 0 && <CountBadge n={unread} />}
-        {count !== undefined && mentions === 0 && unread === 0 && count > 0 && <span className="fs-agx-row__count">{count}</span>}
+        {count !== undefined && mentions === 0 && unread === 0 && (count > 0 || showZeroCount) && <span className="fs-agx-row__count">{count}</span>}
       </button>
     </li>
   );
@@ -201,8 +201,8 @@ export function ChannelList({ guild, view, onOpen, onAction, onMoveChannel, room
         </button>
         <ul className="fs-agx-cat__items fs-agx-shortcuts" aria-label={t('Shortcuts')}>
           <Row current={is('view', 'welcome')} icon={Home} label={t('Home')} onClick={() => onOpen({ kind: 'view', id: 'welcome' })} testId="agora-go-home" />
-          <Row current={is('view', 'pending-decisions')} icon={Scale} label={t('Pending decisions')} count={pendingDecisions}
-            title={pendingDecisions ? t('Pending decisions: {count}', { count: pendingDecisions }) : undefined}
+          <Row current={is('view', 'pending-decisions')} icon={Scale} label={t('Your pending decisions')} count={pendingDecisions} showZeroCount
+            title={pendingDecisions !== undefined ? t('Pending decisions: {count}', { count: pendingDecisions }) : undefined}
             onClick={() => onOpen({ kind: 'view', id: 'pending-decisions' })} testId="agora-view-pending-decisions" />
           <Row current={is('view', 'inbox')} icon={Inbox} label={t('Inbox')} mentions={attention} title={t('Mentions, answers and questions of the agents')}
             onClick={() => onOpen({ kind: 'view', id: 'inbox' })} testId="agora-go-inbox" />

@@ -1,13 +1,14 @@
-import { Compass, Home, Inbox, Plus } from 'lucide-react';
+import { Compass, Home, Inbox, Plus, Scale } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
 import { iconUrl, spaceIconUrl, type AgoraServer } from '../../adapters/agora';
 import { BrandMark } from '../../shell/BrandMark';
 import { t, tn } from '../../i18n';
 import { agentInitials, serverColor } from './util';
 
-function serverHint(server: AgoraServer): string {
+function serverHint(server: AgoraServer, pending: number): string {
   const c = server.counts;
   const bits = [server.title];
+  if (pending) bits.push(t('Pending decisions: {count}', { count: pending }));
   if (server.mentions) bits.push(tn(server.mentions, '{n} mention', '{n} mentions'));
   else if (server.unread) bits.push(tn(server.unread, '{n} unread', '{n} unread'));
   if (c.waiting) bits.push(tn(c.waiting, '{n} thread waits for you', '{n} threads wait for you'));
@@ -47,9 +48,9 @@ export function ServerIcon({ server, size = 44 }: { server: Pick<AgoraServer, 'i
   return <span className="fs-agx-sicon" style={style} data-kind="glyph" aria-hidden="true">{letters}</span>;
 }
 
-export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden, onToggleHidden, onInbox, inboxOpen }: {
+export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden, onToggleHidden, onInbox, inboxOpen, pendingCounts }: {
   servers: AgoraServer[]; current: string; home: string; onSelect: (id: string) => void; onAdd: () => void;
-  showHidden: boolean; onToggleHidden: () => void; onInbox: () => void; inboxOpen: boolean;
+  showHidden: boolean; onToggleHidden: () => void; onInbox: () => void; inboxOpen: boolean; pendingCounts?: Record<string, number>;
 }) {
   const waiting = servers.reduce((sum, s) => sum + (s.muted ? 0 : (s.counts.waiting || 0) + s.mentions), 0);
   const visible = servers.filter((s) => s.id !== home && (showHidden || !s.hidden || s.id === current));
@@ -57,15 +58,18 @@ export function ServerRail({ servers, current, home, onSelect, onAdd, showHidden
   const homeServer = servers.find((s) => s.id === home);
   const row = (server: AgoraServer, glyph?: 'home') => {
     const attention = server.mentions + (server.counts.waiting || 0);
+    const pending = pendingCounts?.[server.id] ?? 0;
+    const hint = serverHint(server, pending);
     return (
       <li key={server.id} className="fs-agx-rail__item" data-current={server.id === current || undefined}
         data-unread={server.unread > 0 || undefined} data-hidden={server.hidden || undefined} data-muted={server.muted || undefined}>
         <span className="fs-agx-rail__pill" aria-hidden="true" />
-        <button type="button" className="fs-agx-rail__btn" title={serverHint(server)} aria-label={serverHint(server)}
+        <button type="button" className="fs-agx-rail__btn" title={hint} aria-label={hint}
           aria-current={server.id === current ? 'page' : undefined} onClick={() => onSelect(server.id)} data-testid={'agora-server-' + server.id}>
           {glyph === 'home'
             ? <span className="fs-agx-sicon" data-kind="home" aria-hidden="true"><Home size={22} /></span>
             : <ServerIcon server={server} />}
+          {pending > 0 && <span className="fs-agx-rail__decisions" data-testid="agora-server-pending-decisions" aria-hidden="true"><Scale size={12} /></span>}
           {attention > 0 && <span className="fs-agx-badge" data-tone={server.muted ? 'quiet' : 'alert'} aria-hidden="true">{attention > 99 ? '99+' : attention}</span>}
           {attention === 0 && server.online > 0 && <span className="fs-agx-rail__live" aria-hidden="true" />}
         </button>
