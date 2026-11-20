@@ -25,19 +25,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional, Tuple
 
+import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.background import BackgroundTask
 
 from core.middleware import is_agent_channel, require_admin
 from src import hub_link
 
 PERSON_SURFACE = "faustus-studio"
+_PERSON_DECISIONS = {"production_decide", "gate_decide", "draft_decide"}
+_DECISION_ASSETS = {"production_decisions_card.js": "text/javascript", "production_decisions_card.css": "text/css"}
 _PATH = re.compile(r"^[a-z0-9_][a-z0-9_/\-]{0,120}$")
 _APP = re.compile(r"^[a-z0-9][a-z0-9_.\-]{0,63}$")
 _FILE = re.compile(r"^[0-9a-f]{32}$")
@@ -51,6 +56,10 @@ _icons: Dict[str, Tuple[bytes, str]] = {}
 _no_icon: set = set()
 
 
+def is_production_choice(operation: str) -> bool:
+    return operation.rstrip("/") in _PERSON_DECISIONS
+
+
 def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = None, body: Optional[dict] = None,
                 timeout: float = 30.0, raw: bool = False, with_headers: bool = False) -> Tuple[Any, ...]:
     """``(status, payload, content_type)``; status None when the hub did not answer. Never raises.
@@ -61,6 +70,15 @@ def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = Non
                "User-Agent": "faustus-agora"}
     if token:
         headers["Authorization"] = "Bearer " + token
+    if method == "POST" and is_production_choice(path.rstrip("/").rsplit("/", 1)[-1]):
+        token_file = where.get("token_file")
+        if token_file:
+            try:
+                proof = Path(token_file).with_name("agora-person-mcp-token").read_text(encoding="ascii").strip()
+            except OSError:
+                proof = ""
+            if proof:
+                headers["X-Agora-Person-Token"] = proof
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
@@ -138,6 +156,21 @@ def _answer(status: Optional[int], payload: Any) -> JSONResponse:
         payload.setdefault("ok", False)
         payload["status"] = status
     return JSONResponse(payload)
+
+
+def _browser_hub(request: Request) -> str | None:
+    where = hub_link.location()
+    try:
+        target = urllib.parse.urlsplit(where["url"])
+        host = request.url.hostname
+        local = {"127.0.0.1", "localhost", "::1"}
+        if (where["remote"] or target.scheme not in {"http", "https"} or target.username is not None
+                or target.hostname is None or target.path not in {"", "/"} or target.query or target.fragment
+                or not (target.hostname == host or target.hostname in local and host in local)):
+            return None
+        return target.geturl().rstrip("/")
+    except (KeyError, ValueError):
+        return None
 
 
 def setup_agora_routes() -> APIRouter:
@@ -238,6 +271,53 @@ def setup_agora_routes() -> APIRouter:
             "Content-Security-Policy": "sandbox; default-src 'none'",
             "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=60"})
 
+    @router.get("/api/agora/decision-assets/{name}")
+    async def decision_asset(name: str, request: Request):
+        require_admin(request)
+        if name not in _DECISION_ASSETS:
+            return Response(status_code=404)
+        status, blob, _ = await asyncio.to_thread(hub_request, "GET", "/ui/" + name, raw=True, timeout=10.0)
+        if status != 200 or not blob:
+            return Response(status_code=404)
+        return Response(blob, media_type=_DECISION_ASSETS[name], headers={
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-cache"})
+
+    @router.get("/api/agora/piece-content/{piece_id}")
+    async def piece_content(piece_id: int, request: Request, preview: Optional[int] = None):
+        require_admin(request)
+        where = hub_link.location()
+        token = hub_link.token(where)
+        headers = {"Authorization": "Bearer " + token} if token else {}
+        if request.headers.get("Range"):
+            headers["Range"] = request.headers["Range"]
+        client = httpx.AsyncClient(trust_env=False, timeout=30.0)
+        try:
+            query = {"preview": preview} if preview is not None else {}
+            upstream = await client.send(client.build_request(
+                "GET", where["url"] + f"/api/agora/piece_file/{piece_id}", headers=headers, params=query), stream=True)
+        except httpx.HTTPError:
+            await client.aclose()
+            return Response(status_code=502)
+
+        async def close():
+            await upstream.aclose()
+            await client.aclose()
+
+        if upstream.status_code not in {200, 206}:
+            await close()
+            return Response(status_code=upstream.status_code)
+        media = upstream.headers.get("Content-Type", "").split(";", 1)[0]
+        disposition = {}
+        if not (media.startswith(("image/", "video/", "audio/")) or media in {"text/plain", "application/pdf"}):
+            media = "application/octet-stream"
+            disposition = {"Content-Disposition": f'attachment; filename="piece-{piece_id}"'}
+        headers = {name: upstream.headers[name] for name in ("Content-Length", "Content-Range", "Accept-Ranges")
+                   if name in upstream.headers}
+        return StreamingResponse(upstream.aiter_raw(), status_code=upstream.status_code, media_type=media,
+                                 background=BackgroundTask(close), headers={**headers, **disposition,
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-cache"})
+
     @router.get("/api/agora/x/{path:path}")
     async def read(path: str, request: Request):
         require_admin(request)
@@ -245,12 +325,16 @@ def setup_agora_routes() -> APIRouter:
             return JSONResponse({"ok": False, "error": "unknown Agora route"}, status_code=404)
         query = {k: v for k, v in request.query_params.items()}
         status, payload, _ = await asyncio.to_thread(hub_request, "GET", "/api/agora/" + path, query=query)
+        if path == "pending_decisions" and isinstance(payload, dict) and payload.get("ok"):
+            payload = {**payload, "order_base": _browser_hub(request)}
         return _answer(status, payload)
 
     @router.post("/api/agora/x/{path:path}")
     async def write(path: str, request: Request):
         require_admin(request)
-        if path.rstrip("/") in {"gate_decide", "draft_decide"} and is_agent_channel(request):
+        if is_production_choice(path) and (
+                is_agent_channel(request) or request.headers.get("Authorization")
+                or request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}):
             return JSONResponse({"ok": False, "error": "Only the person decides a production gate"}, status_code=403)
         if not _PATH.match(path):
             return JSONResponse({"ok": False, "error": "unknown Agora operation"}, status_code=404)
