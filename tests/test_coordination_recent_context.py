@@ -60,7 +60,7 @@ async def test_scope_move_during_recent_read_is_not_cached_or_delivered(native):
 @pytest.mark.asyncio
 async def test_filtered_cursor_drop_and_truncated_recent_preserve_pending_coverage(native):
     store,b,manager,client=native
-    manager.responses['inbox']={'ok':True,'messages':[{'id':1,'thread_id':32,'author':'luis','body':'old'}, {'id':2,'thread_id':162,'author':'luis','body':'unread'}]}
+    manager.responses['inbox']={'ok':True,'messages':[{'id':1,'thread_id':32,'author':'example-user','body':'old'}, {'id':2,'thread_id':162,'author':'example-user','body':'unread'}]}
     truncated=message(1500);truncated.update(body='partial',body_chars=1000,body_truncated=True)
     manager.responses['thread_recent']={'ok':True,'thread':{'id':162},'messages':[truncated],'pagination':{'has_more':False,'next_before_id':None}}
     result=await client.execute('poll',{'thread_ids':[162]})
@@ -89,7 +89,7 @@ async def test_large_poll_and_task_reference_pages_stay_compact_and_review_needs
     store,b,manager,client=native
     tasks=[{**manager.responses['board']['tasks'][0],'id':n,'title':'A task title '*40} for n in range(1,101)]
     manager.responses['board']={'ok':True,'tasks':tasks,'agents':[{'id':'actor'+str(n),'doing':'x'*1000} for n in range(50)],'locks':[{'resource':'path:Faustus/src/'+str(n),'owner':'actor','task_id':n} for n in range(100)]}
-    msgs=[{'id':n,'thread_id':32,'author':'luis','body':'x'*5000} for n in range(1,101)]
+    msgs=[{'id':n,'thread_id':32,'author':'example-user','body':'x'*5000} for n in range(1,101)]
     manager.responses['inbox']={'ok':True,'messages':msgs,'reviews':tasks,'changes':[]}
     result=await client.execute('poll',{})
     assert len(json.dumps(result,ensure_ascii=False))<=6000

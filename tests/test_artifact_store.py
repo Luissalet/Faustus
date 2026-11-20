@@ -130,7 +130,7 @@ def test_a_partial_run_keeps_its_output_and_says_it_is_partial(run_output, own_d
 def test_the_row_records_the_backend_and_leaves_what_it_cannot_know_null(run_output, own_database):
     collected = artifact_store.collect(
         _result(["report.md"]), source_dir=run_output["dir"], store_dir=run_output["store"],
-        owner="luis", project_id="book", skill_id="document.report", skill_version="1.0.0",
+        owner="example-user", project_id="book", skill_id="document.report", skill_version="1.0.0",
         provenance={"recipe": "report.v1", "recipe_version": "1.0.0"})
     art = collected.artifacts[0]
     assert art.provenance.backend == "docker_workspace"
@@ -141,7 +141,7 @@ def test_the_row_records_the_backend_and_leaves_what_it_cannot_know_null(run_out
     db = db_mod.SessionLocal()
     try:
         row = db.query(ArtifactOccurrenceRow).one()
-        assert (row.backend, row.recipe, row.owner) == ("docker_workspace", "report.v1", "luis")
+        assert (row.backend, row.recipe, row.owner) == ("docker_workspace", "report.v1", "example-user")
         assert row.model is None and row.model_license is None and row.inputs_digest is None
         assert row.session_id == "s1"
     finally:

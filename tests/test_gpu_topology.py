@@ -207,12 +207,12 @@ def test_annotate_transport_persists_and_apply_annotations_overlays(monkeypatch,
     profile = {"id": "prof-1", "label": "box", "captured_at": 0.0, "system": {}, "topology_annotations": {}}
     hardware_profiles.save_profile(profile)
 
-    updated = gt.annotate_transport("prof-1", "uuid:GPU-a", "thunderbolt", "eGPU box", "luis")
+    updated = gt.annotate_transport("prof-1", "uuid:GPU-a", "thunderbolt", "eGPU box", "example-user")
     assert updated["id"] == "prof-1"
     stored = hardware_profiles.get_profile("prof-1")
     assert stored["topology_annotations"]["uuid:GPU-a"]["transport"]["kind"] == "thunderbolt"
     assert stored["topology_annotations"]["uuid:GPU-a"]["transport"]["source"] == "manual"
-    assert stored["topology_annotations"]["uuid:GPU-a"]["by"] == "luis"
+    assert stored["topology_annotations"]["uuid:GPU-a"]["by"] == "example-user"
 
     snap = _snap(GpuInfo(index=0, name="A", uuid="GPU-a"))
     applied = gt.apply_annotations(snap, stored)
@@ -236,7 +236,7 @@ def test_apply_annotations_overrides_a_heuristic_guess():
     snap = _snap(GpuInfo(index=0, name="A", uuid="GPU-a", transport=heuristic))
     profile = {"topology_annotations": {"uuid:GPU-a": {
         "transport": {"kind": "oculink", "source": "manual", "note": "confirmed oculink dock", "observed_at": None},
-        "by": "luis",
+        "by": "example-user",
     }}}
     applied = gt.apply_annotations(snap, profile)
     assert applied.gpus[0].transport.kind == "oculink"

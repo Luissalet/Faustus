@@ -45,7 +45,7 @@ def _clean():
 
 
 def _job(tmp_path=None, status="running"):
-    job = dispatch.DispatchJob("luis", {"tasks": [{"name": "w1", "instruction": "a"},
+    job = dispatch.DispatchJob("example-user", {"tasks": [{"name": "w1", "instruction": "a"},
                                                   {"name": "w2", "instruction": "b"}],
                                         "parallel": True, "timeout_s": 60},
                                str(tmp_path) if tmp_path else None, "", "m", None, "t")
@@ -226,7 +226,7 @@ def test_parse_condition_reads_every_documented_form():
 
 # ── `done` and the plain reads are exactly what they were ───────────────────
 
-def _client(monkeypatch, cookie_user="luis"):
+def _client(monkeypatch, cookie_user="example-user"):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 

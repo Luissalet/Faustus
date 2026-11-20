@@ -45,9 +45,9 @@ def test_one_bound_ledger_with_idempotent_preserving_import(ledger, monkeypatch)
     assert 'old-proof' in requirement['origin_snapshot']
     assert 'Visible result' in requirement['acceptance']
     assert requirement['origin_status'] == 'done'
-    ledger['tasks'][1]['body'] = 'Updated by Luis'
+    ledger['tasks'][1]['body'] = 'Updated by ExampleUser'
     assert tasks.prepare(PROJECT)['imported'] == 0
-    assert ledger['tasks'][1]['body'] == 'Updated by Luis'
+    assert ledger['tasks'][1]['body'] == 'Updated by ExampleUser'
     assert all(args.get('space_id') != 'ecosystem' for _, args in ledger['calls'])
 
 
@@ -62,7 +62,7 @@ def test_no_global_fallback_or_writes_from_read(ledger):
 
 def test_edit_conflict_is_preserved_and_caller_cannot_override_scope(ledger):
     with pytest.raises(tasks.TaskError) as conflict:
-        tasks.command(PROJECT, 'task_edit', {'space_id': 'other', 'agent': 'luis', 'task_id': 99})
+        tasks.command(PROJECT, 'task_edit', {'space_id': 'other', 'agent': 'example-user', 'task_id': 99})
     assert conflict.value.status == 409
     args = ledger['calls'][-1][1]
     assert (args['space_id'], args['agent']) == ('silver', 'faustus')

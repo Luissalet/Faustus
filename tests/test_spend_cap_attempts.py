@@ -393,7 +393,7 @@ def settings_post(monkeypatch):
     monkeypatch.setattr(auth_routes, "_load_settings", lambda: dict(stored))
     monkeypatch.setattr(auth_routes, "_save_settings", lambda new: stored.clear() or stored.update(new))
     auth_manager = MagicMock()
-    auth_manager.get_username_for_token.return_value = "luis"
+    auth_manager.get_username_for_token.return_value = "example-user"
     auth_manager.is_admin.return_value = True
     router = auth_routes.setup_auth_routes(auth_manager)
     post = next(r.endpoint for r in router.routes

@@ -20,7 +20,7 @@ import { Carrying, EmojiButton, Files, Quoted, ReactButton, Reactions } from './
 import { RouteLine } from './Router';
 import { RoutineTag, WorkCard } from './Work';
 import {
-  agentColor, clock, composerBus, dayLabel, findTask, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
+  agentColor, clock, composerBus, dayLabel, findTask, guildPerson, isOnline, KIND_LABEL, STATUS_LABEL, stamp,
   THREAD_KIND_LABEL, type View,
 } from './util';
 import '../studio.css';
@@ -73,6 +73,7 @@ const MessageRow = memo(function MessageRow({ message: shown, head, tail, viewer
   if (message.kind === 'system') {
     return <div className="fs-agx-msg fs-agx-msg--system" data-testid="agora-message"><span>{message.body.length > 320 ? message.body.slice(0, 320) + '…' : message.body}</span><time>{clock(message.created)}</time></div>;
   }
+  const person = guildPerson(guild);
   const mine = message.author === viewer;
   const toMe = message.mentions.includes(viewer);
   // A message sent with files and no text arrives with their names as its text: the files already say it.
@@ -88,7 +89,7 @@ const MessageRow = memo(function MessageRow({ message: shown, head, tail, viewer
   const copy = () => { void navigator.clipboard?.writeText(message.body).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }).catch(() => undefined); };
   return (
     <article className="fs-agx-msg" id={'agx-m-' + message.id} data-head={head || undefined} data-tail={tail || undefined} data-mine={mine || undefined} data-tome={toMe || undefined} data-pinned={message.pinned || undefined}
-      data-kind={message.kind} data-tools={tools || undefined} style={{ '--agx-c': agentColor(message.author) } as CSSProperties} data-testid="agora-message"
+      data-kind={message.kind} data-tools={tools || undefined} style={{ '--agx-c': agentColor(message.author, person?.id) } as CSSProperties} data-testid="agora-message"
       onClick={(e) => { if (byTouch() && !(e.target as HTMLElement).closest('a,button,input,textarea')) setTools((v) => !v); }}>
       {head
         ? <AgentAvatar id={message.author} presence={author?.presence} />
@@ -96,8 +97,8 @@ const MessageRow = memo(function MessageRow({ message: shown, head, tail, viewer
       <div className="fs-agx-msg__main">
         {head && (
           <header className="fs-agx-msg__head">
-            <strong data-agent-id={pageOf(message.author)}>{message.author}</strong>
-            <span className="fs-agx-msg__role">{roleLine(message.author, author)}</span>
+            <strong data-agent-id={pageOf(message.author, person?.id)}>{message.author === person?.id ? person.name : message.author}</strong>
+            <span className="fs-agx-msg__role">{roleLine(message.author, author, person?.id)}</span>
             <RoutineTag routine={message.routine} />
             {label && <span className="fs-agx-tag" data-kind={message.kind}>{t(label)}</span>}
             <time title={new Date(message.created * 1000).toLocaleString()}>{stamp(message.created)}</time>
@@ -224,7 +225,8 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
   notify: (text: string, tone?: 'ok' | 'warn') => void; placeholder: string;
 }) {
   const space = guild.space.id;
-  const viewer = guild.viewer || 'luis';
+  const person = guildPerson(guild);
+  const viewer = guild.viewer ?? person?.id ?? '';
   const scope = space + '|' + view.kind + ':' + view.id;
   const [messages, setMessages] = useState<AgoraMessage[]>([]);
   const [info, setInfo] = useState<{ thread: AgoraThreadInfo | null; task: AgoraTask | null }>({ thread: null, task: null });
@@ -594,7 +596,7 @@ export function ChatPane({ guild, view, target, version, onOpen, notify, placeho
                 return (
                   <li key={id}>
                     <button type="button" role="option" id={'agora-mention-' + index} aria-selected={index === pick} onMouseDown={(e) => { e.preventDefault(); choose(id); }}>
-                      <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id) } as CSSProperties}>{id === 'here' ? '@' : <AgentFace id={id} size={11} />}</span>
+                      <span className="fs-agx-mini" style={{ '--agx-c': agentColor(id, person?.id) } as CSSProperties}>{id === 'here' ? '@' : <AgentFace id={id} size={11} />}</span>
                       <strong>{id}</strong>
                       <span className="fs-muted">{id === 'here' ? t('everyone around lately') : member?.doing || (member ? t(member.presence === 'offline' ? 'Offline' : 'Around') : '')}</span>
                     </button>

@@ -308,7 +308,7 @@ def test_an_ambiguous_instruction_defers_to_the_ladder():
 # ── §20: a pinned run does not change because a file did ───────────────────
 
 def test_a_snapshot_round_trips_to_the_same_configuration():
-    resolution = resolve(scope={"owner": "luis", "project_id": "faustus", "run_id": "r1"})
+    resolution = resolve(scope={"owner": "example-user", "project_id": "faustus", "run_id": "r1"})
     raw = resolver.snapshot(resolution)
     back = resolver.rehydrate(raw, defs=catalogue(auditor()))
     assert back.identity() == resolution.identity()
@@ -398,14 +398,14 @@ class Landmine:
 
 def test_resolve_returns_a_minimal_resolution_instead_of_raising():
     resolution = resolver.resolve(agent="landmine", defs={"landmine": Landmine()},
-                                  scope={"owner": "luis"})
+                                  scope={"owner": "example-user"})
     assert isinstance(resolution, ResolvedAgentExecution)
     assert resolution.agent.slug == "landmine"
     assert resolution.completion.mode in ("literal", "professional", "greedy", "maximalist")
     # It grants NOTHING: an empty envelope is the safe direction to be wrong in.
     assert resolution.permissions == PermissionEnvelope()
     assert any("MINIMAL" in c for c in resolution.caveats)
-    assert resolution.execution_scope.owner == "luis"
+    assert resolution.execution_scope.owner == "example-user"
     # And it still round-trips, so a failure can be recorded like any other run.
     assert ResolvedAgentExecution.parse(resolution.to_dict()).agent.slug == "landmine"
 

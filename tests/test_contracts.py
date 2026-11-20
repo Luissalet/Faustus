@@ -200,7 +200,7 @@ PLAN = {
 def _granted(plan=None):
     return C.Approval.parse({
         "id": "ap1", "plan": plan or PLAN, "status": "granted",
-        "decided_at": "2026-09-04T00:00:00Z", "decided_by": "luis",
+        "decided_at": "2026-09-04T00:00:00Z", "decided_by": "example-user",
     })
 
 
@@ -345,7 +345,7 @@ def test_revocation_is_a_fact_on_the_record_with_a_reason():
         C.ExternalIdentity.parse({"id": "x3", "provider": "slack", "external_id": "1",
                                   "revoked_at": "2026-09-04T00:00:00Z"})
     revoked = C.ExternalIdentity.parse({
-        "id": "x3", "provider": "slack", "external_id": "1", "owner": "luis",
+        "id": "x3", "provider": "slack", "external_id": "1", "owner": "example-user",
         "capabilities": ["chat"], "revoked_at": "2026-09-04T00:00:00Z",
         "revoked_reason": "phone lost",
     })

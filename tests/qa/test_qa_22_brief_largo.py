@@ -9,7 +9,7 @@ Requisitos: RES-01, RES-04.
 Estado: verde. `src/deep_research.py::DeepResearcher._extract_subquestions`
 (via `_outline_sections`, RES-01 parcial) es precisamente el mecanismo que
 arreglo este incidente real (ver PENDIENTES.md #13 y
-tests/test_deep_research_outline_sections.py::test_luis_s_real_whiplash_brief_is_fifteen_sections,
+tests/test_deep_research_outline_sections.py::test_user_s_real_whiplash_brief_is_fifteen_sections,
 "used to come out as the first 12 bullets"). Este test usa el mismo brief
 real (tests/fixtures/wad_brief_es.txt: 8 vinetas sueltas + 6 grupos con
 cabecera + una tabla + un cierre de 7 preguntas) y comprueba que NINGUN

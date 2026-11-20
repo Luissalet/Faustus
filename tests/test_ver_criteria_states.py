@@ -33,10 +33,10 @@ def test_waive_requires_both_by_and_reason():
     with pytest.raises(ValueError):
         ver.waive_criterion(_criterion(), by="", reason="not needed for this build")
     with pytest.raises(ValueError):
-        ver.waive_criterion(_criterion(), by="luis", reason="")
-    v = ver.waive_criterion(_criterion(), by="luis", reason="covered manually in QA this sprint")
+        ver.waive_criterion(_criterion(), by="example-user", reason="")
+    v = ver.waive_criterion(_criterion(), by="example-user", reason="covered manually in QA this sprint")
     assert v.state == "waived"
-    assert v.waived_by == "luis"
+    assert v.waived_by == "example-user"
     assert "covered manually" in v.waived_reason
 
 
@@ -66,7 +66,7 @@ def test_a_failed_or_waived_criterion_does_not_block_succeeded_by_itself():
     # Only "pending" blocks — a failed/waived criterion is the caller's
     # decision to make (retry, accept partial, ...), not this function's.
     failed = ver.verify_criterion(_criterion("c1"), evidence_ok=False)
-    waived = ver.waive_criterion(_criterion("c2"), by="luis", reason="out of scope for this release")
+    waived = ver.waive_criterion(_criterion("c2"), by="example-user", reason="out of scope for this release")
     summary = ver.criteria_summary([failed, waived])
     assert summary["pending"] == 0
     assert summary["blocks_succeeded"] is False

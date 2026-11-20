@@ -142,8 +142,8 @@ def test_same_content_two_runs_keeps_both_occurrences(own_database):
     assert (created_first, created_second) == (True, False)
     assert first_blob.id == second_blob.id
 
-    one = ident.record_occurrence(_occurrence("luis", "run-1"))
-    two = ident.record_occurrence(_occurrence("luis", "run-2"))
+    one = ident.record_occurrence(_occurrence("example-user", "run-1"))
+    two = ident.record_occurrence(_occurrence("example-user", "run-2"))
     assert one.id != two.id
 
     both = ident.occurrences_of(DIGEST)
@@ -236,7 +236,7 @@ def test_the_collector_refuses_bytes_the_old_table_still_names(own_database, sto
     db = db_mod.SessionLocal()
     try:
         db.add(ArtifactRow(id=f"art_{DIGEST[:24]}", kind="dataset",
-                           filename=f"{DIGEST}.csv", sha256=DIGEST, owner="luis"))
+                           filename=f"{DIGEST}.csv", sha256=DIGEST, owner="example-user"))
         db.commit()
     finally:
         db.close()
@@ -299,7 +299,7 @@ def test_two_occurrences_recorded_concurrently_both_count(own_database):
     def writer(run_id):
         start.wait(timeout=10)
         try:
-            ident.record_occurrence(_occurrence("luis", run_id))
+            ident.record_occurrence(_occurrence("example-user", run_id))
         except Exception as e:                    # noqa: BLE001
             errors.append(e)
 
@@ -318,16 +318,16 @@ def test_two_occurrences_recorded_concurrently_both_count(own_database):
 
 def test_an_occurrence_without_its_blob_is_refused(own_database):
     with pytest.raises(ident.MissingBlob):
-        ident.record_occurrence(_occurrence("luis", "run-1"))
+        ident.record_occurrence(_occurrence("example-user", "run-1"))
 
 
 def test_an_occurrence_id_is_never_reused(own_database):
     _blob()
-    made = ident.record_occurrence(_occurrence("luis", "run-1"))
+    made = ident.record_occurrence(_occurrence("example-user", "run-1"))
     with pytest.raises(ValueError) as reused:
         ident.record_occurrence(_occurrence("someone-else", "run-2", id=made.id))
     assert "never reused" in str(reused.value)
-    assert ident.occurrence(made.id).owner == "luis"
+    assert ident.occurrence(made.id).owner == "example-user"
 
 
 def test_a_blob_offered_with_a_different_size_is_refused(own_database):
@@ -344,7 +344,7 @@ def test_a_legacy_id_resolves_only_through_the_stored_alias(own_database):
     legacy = f"art_{DIGEST[:24]}"
     assert ident.resolve(legacy) is None          # nothing copied yet: the honest answer
 
-    made = ident.record_occurrence(_occurrence("luis", "run-1", legacy_artifact_id=legacy))
+    made = ident.record_occurrence(_occurrence("example-user", "run-1", legacy_artifact_id=legacy))
     assert ident.resolve(legacy).id == made.id
     assert ident.resolve(made.id).id == made.id
     assert ident.resolve("art_nothing") is None
@@ -387,7 +387,7 @@ def test_an_unowned_occurrence_needs_the_caller_to_say_so(own_database, store):
 
 def test_an_occurrence_naming_bytes_the_store_lost_says_so(own_database, store):
     _blob()
-    made = ident.record_occurrence(_occurrence("luis", "run-1"))
+    made = ident.record_occurrence(_occurrence("example-user", "run-1"))
     db = db_mod.SessionLocal()
     try:
         db.query(BlobRow).filter(BlobRow.sha256 == DIGEST).delete()
@@ -395,7 +395,7 @@ def test_an_occurrence_naming_bytes_the_store_lost_says_so(own_database, store):
     finally:
         db.close()
     with pytest.raises(ident.MissingBlob):
-        ident.path_for(made.id, owner="luis", store_dir=store)
+        ident.path_for(made.id, owner="example-user", store_dir=store)
 
 
 # ── the migration is additive and reversible ───────────────────────────────

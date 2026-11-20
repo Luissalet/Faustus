@@ -67,7 +67,7 @@ def test_the_intention_is_on_the_row_before_anything_is_sent(world, monkeypatch)
         return real_submit(self, plan, **kwargs)
 
     monkeypatch.setattr(ComfyUIBackend, "submit", look_first)
-    started = media_runs.start("image.product", ASK, owner="luis")
+    started = media_runs.start("image.product", ASK, owner="example-user")
 
     assert [r["status"] for r in seen["rows"]] == ["submit_pending"]
     assert seen["rows"][0]["client_id"] == started["client_id"]
@@ -102,7 +102,7 @@ def test_a_crash_right_after_the_server_accepts_the_prompt_is_recoverable(world,
     run must not claim it never reached the engine, and the render must not
     become an orphan burning a GPU that nothing can stop or collect."""
     crash_after_the_server_accepts(monkeypatch)
-    started = media_runs.start("image.product", ASK, owner="luis")
+    started = media_runs.start("image.product", ASK, owner="example-user")
     run_id = started["run_id"]
 
     assert started["ok"] is False
@@ -150,7 +150,7 @@ def test_an_orphan_the_engine_already_finished_is_found_by_its_metadata(world, m
     Faustus was not looking; its history entry still carries the client id, so
     the run adopts the job and collects what it made."""
     crash_after_the_server_accepts(monkeypatch)
-    started = media_runs.start("image.product", ASK, owner="luis")
+    started = media_runs.start("image.product", ASK, owner="example-user")
     run_id = started["run_id"]
 
     world.finish("p1")

@@ -46,7 +46,7 @@ def real_db(tmp_path, monkeypatch):
 def test_compaction_preserves_pending_approval_constraints_objective_and_sources(
     real_db, request,
 ):
-    approval = approval_store.request(PLAN, owner="luis", session_id="s-a14")
+    approval = approval_store.request(PLAN, owner="example-user", session_id="s-a14")
     assert approval.status == "pending"
 
     url = "https://example.com/runbooks/deploy"
@@ -72,7 +72,7 @@ def test_compaction_preserves_pending_approval_constraints_objective_and_sources
     messages = older_block + recent_block
 
     folded, evidence = context_compactor.compact_with_integrity(
-        messages, owner_id="luis", session_id="s-a14", keep_recent=4,
+        messages, owner_id="example-user", session_id="s-a14", keep_recent=4,
     )
     assert evidence, "expected compact_with_integrity to actually fold something"
 

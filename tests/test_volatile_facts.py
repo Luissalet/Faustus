@@ -28,7 +28,7 @@ REJECTED = [
 ]
 
 KEPT = [
-    "User's GitHub account is named Luissalet.",
+    "User's GitHub account is named sample-maintainer.",
     "User lives in or is located in Mostoles.",
     "User communicates in Spanish.",
     "User prefers working in millimeters (mm) for physical dimensions.",

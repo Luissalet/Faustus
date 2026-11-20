@@ -37,8 +37,8 @@ def client(tmp_path, monkeypatch):
     app = FastAPI()
 
     @app.middleware("http")
-    async def _as_luis(request, call_next):
-        request.state.current_user = "luis"
+    async def _as_user(request, call_next):
+        request.state.current_user = "example-user"
         return await call_next(request)
 
     app.include_router(setup_context_engine_routes())

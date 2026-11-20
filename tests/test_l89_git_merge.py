@@ -37,7 +37,7 @@ from src.agent_tools.git_tools import GitDeleteBranchTool, GitMergeTool  # noqa:
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

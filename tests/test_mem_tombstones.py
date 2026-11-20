@@ -40,7 +40,7 @@ def store(tmp_path, monkeypatch):
 
 
 def _fact(text="The cart total excludes shipping", **kw):
-    kw.setdefault("owner", "luis")
+    kw.setdefault("owner", "example-user")
     kw.setdefault("project", "acme")
     kw.setdefault("level", "semantic")
     kw.setdefault("trust_class", "human_explicit")
@@ -55,7 +55,7 @@ def test_forget_deletes_the_row_and_leaves_a_tombstone(store):
     assert tombstone is not None
     assert tombstone["item_id"] == item["id"]
     assert engine.get_item(item["id"]) is None                # row is gone
-    rows = engine.list_tombstones(owner="luis")
+    rows = engine.list_tombstones(owner="example-user")
     assert any(row["item_id"] == item["id"] for row in rows)   # tombstone remains
 
 
@@ -68,10 +68,10 @@ def test_neither_search_nor_pack_ever_returns_a_forgotten_memory(store):
     item = _fact("Ship on Fridays only", level="semantic")
     engine.forget(item["id"], now=NOW)
 
-    hits = engine.search("Ship on Fridays", "luis", "acme", now=NOW)
+    hits = engine.search("Ship on Fridays", "example-user", "acme", now=NOW)
     assert all(h["id"] != item["id"] for h in hits)
 
-    detail = engine.pack_detail("luis", "acme", "Ship on Fridays", 2000, now=NOW)
+    detail = engine.pack_detail("example-user", "acme", "Ship on Fridays", 2000, now=NOW)
     assert item["id"] not in detail["ids"]
 
 
@@ -85,14 +85,14 @@ def test_forget_blocks_automatic_resurrection_of_the_same_text(store):
     with pytest.raises(engine.MemoryEngineError):
         engine.add_item(
             "Always deploy on a green build",
-            owner="luis", project="acme", level="procedural",
+            owner="example-user", project="acme", level="procedural",
             trust_class="agent_assertion", now=NOW,
         )
     # A DIFFERENT scope (different project) is unaffected — the tombstone is
     # per-scope, not a global ban on the sentence.
     other = engine.add_item(
         "Always deploy on a green build",
-        owner="luis", project="other-project", level="procedural",
+        owner="example-user", project="other-project", level="procedural",
         trust_class="agent_assertion", now=NOW,
     )
     assert other["text"] == "Always deploy on a green build"
@@ -107,7 +107,7 @@ def test_forget_never_blocks_an_explicit_human_restatement(store):
 
     revived = engine.add_item(
         "Prefer tabs over spaces",
-        owner="luis", project="acme", trust_class="human_explicit", now=NOW,
+        owner="example-user", project="acme", trust_class="human_explicit", now=NOW,
     )
     assert revived["text"] == "Prefer tabs over spaces"
     assert engine.get_item(revived["id"]) is not None
@@ -147,12 +147,12 @@ def test_correct_replaces_text_and_links_provenance_to_the_original(store):
     assert corrected["provenance"]["corrected_from"] == item["id"]
     assert engine.get_item(item["id"]) is None                 # original is gone
     assert any(row["item_id"] == item["id"]
-               for row in engine.list_tombstones(owner="luis"))  # …and tombstoned
+               for row in engine.list_tombstones(owner="example-user"))  # …and tombstoned
 
     # The corrected text must land even though it would otherwise collide
     # with nothing (no tombstone on the NEW text) — sanity check it is a real,
     # searchable item and not just a return value.
-    hits = engine.search("API key rotates", "luis", "acme", now=NOW)
+    hits = engine.search("API key rotates", "example-user", "acme", now=NOW)
     assert any(h["id"] == corrected["id"] for h in hits)
 
 

@@ -33,7 +33,7 @@ from src.research_citations import (
     sources_heading,
 )
 
-# The real question Luis asked, in the shape he asked it: a numbered list of
+# The real question ExampleUser asked, in the shape he asked it: a numbered list of
 # sub-questions in Spanish. Every language/structure test uses this one so a
 # regression shows up against the case that actually motivated the work.
 PHYSIO_QUESTION = """\

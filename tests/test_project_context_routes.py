@@ -47,7 +47,7 @@ from src.project_context.resolvers import (  # noqa: E402
     install_default_resolvers, register_resolver,
 )
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 
 

@@ -36,7 +36,7 @@ from src.context_engine import code_index  # noqa: E402
 from src.context_engine import store as ce_store  # noqa: E402
 from src.requirements import store as req_store  # noqa: E402
 
-OWNER = "luis"
+OWNER = "example-user"
 PROJECT = "proj-1"
 
 

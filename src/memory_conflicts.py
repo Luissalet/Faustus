@@ -6,7 +6,7 @@ context candidates wins" on the turn path, with a deliberately blunt,
 no-LLM polarity test. This module answers a narrower, earlier question for
 the memory STORE itself: when a brand-new item is written, does it disagree
 with something already sitting there as active ("the project uses Python"
-next to "the project uses Rust"; "Luis prefers tabs" next to "Luis does not
+next to "the project uses Rust"; "the user prefers tabs" next to "the user does not
 prefer tabs")? Nothing before this module noticed that at write time, so
 both stayed active forever and the model got handed both without being told
 they disagreed.
@@ -16,10 +16,10 @@ Two ways a pair is flagged, both deterministic and both reusing
 
 * ``negation`` — the same blunt negation/affirmation markers
   (``conflicts._NEGATIONS`` / ``conflicts._AFFIRMATIONS``) appear on exactly
-  one side of an otherwise near-identical claim ("Luis prefers tabs" vs.
-  "Luis does not prefer tabs"). A single shared polarity word is not enough
+  one side of an otherwise near-identical claim ("the user prefers tabs" vs.
+  "the user does not prefer tabs"). A single shared polarity word is not enough
   on its own here — unlike ``conflicts.py``'s turn-path test, most memory
-  sentences never carry an affirmation word at all ("Luis prefers tabs" has
+  sentences never carry an affirmation word at all ("the user prefers tabs" has
   none), so this module keys off the ASYMMETRY of negation markers between
   otherwise-matching cores, not off both sides carrying an opposite marker.
 * ``same_subject_different_value`` — the two texts share an explicit

@@ -33,7 +33,7 @@ SETTING_KEY = "model_load_options"
 ALLOWED_KEYS = ("num_ctx", "num_gpu", "keep_alive", "main_gpu", "extra")
 
 # `extra`: further Ollama runtime `options` a person may pin per model, by
-# name, from the Options form (09-09-2026, Luis: "more customisation per
+# name, from the Options form (09-09-2026, the user: "more customisation per
 # model"). Only names Ollama's /api/chat `options` object actually accepts —
 # these are llama.cpp parameters Ollama forwards per request. What is NOT here
 # on purpose: llama-server command-line flags (`-jinja`, `--spec-type`,

@@ -433,7 +433,7 @@ def test_an_unguarded_proof_uncertainty_makes_a_worker_uncertain():
 
 def test_dispatch_compact_attaches_the_classification(monkeypatch):
     from src import dispatch
-    job = dispatch.DispatchJob("luis", {"tasks": []}, "/ws", "", "m", None, "t")
+    job = dispatch.DispatchJob("example-user", {"tasks": []}, "/ws", "", "m", None, "t")
     job.status = "done"
     job.result = {"subagents": [{"name": "w1", "status": "done", "mutations": ["a.py"]}], "exit_code": 0}
     job.changes = {"modified": ["a.py"], "added": [], "deleted": [], "checkpoint": "abc"}

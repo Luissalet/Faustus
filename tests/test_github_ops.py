@@ -28,7 +28,7 @@ from src.git_github import GhNotAvailableError  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 REAL_LS_REMOTE_TAG = github_ops._ls_remote_tag
 GITHUB_URL = "git@github.com:acme/widgets.git"
 
@@ -161,9 +161,9 @@ def ws(repo):
 
 
 PRS = [
-    {"number": 12, "title": "Add export", "labels": [{"name": "enhancement"}], "author": {"login": "luis"}, "url": "https://github.com/acme/widgets/pull/12"},
+    {"number": 12, "title": "Add export", "labels": [{"name": "enhancement"}], "author": {"login": "example-user"}, "url": "https://github.com/acme/widgets/pull/12"},
     {"number": 13, "title": "Handle empty body", "labels": [{"name": "bug"}], "author": {"login": "marta"}, "url": "https://github.com/acme/widgets/pull/13"},
-    {"number": 14, "title": "Docs pass", "labels": [{"name": "documentation"}], "author": {"login": "luis"}, "url": "https://github.com/acme/widgets/pull/14"},
+    {"number": 14, "title": "Docs pass", "labels": [{"name": "documentation"}], "author": {"login": "example-user"}, "url": "https://github.com/acme/widgets/pull/14"},
     {"number": 99, "title": "Not in range", "labels": [], "author": {"login": "x"}, "url": ""},
 ]
 
@@ -351,7 +351,7 @@ def test_notes_grouped_by_label_from_canned_gh_json(repo, gh):
     assert titles["other"] == ["Tweak readme"]
     assert res["gh"]["used"] is True and res["pull_requests"] == 3
     md = res["markdown"]
-    assert "### Features" in md and "- Add export (#12, @luis)" in md and "- Handle empty body (#13, @marta)" in md
+    assert "### Features" in md and "- Add export (#12, @example-user)" in md and "- Handle empty body (#13, @marta)" in md
     assert "- Tweak readme (" in md and "#99" not in md
     assert "compare/v1.0.0...HEAD" in md and "Not in range" not in md
     # the group order is stable: features before fixes before docs
@@ -834,9 +834,9 @@ def test_route_sync_needs_policy_then_approval_then_applies(client, repo, gh):
 
 def test_route_status(client, repo, monkeypatch):
     from src import git_github
-    monkeypatch.setattr(git_github, "gh_accounts", lambda **kw: {"available": True, "version": "2.0.0", "accounts": [{"login": "luis"}]})
+    monkeypatch.setattr(git_github, "gh_accounts", lambda **kw: {"available": True, "version": "2.0.0", "accounts": [{"login": "example-user"}]})
     r = client.get("/api/github/status", params={"workspace": str(repo)}).json()
-    assert r["gh_available"] is True and r["accounts"] == ["luis"]
+    assert r["gh_available"] is True and r["accounts"] == ["example-user"]
     assert r["repo"]["slug"] == "acme/widgets" and r["repo"]["github"] is True
 
 
@@ -1079,12 +1079,12 @@ def test_notes_put_footer_and_bang_breaking_changes_in_their_own_group(breaking_
 
 
 def test_notes_footer_breaking_change_beats_a_pull_request_label_and_title(breaking_repo, gh):
-    gh.prs = [{"number": 5, "title": "New export", "labels": [{"name": "enhancement"}], "author": {"login": "luis"}, "url": "u"}]
+    gh.prs = [{"number": 5, "title": "New export", "labels": [{"name": "enhancement"}], "author": {"login": "example-user"}, "url": "u"}]
     res = github_ops.release_notes(str(breaking_repo))
     entry = next(e for g in res["groups"].values() for e in g if e["pr"] == 5)
     assert entry["group"] == "breaking" and entry["type_group"] == "features" and entry["from_gh"] is True
     assert entry["breaking_note"] == "the export format is now JSON"
-    assert "(#5, @luis)" in res["markdown"]
+    assert "(#5, @example-user)" in res["markdown"]
 
 
 def test_breaking_note_parser_edge_cases():

@@ -1,6 +1,6 @@
 """agent_tools/git_tools.py — git tools for the agent (Lote 87, OBJ-4).
 
-Luis's own framing (CONTRATO_GIT_4, Lote 87): "the user says 'commit this and
+the user's own framing (CONTRATO_GIT_4, Lote 87): "the user says 'commit this and
 push' and the model does it through tools, with approval and respecting the
 policy." Nine tools, all thin executors over `src.git_panel` (the same
 argv-only, no-`shell=True`, hardened-flags git runner the Source Control
@@ -713,7 +713,7 @@ class GitCommitTool:
 
 class GitMergeTool:
     """`git_merge`: merge `branch` into the current branch of the repo at
-    `path` (Lote 89). Gated by `policy.use_branch` -- Luis's own spec: "con
+    `path` (Lote 89). Gated by `policy.use_branch` -- the user's own spec: "con
     la misma política/aprobación que git_checkout" (this changes which
     commits the current branch points at, the same class of surprise
     `use_branch` already gates for branch/checkout).

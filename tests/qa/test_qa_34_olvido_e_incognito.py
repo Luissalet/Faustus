@@ -47,7 +47,7 @@ def store(tmp_path, monkeypatch):
 
 def test_forgetting_a_memory_leaves_a_tombstone_that_blocks_reindex_resurrection(store):
     item = memory_engine.add_item(
-        "The staging DB is read-only", owner="luis", project="acme",
+        "The staging DB is read-only", owner="example-user", project="acme",
         trust_class="human_explicit", now=NOW,
     )
 
@@ -59,18 +59,18 @@ def test_forgetting_a_memory_leaves_a_tombstone_that_blocks_reindex_resurrection
     # consolidation/reindex pass) reproducing the same fact is refused...
     with pytest.raises(memory_engine.MemoryEngineError):
         memory_engine.add_item(
-            "The staging DB is read-only", owner="luis", project="acme",
+            "The staging DB is read-only", owner="example-user", project="acme",
             trust_class="agent_assertion", now=NOW,
         )
     # ...and neither search nor the pack given to the model ever return it.
-    assert not memory_engine.search("staging DB read-only", "luis", "acme", now=NOW)
-    detail = memory_engine.pack_detail("luis", "acme", "staging DB read-only", 2000, now=NOW)
+    assert not memory_engine.search("staging DB read-only", "example-user", "acme", now=NOW)
+    detail = memory_engine.pack_detail("example-user", "acme", "staging DB read-only", 2000, now=NOW)
     assert item["id"] not in detail["ids"]
 
     # "...persistencia y excepciones de archivos explicitos acordes a
     # politica": an EXPLICIT human restatement is still allowed.
     revived = memory_engine.add_item(
-        "The staging DB is read-only", owner="luis", project="acme",
+        "The staging DB is read-only", owner="example-user", project="acme",
         trust_class="human_explicit", now=NOW,
     )
     assert revived["text"] == "The staging DB is read-only"

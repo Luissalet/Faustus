@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 MEMORY_DIRNAME = ".faustus"
 MEMORY_INDEX = "MEMORY.md"
 
-# Caps. The injected block rides in the system prompt of every turn, and Luis's
+# Caps. The injected block rides in the system prompt of every turn, and the user's
 # local models run 32k contexts — an unbounded index would quietly eat the
 # window. Truncation is announced in-band so the model knows it saw a partial
 # file rather than a complete one.
@@ -1633,7 +1633,7 @@ def default_projects_root(rows: Optional[List[Dict[str, Any]]] = None) -> str:
     """Folder where a project without its own workspace gets one.
 
     The ``projects_root`` setting wins; otherwise the parent folder that
-    already holds most project workspaces (on Luis's machine, the
+    already holds most project workspaces (on the user's machine, the
     «Proyectos independientes» folder). '' when nothing sensible exists.
     """
     try:

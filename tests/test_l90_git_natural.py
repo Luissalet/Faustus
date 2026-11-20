@@ -1,6 +1,6 @@
 """Lote 90 -- natural language for git (OBJ-4).
 
-Luis's own framing: "que no tenga que ser todo tan explicito ... un usuario
+ExampleUser's own framing: "que no tenga que ser todo tan explicito ... un usuario
 no deberia saberse de memoria todas las tools de Faustus." Three things this
 covers:
 
@@ -45,7 +45,7 @@ from src.agent_tools.git_tools import GitStatusTool  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

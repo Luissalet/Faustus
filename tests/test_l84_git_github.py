@@ -27,7 +27,7 @@ from src import git_github, git_identities, git_panel  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ def _auth_status_text(accounts):
     return "\n".join(lines) + "\n"
 
 
-def _make_fake_run_gh(*, accounts=(("Luissalet", True, "ssh", ("repo", "gist")),),
+def _make_fake_run_gh(*, accounts=(("sample-maintainer", True, "ssh", ("repo", "gist")),),
                       bare_by_name=None, exists_names=(), fail_names=()):
     """A drop-in for `git_github._run_gh`: dispatches on `gh`'s subcommand,
     never touches a real `gh` binary or the network. `bare_by_name` maps a
@@ -191,19 +191,19 @@ def test_gh_version_parses_and_is_none_when_gh_missing(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_gh_accounts_parses_login_active_protocol_scopes(monkeypatch):
     accounts = (
-        ("Luissalet", True, "ssh", ("gist", "read:org", "repo", "workflow")),
-        ("Mlgpigeon", False, "ssh", ("gist", "read:org", "repo")),
+        ("sample-maintainer", True, "ssh", ("gist", "read:org", "repo", "workflow")),
+        ("sample-secondary", False, "ssh", ("gist", "read:org", "repo")),
     )
     monkeypatch.setattr(git_github, "_run_gh", _make_fake_run_gh(accounts=accounts))
     result = git_github.gh_accounts(use_cache=False)
     assert result["available"] is True
     assert result["version"] == "2.40.1"
     by_login = {a["login"]: a for a in result["accounts"]}
-    assert set(by_login) == {"Luissalet", "Mlgpigeon"}
-    assert by_login["Luissalet"]["active"] is True
-    assert by_login["Luissalet"]["protocol"] == "ssh"
-    assert by_login["Luissalet"]["scopes"] == ["gist", "read:org", "repo", "workflow"]
-    assert by_login["Mlgpigeon"]["active"] is False
+    assert set(by_login) == {"sample-maintainer", "sample-secondary"}
+    assert by_login["sample-maintainer"]["active"] is True
+    assert by_login["sample-maintainer"]["protocol"] == "ssh"
+    assert by_login["sample-maintainer"]["scopes"] == ["gist", "read:org", "repo", "workflow"]
+    assert by_login["sample-secondary"]["active"] is False
     # Never the token.
     assert not any("gho_" in json.dumps(a) for a in result["accounts"])
 
@@ -239,7 +239,7 @@ def test_gh_accounts_is_cached_then_bypassable(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_gh_token_returns_stripped_token(monkeypatch):
     monkeypatch.setattr(git_github, "_run_gh", _make_fake_run_gh())
-    assert git_github.gh_token("Luissalet") == "gho_faketoken_Luissalet"
+    assert git_github.gh_token("sample-maintainer") == "gho_faketoken_sample-maintainer"
 
 
 def test_gh_token_none_on_failure_or_missing_gh(monkeypatch):
@@ -251,7 +251,7 @@ def test_gh_token_none_on_failure_or_missing_gh(monkeypatch):
     def _missing(args, **kw):
         raise git_github.GhNotAvailableError()
     monkeypatch.setattr(git_github, "_run_gh", _missing)
-    assert git_github.gh_token("Luissalet") is None
+    assert git_github.gh_token("sample-maintainer") is None
 
 
 # ---------------------------------------------------------------------------
@@ -259,27 +259,27 @@ def test_gh_token_none_on_failure_or_missing_gh(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_create_github_repo_returns_full_name_and_urls(monkeypatch):
     monkeypatch.setattr(git_github, "_run_gh", _make_fake_run_gh())
-    result = git_github.create_github_repo("Luissalet", "faustus", private=True)
+    result = git_github.create_github_repo("sample-maintainer", "faustus", private=True)
     assert result == {
-        "full_name": "Luissalet/faustus",
-        "html_url": "https://github.com/Luissalet/faustus",
-        "ssh_url": "git@github.com:Luissalet/faustus.git",
-        "https_url": "https://github.com/Luissalet/faustus.git",
+        "full_name": "sample-maintainer/faustus",
+        "html_url": "https://github.com/sample-maintainer/faustus",
+        "ssh_url": "git@github.com:sample-maintainer/faustus.git",
+        "https_url": "https://github.com/sample-maintainer/faustus.git",
     }
 
 
 def test_create_github_repo_already_exists_raises(monkeypatch):
     monkeypatch.setattr(git_github, "_run_gh",
-                        _make_fake_run_gh(exists_names={"Luissalet/faustus"}))
+                        _make_fake_run_gh(exists_names={"sample-maintainer/faustus"}))
     with pytest.raises(git_github.GitHubRepoExistsError):
-        git_github.create_github_repo("Luissalet", "faustus")
+        git_github.create_github_repo("sample-maintainer", "faustus")
 
 
 def test_create_github_repo_other_failure_raises_command_error(monkeypatch):
     monkeypatch.setattr(git_github, "_run_gh",
-                        _make_fake_run_gh(fail_names={"Luissalet/faustus"}))
+                        _make_fake_run_gh(fail_names={"sample-maintainer/faustus"}))
     with pytest.raises(git_github.GitHubCommandError) as exc:
-        git_github.create_github_repo("Luissalet", "faustus")
+        git_github.create_github_repo("sample-maintainer", "faustus")
     assert "unexpected server error" in exc.value.stderr
 
 
@@ -288,26 +288,26 @@ def test_create_github_repo_missing_gh_raises(monkeypatch):
         raise git_github.GhNotAvailableError()
     monkeypatch.setattr(git_github, "_run_gh", _missing)
     with pytest.raises(git_github.GhNotAvailableError):
-        git_github.create_github_repo("Luissalet", "faustus")
+        git_github.create_github_repo("sample-maintainer", "faustus")
 
 
 # ---------------------------------------------------------------------------
 # git_identities merge (`source: "gh"`) and set_repo_identity for it
 # ---------------------------------------------------------------------------
 def test_list_identities_includes_gh_accounts_as_a_source(monkeypatch):
-    accounts = (("Luissalet", True, "ssh", ("repo",)), ("Mlgpigeon", False, "https", ("repo",)))
+    accounts = (("sample-maintainer", True, "ssh", ("repo",)), ("sample-secondary", False, "https", ("repo",)))
     monkeypatch.setattr(git_github, "gh_accounts", lambda **kw: {
         "available": True, "version": "2.40.1",
         "accounts": [{"login": l, "active": a, "protocol": p, "scopes": list(s)} for l, a, p, s in accounts],
     })
     result = git_identities.list_identities(OWNER)
     gh_ids = [i for i in result["identities"] if i["source"] == "gh"]
-    assert {i["label"] for i in gh_ids} == {"Luissalet", "Mlgpigeon"}
-    luissalet = next(i for i in gh_ids if i["label"] == "Luissalet")
-    assert luissalet["id"] == "gh:Luissalet"
-    assert luissalet["ssh_host"] is None
-    assert luissalet["github_login"] == "Luissalet"
-    assert luissalet["protocol"] == "ssh"
+    assert {i["label"] for i in gh_ids} == {"sample-maintainer", "sample-secondary"}
+    primary_account= next(i for i in gh_ids if i["label"] == "sample-maintainer")
+    assert primary_account["id"] == "gh:sample-maintainer"
+    assert primary_account["ssh_host"] is None
+    assert primary_account["github_login"] == "sample-maintainer"
+    assert primary_account["protocol"] == "ssh"
 
 
 def test_list_identities_no_gh_accounts_when_gh_unavailable(monkeypatch):
@@ -333,18 +333,18 @@ def test_set_repo_identity_gh_source_ssh_rewrites_to_plain_github(tmp_path, monk
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "no-such-gitconfig"))
     repo = _init_repo_no_identity(tmp_path / "gh_ssh_repo")
     _run(["remote", "add", "origin", "git@SomeAlias:owner/repo.git"], cwd=repo)
-    identity = {"id": "gh:Luissalet", "label": "Luissalet", "ssh_host": None, "source": "gh",
-                "github_login": "Luissalet", "protocol": "ssh"}
+    identity = {"id": "gh:sample-maintainer", "label": "sample-maintainer", "ssh_host": None, "source": "gh",
+                "github_login": "sample-maintainer", "protocol": "ssh"}
     result = git_identities.set_repo_identity(str(repo), identity)
     assert result["remote_url_after"] == "git@github.com:owner/repo.git"
-    assert result["git_user"]["name"] == "Luissalet"  # no local (or global) name was set before
+    assert result["git_user"]["name"] == "sample-maintainer"  # no local (or global) name was set before
 
 
 def test_set_repo_identity_gh_source_https_rewrites_to_https(tmp_path):
     repo = _init_repo(tmp_path / "gh_https_repo")
     _run(["remote", "add", "origin", "git@SomeAlias:owner/repo.git"], cwd=repo)
-    identity = {"id": "gh:Mlgpigeon", "label": "Mlgpigeon", "ssh_host": None, "source": "gh",
-                "github_login": "Mlgpigeon", "protocol": "https"}
+    identity = {"id": "gh:sample-secondary", "label": "sample-secondary", "ssh_host": None, "source": "gh",
+                "github_login": "sample-secondary", "protocol": "https"}
     result = git_identities.set_repo_identity(str(repo), identity)
     assert result["remote_url_after"] == "https://github.com/owner/repo.git"
 
@@ -353,8 +353,8 @@ def test_set_repo_identity_gh_source_never_overwrites_existing_name(tmp_path):
     repo = _init_repo(tmp_path / "gh_named_repo")
     _run(["config", "user.name", "Already Set"], cwd=repo)
     _run(["remote", "add", "origin", "git@SomeAlias:owner/repo.git"], cwd=repo)
-    identity = {"id": "gh:Luissalet", "label": "Luissalet", "ssh_host": None, "source": "gh",
-                "github_login": "Luissalet", "protocol": "ssh"}
+    identity = {"id": "gh:sample-maintainer", "label": "sample-maintainer", "ssh_host": None, "source": "gh",
+                "github_login": "sample-maintainer", "protocol": "ssh"}
     result = git_identities.set_repo_identity(str(repo), identity)
     assert result["git_user"]["name"] == "Already Set"
 
@@ -397,13 +397,13 @@ def test_repo_identity_info_auto_probes_uncached_login(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 def test_get_github_accounts_route(client, monkeypatch):
     monkeypatch.setattr(git_github, "_run_gh",
-                        _make_fake_run_gh(accounts=(("Luissalet", True, "ssh", ("repo",)),)))
+                        _make_fake_run_gh(accounts=(("sample-maintainer", True, "ssh", ("repo",)),)))
     resp = client.get("/api/git/github/accounts", headers=_hdr())
     assert resp.status_code == 200
     body = resp.json()
     assert body["available"] is True
     assert body["version"] == "2.40.1"
-    assert body["accounts"][0]["login"] == "Luissalet"
+    assert body["accounts"][0]["login"] == "sample-maintainer"
 
 
 def test_get_github_accounts_route_when_gh_missing(client, monkeypatch):
@@ -421,16 +421,16 @@ def test_create_repo_with_github_create_pushes_for_real(client, store, tmp_path,
     _project(store, parent)
     bare = _bare(tmp_path / "remote.git")
     monkeypatch.setattr(git_github, "_run_gh", _make_fake_run_gh(
-        bare_by_name={"Luissalet/newproj": str(bare)},
+        bare_by_name={"sample-maintainer/newproj": str(bare)},
     ))
 
     resp = client.post("/api/git/repos", json={
         "mode": "init", "parent_folder": str(parent), "name": "newproj",
-        "github": {"create": True, "login": "Luissalet", "private": True, "push": True},
+        "github": {"create": True, "login": "sample-maintainer", "private": True, "push": True},
     }, headers=_hdr())
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["github"]["full_name"] == "Luissalet/newproj"
+    assert body["github"]["full_name"] == "sample-maintainer/newproj"
     assert body["github"]["ssh_url"] == str(bare)
     assert body["push"]["ok"] is True
     assert body["repo"]["remotes"][0]["name"] == "origin"
@@ -462,11 +462,11 @@ def test_create_repo_with_github_create_name_taken_409_keeps_local_repo(client, 
     parent.mkdir()
     _project(store, parent)
     monkeypatch.setattr(git_github, "_run_gh",
-                        _make_fake_run_gh(exists_names={"Luissalet/dupe"}))
+                        _make_fake_run_gh(exists_names={"sample-maintainer/dupe"}))
 
     resp = client.post("/api/git/repos", json={
         "mode": "init", "parent_folder": str(parent), "name": "dupe",
-        "github": {"create": True, "login": "Luissalet"},
+        "github": {"create": True, "login": "sample-maintainer"},
     }, headers=_hdr())
     assert resp.status_code == 409
     body = resp.json()
@@ -481,11 +481,11 @@ def test_create_repo_with_github_create_other_failure_502(client, store, tmp_pat
     parent.mkdir()
     _project(store, parent)
     monkeypatch.setattr(git_github, "_run_gh",
-                        _make_fake_run_gh(fail_names={"Luissalet/broken"}))
+                        _make_fake_run_gh(fail_names={"sample-maintainer/broken"}))
 
     resp = client.post("/api/git/repos", json={
         "mode": "init", "parent_folder": str(parent), "name": "broken",
-        "github": {"create": True, "login": "Luissalet"},
+        "github": {"create": True, "login": "sample-maintainer"},
     }, headers=_hdr())
     assert resp.status_code == 502
     body = resp.json()
@@ -510,7 +510,7 @@ def test_clone_mode_ignores_github_create(client, store, tmp_path, monkeypatch):
 
     resp = client.post("/api/git/repos", json={
         "mode": "clone", "parent_folder": str(parent), "name": "cloned", "url": str(bare),
-        "github": {"create": True, "login": "Luissalet"},
+        "github": {"create": True, "login": "sample-maintainer"},
     }, headers=_hdr())
     assert resp.status_code == 201, resp.text
     body = resp.json()
@@ -526,16 +526,16 @@ def test_github_publish_creates_remote_and_pushes(client, store, tmp_path, monke
     _project(store, parent)
     bare = _bare(tmp_path / "published.git")
     monkeypatch.setattr(git_github, "_run_gh", _make_fake_run_gh(
-        bare_by_name={"Mlgpigeon/publishme": str(bare)},
+        bare_by_name={"sample-secondary/publishme": str(bare)},
     ))
 
     rid = git_panel.compute_repo_id(str(repo))
     resp = client.post(f"/api/git/repos/{rid}/github/publish", json={
-        "login": "Mlgpigeon", "private": False, "push": True,
+        "login": "sample-secondary", "private": False, "push": True,
     }, headers=_hdr())
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["github"]["full_name"] == "Mlgpigeon/publishme"
+    assert body["github"]["full_name"] == "sample-secondary/publishme"
     assert body["push"]["ok"] is True
     assert body["repo"]["remotes"][0]["fetch_url"] == str(bare)
 
@@ -548,7 +548,7 @@ def test_github_publish_uses_identity_selected_before_origin(client, store, tmp_
     _project(store, parent)
     bare = _bare(tmp_path / "preselected.git")
     monkeypatch.setattr(git_github, "_run_gh", _make_fake_run_gh(
-        bare_by_name={"Mlgpigeon/preselected": str(bare)},
+        bare_by_name={"sample-secondary/preselected": str(bare)},
     ))
     identity = {
         "id": "manual:work", "label": "Work", "ssh_host": "github-work",
@@ -562,12 +562,12 @@ def test_github_publish_uses_identity_selected_before_origin(client, store, tmp_
 
     rid = git_panel.compute_repo_id(str(repo))
     resp = client.post(f"/api/git/repos/{rid}/github/publish", json={
-        "login": "Mlgpigeon", "private": True, "push": False,
+        "login": "sample-secondary", "private": True, "push": False,
     }, headers=_hdr())
 
     assert resp.status_code == 201, resp.text
     assert _run(["remote", "get-url", "origin"], cwd=repo).stdout.strip() == \
-        "git@github-work:Mlgpigeon/preselected.git"
+        "git@github-work:sample-secondary/preselected.git"
 
 
 def test_github_publish_409_when_origin_already_exists(client, store, tmp_path, monkeypatch):
@@ -583,6 +583,6 @@ def test_github_publish_409_when_origin_already_exists(client, store, tmp_path, 
     monkeypatch.setattr(git_github, "_run_gh", _boom)
 
     rid = git_panel.compute_repo_id(str(repo))
-    resp = client.post(f"/api/git/repos/{rid}/github/publish", json={"login": "Mlgpigeon"}, headers=_hdr())
+    resp = client.post(f"/api/git/repos/{rid}/github/publish", json={"login": "sample-secondary"}, headers=_hdr())
     assert resp.status_code == 409
     assert resp.json()["error_class"] == "git.remote_exists"

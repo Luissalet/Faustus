@@ -36,7 +36,7 @@ from src.agent_tools.document_tools import (
 from src.agent_tools.subagent_tools import SUBAGENT_FOLDER
 from src.project_context.references import TurnReferenceRegistry
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

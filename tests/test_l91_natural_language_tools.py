@@ -1,6 +1,6 @@
 """Lote 91 (OBJ-7) -- natural-language tool-selection benchmark.
 
-Luis's framing: "un usuario no debería saberse de memoria todas las tools;
+ExampleUser's framing: "un usuario no debería saberse de memoria todas las tools;
 'dime nosequé para el proyecto X' tiene que bastar." This is the acceptance
 benchmark for that: a table of >= 60 colloquial requests (Spanish and
 English, mixed, never naming a tool) mapped to the tool each one means, run

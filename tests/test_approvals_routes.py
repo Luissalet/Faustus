@@ -48,7 +48,7 @@ def test_the_model_can_open_a_card_and_cannot_grant_it(client):
     by design, so if grant sat behind the same gate as request, the model
     would approve its own plan."""
     opened = client.post("/api/approvals/request",
-                         json={"plan": PLAN, "owner": "luis"},
+                         json={"plan": PLAN, "owner": "example-user"},
                          headers=TOOL_HEADERS)
     assert opened.status_code == 200
     card_id = opened.json()["approval"]["id"]
@@ -69,24 +69,24 @@ def test_the_model_can_open_a_card_and_cannot_grant_it(client):
 
 def test_a_person_grants_it_and_then_it_covers_the_plan(client):
     card_id = client.post("/api/approvals/request",
-                          json={"plan": PLAN, "owner": "luis"}).json()["approval"]["id"]
+                          json={"plan": PLAN, "owner": "example-user"}).json()["approval"]["id"]
     assert client.post("/api/approvals/check",
-                       json={"plan": PLAN, "owner": "luis"}).json()["ok"] is False
+                       json={"plan": PLAN, "owner": "example-user"}).json()["ok"] is False
 
-    granted = client.post(f"/api/approvals/{card_id}/grant", json={"by": "luis"})
+    granted = client.post(f"/api/approvals/{card_id}/grant", json={"by": "example-user"})
     assert granted.status_code == 200 and granted.json()["ok"] is True
 
-    covered = client.post("/api/approvals/check", json={"plan": PLAN, "owner": "luis"}).json()
+    covered = client.post("/api/approvals/check", json={"plan": PLAN, "owner": "example-user"}).json()
     assert covered["ok"] is True and covered["approval_id"] == card_id
 
 
 def test_the_check_says_which_field_moved(client):
     card_id = client.post("/api/approvals/request",
-                          json={"plan": PLAN, "owner": "luis"}).json()["approval"]["id"]
-    client.post(f"/api/approvals/{card_id}/grant", json={"by": "luis"})
+                          json={"plan": PLAN, "owner": "example-user"}).json()["approval"]["id"]
+    client.post(f"/api/approvals/{card_id}/grant", json={"by": "example-user"})
 
     drifted = {**PLAN, "cost_units": 400}
-    out = client.post("/api/approvals/check", json={"plan": drifted, "owner": "luis"}).json()
+    out = client.post("/api/approvals/check", json={"plan": drifted, "owner": "example-user"}).json()
     assert out["ok"] is False and out["reason"] == "plan_changed"
     assert out["changes"] == [{"field": "cost_units", "approved": 12, "now": 400}]
 

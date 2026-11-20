@@ -9,6 +9,7 @@ counts as read by them.
   tasks/<id>, threads/<id>, decisions, locks, console/overview, console/usage…)
 * ``POST /api/agora/x/<op>``    -> hub ``POST /api/agora/<op>`` (channel_post, channel_create, task_add, task_edit,
   task_review, resolve, escalate, space_meta_set, console/message…)
+* ``GET  /api/agora/person-inbox`` -> peek at the configured person's inbox across spaces (optionally skip muted ones)
 * ``GET  /api/agora/pulse``     -> the hub's change token, waiting up to 20 s for a change
 * ``GET  /api/agora/icon/<app>``-> the icon of a family app (``hub`` is the hub's own), made small: the originals weigh
   up to 1 MB each and a server list draws thirty of them at 48 px; with ``soft=1`` an app without one answers 204
@@ -89,6 +90,27 @@ def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = Non
         return more(status, None, ctype)
 
 
+def person_inbox(*, heard: bool = False, limit: int = 40) -> Tuple[Any, ...]:
+    """Peek at the configured person's inbox. Older hubs publish the member in the guild."""
+    status, profile, ctype = hub_request("GET", "/api/agora/person", timeout=10.0)
+    if status == 404 or (isinstance(profile, dict) and profile.get("status") == 404):
+        status, guild, ctype = hub_request("GET", "/api/agora/guild", timeout=10.0)
+        if status != 200 or not isinstance(guild, dict) or guild.get("ok") is False:
+            return status, guild, ctype
+        person = next((row for row in guild.get("members", []) if row.get("role") == "person"),
+                      {"id": guild.get("viewer")})
+    elif status == 200 and isinstance(profile, dict) and profile.get("ok") is not False:
+        person = profile.get("person") or {}
+    else:
+        return status, profile, ctype
+    if not person.get("id"):
+        return 502, {"ok": False, "error": "The Hub did not identify the Agora person."}, ctype
+    query = {"agent": person["id"], "all_spaces": "1", "peek": "1", "mine_only": "1", "limit": str(limit)}
+    if heard:
+        query["skip_muted"] = "1"
+    return hub_request("GET", "/api/agora/inbox", timeout=20.0, query=query)
+
+
 def small_icon(blob: bytes, ctype: str) -> Tuple[bytes, str]:
     """The icon as a PNG of at most ``_ICON_PX`` a side; the original when it is not a raster image or cannot be read."""
     if "svg" in (ctype or "").lower() or len(blob) < 24_000:
@@ -133,6 +155,12 @@ def setup_agora_routes() -> APIRouter:
     async def where(request: Request):
         require_admin(request)
         return {"ok": True, "remote": bool(hub_link.location()["remote"])}
+
+    @router.get("/api/agora/person-inbox")
+    async def read_person_inbox(request: Request, heard: bool = False):
+        require_admin(request)
+        status, payload, _ = await asyncio.to_thread(person_inbox, heard=heard)
+        return _answer(status, payload)
 
     @router.get("/api/agora/worker-activity")
     async def worker_activity(request: Request):

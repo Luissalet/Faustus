@@ -31,14 +31,14 @@ def _simple_pdf_bytes(pages: int = 1, text: str = "Hello world") -> bytes:
 
 def test_pdf_page_evidence_ref_is_well_formed():
     ref = dp.pdf_page_evidence_ref("doc.pdf", 3, "the exact text of page 3",
-                                   owner_id="luis", project_id="p1")
+                                   owner_id="example-user", project_id="p1")
     assert isinstance(ref, EvidenceRef)
     assert ref.source_type == "file"
     assert ref.source_ref == "doc.pdf"
     assert ref.locator.kind == "page"
     assert ref.locator.value == "3"
     assert len(ref.content_sha256) == 64
-    assert ref.owner_id == "luis" and ref.project_id == "p1"
+    assert ref.owner_id == "example-user" and ref.project_id == "p1"
 
 
 def test_evidence_id_changes_with_page_or_content():

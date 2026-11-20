@@ -48,7 +48,7 @@ def store(tmp_path, monkeypatch):
 
 
 def test_an_expired_approval_never_authorizes_the_send(store):
-    card = approval_store.request(PLAN, owner="luis", ttl_seconds=1)
+    card = approval_store.request(PLAN, owner="example-user", ttl_seconds=1)
     assert card.status == "pending"
 
     # Time passes; nobody answers. The sweep marks it expired - not granted,
@@ -63,8 +63,8 @@ def test_an_expired_approval_never_authorizes_the_send(store):
 
     # Nothing downstream treats the abandoned question as consent: sending
     # is still refused, exactly as it was before expiry.
-    result = approval_store.check(PLAN, owner="luis")
+    result = approval_store.check(PLAN, owner="example-user")
     assert result["ok"] is False
 
-    consumed = approval_store.consume(card.id, PLAN, owner="luis")
+    consumed = approval_store.consume(card.id, PLAN, owner="example-user")
     assert consumed.get("ok") is not True

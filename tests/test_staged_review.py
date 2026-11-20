@@ -270,7 +270,7 @@ def test_route_is_admin_only_and_never_takes_an_endpoint_from_the_body(tmp_path,
     monkeypatch.setattr(rr, "_resolve_model", lambda owner, wanted: ("http://own-endpoint/v1", "m", {}))
     app = FastAPI()
     app.include_router(rr.setup_staged_review_routes())
-    app.dependency_overrides[rr.require_user] = lambda: "luis"
+    app.dependency_overrides[rr.require_user] = lambda: "example-user"
     client = TestClient(app)
 
     def deny():

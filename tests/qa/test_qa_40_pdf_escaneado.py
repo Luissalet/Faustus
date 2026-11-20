@@ -54,7 +54,7 @@ def test_a_textless_scanned_pdf_reads_via_vision_instead_of_coming_back_empty(tm
 
     monkeypatch.setattr(dp, "analyze_image_with_vl", fake_vl)
 
-    result = dp._process_pdf(str(pdf_path), owner="luis")
+    result = dp._process_pdf(str(pdf_path), owner="example-user")
 
     assert calls, "the scanned page never reached vision OCR"
     assert "Page 1" in result  # the page it came from is named, not silent

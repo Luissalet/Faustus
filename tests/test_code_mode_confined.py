@@ -461,12 +461,12 @@ _WRITE_SCRIPT = (
 async def test_bridge_write_needs_approval_and_works_from_the_container(use_image, gated_write_tool):
     from src import question_store
     task = asyncio.ensure_future(run_code_mode(
-        _WRITE_SCRIPT, session_id="s-confined", owner="luis", workspace=str(gated_write_tool)))
+        _WRITE_SCRIPT, session_id="s-confined", owner="example-user", workspace=str(gated_write_tool)))
     try:
-        opened = await _open_question("luis")
+        opened = await _open_question("example-user")
         assert not (gated_write_tool / "bridged.txt").exists(), "must not run before approval"
         assert question_store.resolve_question(
-            opened["question_id"], {"option_ids": ["approve"]}, owner="luis")["ok"] is True
+            opened["question_id"], {"option_ids": ["approve"]}, owner="example-user")["ok"] is True
         result = await asyncio.wait_for(task, timeout=30)
     finally:
         if not task.done():
@@ -483,10 +483,10 @@ async def test_bridge_write_needs_approval_and_works_from_the_container(use_imag
 async def test_bridge_denial_is_honoured_from_the_container(use_image, gated_write_tool):
     from src import question_store
     task = asyncio.ensure_future(run_code_mode(
-        _WRITE_SCRIPT, session_id="s-confined", owner="luis", workspace=str(gated_write_tool)))
+        _WRITE_SCRIPT, session_id="s-confined", owner="example-user", workspace=str(gated_write_tool)))
     try:
-        opened = await _open_question("luis")
-        question_store.resolve_question(opened["question_id"], {"option_ids": ["deny"]}, owner="luis")
+        opened = await _open_question("example-user")
+        question_store.resolve_question(opened["question_id"], {"option_ids": ["deny"]}, owner="example-user")
         result = await asyncio.wait_for(task, timeout=30)
     finally:
         if not task.done():
@@ -497,8 +497,8 @@ async def test_bridge_denial_is_honoured_from_the_container(use_image, gated_wri
 
 async def test_cancellation_while_waiting_for_approval_removes_the_container(use_image, gated_write_tool):
     task = asyncio.ensure_future(run_code_mode(
-        _WRITE_SCRIPT, session_id="s-confined", owner="luis", workspace=str(gated_write_tool)))
-    await _open_question("luis")
+        _WRITE_SCRIPT, session_id="s-confined", owner="example-user", workspace=str(gated_write_tool)))
+    await _open_question("example-user")
     assert _containers_left(), "the guest container should be running while approval is pending"
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

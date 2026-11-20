@@ -232,7 +232,7 @@ def test_new_explicit_actor_uses_native_owner_api_and_exact_saved_scope(capsys):
 
 def test_explicit_human_actor_is_rejected_before_creating_a_chat(capsys):
     srv,url=_serve([],gets={'/api/projects/p1':{'id':'p1'}})
-    try:code=fr.main(['-p','do it','--url',url,'--project-id','p1','--agent-id','luis'])
+    try:code=fr.main(['-p','do it','--url',url,'--project-id','p1','--agent-id','example-user'])
     finally:srv.shutdown()
     assert code==fr.EXIT_ERROR and not _H.sessions and not _H.puts and not _H.forms
 

@@ -8,7 +8,7 @@ from src import approval_store, execution_router as router
 from tests.test_approval_gate_on_runs import stage, manifest, _run  # noqa: F401
 
 
-def grant_for(stage, man, *, owner="luis", uses=1):
+def grant_for(stage, man, *, owner="example-user", uses=1):
     decision = router.choose(man, workspace=stage["workspace"],
                              artifacts_root=stage["artifacts_root"], run_id="preview",
                              create_dirs=False)
@@ -72,15 +72,15 @@ def test_backend_exception_does_not_refund_a_possibly_executed_action(stage, mon
 def test_batch_does_not_spend_earlier_permissions_if_one_is_missing(stage):
     card, = grant_for(stage, manifest())
     missing = {**card.plan.to_dict(), "action": "deliver"}
-    result = approval_store.consume_plans([card.plan, missing], owner="luis")
+    result = approval_store.consume_plans([card.plan, missing], owner="example-user")
     assert not result["ok"]
     assert approval_store.get(card.id).uses_left == 1
-    assert approval_store.check(card.plan, owner="luis")["ok"]
+    assert approval_store.check(card.plan, owner="example-user")["ok"]
 
 
 def test_batch_cannot_spend_another_owners_permission(stage):
     card, = grant_for(stage, manifest(), owner="alice")
-    assert not approval_store.consume_plans([card.plan], owner="luis")["ok"]
+    assert not approval_store.consume_plans([card.plan], owner="example-user")["ok"]
     assert approval_store.get(card.id).uses_left == 1
 
 

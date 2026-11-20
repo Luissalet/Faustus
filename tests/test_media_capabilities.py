@@ -135,7 +135,7 @@ def test_run_version_still_reports_installed_true_on_a_clean_zero_exit(tmp_path,
 
 
 def test_stt_probe_is_false_when_faster_whisper_is_not_installed(monkeypatch):
-    # Luis's venv has faster_whisper for real: the probe must be asked about
+    # ExampleUser's venv has faster_whisper for real: the probe must be asked about
     # a world without it, not the world the test happens to run in.
     monkeypatch.setattr(caps, "_importable", lambda module: False)
     result = caps.probe_stt()

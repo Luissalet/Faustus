@@ -7,7 +7,7 @@ The forensic case this exists for (`silhouettes_analysis.md`, chat `782b7d89`,
 modules with `Content-Type: text/plain`, the browser refused to execute
 them as ES modules, and not a single button in the UI ever ran. The bug was
 invisible to every unit test — it only shows up as a response header, and a
-27B model never opened a browser to see it. Luis found it by hand; the
+27B model never opened a browser to see it. the user found it by hand; the
 harness had no mechanism that could have found it first.
 
 This module is that mechanism, and it does not trust the model to run it:
@@ -23,7 +23,7 @@ whether or not a single pytest ran.
 
 When Python `playwright` is installed with a Chromium build available, the
 page is also loaded headless and real console errors / uncaught exceptions /
-4xx-5xx network responses are captured — closer still to what Luis actually
+4xx-5xx network responses are captured — closer still to what the user actually
 saw ("I ran app.py and nothing works"). Without it, the module degrades to
 the HTTP-only checks above; it never fails a turn for lacking Playwright.
 

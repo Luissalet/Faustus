@@ -468,7 +468,7 @@ def _fit_payload(monkeypatch, vram, tags=_TAGS, ps=None, base="http://127.0.0.1:
     monkeypatch.setattr(mr, "httpx", fake)
     monkeypatch.setattr(mr.gpu_shared_memory, "vram_snapshot", lambda: vram)
     request = SimpleNamespace(
-        state=SimpleNamespace(current_user="luis", api_token=False),
+        state=SimpleNamespace(current_user="example-user", api_token=False),
         app=SimpleNamespace(state=SimpleNamespace(auth_manager=None)),
     )
     return asyncio.run(endpoint(request, refresh=True)), fake
@@ -544,7 +544,7 @@ def test_an_unreachable_ollama_produces_no_rows_rather_than_zeroes(monkeypatch):
     monkeypatch.setattr(mr, "httpx", _Dead([]))
     monkeypatch.setattr(mr.gpu_shared_memory, "vram_snapshot", lambda: _4070TI)
     request = SimpleNamespace(
-        state=SimpleNamespace(current_user="luis", api_token=False),
+        state=SimpleNamespace(current_user="example-user", api_token=False),
         app=SimpleNamespace(state=SimpleNamespace(auth_manager=None)),
     )
     data = asyncio.run(endpoint(request, refresh=True))
@@ -807,7 +807,7 @@ def test_one_ollama_under_two_spellings_is_probed_once(monkeypatch):
     monkeypatch.setattr(mr, "httpx", fake)
     monkeypatch.setattr(mr.gpu_shared_memory, "vram_snapshot", lambda: _4070TI)
     request = SimpleNamespace(
-        state=SimpleNamespace(current_user="luis", api_token=False),
+        state=SimpleNamespace(current_user="example-user", api_token=False),
         app=SimpleNamespace(state=SimpleNamespace(auth_manager=None)),
     )
     data = asyncio.run(endpoint(request, refresh=True))

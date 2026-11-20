@@ -10,7 +10,7 @@ from src import personal_assistants as assistants, assistant_runtime as runtime
 
 
 def profile(**kwargs):
-    return assistants.save("chat-a", "Research helper", "Notes stay descriptive", "luis", **kwargs)
+    return assistants.save("chat-a", "Research helper", "Notes stay descriptive", "example-user", **kwargs)
 
 
 def test_patch_preserves_configuration_and_native_task_identity(database, monkeypatch):
@@ -38,8 +38,8 @@ def test_patch_preserves_configuration_and_native_task_identity(database, monkey
 
 def test_remove_restore_keeps_settings_but_does_not_restart_proactivity(database, monkeypatch):
     profile(instructions="Persistent role", skills=["test"], proactivity={"enabled": True, "prompt": "Check"})
-    assistants.retire("chat-a", "luis")
-    assert runtime.context_messages("chat-a", "luis") == []
+    assistants.retire("chat-a", "example-user")
+    assert runtime.context_messages("chat-a", "example-user") == []
     with client(monkeypatch) as c:
         restored = c.post("/api/mobile/assistants", json={"name": "Restored", "session_id": "chat-a"}).json()
     assert restored["instructions"] == "Persistent role"
@@ -57,7 +57,7 @@ def test_invalid_config_does_not_mutate_existing_profile_or_task(database, monke
     before = profile(instructions="Keep this")
     with client(monkeypatch) as c:
         assert c.patch("/api/mobile/assistants/chat-a", json={"instructions": "Lost", "proactivity": config}).status_code == 422
-    after = assistants.list_assistants("luis")[0]
+    after = assistants.list_assistants("example-user")[0]
     assert after["instructions"] == "Keep this"
     assert after["revision"] == before["revision"]
     assert after["proactivity"]["task_id"] is None
@@ -71,7 +71,7 @@ def test_pinned_skill_bodies_and_instructions_reach_real_prompt_outside_shared_c
     profile(instructions="ROLE-ONLY-A", skills=["source-check"])
     def build(sid, **kwargs):
         built, _ = al._build_system_prompt([{"role": "user", "content": "Continue"}], "test", None, None, set(),
-            owner="luis", session_id=sid, suppress_local_context=True, **kwargs)
+            owner="example-user", session_id=sid, suppress_local_context=True, **kwargs)
         return built
     # Skills respect the request's suppression, instructions remain effective.
     first = build("chat-a")
@@ -81,7 +81,7 @@ def test_pinned_skill_bodies_and_instructions_reach_real_prompt_outside_shared_c
     profile(instructions="ROLE-EDITED", skills=["source-check"])
     assert "ROLE-EDITED" in str(build("chat-a"))
     assert "ROLE-ONLY-A" not in str(build("chat-a"))
-    messages = runtime.context_messages("chat-a", "luis")
+    messages = runtime.context_messages("chat-a", "example-user")
     assert "VERIFY-PRIMARY-SOURCE" in str(messages)
     assert messages[1]["metadata"]["skill_disclosure"]
     assert runtime.context_messages("chat-a", "other") == []
@@ -91,16 +91,16 @@ def test_pinned_skill_bodies_and_instructions_reach_real_prompt_outside_shared_c
 
     # Lean chat skips automatic retrieval, but keeps the owner's pinned skills.
     pinned, _ = al._build_system_prompt([{"role": "user", "content": "Continue"}], "test", None, None, set(),
-        owner="luis", session_id="chat-a", suppress_skills=True, suppress_assistant_skills=False)
+        owner="example-user", session_id="chat-a", suppress_skills=True, suppress_assistant_skills=False)
     assert "VERIFY-PRIMARY-SOURCE" in str(pinned)
 
 
 def test_missing_skill_is_explicit_and_disabled_skills_leave_role(database, monkeypatch):
     profile(instructions="Role", skills=["gone"])
     monkeypatch.setattr(runtime, "skill_catalog", lambda owner: [])
-    assert "Unavailable skills" in str(runtime.context_messages("chat-a", "luis"))
-    assert "gone" not in str(runtime.context_messages("chat-a", "luis", skills_enabled=False))
-    assert "Role" in str(runtime.context_messages("chat-a", "luis", skills_enabled=False))
+    assert "Unavailable skills" in str(runtime.context_messages("chat-a", "example-user"))
+    assert "gone" not in str(runtime.context_messages("chat-a", "example-user", skills_enabled=False))
+    assert "Role" in str(runtime.context_messages("chat-a", "example-user", skills_enabled=False))
 
 
 def test_auth_disabled_chat_uses_the_same_local_owner_as_mobile_profiles(database, monkeypatch):
@@ -120,15 +120,15 @@ def test_local_skill_catalog_matches_existing_library_without_cross_owner_login_
     from pathlib import Path
     from src.constants import DATA_DIR
     from src.owner_identity import DEFAULT_LOCAL_OWNER
-    for name, owner, status in [("named", "luis", "published"), ("another", "other", "published"),
-                                ("shared", "*", "published"), ("draft", "luis", "draft")]:
+    for name, owner, status in [("named", "example-user", "published"), ("another", "other", "published"),
+                                ("shared", "*", "published"), ("draft", "example-user", "draft")]:
         path = Path(DATA_DIR) / "skills/general" / name / "SKILL.md"
         path.parent.mkdir(parents=True)
         path.write_text(f'---\nname: {name}\ndescription: A procedure\nowner: "{owner}"\nstatus: {status}\n---\n\n## Procedure\n1. Check sources\n', encoding="utf-8")
     monkeypatch.setenv("AUTH_ENABLED", "false")
     assert {s["name"] for s in runtime.skill_catalog(DEFAULT_LOCAL_OWNER)} == {"named", "another", "shared"}
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    assert {s["name"] for s in runtime.skill_catalog("luis")} == {"named", "shared"}
+    assert {s["name"] for s in runtime.skill_catalog("example-user")} == {"named", "shared"}
     assert {s["name"] for s in runtime.skill_catalog(DEFAULT_LOCAL_OWNER)} == {"shared"}
 
 
@@ -139,7 +139,7 @@ def test_hourly_uses_native_cron_and_persists_across_store_instances(database):
         task = db.query(ScheduledTask).one()
         assert task.schedule == "cron" and task.cron_expression == "23 * * * *"
         assert task.next_run is not None and task.next_run.minute == 23
-    observed = runtime.proactive_state("chat-a", "luis")
+    observed = runtime.proactive_state("chat-a", "example-user")
     assert observed["schedule"] == "hourly" and observed["enabled"]
     assert observed["next_run"] == p["proactivity"]["next_run"]
 
@@ -221,4 +221,4 @@ def test_run_now_checks_owner_and_does_not_enable_paused_mission(database, monke
         assert started == []
         assert c.patch("/api/mobile/assistants/chat-a", json={"proactivity": {"enabled": True}}).status_code == 200
         assert c.post("/api/mobile/assistants/chat-a/run").json()["started"]
-        assert started == [runtime.task_id("chat-a", "luis")]
+        assert started == [runtime.task_id("chat-a", "example-user")]

@@ -22,7 +22,7 @@ from src.agent_tools.board_tools import (  # noqa: E402
     BoardLinkTool, BoardListTool, BoardReadyTool, BoardUpdateTool,
 )
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 def _run_async(coro):

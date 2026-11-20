@@ -420,7 +420,7 @@ def settings_post(monkeypatch):
     monkeypatch.setattr(auth_routes, "_load_settings", lambda: dict(stored))
     monkeypatch.setattr(auth_routes, "_save_settings", lambda new: stored.clear() or stored.update(new))
     auth_manager = MagicMock()
-    auth_manager.get_username_for_token.return_value = "luis"
+    auth_manager.get_username_for_token.return_value = "example-user"
     auth_manager.is_admin.return_value = True
     router = auth_routes.setup_auth_routes(auth_manager)
     post = next(r.endpoint for r in router.routes
@@ -474,14 +474,14 @@ def backup_import(monkeypatch):
     store = dict(settings.DEFAULT_SETTINGS)
     monkeypatch.setattr(br, "load_settings", lambda: dict(store))
     monkeypatch.setattr(br, "save_settings", lambda new: store.update(new))
-    monkeypatch.setattr(br, "get_current_user", lambda request: "luis")
+    monkeypatch.setattr(br, "get_current_user", lambda request: "example-user")
     # `require_admin` lets BOTH an admin person and the internal tool token through (that is the hole being closed), so it is
     # stubbed to pass; what separates them is the route's own `is_agent_channel` check, which stays real
     monkeypatch.setattr(br, "require_admin", lambda request: None)
     router = br.setup_backup_routes(MagicMock(), MagicMock(), MagicMock(spec=["load_all", "add_skill"]))
     endpoint = next(r.endpoint for r in router.routes if r.path == "/api/import" and "POST" in getattr(r, "methods", ()))
 
-    def call(body, headers=None, user="luis"):
+    def call(body, headers=None, user="example-user"):
         async def js():
             return body
         request = SimpleNamespace(cookies={}, headers=headers or {}, state=SimpleNamespace(current_user=user),

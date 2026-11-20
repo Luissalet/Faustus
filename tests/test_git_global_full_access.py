@@ -36,8 +36,8 @@ def isolated(tmp_path, monkeypatch):
 @pytest.fixture
 def repo(tmp_path):
     root = tmp_path / 'repo'; root.mkdir(); git(root, 'init', '-b', 'main')
-    git(root, 'config', 'user.name', 'Luissalet')
-    git(root, 'config', 'user.email', 'luissalet@users.noreply.github.com')
+    git(root, 'config', 'user.name', 'sample-maintainer')
+    git(root, 'config', 'user.email', 'user@example.com')
     (root / 'sample.txt').write_text('initial\n')
     git(root, 'add', '--', 'sample.txt'); git(root, 'commit', '-m', 'Initial fixture')
     return root

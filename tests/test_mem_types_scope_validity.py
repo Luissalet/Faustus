@@ -41,41 +41,41 @@ def store(tmp_path, monkeypatch):
 
 
 def test_type_defaults_from_level_and_status_when_not_given(store):
-    fact = engine.add_item("The cart total excludes shipping", owner="luis", now=NOW)
+    fact = engine.add_item("The cart total excludes shipping", owner="example-user", now=NOW)
     assert fact["type"] == "fact"
 
-    rule = engine.add_item("Always run tests before claiming done", owner="luis",
+    rule = engine.add_item("Always run tests before claiming done", owner="example-user",
                            level="procedural", trust_class="human_explicit", now=NOW)
     assert rule["type"] == "procedure"
 
-    anti = engine.add_item("Never skip the tests", owner="luis", status="anti_pattern",
+    anti = engine.add_item("Never skip the tests", owner="example-user", status="anti_pattern",
                            trust_class="human_explicit", now=NOW)
     assert anti["type"] == "anti_pattern"
 
 
 def test_type_is_validated_against_the_known_vocabulary(store):
-    item = engine.add_item("Ship on Fridays", owner="luis", type="decision", now=NOW)
+    item = engine.add_item("Ship on Fridays", owner="example-user", type="decision", now=NOW)
     assert item["type"] == "decision"
 
     with pytest.raises(engine.MemoryEngineError):
-        engine.add_item("bad type", owner="luis", type="opinion", now=NOW)
+        engine.add_item("bad type", owner="example-user", type="opinion", now=NOW)
 
 
 def test_scope_is_computed_from_owner_project_and_session(store):
-    global_item = engine.add_item("A global preference", owner="luis", now=NOW)
+    global_item = engine.add_item("A global preference", owner="example-user", now=NOW)
     assert global_item["scope"] == "global"
 
-    project_item = engine.add_item("A project fact", owner="luis", project="acme", now=NOW)
+    project_item = engine.add_item("A project fact", owner="example-user", project="acme", now=NOW)
     assert project_item["scope"] == "project:acme"
 
-    session_item = engine.add_item("A one-off note", owner="luis", project="acme",
+    session_item = engine.add_item("A one-off note", owner="example-user", project="acme",
                                    session_id="sess-1", now=NOW)
     assert session_item["scope"] == "session:sess-1"
 
 
 def test_provenance_records_who_said_it(store):
     item = engine.add_item(
-        "The deploy window is 2am UTC", owner="luis", trust_class="human_explicit",
+        "The deploy window is 2am UTC", owner="example-user", trust_class="human_explicit",
         provenance={"turn": "t-42", "message_id": "m-7"}, now=NOW,
     )
     assert item["provenance"]["turn"] == "t-42"
@@ -89,14 +89,14 @@ def test_provenance_records_who_said_it(store):
 def test_a_hypothesis_with_an_expired_validity_window_does_not_come_back(store):
     """MEM-01 acceptance: "una hipótesis refutada no vuelve como hecho"."""
     item = engine.add_item(
-        "The bug is caused by a race condition", owner="luis", project="acme",
+        "The bug is caused by a race condition", owner="example-user", project="acme",
         trust_class="agent_assertion", valid_until=engine._iso(NOW - timedelta(days=1)),
         now=NOW - timedelta(days=5),
     )
-    hits = engine.search("race condition", "luis", "acme", now=NOW)
+    hits = engine.search("race condition", "example-user", "acme", now=NOW)
     assert all(h["id"] != item["id"] for h in hits)
 
-    detail = engine.pack_detail("luis", "acme", "race condition", 2000, now=NOW)
+    detail = engine.pack_detail("example-user", "acme", "race condition", 2000, now=NOW)
     assert item["id"] not in detail["ids"]
 
     # The row itself is untouched (an expired item is not deleted, only not
@@ -106,18 +106,18 @@ def test_a_hypothesis_with_an_expired_validity_window_does_not_come_back(store):
 
 def test_a_not_yet_valid_item_is_not_recalled_before_its_start(store):
     item = engine.add_item(
-        "New pricing takes effect", owner="luis", project="acme",
+        "New pricing takes effect", owner="example-user", project="acme",
         trust_class="human_explicit", valid_from=engine._iso(NOW + timedelta(days=30)),
         now=NOW,
     )
-    hits = engine.search("New pricing", "luis", "acme", now=NOW)
+    hits = engine.search("New pricing", "example-user", "acme", now=NOW)
     assert all(h["id"] != item["id"] for h in hits)
 
 
 def test_an_item_with_no_validity_window_is_always_recallable(store):
     """The default for every item added before this field existed."""
-    item = engine.add_item("Coffee before code", owner="luis", now=NOW)
-    hits = engine.search("Coffee before code", "luis", "", now=NOW + timedelta(days=3650))
+    item = engine.add_item("Coffee before code", owner="example-user", now=NOW)
+    hits = engine.search("Coffee before code", "example-user", "", now=NOW + timedelta(days=3650))
     assert any(h["id"] == item["id"] for h in hits)
 
 
@@ -152,7 +152,7 @@ def test_migration_is_additive_over_a_pre_mem01_database(store, tmp_path):
     conn.execute(
         "INSERT INTO items (id, owner, project, level, text, status, maturity, "
         "trust_class, trust, confidence, created_at, updated_at) VALUES "
-        "('pre-mem01', 'luis', 'acme', 'procedural', 'Legacy rule from before MEM-01', "
+        "('pre-mem01', 'example-user', 'acme', 'procedural', 'Legacy rule from before MEM-01', "
         "'active', 'proven', 'human_explicit', 0.85, 0.85, '2025-01-01T00:00:00Z', "
         "'2025-01-01T00:00:00Z')"
     )

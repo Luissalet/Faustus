@@ -223,7 +223,7 @@ def _memory_items(n=15):
 def _guard_log(n=25):
     return {"status": "success", "receipts": [
         {"ts": "2026-08-30T12:34:56Z", "tier": "DANGEROUS", "rule_id": "fs.rm_rf",
-         "decision": "blocked", "command_head": "rm -rf /tmp/build", "owner": "luis",
+         "decision": "blocked", "command_head": "rm -rf /tmp/build", "owner": "example-user",
          "hash": "a" * 32} for _ in range(n)],
         "chain": {"ok": True, "entries": n, "broken_at": None}}
 

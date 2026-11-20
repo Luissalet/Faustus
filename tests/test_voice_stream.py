@@ -239,7 +239,7 @@ def test_reply_text_ignores_reasoning_and_follows_replacements():
 def test_server_mode_sends_once_and_speaks_the_reply_in_order():
     async def scenario():
         manager, runs, sent = make_manager(delay=0.01)
-        session = await manager.create("luis", "sid-1")
+        session = await manager.create("example-user", "sid-1")
         result = await session.submit_clip(vs.pcm16_to_wav(pcm(1.2)), speech_end_at=None)
         assert result["verdict"] == "ok" and result["text"].startswith("hola")
         events = await collect_until(session, "speech_end")
@@ -261,7 +261,7 @@ def test_interrupt_stops_speech_but_not_the_turn():
     async def scenario():
         frames = [delta(f"Frase número {i}. ") for i in range(12)] + [DONE]
         manager, runs, sent = make_manager(frames=frames, delay=0.05)
-        session = await manager.create("luis", "sid-1")
+        session = await manager.create("example-user", "sid-1")
         await session.send_text("cuéntame algo")
         await collect_until(session, "audio")
         await session.interrupt("barge_in")
@@ -281,7 +281,7 @@ def test_interrupt_stops_speech_but_not_the_turn():
 def test_client_mode_only_transcribes_and_follows_the_run_the_client_starts():
     async def scenario():
         manager, runs, sent = make_manager()
-        session = await manager.create("luis", "sid-1", send_mode="client")
+        session = await manager.create("example-user", "sid-1", send_mode="client")
         result = await session.submit_clip(vs.pcm16_to_wav(pcm(1.0)))
         assert result["verdict"] == "ok" and "turn" not in result
         assert sent == []
@@ -299,10 +299,10 @@ def test_a_run_already_running_when_voice_opens_is_not_read_aloud():
         runs = FakeRuns()
         runs.active["sid-1"] = FakeRun("old-run", [delta("Respuesta vieja."), DONE], delay=0.05)
         manager, _, _ = make_manager(runs=runs)
-        session = await manager.create("luis", "sid-1")
+        session = await manager.create("example-user", "sid-1")
         await asyncio.sleep(0.4)
         assert not [e for e in session.events if e.type in ("audio", "turn")]
-        follower = await manager.create("luis", "sid-1", follow_current=True)
+        follower = await manager.create("example-user", "sid-1", follow_current=True)
         assert follower._baseline_run == ""
         await manager.close_all()
     asyncio.run(scenario())
@@ -312,7 +312,7 @@ def test_rewritten_answer_does_not_repeat_sentences():
     async def scenario():
         frames = [delta("Primera idea. Segunda idea. "), replace(""), delta("Primera idea. Tercera idea."), DONE]
         manager, runs, sent = make_manager(frames=frames, delay=0.02)
-        session = await manager.create("luis", "sid-1")
+        session = await manager.create("example-user", "sid-1")
         await session.send_text("hola")
         events = await collect_until(session, "speech_end")
         # "Segunda idea." was still held back (unfinished) when the answer was rewritten without it.
@@ -324,7 +324,7 @@ def test_rewritten_answer_does_not_repeat_sentences():
 def test_stop_phrase_interrupts_and_sends_nothing():
     async def scenario():
         manager, runs, sent = make_manager(stt=FakeSTT(text="¡Para!"))
-        session = await manager.create("luis", "sid-1")
+        session = await manager.create("example-user", "sid-1")
         result = await session.submit_clip(vs.pcm16_to_wav(pcm(0.5)))
         assert result["verdict"] == "stop_phrase" and sent == []
         assert any(e.type == "interrupted" for e in session.events)
@@ -337,7 +337,7 @@ def test_stop_phrase_interrupts_and_sends_nothing():
 def test_wake_word_mode_drops_utterances_without_it():
     async def scenario():
         manager, runs, sent = make_manager(stt=FakeSTT(text="abre el correo"))
-        session = await manager.create("luis", "sid-1", wake_word=True)
+        session = await manager.create("example-user", "sid-1", wake_word=True)
         assert (await session.submit_clip(vs.pcm16_to_wav(pcm(0.6))))["verdict"] == "no_wake_word"
         manager.stt.text = "Faustus abre el correo"
         result = await session.submit_clip(vs.pcm16_to_wav(pcm(0.6)))
@@ -350,7 +350,7 @@ def test_streamed_pcm_gives_partials_then_one_final_with_preroll():
     async def scenario():
         stt = FakeSTT(text=lambda audio: f"{len(audio)} bytes")
         manager, runs, sent = make_manager(stt=stt)
-        session = await manager.create("luis", "sid-1", send_mode="client")
+        session = await manager.create("example-user", "sid-1", send_mode="client")
         assert not manager.partials_affordable()  # unknown recognizer speed: no guesses that could delay the final
         manager.note_stt(100, 64000)               # 2 s transcribed in 0.1 s
         assert manager.partials_affordable()
@@ -372,8 +372,8 @@ def test_streamed_pcm_gives_partials_then_one_final_with_preroll():
 def test_sessions_are_bounded_per_owner_and_close_cleanly():
     async def scenario():
         manager, _, _ = make_manager()
-        created = [await manager.create("luis", "sid-1") for _ in range(vs.MAX_SESSIONS_PER_OWNER + 1)]
-        open_ids = {s["id"] for s in manager.list("luis")}
+        created = [await manager.create("example-user", "sid-1") for _ in range(vs.MAX_SESSIONS_PER_OWNER + 1)]
+        open_ids = {s["id"] for s in manager.list("example-user")}
         assert len(open_ids) == vs.MAX_SESSIONS_PER_OWNER and created[0].id not in open_ids
         with pytest.raises(KeyError):
             manager.get(created[1].id, "otra")
@@ -397,7 +397,7 @@ def test_speculative_transcript_is_used_unless_withdrawn():
     async def scenario():
         stt = FakeSTT(text=lambda audio: f"{len(audio)} bytes")
         manager, runs, sent = make_manager(stt=stt)
-        session = await manager.create("luis", "sid-1", send_mode="client", partials=False)
+        session = await manager.create("example-user", "sid-1", send_mode="client", partials=False)
         session.begin_utterance(16000)
         await session.add_audio(pcm(1.0))
         assert session.speculate()
@@ -435,13 +435,13 @@ def test_slow_recognizer_turns_partials_off():
 def test_a_session_left_by_its_websocket_closes_after_the_grace_period(monkeypatch):
     async def scenario():
         manager, _, _ = make_manager()
-        session = await manager.create("luis", "sid-1", send_mode="client")
+        session = await manager.create("example-user", "sid-1", send_mode="client")
         session.attach()
         session.detach()
         monkeypatch.setattr(vs, "DETACHED_TTL_S", 0.1)
         await asyncio.sleep(0.4)
-        assert session.closed and manager.list("luis") == []
-        rest = await manager.create("luis", "sid-1")  # REST/MCP sessions never had a socket: not closed by this
+        assert session.closed and manager.list("example-user") == []
+        rest = await manager.create("example-user", "sid-1")  # REST/MCP sessions never had a socket: not closed by this
         await asyncio.sleep(0.3)
         assert not rest.closed
         await manager.close_all()
@@ -451,7 +451,7 @@ def test_a_session_left_by_its_websocket_closes_after_the_grace_period(monkeypat
 def test_client_mode_timings_belong_to_the_run_the_transcript_started(monkeypatch):
     async def scenario():
         manager, runs, sent = make_manager()
-        session = await manager.create("luis", "sid-1", send_mode="client")
+        session = await manager.create("example-user", "sid-1", send_mode="client")
         emit = session.emit
 
         async def eager_client(kind, data=None, **extra):

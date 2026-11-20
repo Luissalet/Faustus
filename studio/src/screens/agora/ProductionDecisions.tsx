@@ -1,5 +1,6 @@
 import { ExternalLink } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { AgoraPersonContext } from './util';
 import { agoraGet, type Decision } from '../../adapters/agora';
 import { locale, t } from '../../i18n';
 import './production-decisions.css';
@@ -11,7 +12,8 @@ type Draft = { id: number; title: string; order: { title: string }; variants: Va
 type Summary = { id: number; title: string };
 type RecordRow = {
   id: number; created: number; gate_id: number; note: string; decision: 'keep' | 'cancel'; piece_title: string;
-  situation: { order?: Summary; gate?: Summary; draft_pass?: Summary; variant?: Summary };
+  decided_by?: { id: string; name?: string };
+  situation: { decided_by?: string; order?: Summary; gate?: Summary; draft_pass?: Summary; variant?: Summary };
 };
 type PendingRow = { key: string; title: string; order: string; variants: { id: number; title: string; piece?: Piece }[] };
 type State = { space: string; pending: PendingRow[]; pendingError: boolean };
@@ -111,14 +113,18 @@ export async function readDecisionLog(space: string, signal: AbortSignal) {
 }
 
 export function ProductionHistory({ rows, error }: { rows: RecordRow[]; error: boolean }) {
+  const person = useContext(AgoraPersonContext);
   if (!rows.length && !error) return null;
   return <section className="fs-agx-production" data-testid="agora-production-history" aria-labelledby="agora-production-history-heading">
     <h3 id="agora-production-history-heading">{t('Production decision history')}</h3>
     {error && <p role="status">{t('Production decision history could not be loaded.')}</p>}
     {rows.map(row => {
       const { order, gate, draft_pass: pass, variant } = row.situation;
+      const actorId = row.decided_by?.id || row.situation.decided_by;
+      const actorName = row.decided_by?.name || (actorId && actorId === person?.id ? person?.name || actorId : actorId);
+      const date = new Date(row.created * 1000).toLocaleDateString(locale());
       return <article className="fs-agx-production__record" key={row.id}>
-        <h3>{t('Luis’s decision ({date})', { date: new Date(row.created * 1000).toLocaleDateString(locale()) })}</h3>
+        <h3>{actorName ? t('{name} · Decision ({date})', { name: actorName, date }) : t('Decision ({date})', { date })}</h3>
         <p>{pass?.title || gate?.title || row.piece_title}</p>
         <p>{[order?.title, row.decision === 'keep' && variant?.title,
           row.decision === 'keep' ? t('Kept') : pass ? t('Discarded') : t('Cancelled')].filter(Boolean).join(' · ')}</p>

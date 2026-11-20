@@ -398,7 +398,7 @@ def test_save_assistant_response_emits_turn_finished_once(monkeypatch):
 
     sess = _FakeSession("selected-model")
     sess.name = "Weather chat"
-    sess.owner = "luis"
+    sess.owner = "example-user"
 
     fake_session_manager = SimpleNamespace(save_sessions=lambda: None)
 
@@ -419,7 +419,7 @@ def test_save_assistant_response_emits_turn_finished_once(monkeypatch):
     assert len(calls) == 1
     kind, kw = calls[0]
     assert kind == "turn_finished"
-    assert kw["owner"] == "luis"
+    assert kw["owner"] == "example-user"
     assert kw["title"] == "Weather chat"
     assert kw["body"] == "The forecast is sunny."
     assert kw["session_id"] == "s1"

@@ -64,7 +64,7 @@ def _interrupted_marker(path, session_id, **over):
     data = {
         "marker": True, "query": "the whiplash rehab question",
         "status": "interrupted", "error": ResearchHandler.INTERRUPTED_MESSAGE,
-        "model": "m", "category": None, "started_at": 500.0, "owner": "luis",
+        "model": "m", "category": None, "started_at": 500.0, "owner": "example-user",
         "max_rounds": 20, "checkpoint": _checkpoint(),
     }
     data.update(over)
@@ -84,7 +84,7 @@ def test_kill_and_restart_after_three_rounds_then_resume_without_repeating(data_
     h = _handler()
     h._write_marker("rp-old", {"query": "the whiplash rehab question", "status": "running",
                                "progress": {"model": "m"}, "error": "", "started_at": 500.0,
-                               "category": None, "owner": "luis", "max_rounds": 20})
+                               "category": None, "owner": "example-user", "max_rounds": 20})
     h._write_checkpoint("rp-old", _checkpoint())
 
     # "Matar backend" — a fresh process re-reads disk state on construction.
@@ -107,7 +107,7 @@ def test_kill_and_restart_after_three_rounds_then_resume_without_repeating(data_
         return {"session_id": kwargs["session_id"], "status": "running"}
     with mock.patch.object(ResearchHandler, "start_research", fake_start_research):
         result = fresh.resume_interrupted(
-            "rp-old", "luis",
+            "rp-old", "example-user",
             resolve_endpoint=lambda model: ("http://127.0.0.1:11434/v1", "m", None))
 
     # A NEW session, never a second writer for the interrupted one.
@@ -127,7 +127,7 @@ def test_kill_and_restart_after_three_rounds_then_resume_without_repeating(data_
 
     # The interrupted card's checkpoint has been consumed — resuming is not
     # offered a second time for the same marker.
-    assert fresh.list_interrupted("luis") == []
+    assert fresh.list_interrupted("example-user") == []
 
 
 def test_resume_is_distinct_from_retry(data_dir):
@@ -144,13 +144,13 @@ def test_resume_is_distinct_from_retry(data_dir):
         return {"session_id": kwargs["session_id"], "status": "running"}
     import unittest.mock as mock
     with mock.patch.object(ResearchHandler, "start_research", fake_start_research):
-        h.resume_interrupted("rp-old", "luis", resolve_endpoint=lambda model: ("http://x", "m", None))
+        h.resume_interrupted("rp-old", "example-user", resolve_endpoint=lambda model: ("http://x", "m", None))
     resume_kwargs = dict(captured)
 
     captured.clear()
     with mock.patch.object(ResearchHandler, "start_research", fake_start_research):
         h.start_research(session_id="rp-fresh-retry", query="the whiplash rehab question",
-                         llm_endpoint="http://x", llm_model="m", owner="luis")
+                         llm_endpoint="http://x", llm_model="m", owner="example-user")
     retry_kwargs = dict(captured)
 
     assert resume_kwargs.get("prior_findings")
@@ -163,10 +163,10 @@ def test_resume_without_a_checkpoint_refuses_explicitly(data_dir):
     h = _handler()
     (data_dir / "rp-empty.json").write_text(
         json.dumps({"marker": True, "query": "q", "status": "interrupted",
-                    "owner": "luis"}), encoding="utf-8")
+                    "owner": "example-user"}), encoding="utf-8")
 
     with pytest.raises(ResearchHandler.NoCheckpointError):
-        h.resume_interrupted("rp-empty", "luis", resolve_endpoint=lambda model: ("http://x", "m", None))
+        h.resume_interrupted("rp-empty", "example-user", resolve_endpoint=lambda model: ("http://x", "m", None))
 
 
 def test_resume_never_leaks_another_owners_session(data_dir):
@@ -174,10 +174,10 @@ def test_resume_never_leaks_another_owners_session(data_dir):
     _interrupted_marker(data_dir, "rp-theirs", owner="ana")
 
     with pytest.raises(FileNotFoundError):
-        h.resume_interrupted("rp-theirs", "luis", resolve_endpoint=lambda model: ("http://x", "m", None))
+        h.resume_interrupted("rp-theirs", "example-user", resolve_endpoint=lambda model: ("http://x", "m", None))
 
 
 def test_resume_of_a_nonexistent_session_raises_not_found(data_dir):
     h = _handler()
     with pytest.raises(FileNotFoundError):
-        h.resume_interrupted("rp-does-not-exist", "luis", resolve_endpoint=lambda model: ("http://x", "m", None))
+        h.resume_interrupted("rp-does-not-exist", "example-user", resolve_endpoint=lambda model: ("http://x", "m", None))

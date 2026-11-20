@@ -183,7 +183,7 @@ def test_a_malformed_extra_reads_as_a_conversation(broken):
 @pytest.mark.parametrize("extra", [
     None,
     {},
-    {"kind": "chat", "owner": "luis"},
+    {"kind": "chat", "owner": "example-user"},
     {DOCUMENT_FLAG: False},
 ])
 def test_docx_conversation_is_byte_identical_whatever_extra_holds(extra):
@@ -198,7 +198,7 @@ def test_docx_conversation_is_byte_identical_whatever_extra_holds(extra):
 @pytest.mark.parametrize("extra", [
     None,
     {},
-    {"kind": "chat", "owner": "luis"},
+    {"kind": "chat", "owner": "example-user"},
     {DOCUMENT_FLAG: False},
 ])
 def test_pdf_conversation_is_byte_identical_whatever_extra_holds(extra, invariant_pdf):

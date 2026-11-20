@@ -199,7 +199,7 @@ async def test_the_fix_loop_stops_when_the_rounds_stop_changing_anything(job_run
     """Two fix rounds that leave the identical verification behind: the third
     is not spent, the job says why, and the score rides in the answer."""
     job_runner["settings"]["agent_fix_round_convergence"] = True
-    job = await dispatch.start("luis", {"tasks": ["fix total()"], "workspace": job_runner["ws"],
+    job = await dispatch.start("example-user", {"tasks": ["fix total()"], "workspace": job_runner["ws"],
                                         "fix_rounds": 4, "verify": "pytest -q"})
     assert await dispatch.wait(job, 60)
     # the workers + fix rounds 1 and 2; round 3 and 4 were never dispatched
@@ -221,7 +221,7 @@ async def test_with_the_setting_off_the_fixed_counter_runs_every_round(job_runne
     unchanging verification — every requested round is spent, nothing about
     convergence appears anywhere."""
     job_runner["settings"]["agent_fix_round_convergence"] = False
-    job = await dispatch.start("luis", {"tasks": ["fix total()"], "workspace": job_runner["ws"],
+    job = await dispatch.start("example-user", {"tasks": ["fix total()"], "workspace": job_runner["ws"],
                                         "fix_rounds": 4, "verify": "pytest -q"})
     assert await dispatch.wait(job, 60)
     # 4 was clamped to the old maximum of 2, and both rounds ran
@@ -254,7 +254,7 @@ async def test_a_loop_that_is_still_making_progress_spends_its_rounds(job_runner
         return {**base, **over}
 
     monkeypatch.setattr(dispatch, "run_verification", verification)
-    job = await dispatch.start("luis", {"tasks": ["fix it"], "workspace": job_runner["ws"],
+    job = await dispatch.start("example-user", {"tasks": ["fix it"], "workspace": job_runner["ws"],
                                         "fix_rounds": 3, "verify": "pytest -q"})
     assert await dispatch.wait(job, 60)
     assert len(job_runner["calls"]) == 4                     # the workers + all 3 fix rounds
@@ -282,7 +282,7 @@ def test_a_broken_detector_never_breaks_the_job(monkeypatch):
 
 
 def test_the_round_artifact_carries_the_verdict_the_failures_and_the_files():
-    job = dispatch.DispatchJob("luis", {"tasks": []}, "/ws", "", "m", None, "t")
+    job = dispatch.DispatchJob("example-user", {"tasks": []}, "/ws", "", "m", None, "t")
     job.changes = {"added": ["b.py"], "modified": ["a.py"], "deleted": []}
     art = dispatch._round_artifact(job, {"summary": "1 failed", "failures": ["test_total"],
                                          "output_tail": "assert 0 == 3"})

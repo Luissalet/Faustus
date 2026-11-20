@@ -42,9 +42,9 @@ async def test_real_board_tools_and_editor_use_same_task_without_changing_source
     detail=project_tasks.command(project,'task',{'task_id':tid})
     assert (detail['task']['status'],detail['task']['body'],detail['task']['labels'])==('done','Done by tool',['urgent'])
     assert any(msg['body']=='Completion proof' for msg in detail['messages'])
-    project_tasks.command(project,'task_edit',{'task_id':tid,'expected_etag':detail['task']['etag'],'status':'open','body':'Luis reopened','kind':'task','labels':['clarification']})
+    project_tasks.command(project,'task_edit',{'task_id':tid,'expected_etag':detail['task']['etag'],'status':'open','body':'ExampleUser reopened','kind':'task','labels':['clarification']})
     read=await BoardGetTool().execute({'id':key},ctx)
-    assert (read['issue']['status'],read['issue']['body_md'],read['issue']['labels'])==('open','Luis reopened',['clarification'])
+    assert (read['issue']['status'],read['issue']['body_md'],read['issue']['labels'])==('open','ExampleUser reopened',['clarification'])
     assert project_tasks.prepare(project)['imported']==0
     assert project_board.Store().list_issues(project['id'])[0]==[]
 

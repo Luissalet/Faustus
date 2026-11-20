@@ -23,10 +23,10 @@ def world(monkeypatch):
     from src import plugins as plugins_mod
 
     rows = [
-        {"id": "c-editor", "preset_id": "platos", "owner": "luis",
+        {"id": "c-editor", "preset_id": "platos", "owner": "example-user",
          "app_url": "http://127.0.0.1:5000", "ui_url": "http://127.0.0.1:5000",
          "launch_profile_id": "prof-editor", "values": {}},
-        {"id": "c-notes", "preset_id": "writer", "owner": "luis",
+        {"id": "c-notes", "preset_id": "writer", "owner": "example-user",
          "app_url": "http://127.0.0.1:8766", "ui_url": None,
          "launch_profile_id": "", "values": {}},
     ]

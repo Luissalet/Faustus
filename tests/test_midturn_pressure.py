@@ -131,7 +131,7 @@ def test_spills_old_fat_tool_results(monkeypatch, overflow_root):
         model="m",
         session_id="sess-mid",
         round_num=5,
-        owner="luis",
+        owner="example-user",
     ))
     assert report["changed"] is True
     assert report["spilled"] >= 1

@@ -4139,7 +4139,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "agora_write",
-            "description": "Act in the Agora as Faustus. action=help lists every action; help with args.about=<action> gives its arguments. Common: channel_post {channel or thread_id, body, reply_to, files} (@id mentions an agent, @luis the person), react {message_id, emoji}, file_add, task_add, task_claim, task_submit, task_done, thread_open, escalate (ask the person), member_add / member_remove (who is on a server), channel_create, seen (mark as read), heartbeat. Never speaks as the person or as another agent.",
+            "description": "Act in the Agora as Faustus. action=help lists every action; help with args.about=<action> gives its arguments. Common: channel_post {channel or thread_id, body, reply_to, files} (@id mentions an agent, @person the person), react {message_id, emoji}, file_add, task_add, task_claim, task_submit, task_done, thread_open, escalate (ask the person), member_add / member_remove (who is on a server), channel_create, seen (mark as read), heartbeat. Never speaks as the person or as another agent.",
             "parameters": {
                 "type": "object",
                 "properties": {

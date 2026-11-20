@@ -176,7 +176,7 @@ def test_bash_runs_a_command_with_the_effective_bound(settings, monkeypatch):
 def test_the_job_ceiling_grows_with_what_jobs_really_take(settings):
     from src import dispatch
     settings["agent_adaptive_idle_timeout"] = True
-    job = dispatch.DispatchJob("luis", {"tasks": [{"name": "w", "instruction": "a"}], "timeout_s": 100},
+    job = dispatch.DispatchJob("example-user", {"tasks": [{"name": "w", "instruction": "a"}], "timeout_s": 100},
                                "/ws", "", "m", None, "t", verify="none")
     fixed = job.ceiling_s()
     assert fixed == 100
@@ -203,6 +203,6 @@ def test_a_broken_recorder_never_breaks_a_job_or_a_command(settings, monkeypatch
     assert sp._effective_idle_timeout("bash") == 300.0
     sp._record_cycle("bash", 0.0)                       # swallowed
     assert dispatch._adaptive_ceiling("/ws", 900) == 900
-    job = dispatch.DispatchJob("luis", {"tasks": []}, "/ws", "", "m", None, "t")
+    job = dispatch.DispatchJob("example-user", {"tasks": []}, "/ws", "", "m", None, "t")
     job.started, job.finished = 1.0, 2.0
     dispatch._record_job_duration(job)                  # swallowed

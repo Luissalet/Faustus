@@ -51,7 +51,7 @@ export interface ConnectorPreset {
   purpose: string;
   capabilities: string[];
   transport: string;
-  /** Names the user has to fill (`JOBHUNT_DIR`, `APP_URL`…). Never a path of Luis's own machine. */
+  /** Names the user has to fill (`JOBHUNT_DIR`, `APP_URL`…). Never a path of the user's own machine. */
   placeholders: string[];
   defaults: Record<string, string>;
   app_url_default?: string | null;

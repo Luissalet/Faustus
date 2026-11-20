@@ -35,7 +35,7 @@ def _compile_and_inject(client, *, item_id="item1", source_ref="l64test:1",
     no reason to pick up `_FakeSource`'s made-up prefix, so this is the
     direct way to get one onto a REAL packet's manifest without teaching the
     compiler about a test-only source."""
-    body = _request_body(execution={"owner": "luis", "session_id": session_id})
+    body = _request_body(execution={"owner": "example-user", "session_id": session_id})
     compiled = client.post("/api/context/compile", json=body,
                            headers=TOOL_HEADERS).json()
     packet_id = compiled["packet_id"]
@@ -44,7 +44,7 @@ def _compile_and_inject(client, *, item_id="item1", source_ref="l64test:1",
     scope = cache.scope_of(ctx_request)
     cache.working_set().put(
         scope, cache.PREFIX_PACKET + packet_id,
-        {"owner": "luis", "manifest": [
+        {"owner": "example-user", "manifest": [
             {"context_item_id": item_id, "section": "retrieved_memory",
              "source_type": "memory", "source_ref": source_ref},
         ], "summary": {}},
@@ -90,7 +90,7 @@ def test_an_unknown_packet_id_is_404(client):
 
 
 def test_another_owners_packet_is_404_not_leaked(client, fake_source):
-    body = _request_body(execution={"owner": "luis", "session_id": "s-frag-owner"})
+    body = _request_body(execution={"owner": "example-user", "session_id": "s-frag-owner"})
     compiled = client.post("/api/context/compile", json=body, headers=TOOL_HEADERS).json()
     packet_id = compiled["packet_id"]
 
@@ -116,7 +116,7 @@ def test_an_evicted_packets_manifest_is_an_honest_miss(client):
     """No `_compile_and_inject` splice here — the ledger row exists (from a
     real compile) but its manifest was never cached under a key this test
     controls, mirroring an eviction."""
-    body = _request_body(execution={"owner": "luis", "session_id": "s-frag-evicted"})
+    body = _request_body(execution={"owner": "example-user", "session_id": "s-frag-evicted"})
     compiled = client.post("/api/context/compile", json=body, headers=TOOL_HEADERS).json()
     packet_id = compiled["packet_id"]
     cache.reset_working_set()  # the packet row survives this; its manifest cache does not

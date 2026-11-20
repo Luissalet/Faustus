@@ -39,13 +39,14 @@ def test_no_movement_without_events():
     assert state.snapshot(500.0)["phase"] == "act"
 
 
-def test_practices_marked_from_what_the_calls_ran():
+def test_practices_marked_from_what_the_calls_ran(monkeypatch):
+    monkeypatch.setenv("FAUSTUS_GIT_AUTHOR", "sample-maintainer")
     state = loop.LoopState("s1", "r1", 0.0)
     calls = [
         ("bash", "python -m pytest tests/test_x.py -q", 0),
         ("browser_navigate", "http://127.0.0.1:7012", 0),
         ("edit_file", "FAUSTUS.md", 0),
-        ("bash", 'git add src/x.py FAUSTUS.md && git commit --author="Luissalet <l@x>" -m "Add x"', 0),
+        ("bash", 'git add src/x.py FAUSTUS.md && git commit --author="sample-maintainer <l@x>" -m "Add x"', 0),
         ("bash", "agora.cmd --space mejoras submit 12 --commits abc", 0),
     ]
     for i, (tool, command, code) in enumerate(calls):
@@ -69,7 +70,7 @@ def test_failures_and_unsettled_identity():
     assert marks["no_evidence"]["state"] == "fail"
     assert marks["commit"]["state"] == "unknown"
     assert marks["browser"]["state"] == "pending" and marks["agora"]["state"] == "pending"
-    other = loop.judge_practices([{"tool": "bash", "command": "git commit --author='Someone <s@x>' -m x", "ok": True}])
+    other = loop.judge_practices([{"tool": "bash", "command": "git commit --author='Someone <s@x>' -m x", "ok": True}], author="sample-maintainer")
     assert next(p for p in other if p["id"] == "commit")["state"] == "fail"
     trailer = loop.judge_practices([{"tool": "bash", "command": "git commit -m 'x\n\nCo-Authored-By: Bot'", "ok": True}])
     assert next(p for p in trailer if p["id"] == "commit")["state"] == "fail"

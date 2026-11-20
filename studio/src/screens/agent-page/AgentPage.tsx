@@ -174,9 +174,9 @@ export function AgentPage({ space, agentId, onClose, onOpenDm, onOpenTask }: Age
   if (!data) return <section className="fs-agp" aria-busy="true" role="region" aria-label={t('Agent page')}><p className="fs-agp-empty">{t('Loading…')}</p></section>;
 
   const h = data.profile;
-  const color = h.color || agentColor(h.id);
+  const isPerson = h.presence === 'person' || h.rank === 'person';
+  const color = h.color || agentColor(h.id, isPerson ? h.id : undefined);
   const pending = data.proposals.filter((p) => p.status === 'pending');
-  const isPerson = h.id === 'luis';
   const instructionsText = draft ?? data.instructions.body;
   const engineLine = [h.engine, h.model, h.effort].filter(Boolean).join(' · ');
 
@@ -185,7 +185,7 @@ export function AgentPage({ space, agentId, onClose, onOpenDm, onOpenTask }: Age
       <header className="fs-agp-head">
         <span className="fs-agp-avatar" data-presence={h.presence} aria-hidden="true">{h.initials || agentInitials(h.id)}</span>
         <div className="fs-agp-head__text">
-          <h2>{h.id}{RANK_LABEL[h.rank] && h.rank !== 'agent' && <span className="fs-agp-rank">{t(RANK_LABEL[h.rank])}</span>}</h2>
+          <h2>{isPerson ? h.name || h.id : h.id}{RANK_LABEL[h.rank] && h.rank !== 'agent' && <span className="fs-agp-rank">{t(RANK_LABEL[h.rank])}</span>}</h2>
           <p>
             <span className="fs-agp-dot" data-presence={h.presence} aria-hidden="true" />
             {t(PRESENCE_LABEL[h.presence as keyof typeof PRESENCE_LABEL] ?? h.presence)}

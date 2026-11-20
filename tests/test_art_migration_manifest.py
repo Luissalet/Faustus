@@ -41,7 +41,7 @@ def _occurrences(n, own_database):
                              media_type="text/plain")
         occ_id = f"occ_backfill_{i}"
         identity.ensure_occurrence(ArtifactOccurrence.parse({
-            "id": occ_id, "blob_sha256": digest, "kind": "text", "owner": "luis",
+            "id": occ_id, "blob_sha256": digest, "kind": "text", "owner": "example-user",
         }))
         ids.append(occ_id)
     return ids

@@ -22,7 +22,7 @@ from routes import project_routes
 from services import projects as projects_mod
 from services.projects import ProjectStore
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 @pytest.fixture()

@@ -192,7 +192,7 @@ def box(tmp_path, monkeypatch, workspace):
 
 def _run(box, **body):
     async def go():
-        job = await dispatch.start("luis", {"workspace": box["ws"], "verify": False, **body})
+        job = await dispatch.start("example-user", {"workspace": box["ws"], "verify": False, **body})
         assert await dispatch.wait(job, 10)
         return job
     return asyncio.run(go())

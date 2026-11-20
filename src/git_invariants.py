@@ -95,7 +95,7 @@ def canonical_git_remote(repo_dir: str) -> Optional[str]:
     Reduces the forms of the same remote to one string: `git@host:owner/repo.git`,
     `ssh://git@host:22/owner/repo`, and `https://host/owner/repo` all canonicalise
     to `host/owner/repo`. An ssh alias from the user's ssh config
-    (`git@Luissalet:owner/repo.git`) keeps the alias as the host rather than
+    (`git@sample-maintainer:owner/repo.git`) keeps the alias as the host rather than
     failing to parse — an unparseable remote would silently compare equal to
     nothing and turn every expectation into a refusal.
     """

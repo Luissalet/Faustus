@@ -20,7 +20,7 @@ def home(tmp_path):
     _write(c / "CLAUDE.md", "# Reglas\nUsa español.\n\n## Git\nSin push.\n\n## Tests\nPrueba antes.\n")
     _write(c / "projects" / "E--repo" / "memory" / "MEMORY.md", "- [x](x.md)\n")
     _write(c / "projects" / "E--repo" / "memory" / "user_role.md",
-           "---\nname: user-role\ndescription: Luis es desarrollador\n---\nPrefiere respuestas cortas.\n")
+           "---\nname: user-role\ndescription: ExampleUser es desarrollador\n---\nPrefiere respuestas cortas.\n")
     _write(c / "skills" / "tdd" / "SKILL.md", "---\nname: tdd\ndescription: Test first\n---\nWrite the test.\n")
     _write(c / "skills" / "tdd" / "references" / "x.md", "ref")
     _write(c / "agents" / "reviewer.md", "---\nname: reviewer\ndescription: Reviews code\ntools: Read, Grep\nmodel: sonnet\n---\nYou review diffs.\n")
@@ -52,7 +52,7 @@ def test_scan_claude_code(home):
                           "skill:tdd", "agent:reviewer"}
     assert len(items["instructions:CLAUDE.md"].payload["texts"]) == 3
     assert items["instructions:CLAUDE.md"].payload["texts"][1].startswith("[Claude Code] ## Git")
-    assert "Luis es desarrollador" in items["memory:E--repo/user_role"].payload["text"]
+    assert "ExampleUser es desarrollador" in items["memory:E--repo/user_role"].payload["text"]
     assert items["mcp:fs"].payload == {"name": "fs", "transport": "stdio", "command": "npx", "args": ["-y", "server-fs"], "env": {"TOKEN": "abc"}}
     assert items["mcp:remote"].payload["transport"] == "sse" and items["mcp:remote"].warnings
     assert items["mcp:dup"].payload["command"] == "x"                 # ~/.claude.json wins over settings.json

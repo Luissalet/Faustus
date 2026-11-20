@@ -137,14 +137,14 @@ def test_the_common_payload_is_present_as_empty_never_absent(stream):
 def test_a_supplied_common_payload_travels_on_the_event(stream):
     event = stream.publish(
         "council_decision_recorded",
-        owner="luis", project_id="proj_1", council_id="council_test",
+        owner="example-user", project_id="proj_1", council_id="council_test",
         activity_id="act_7", run_id="run_3", actor_id="p_claude",
         causation_id="cev_before", correlation_id="turn_9",
     )
     assert event.activity_id == "act_7"
     assert event.causation_id == "cev_before"
     assert event.correlation_id == "turn_9"
-    assert event.payload["owner"] == "luis"
+    assert event.payload["owner"] == "example-user"
     assert event.payload["run_id"] == "run_3"
     # The session is the stream's, never the publisher's claim about it.
     assert event.payload["session_id"] == "council_test"

@@ -160,7 +160,7 @@ def test_hub_payload_is_compact_and_keyed():
         "role": "assistant", "session_id": "s", "id": 1, "content": "",
         "metadata": {"stop_reason": "budget_exhausted"},
     }])
-    body.update({"owner": "luis", "days": 1, "since": "2026-10-11T00:00:00"})
+    body.update({"owner": "example-user", "days": 1, "since": "2026-10-11T00:00:00"})
     payload = fs.build_hub_payload(body)
     assert payload["signature_count"] >= 1
     assert set(payload) <= set(fs._HUB_KEYS)

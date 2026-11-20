@@ -47,7 +47,7 @@ async def test_infinite_loop_is_killed_by_the_wall_time_quota_with_a_diagnostic_
     from src.code_mode.runner import run_code_mode
 
     t0 = time.monotonic()
-    result = await run_code_mode("while True:\n    pass\n", session_id="a11-session", owner="luis")
+    result = await run_code_mode("while True:\n    pass\n", session_id="a11-session", owner="example-user")
     elapsed = time.monotonic() - t0
 
     assert elapsed < 10, "the timeout quota must actually bound wall time, not just report it"
@@ -68,7 +68,7 @@ async def test_unbounded_print_output_is_killed_by_the_output_quota(monkeypatch,
                    agent_code_mode_max_output_bytes=10_000)
     from src.code_mode.runner import run_code_mode
 
-    result = await run_code_mode('print("x" * 10**7)\n', session_id="a11-session", owner="luis")
+    result = await run_code_mode('print("x" * 10**7)\n', session_id="a11-session", owner="example-user")
 
     assert result.get("terminated") is True
     receipt = result["receipt"]
@@ -86,7 +86,7 @@ async def test_a_thousand_tool_calls_are_stopped_by_the_max_calls_quota(monkeypa
     from src.code_mode.runner import run_code_mode
 
     code = "\n".join(f"tools.call('get_workspace', {{}})" for _ in range(1000)) + "\n"
-    result = await run_code_mode(code, session_id="a11-session", owner="luis")
+    result = await run_code_mode(code, session_id="a11-session", owner="example-user")
 
     assert result.get("terminated") is True
     receipt = result["receipt"]
@@ -119,7 +119,7 @@ async def test_the_terminated_child_process_does_not_survive(monkeypatch, reques
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _spy_create)
 
     result = await runner_mod.run_code_mode(
-        "while True:\n    pass\n", session_id="a11-session", owner="luis",
+        "while True:\n    pass\n", session_id="a11-session", owner="example-user",
     )
     assert result["receipt"]["terminated_by"] == "timeout"
     assert len(spawned_pids) == 1

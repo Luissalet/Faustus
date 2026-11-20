@@ -102,7 +102,7 @@ def test_parse_bare_number_resolves_via_https_origin(tmp_path, monkeypatch):
 
 def test_parse_bare_number_resolves_via_ssh_alias_origin(tmp_path, monkeypatch):
     def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None, **_kw):
-        return subprocess.CompletedProcess(cmd, 0, "git@Luissalet:Owner/Repo.git\n", "")
+        return subprocess.CompletedProcess(cmd, 0, "git@sample-maintainer:Owner/Repo.git\n", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert github_pr.parse_issue_ref("12", workspace=str(tmp_path)) == \
@@ -341,7 +341,7 @@ from src import settings as settings_mod  # noqa: E402
 from src import tool_execution as te  # noqa: E402
 from src.agent_tools.git_tools import GitOpenPrTool, GithubIssueTool  # noqa: E402
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 @pytest.fixture(autouse=True)

@@ -167,7 +167,7 @@ def test_an_output_entry_has_to_say_name_equals_type(tmp_path):
 def test_the_walk_stops_at_the_repository_and_never_reaches_your_home(tmp_path):
     """The first version climbed to the filesystem root, so a scratch folder
     picked up the user's personal `.claude/skills` from their home directory.
-    A test in a temp path found a real skill of Luis's — which is how this was
+    A test in a temp path found a real skill of ExampleUser's — which is how this was
     caught."""
     project = tmp_path / "outside" / "repo" / "pkg"
     project.mkdir(parents=True)

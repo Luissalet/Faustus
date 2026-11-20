@@ -24,19 +24,19 @@ def test_meeting_actions_preview_commit_and_repeat(tmp_path, monkeypatch):
     folder.mkdir()
     meeting_id = "2026-09-27-atlas"
     (folder / f"{meeting_id}.json").write_text(json.dumps({
-        "id": meeting_id, "title": "Atlas planning", "owner": "luis",
+        "id": meeting_id, "title": "Atlas planning", "owner": "example-user",
         "project_id": "p1", "model_ok": True,
     }), encoding="utf-8")
     (folder / f"{meeting_id}.md").write_text(
         "# Atlas planning\n\n## Summary\nWe discussed DuckDB.\n\n"
         "## Action items\n- [00:12] Ana prepara la migración antes del viernes (responsable: Ana)\n"
-        "- Luis revisa el endpoint de salud\n"
+        "- ExampleUser revisa el endpoint de salud\n"
         "- ¿Migramos todo a DuckDB?\n\n"
         "## Open questions\n- ¿Migramos todo a DuckDB?\n\n"
         "## Transcript\n[00:12] Ana: preparo la migración.\n", encoding="utf-8")
 
     tool = MeetingActionsToBoardTool()
-    ctx = {"owner": "luis", "project_id": "p1"}
+    ctx = {"owner": "example-user", "project_id": "p1"}
     # the module the tool was defined in, even if src.agent_tools was reloaded since
     monkeypatch.setitem(MeetingActionsToBoardTool.execute.__globals__, "_key_for", lambda *_: "ATL")
     preview = asyncio.run(tool.execute(json.dumps({"meeting_id": meeting_id}), ctx))
@@ -67,5 +67,5 @@ def test_meeting_actions_preview_commit_and_repeat(tmp_path, monkeypatch):
                                            {"owner": "other", "project_id": "p1"}))
     assert wrong_owner["exit_code"] == 1
     wrong_project = asyncio.run(tool.execute(json.dumps({"meeting_id": meeting_id}),
-                                             {"owner": "luis", "project_id": "p2"}))
+                                             {"owner": "example-user", "project_id": "p2"}))
     assert wrong_project["exit_code"] == 1

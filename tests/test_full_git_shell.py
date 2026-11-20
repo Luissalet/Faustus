@@ -15,7 +15,7 @@ def test_other_modes_keep_the_selected_git_workflow(monkeypatch, mode):
 
 @pytest.mark.parametrize("command", [
     "git init", "git add note.txt", "git commit -m 'Record note'",
-    "git merge --ff-only feature", "git config user.name Luissalet",
+    "git merge --ff-only feature", "git config user.name sample-maintainer",
 ])
 def test_full_does_not_impose_another_tool(monkeypatch, command):
     monkeypatch.setattr("src.tool_capabilities.tool_approval_mode", lambda: "full")
@@ -35,8 +35,8 @@ async def test_full_bash_commits_exact_named_file_in_private_repository(monkeypa
     (tmp_path / "note.txt").write_text("Owned QA file\n", encoding="utf-8")
     (tmp_path / "other.txt").write_text("Must remain untracked\n", encoding="utf-8")
     result = await tools.BashTool().execute(
-        "git add note.txt && git -c user.name=Luissalet "
-        "-c user.email=luissalet@users.noreply.github.com commit -m 'Record note'", {})
+        "git add note.txt && git -c user.name=sample-maintainer "
+        "-c user.email=user@example.com commit -m 'Record note'", {})
     assert result.get("exit_code") == 0, result
     tracked = subprocess.check_output(["git", "-C", str(tmp_path), "ls-files"], text=True)
     assert tracked.splitlines() == ["note.txt"]

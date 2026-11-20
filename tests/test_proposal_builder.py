@@ -65,7 +65,7 @@ def test_empty_sections_say_so_and_files_are_served_by_name():
 
 def test_paths_with_spaces_and_slashes_are_masked_whole():
     leaks = []
-    text = pb._mask(r"Ver C:\Users\luis m\Desktop\Mis proyectos\x.pdf y C:/Users/luism/a.txt y ~/privado/a.md", set(), [], leaks)
-    for secret in ("luis m", "Mis proyectos", "luism", "privado"):
+    text = pb._mask(r"Ver C:\Users\example-user m\Desktop\Mis proyectos\x.pdf y C:/Users/example-user/a.txt y ~/privado/a.md", set(), [], leaks)
+    for secret in ("example-user m", "Mis proyectos", "example-user", "privado"):
         assert secret not in text
     assert len(leaks) == 3

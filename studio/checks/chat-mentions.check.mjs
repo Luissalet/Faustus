@@ -13,10 +13,10 @@ globalThis.window=win; globalThis.document=win.document; globalThis.localStorage
 const {render}=await import(pathToFileURL(out));
 const doc=win.document;
 function mentions(text){doc.body.innerHTML=render(text);return [...doc.querySelectorAll('.fs-rich__mention')].map(e=>e.textContent);}
-assert.deepEqual(mentions('@Luis — ask @glm-5.3-flash-nvfp4 and **@qwen3.8-flash-next**.'),['@Luis','@glm-5.3-flash-nvfp4','@qwen3.8-flash-next']);
+assert.deepEqual(mentions('@example-user — ask @glm-5.3-flash-nvfp4 and **@qwen3.8-flash-next**.'),['@example-user','@glm-5.3-flash-nvfp4','@qwen3.8-flash-next']);
 assert.deepEqual(mentions('Contact user@example.com; use `@literal` or @src/file.ts.\n\n```txt\n@not-a-mention\n```'),[]);
 assert.deepEqual(mentions('Hola @José, revisa @Ana.'),['@José','@Ana']);
-doc.body.innerHTML=render('@Luis — say the word.');
-assert.equal(doc.querySelector('.fs-rich').textContent,'@Luis — say the word.');
+doc.body.innerHTML=render('@example-user — say the word.');
+assert.equal(doc.querySelector('.fs-rich').textContent,'@example-user — say the word.');
 assert.equal(doc.querySelector('.fs-rich__mention').tagName,'SPAN','decorating a name must not pretend it opens a workspace file');
 console.log('PASS: native Rich highlights names/models, preserves literal code, email, paths and copied text.');

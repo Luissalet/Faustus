@@ -1,5 +1,5 @@
 """agent_git_policy.py -- OBJ-4 (Lote 82): how the agent itself behaves
-inside a git repository it happens to be working in. Luis's own framing:
+inside a git repository it happens to be working in. the user's own framing:
 "does it use a separate branch? commit? push? -- and depending on that, it
 creates branches or not, commits or not, pushes or not, at the user's
 preference."

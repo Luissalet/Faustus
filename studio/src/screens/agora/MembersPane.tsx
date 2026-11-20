@@ -59,10 +59,10 @@ function MemberCard({ member, guild, onOpen, onRemove, started, onStop, onRank }
   const model = memberModel(member, started);
   const declaredAt = member.declared_at ? new Date(member.declared_at) : null;
   return (
-    <div className="fs-agx-profile" style={{ '--agx-c': agentColor(member.id) } as CSSProperties} data-testid="agora-profile">
+    <div className="fs-agx-profile" style={{ '--agx-c': agentColor(member.id, member.role === 'person' ? member.id : undefined) } as CSSProperties} data-testid="agora-profile">
       <header>
         <AgentAvatar id={member.id} presence={member.presence} size="lg" />
-        <div><strong>{member.id}</strong><span>{t(PRESENCE_LABEL[member.presence])}{member.presence === 'invited' ? '' : ' · ' + t('seen {when}', { when: ago(member.last_seen) })}</span></div>
+        <div><strong>{member.role === 'person' ? member.name : member.id}</strong><span>{t(PRESENCE_LABEL[member.presence])}{member.presence === 'invited' ? '' : ' · ' + t('seen {when}', { when: ago(member.last_seen) })}</span></div>
       </header>
       {member.role !== 'person' && (
         <label className="fs-agx-profile__rank" title={t('A higher role decides: its word closes disagreements, its review stands, it hands out the work and the questions of those below reach it before you.')}>
@@ -116,11 +116,11 @@ function MemberRow({ member, guild, onOpen, onRemove, started, onStop, onRank }:
   return (
     <li>
       <Popover side="left" align="start" className="fs-agx-profile-pop" testId="agora-member-pop" trigger={
-        <button type="button" className="fs-agx-member" data-presence={member.presence} style={{ '--agx-c': agentColor(member.id) } as CSSProperties}
+        <button type="button" className="fs-agx-member" data-presence={member.presence} style={{ '--agx-c': agentColor(member.id, member.role === 'person' ? member.id : undefined) } as CSSProperties}
           title={member.id + ' · ' + t(PRESENCE_LABEL[member.presence])} data-testid={'agora-member-' + member.id}>
           <AgentAvatar id={member.id} presence={member.presence} />
           {/* The role goes under the name, so a long name is not cut short to make room for it. */}
-          <span className="fs-agx-member__text"><strong>{member.id}</strong>
+          <span className="fs-agx-member__text"><strong>{member.role === 'person' ? member.name : member.id}</strong>
             {member.role !== 'person' && model.name && <span title={model.line} data-testid="agora-member-model">{model.name}</span>}
             <span className="fs-agx-member__line"><RankMark member={member} /><span>{line}</span></span></span>
           {member.tasks.length > 0 && <span className="fs-agx-row__count">{member.tasks.length}</span>}

@@ -53,7 +53,7 @@ const assert = (condition, message) => {
 // ── rewriteRemoteToAlias: https and ssh remotes -> git@<alias>:o/r.git ──
 {
   assert(
-    g.rewriteRemoteToAlias('https://github.com/Luissalet/Faustus.git', 'github-work') === 'git@github-work:Luissalet/Faustus.git',
+    g.rewriteRemoteToAlias('https://github.com/sample-maintainer/Faustus.git', 'github-work') === 'git@github-work:sample-maintainer/Faustus.git',
     'an https remote rewrites onto the given alias',
   );
   assert(
@@ -61,7 +61,7 @@ const assert = (condition, message) => {
     'an https remote with no trailing .git still rewrites correctly',
   );
   assert(
-    g.rewriteRemoteToAlias('git@Luissalet:Luissalet/Faustus.git', 'github-lsaletec') === 'git@github-lsaletec:Luissalet/Faustus.git',
+    g.rewriteRemoteToAlias('git@sample-maintainer:sample-maintainer/Faustus.git', 'github-work') === 'git@github-work:sample-maintainer/Faustus.git',
     'an ssh remote already on one alias rewrites onto a different one — only the host alias changes, the owner/repo path does not',
   );
   assert(g.rewriteRemoteToAlias('not a remote at all', 'alias') === null, 'an unrecognized remote shape previews as null, never a wrong guess');
@@ -76,9 +76,9 @@ const assert = (condition, message) => {
 
 // ── identityChipLabel: t()-key + values, never a hardcoded rendered string ──
 {
-  const withLogin = g.identityChipLabel({ label: 'Luissalet', github_login: 'Luissalet' });
+  const withLogin = g.identityChipLabel({ label: 'sample-maintainer', github_login: 'sample-maintainer' });
   assert(withLogin.key === 'SSH: {label} (login: {login})', 'an identity with a cached login uses the login-aware key');
-  assert(withLogin.values.label === 'Luissalet' && withLogin.values.login === 'Luissalet', 'label and login both interpolate');
+  assert(withLogin.values.label === 'sample-maintainer' && withLogin.values.login === 'sample-maintainer', 'label and login both interpolate');
 
   const noLogin = g.identityChipLabel({ label: 'github-work', github_login: null });
   assert(noLogin.key === 'SSH: {label}', 'an identity with no cached login uses the plain key');

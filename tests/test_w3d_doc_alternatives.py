@@ -30,7 +30,7 @@ from core.database import Document  # noqa: E402
 from src import alternatives  # noqa: E402
 from src import constants as constants_mod  # noqa: E402
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 
 

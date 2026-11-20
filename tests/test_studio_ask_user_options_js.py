@@ -3,7 +3,7 @@
 ask_user sends options as {label, description}; the live event path used to
 String() them, so every button read "[object Object]" (10-09-2026). The card
 now shows one button per option (with its consequence), a checklist when the
-tool says `multi`, and always a free-text line — the shape Luis asked for
+tool says `multi`, and always a free-text line — the shape ExampleUser asked for
 ("varias opciones para elegir y una para que escribas tú, o una checklist").
 """
 from pathlib import Path

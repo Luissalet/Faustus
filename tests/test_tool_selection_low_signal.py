@@ -1,6 +1,6 @@
 """A "low-signal" turn may still name the tool it needs.
 
-Seen live (07-09-2026). Luis asked a chat in a project to write the report's
+Seen live (07-09-2026). ExampleUser asked a chat in a project to write the report's
 objectives into the project, got them as prose, and said:
 
     "I meant pu them into the project objectives tab of the project"

@@ -352,8 +352,8 @@ def test_post_compact_reminder_outside_a_project_is_none(monkeypatch):
     class _Sess:
         id = "orphan"
 
-    assert cc.post_compact_reminder(_Sess(), "luis") is None
-    assert cc.post_compact_reminder(None, "luis") is None
+    assert cc.post_compact_reminder(_Sess(), "example-user") is None
+    assert cc.post_compact_reminder(None, "example-user") is None
 
 
 def _reminder_with_agents_md(project, workspace, monkeypatch, tmp_path, *, approve):
@@ -380,7 +380,7 @@ def _reminder_with_agents_md(project, workspace, monkeypatch, tmp_path, *, appro
     class _Sess:
         id = "sess-1"
 
-    msg = cc.post_compact_reminder(_Sess(), "luis")
+    msg = cc.post_compact_reminder(_Sess(), "example-user")
     pi.invalidate()
     return msg
 
@@ -419,7 +419,7 @@ def test_post_compact_reminder_never_raises(monkeypatch):
     class _Sess:
         id = "sess-1"
 
-    assert cc.post_compact_reminder(_Sess(), "luis") is None
+    assert cc.post_compact_reminder(_Sess(), "example-user") is None
 
 
 # ── the agent tool dispatch ───────────────────────────────────────────
@@ -435,7 +435,7 @@ async def test_tool_dispatch_outside_a_project_is_an_error(monkeypatch):
     from src.tool_execution import _execute_tool_block_impl
     monkeypatch.setattr(projects_mod, "project_for_session", lambda sid, owner=None: None)
     desc, result = await _execute_tool_block_impl(_tool_block({"action": "list"}),
-                                                  session_id="sess-1", owner="luis")
+                                                  session_id="sess-1", owner="example-user")
     assert result["exit_code"] == 1
     assert "not attached to a project" in result["error"]
 
@@ -449,12 +449,12 @@ async def test_tool_dispatch_list_and_apply(project, monkeypatch):
         _tool_block({"action": "apply",
                      "deltas": [{"op": "ADD", "title": "Via the tool", "priority": 1,
                                  "rationale": "asked for"}]}),
-        session_id="sess-1", owner="luis")
+        session_id="sess-1", owner="example-user")
     assert desc == "project_objectives: apply"
     assert result["applied"][0]["id"] == "OBJ-1" and not result["conflicts"]
 
     desc, result = await _execute_tool_block_impl(_tool_block({"action": "list"}),
-                                                  session_id="sess-1", owner="luis")
+                                                  session_id="sess-1", owner="example-user")
     assert desc == "project_objectives: list"
     assert [o["id"] for o in result["objectives"]] == ["OBJ-1"]
     assert "OBJ-1" in result["scores"]
@@ -470,7 +470,7 @@ async def test_tool_dispatch_rejects_garbage_without_raising(project, monkeypatc
     for content in ("not json", json.dumps({"action": "reset"}), json.dumps([1, 2])):
         from src.agent_tools import ToolBlock
         block = ToolBlock(tool_type="project_objectives", content=content)
-        _, result = await _execute_tool_block_impl(block, session_id="s", owner="luis")
+        _, result = await _execute_tool_block_impl(block, session_id="s", owner="example-user")
         assert result["exit_code"] == 1 and result["error"]
 
 
@@ -571,7 +571,7 @@ def test_dispatch_settle_records_objective_evidence(project, monkeypatch):
 
     class _Job:
         id = "job-7"
-        owner = "luis"
+        owner = "example-user"
         session_id = "chat-1"
         status = "done"
         args = {"tasks": [{"name": "t1", "instruction": f"finish {oid} and OBJ-99 today"}]}
@@ -592,7 +592,7 @@ def test_dispatch_settle_evidence_never_breaks_the_verdict(monkeypatch):
         raise RuntimeError("objectives store is a banana")
 
     monkeypatch.setattr(dispatch, "_record_objective_evidence", _boom)
-    job = dispatch.DispatchJob(owner="luis", args={"tasks": [{"instruction": "do OBJ-1"}]},
+    job = dispatch.DispatchJob(owner="example-user", args={"tasks": [{"instruction": "do OBJ-1"}]},
                                workspace=None, endpoint_url="http://x", model="m",
                                headers=None, title="t")
     job.result = {"subagents": [{"status": "done"}]}

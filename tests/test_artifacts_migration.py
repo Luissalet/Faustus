@@ -103,13 +103,13 @@ def gallery(own_database):
     tag = uuid.uuid4().hex[:8]
     rows = [
         GalleryImage(id=f"{tag}-a", filename=f"{tag}a.png", prompt="a cat",
-                     model="sdxl", owner="luis", file_hash="a" * 64, file_size=1234),
+                     model="sdxl", owner="example-user", file_hash="a" * 64, file_size=1234),
         GalleryImage(id=f"{tag}-b", filename=f"{tag}b.mp4", prompt="a clip",
-                     model=None, owner="luis"),
+                     model=None, owner="example-user"),
         GalleryImage(id=f"{tag}-c", filename=f"{tag}c.txt", prompt="not media",
-                     owner="luis"),
+                     owner="example-user"),
         GalleryImage(id=f"{tag}-d", filename=f"sub/{tag}d.png", prompt="path",
-                     owner="luis"),
+                     owner="example-user"),
     ]
     db = SessionLocal()
     try:

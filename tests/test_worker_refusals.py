@@ -249,7 +249,7 @@ def test_a_flood_of_refusal_groups_is_bounded_in_the_projection_too():
 # ── K3: the verdict ───────────────────────────────────────────────────────
 
 def _settled(workers) -> str:
-    job = dispatch.DispatchJob("luis", {"tasks": []}, "/ws", "", "m", None, "t")
+    job = dispatch.DispatchJob("example-user", {"tasks": []}, "/ws", "", "m", None, "t")
     job.result = {"subagents": workers, "exit_code": 0}
     dispatch._settle(job)
     return job.verdict or ""

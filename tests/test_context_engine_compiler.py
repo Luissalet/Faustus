@@ -71,7 +71,7 @@ def _request(**over):
     fields = dict(
         request_id="ctxreq_test",
         actor=ContextActor(agent_id="builder", role="engineer", model="test-model"),
-        execution=ContextExecution(owner="luis", session_id="s1", project_id="p1",
+        execution=ContextExecution(owner="example-user", session_id="s1", project_id="p1",
                                    workspace="/repo", turn_id="t1"),
         task=ContextTask(intent="", phase="act",
                          query="fix the failing test in src/app.py"),
@@ -85,7 +85,7 @@ def _request(**over):
 
 def _chat_request(**over):
     fields = dict(
-        execution=ContextExecution(owner="luis", session_id="s1"),
+        execution=ContextExecution(owner="example-user", session_id="s1"),
         task=ContextTask(query="buenos dias, que tal todo?"),
     )
     fields.update(over)
@@ -208,7 +208,7 @@ def test_a_coding_turn_in_a_workspace_asks_for_the_code_lanes():
 ])
 def test_the_signal_table_classifies_without_a_model(query, workspace, expected):
     request = _request(task=ContextTask(query=query),
-                       execution=ContextExecution(owner="luis", session_id="s1",
+                       execution=ContextExecution(owner="example-user", session_id="s1",
                                                   workspace=workspace))
     assert planner.classify_intent(request) == expected
 
@@ -286,7 +286,7 @@ def test_policy_removes_a_source_from_the_plan_and_says_why():
 
 
 def test_a_source_with_no_workspace_or_session_is_not_woken():
-    bare = _request(execution=ContextExecution(owner="luis"))
+    bare = _request(execution=ContextExecution(owner="example-user"))
     plan = planner.plan(bare, available=("files", "code_index", "sessions"))
     assert plan.source_ids == ()
     assert "no workspace" in plan.skipped["files"]
@@ -760,7 +760,7 @@ async def test_shadow_reports_the_difference_and_writes_no_ledger_row(ce_db):
     assert report["packet_tokens"] >= 0 and report["sent_tokens"] > 0
     # Phase 1 measures; it does not record.  Nothing reached the ledger.
     assert compiler.get_packet_row(report["packet"]["packet_id"]) is None
-    assert compiler.recent_packets(owner="luis") == []
+    assert compiler.recent_packets(owner="example-user") == []
 
 
 async def test_shadow_never_raises(ce_db, monkeypatch):
@@ -783,7 +783,7 @@ async def test_a_packet_leaves_one_ledger_row_with_no_content(ce_db):
 
     row = compiler.get_packet_row(packet.packet_id)
     assert row is not None
-    assert row["owner"] == "luis" and row["project_id"] == "p1"
+    assert row["owner"] == "example-user" and row["project_id"] == "p1"
     assert row["model"] == "test-model" and row["intent"] == "code_change"
     assert row["tokens"] == packet.tokens()
     assert row["input_budget"] == packet.window.input_budget
@@ -801,11 +801,11 @@ async def test_recent_packets_and_diagnostics_read_the_scope(ce_db):
                                                 session_id="s2"))
     await engine.compile(other, mandatory=[_safety()], **_roomy())
 
-    mine = compiler.recent_packets(owner="luis")
-    assert len(mine) == 1 and mine[0]["owner"] == "luis"
+    mine = compiler.recent_packets(owner="example-user")
+    assert len(mine) == 1 and mine[0]["owner"] == "example-user"
     assert len(compiler.recent_packets()) == 2
 
-    report = compiler.diagnostics(owner="luis")
+    report = compiler.diagnostics(owner="example-user")
     assert report["packets"] == 1 and report["degraded"] == 0
     assert report["by_consumer"] == {"agent": 1}
     assert report["avg_tokens"] > 0 and report["last_packet_at"]
@@ -821,10 +821,10 @@ async def test_a_receipt_is_stored_beside_its_packet(ce_db):
         consumer="agent", used_item_ids=(item.item_id,),
         declared_item_ids=("ctxitem_invented",), feedback="helpful"))
 
-    assert compiler.diagnostics(owner="luis")["receipts"] == 1
+    assert compiler.diagnostics(owner="example-user")["receipts"] == 1
     # A receipt with no packet id is a receipt for nothing.
     compiler.record_receipt(ContextReceipt(packet_id=""))
-    assert compiler.diagnostics(owner="luis")["receipts"] == 1
+    assert compiler.diagnostics(owner="example-user")["receipts"] == 1
 
 
 def test_the_ledger_never_raises_when_the_store_is_gone(ce_db, monkeypatch):
@@ -867,7 +867,7 @@ def test_every_named_task_exists_and_none_of_them_is_generative():
 
 
 def test_a_pass_returns_one_row_per_requested_task(ce_db):
-    results = maintenance.run(owner="luis", project_id="p1", budget_s=30.0)
+    results = maintenance.run(owner="example-user", project_id="p1", budget_s=30.0)
     assert [r.name for r in results] == list(maintenance.TASK_NAMES)
     assert all(r.ok for r in results)
     assert all(isinstance(r.to_dict(), dict) for r in results)
@@ -987,6 +987,6 @@ def test_scheduled_pass_fans_scoped_tasks_over_every_project(ce_db, monkeypatch)
 
 
 def test_audit_blocks_reports_and_changes_nothing(ce_db):
-    result = maintenance.run(("audit_blocks",), owner="luis", project_id="p1")[0]
+    result = maintenance.run(("audit_blocks",), owner="example-user", project_id="p1")[0]
     assert result.ok and result.changed == 0
     assert "nothing changed" in result.detail

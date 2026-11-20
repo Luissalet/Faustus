@@ -23,7 +23,7 @@ const waitFor = async (probe, what = 'the expected render') => {
 };
 
 const now = Date.now() / 1000;
-const proposal = { id: 4, agent: 'claude-x', space_id: 'ecosystem', body: 'A\nB', base_body: 'A', reason: 'Luis corrected me', trigger: 'correction',
+const proposal = { id: 4, agent: 'claude-x', space_id: 'ecosystem', body: 'A\nB', base_body: 'A', reason: 'ExampleUser corrected me', trigger: 'correction',
   source: 'task 9', status: 'pending', created: now, decided_by: null, decided_at: null, decision_note: '', stale: false, diff: '@@\n+B' };
 const profile = (extra = {}) => ({ ok: true,
   profile: { id: 'claude-x', name: 'claude-x', initials: 'CX', kind: 'agent', provider: 'claude', engine: 'Claude', model: 'sonnet', effort: 'high',
@@ -32,8 +32,8 @@ const profile = (extra = {}) => ({ ok: true,
   activity: { messages: [], tasks: [], deliveries: [], commits: [], timeline: [
     { at: now, type: 'message', text: 'hello team', where: '#general', message_id: 1 },
     { at: now, type: 'delivery', text: 'A delivery', task_id: 9, commits: ['abcdef1234'], status: 'review' }] },
-  instructions: { body: 'A', updated_by: 'luis', updated: now },
-  memory: [{ id: 3, kind: 'correction', text: 'No trailers', source: 'task 9', by: 'luis', at: now, space_id: 'ecosystem' }],
+  instructions: { body: 'A', updated_by: 'example-user', updated: now },
+  memory: [{ id: 3, kind: 'correction', text: 'No trailers', source: 'task 9', by: 'example-user', at: now, space_id: 'ecosystem' }],
   routines: [{ name: 'Inbox sweep', schedule: 'every 2 h', note: '', enabled: true }],
   usage: { days: Array.from({ length: 14 }, (_, i) => ({ day: `2026-11-${String(i + 1).padStart(2, '0')}`, messages: i, tasks_closed: 0, run_minutes: 0 })), tokens: null, note: '' },
   proposals: [proposal], proposals_pending: 1, dm: { channel: 'dm-abc', thread_id: 7 }, ...extra });
@@ -84,7 +84,7 @@ try {
   // Tabs.
   q('agent-tab-instructions').click();
   await waitFor(() => q('agent-instructions'), 'the instructions tab');
-  assert.match(q('agent-instructions').textContent, /Luis corrected me/);
+  assert.match(q('agent-instructions').textContent, /ExampleUser corrected me/);
   assert.equal(q('agent-instructions-text').value, 'A');
   q('agent-tab-memory').click();
   await waitFor(() => q('agent-memory'), 'the memory tab');

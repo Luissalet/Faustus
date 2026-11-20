@@ -54,11 +54,11 @@ def client(tmp_path, monkeypatch):
 
 def _open_and_grant(client, **plan_overrides):
     plan = dict(PLAN, **plan_overrides)
-    opened = client.post("/api/approvals/request", json={"plan": plan, "owner": "luis"},
+    opened = client.post("/api/approvals/request", json={"plan": plan, "owner": "example-user"},
                          headers=TOOL_HEADERS)
     assert opened.status_code == 200, opened.text
     card_id = opened.json()["approval"]["id"]
-    granted = client.post(f"/api/approvals/{card_id}/grant", json={"by": "luis"})
+    granted = client.post(f"/api/approvals/{card_id}/grant", json={"by": "example-user"})
     assert granted.status_code == 200, granted.text
     return card_id
 
@@ -78,7 +78,7 @@ def test_active_lists_a_granted_card(client):
 
 
 def test_active_excludes_a_card_that_is_only_pending(client):
-    client.post("/api/approvals/request", json={"plan": PLAN, "owner": "luis"},
+    client.post("/api/approvals/request", json={"plan": PLAN, "owner": "example-user"},
                headers=TOOL_HEADERS)
 
     r = client.get("/api/approvals/active")
@@ -86,10 +86,10 @@ def test_active_excludes_a_card_that_is_only_pending(client):
 
 
 def test_active_excludes_an_already_denied_card(client):
-    opened = client.post("/api/approvals/request", json={"plan": PLAN, "owner": "luis"},
+    opened = client.post("/api/approvals/request", json={"plan": PLAN, "owner": "example-user"},
                          headers=TOOL_HEADERS)
     card_id = opened.json()["approval"]["id"]
-    client.post(f"/api/approvals/{card_id}/deny", json={"by": "luis"})
+    client.post(f"/api/approvals/{card_id}/deny", json={"by": "example-user"})
 
     r = client.get("/api/approvals/active")
     assert r.json()["active"] == []
@@ -98,10 +98,10 @@ def test_active_excludes_an_already_denied_card(client):
 def test_active_excludes_a_card_that_expired_before_anyone_used_it(client):
     plan = dict(PLAN, detail="Publish the expiring clip.")
     opened = client.post("/api/approvals/request",
-                         json={"plan": plan, "owner": "luis", "ttl_seconds": 1},
+                         json={"plan": plan, "owner": "example-user", "ttl_seconds": 1},
                          headers=TOOL_HEADERS)
     card_id = opened.json()["approval"]["id"]
-    client.post(f"/api/approvals/{card_id}/grant", json={"by": "luis"})
+    client.post(f"/api/approvals/{card_id}/grant", json={"by": "example-user"})
 
     # Fast-forward the store's own clock rather than sleeping in a test.
     from datetime import datetime, timedelta, timezone
@@ -133,14 +133,14 @@ def test_revoking_a_granted_card_removes_it_from_active_and_from_covering_the_pl
     card_id = _open_and_grant(client)
     assert card_id in {c["id"] for c in client.get("/api/approvals/active").json()["active"]}
 
-    r = client.request("DELETE", f"/api/approvals/{card_id}", json={"by": "luis", "reason": "changed my mind"})
+    r = client.request("DELETE", f"/api/approvals/{card_id}", json={"by": "example-user", "reason": "changed my mind"})
     assert r.status_code == 200, r.text
     assert r.json()["ok"] is True
     assert r.json()["approval"]["status"] == "revoked"
 
     assert client.get("/api/approvals/active").json()["active"] == []
     # A plan that USED to be covered by this card no longer is.
-    check = client.post("/api/approvals/check", json={"plan": PLAN, "owner": "luis"},
+    check = client.post("/api/approvals/check", json={"plan": PLAN, "owner": "example-user"},
                         headers=TOOL_HEADERS)
     assert check.json()["ok"] is False
 
@@ -148,16 +148,16 @@ def test_revoking_a_granted_card_removes_it_from_active_and_from_covering_the_pl
 def test_revoking_a_pending_card_takes_it_away_before_anyone_decides(client):
     """The literal SEC-01 point: revocation is not limited to cards already
     granted — an open request is a standing possibility of access too."""
-    opened = client.post("/api/approvals/request", json={"plan": PLAN, "owner": "luis"},
+    opened = client.post("/api/approvals/request", json={"plan": PLAN, "owner": "example-user"},
                          headers=TOOL_HEADERS)
     card_id = opened.json()["approval"]["id"]
 
-    r = client.request("DELETE", f"/api/approvals/{card_id}", json={"by": "luis"})
+    r = client.request("DELETE", f"/api/approvals/{card_id}", json={"by": "example-user"})
     assert r.status_code == 200
     assert r.json()["approval"]["status"] == "revoked"
 
     # Nobody can grant it after the fact.
-    granted = client.post(f"/api/approvals/{card_id}/grant", json={"by": "luis"})
+    granted = client.post(f"/api/approvals/{card_id}/grant", json={"by": "example-user"})
     assert granted.json()["ok"] is False
     assert granted.json()["reason"] == "already_revoked"
 
@@ -173,17 +173,17 @@ def test_the_model_cannot_revoke_its_own_card(client):
 
 
 def test_revoking_an_unknown_id_is_404(client):
-    r = client.request("DELETE", "/api/approvals/apr_does_not_exist", json={"by": "luis"})
+    r = client.request("DELETE", "/api/approvals/apr_does_not_exist", json={"by": "example-user"})
     assert r.status_code == 404
 
 
 def test_revoking_an_already_denied_card_is_a_clear_no_op(client):
-    opened = client.post("/api/approvals/request", json={"plan": PLAN, "owner": "luis"},
+    opened = client.post("/api/approvals/request", json={"plan": PLAN, "owner": "example-user"},
                          headers=TOOL_HEADERS)
     card_id = opened.json()["approval"]["id"]
-    client.post(f"/api/approvals/{card_id}/deny", json={"by": "luis"})
+    client.post(f"/api/approvals/{card_id}/deny", json={"by": "example-user"})
 
-    r = client.request("DELETE", f"/api/approvals/{card_id}", json={"by": "luis"})
+    r = client.request("DELETE", f"/api/approvals/{card_id}", json={"by": "example-user"})
     assert r.status_code == 200
     assert r.json()["ok"] is False
     assert r.json()["reason"] == "already_denied"
@@ -207,12 +207,12 @@ def store(tmp_path, monkeypatch):
 
 def test_revoke_requires_a_named_decider(store):
     from src.contracts import ApprovalPlan
-    card = approval_store.request(ApprovalPlan.parse(PLAN), owner="luis")
+    card = approval_store.request(ApprovalPlan.parse(PLAN), owner="example-user")
     result = approval_store.revoke(card.id, by="")
     assert result == {"ok": False, "reason": "no_decider",
                       "detail": "a revocation has to record who revoked it"}
 
 
 def test_revoke_on_an_unknown_id_is_not_found(store):
-    result = approval_store.revoke("apr_missing", by="luis")
+    result = approval_store.revoke("apr_missing", by="example-user")
     assert result == {"ok": False, "reason": "not_found", "detail": "apr_missing"}

@@ -730,7 +730,7 @@ async def test_tool_review_dispatch(experts, project, monkeypatch):
     monkeypatch.setattr(te, "_expert_llm_call", lambda expert, owner, sid: llm)
     desc, result = await te._execute_tool_block_impl(
         _tool_block({"action": "review", "slug": "brenner_bot", "text": ORIGINAL}),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
     assert desc == "expert_review: review"
     assert result["anchored_count"] == 1
     assert er.LABEL_CORPUS in result["summary"]
@@ -753,14 +753,14 @@ async def test_tool_bible_dispatch(experts, project):
                                           "source": "cap. 3, p. 41"}]}], "user")
 
     desc, result = await te._execute_tool_block_impl(
-        _tool_block({"action": "bible"}), session_id="s1", owner="luis")
+        _tool_block({"action": "bible"}), session_id="s1", owner="example-user")
     assert desc == "expert_review: bible"
     assert result["counts"]["characters"] == 1
 
     _, checked = await te._execute_tool_block_impl(
         _tool_block({"action": "bible",
                      "text": "Marta llegó. Marta tenía los ojos azules."}),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
     assert checked["findings"][0]["kind"] == "contradiction"
     assert checked["findings"][0]["bible_fact"]["source"] == "cap. 3, p. 41"
 
@@ -768,7 +768,7 @@ async def test_tool_bible_dispatch(experts, project):
         _tool_block({"action": "bible",
                      "deltas": [{"op": "ADD", "kind": "character", "name": "Nuria",
                                  "rationale": "aparece en el capítulo 2"}]}),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
     assert applied["applied"][0]["id"] == "CHAR-2"
 
 
@@ -778,7 +778,7 @@ async def test_tool_bible_outside_a_project_is_an_error(experts, monkeypatch):
     monkeypatch.setattr(projects_mod, "project_for_session",
                         lambda sid, owner=None: None, raising=False)
     _, result = await te._execute_tool_block_impl(
-        _tool_block({"action": "bible"}), session_id="s1", owner="luis")
+        _tool_block({"action": "bible"}), session_id="s1", owner="example-user")
     assert result["exit_code"] == 1 and "not attached to a project" in result["error"]
 
 
@@ -787,20 +787,20 @@ async def test_tool_experts_apply_and_feedback(experts, project):
 
     _, profile = await te._execute_tool_block_impl(
         _tool_block({"action": "experts", "slug": "brenner_bot"}),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
     assert profile["expert"]["name"] == "Brenner bot"
 
     deltas = _one(json.dumps([_delta_json(start=7, end=26)]))["deltas"]
     _, applied = await te._execute_tool_block_impl(
         _tool_block({"action": "apply", "text": ORIGINAL,
                      "deltas": deltas, "accept": ["D1"]}),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
     assert "se arrastraba" in applied["text"]
 
     _, fed = await te._execute_tool_block_impl(
         _tool_block({"action": "feedback", "slug": "brenner_bot",
                      "accepted": 2, "rejected": 1}),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
     assert fed["recorded"] is True
     assert experts.calls["feedback"][-1] == ("brenner_bot", 2, 1)
 
@@ -809,11 +809,11 @@ async def test_tool_reports_a_missing_expert_store_instead_of_raising(no_experts
     import src.tool_execution as te
     _, result = await te._execute_tool_block_impl(
         _tool_block({"action": "review", "slug": "brenner_bot", "text": ORIGINAL}),
-        session_id="s1", owner="luis")
+        session_id="s1", owner="example-user")
     assert result["exit_code"] == 1 and "not configured" in result["error"]
 
     _, listing = await te._execute_tool_block_impl(
-        _tool_block({"action": "experts"}), session_id="s1", owner="luis")
+        _tool_block({"action": "experts"}), session_id="s1", owner="example-user")
     assert listing["exit_code"] == 1 and "does not expose a listing" in listing["error"]
 
 
@@ -824,7 +824,7 @@ async def test_tool_rejects_garbage_without_raising(experts, project):
                     json.dumps({"action": "review", "slug": "", "text": "x"})):
         from src.agent_tools import ToolBlock
         block = ToolBlock(tool_type="expert_review", content=content)
-        _, result = await te._execute_tool_block_impl(block, session_id="s1", owner="luis")
+        _, result = await te._execute_tool_block_impl(block, session_id="s1", owner="example-user")
         assert result["exit_code"] == 1 and result["error"]
 
 

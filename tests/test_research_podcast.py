@@ -104,8 +104,8 @@ def test_parse_accepts_bare_array_and_speaker_aliases():
 
 def test_parse_named_speakers_map_by_first_appearance():
     raw = json.dumps({"dialogue": [
-        {"speaker": "Ana", "text": "One."}, {"speaker": "Luis", "text": "Two."},
-        {"speaker": "Ana", "text": "Three."}, {"speaker": "Luis", "text": "Four."},
+        {"speaker": "Ana", "text": "One."}, {"speaker": "ExampleUser", "text": "Two."},
+        {"speaker": "Ana", "text": "Three."}, {"speaker": "ExampleUser", "text": "Four."},
         {"speaker": "Narrator", "text": "dropped"}]})
     lines = rp.parse_script(raw)
     assert [l["speaker"] for l in lines] == ["A", "B", "A", "B"]

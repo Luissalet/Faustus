@@ -29,20 +29,20 @@ def outbox_dir(tmp_path, monkeypatch):
 
 def test_double_click_and_dropped_ack_resolve_to_one_intent(outbox_dir):
     # Double click on Send: two calls, same client_message_id.
-    first = chat_outbox.record_intent(owner="luis", session_id="s1", client_message_id="m-double-click")
-    second = chat_outbox.record_intent(owner="luis", session_id="s1", client_message_id="m-double-click")
+    first = chat_outbox.record_intent(owner="example-user", session_id="s1", client_message_id="m-double-click")
+    second = chat_outbox.record_intent(owner="example-user", session_id="s1", client_message_id="m-double-click")
     assert first["created"] is True
     assert second["created"] is False, "the second click must not open a new intent"
     assert first["status"] == second["status"] == "accepted"
 
     # Network drops before the ack arrives; the client retries with the same
     # client_message_id - still the same row, not a second Task.
-    retried = chat_outbox.record_intent(owner="luis", session_id="s1", client_message_id="m-double-click")
+    retried = chat_outbox.record_intent(owner="example-user", session_id="s1", client_message_id="m-double-click")
     assert retried["created"] is False
 
     # Exactly one confirmed message lands in the store for this id.
-    chat_outbox.mark_finished(owner="luis", session_id="s1", client_message_id="m-double-click",
+    chat_outbox.mark_finished(owner="example-user", session_id="s1", client_message_id="m-double-click",
                                status="finished", result={"response": "ok"})
-    row = chat_outbox.get(owner="luis", session_id="s1", client_message_id="m-double-click")
+    row = chat_outbox.get(owner="example-user", session_id="s1", client_message_id="m-double-click")
     assert row["status"] == "finished"
     assert row["result"] == {"response": "ok"}

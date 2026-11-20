@@ -91,7 +91,7 @@ Accounts live in the owner's prefs (`routes.prefs_routes`, same mechanism as
 `caldav_accounts`) under the `google_calendar_accounts` key:
 
 ```json
-[{"id": "<uuid>", "label": "Google · luis@gmail.com", "email": "luis@gmail.com",
+[{"id": "<uuid>", "label": "Google · user@example.com", "email": "user@example.com",
   "access_token": "enc:...", "refresh_token": "enc:...", "token_expiry": "<unix>",
   "status": "ok" | "needs_reauth", "sync_tokens": {"<google calendar id>": "<syncToken>"},
   "selected_calendars": null | ["<google calendar id>", ...],

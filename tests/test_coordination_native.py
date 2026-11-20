@@ -105,7 +105,7 @@ async def test_heartbeat_no_scoped_locks_reports_state_with_empty_renewal(native
 @pytest.mark.asyncio
 async def test_model_cannot_choose_heartbeat_renewal_or_actor(native):
     _, _, manager, client = native
-    for args in ({'renew_resources':['model:reserved-qa']},{'agent':'luis'}):
+    for args in ({'renew_resources':['model:reserved-qa']},{'agent':'example-user'}):
         with pytest.raises(CoordinationError):
             await client.execute('heartbeat',args)
     assert manager.calls == []
@@ -421,7 +421,7 @@ async def test_native_poll_compacts_and_persists_without_sync_or_ack(native):
     manager.responses["inbox"] = {"ok": True, "messages": [
         {"id": 1, "thread_id": 32, "author": "claude", "body": "x" * 10000, "mentions": [binding.actor]},
         {"id": 2, "thread_id": 91, "author": "cursor", "body": "unrelated"}],
-        "pending": [{"id": 500, "thread_id": 32, "author": "luis", "body": "an urgent mention", "mentions": [binding.actor]}]}
+        "pending": [{"id": 500, "thread_id": 32, "author": "example-user", "body": "an urgent mention", "mentions": [binding.actor]}]}
     first = await client.execute("poll", {})
     assert first["cursor"] == 2  # Pending mention500 must not skip unfetched3..499.
     assert {p["id"] for p in first["pending"]} == {1, 500}
@@ -598,3 +598,16 @@ async def test_review_needs_full_submission_discussion_not_a_task_summary(native
     assert grant.allows("coordination_review", vote)
     await client.execute("review", vote)
     assert manager.calls[-1][1]["expected_submission_revision"] == 2
+
+
+@pytest.mark.asyncio
+async def test_poll_treats_posts_from_the_configured_person_as_relevant(native):
+    _, _, manager, client = native
+    manager.responses["board"]["person"] = {"id": "review-owner", "name": "Workspace Reviewer"}
+    manager.responses["inbox"] = {"ok": True, "messages": [
+        {"id": 1, "thread_id": 32, "author": "review-owner", "body": "An unaddressed request"},
+        {"id": 2, "thread_id": 32, "author": "review-agent", "body": "An unaddressed update"},
+    ]}
+    result = await client.poll({})
+    assert result["page_received"] == 2
+    assert [row["id"] for row in result["pending"]] == [1]

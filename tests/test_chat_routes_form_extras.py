@@ -116,13 +116,13 @@ def test_activity_snapshot_helpers():
     from src.tool_capabilities import capabilities_for_action
     store = ToolApprovalStore()
     content = '{"path": "x", "old_string": "a", "new_string": "b"}'
-    store.create(owner="luis", session_id="s1", origin_run_id="r1", tool_name="edit_file",
+    store.create(owner="example-user", session_id="s1", origin_run_id="r1", tool_name="edit_file",
                  content=content, workspace=None, external_untrusted_context_seen=True,
                  capabilities=capabilities_for_action("edit_file", content))
-    assert store.pending_session_ids(owner="luis") == ["s1"]
+    assert store.pending_session_ids(owner="example-user") == ["s1"]
     assert store.pending_session_ids(owner="someone-else") == []
-    store.retire_for_session(owner="luis", session_id="s1")
-    assert store.pending_session_ids(owner="luis") == []
+    store.retire_for_session(owner="example-user", session_id="s1")
+    assert store.pending_session_ids(owner="example-user") == []
 
 
 def test_detached_activity_names_model_and_tool_phases():

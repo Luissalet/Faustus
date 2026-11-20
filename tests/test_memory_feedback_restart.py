@@ -21,7 +21,7 @@ def store(tmp_path, monkeypatch):
 
 
 def test_partial_feedback_resumes_in_a_new_process(store, monkeypatch):
-    rules = [engine.add_item(text=text, level="procedural", owner="luis")
+    rules = [engine.add_item(text=text, level="procedural", owner="example-user")
              for text in ("Check tests", "Check build")]
     engine.note_injected("restart-run", [rule["id"] for rule in rules])
     original = engine.add_feedback
@@ -63,7 +63,7 @@ def test_expired_receipt_is_not_restored_after_restart(store, monkeypatch):
 
 
 def test_finishing_old_outcome_does_not_consume_new_turn(store, monkeypatch):
-    rule = engine.add_item(text="Check tests", level="procedural", owner="luis")
+    rule = engine.add_item(text="Check tests", level="procedural", owner="example-user")
     engine.note_injected("session", [rule["id"]])
     original = engine.add_feedback
 

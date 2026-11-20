@@ -30,10 +30,10 @@ try {
       { id: 3, title: 'An old one', kind: 'question', space_id: 'vulcan', updated: now - 90000, question: 'x', escalated_by: null },
     ],
     pending: [
-      { id: 41, thread_id: 7, author: 'codex-docs', kind: 'comment', body: 'hey @luis, look at [this](http://x)', created: now - 60, thread_title: 'general', thread_kind: 'channel', task_id: null, space_id: 'atlas' },
+      { id: 41, thread_id: 7, author: 'codex-docs', kind: 'comment', body: 'hey @example-user, look at [this](http://x)', created: now - 60, thread_title: 'general', thread_kind: 'channel', task_id: null, space_id: 'atlas' },
       { id: 42, thread_id: 12, author: 'cursor', kind: 'comment', body: 'about the task', created: now - 5, thread_title: 'Import', thread_kind: 'task', task_id: 5, space_id: 'atlas x' },
       { id: 2, thread_id: 7, author: 'cursor', kind: 'comment', body: 'long ago', created: now - 200000, thread_title: 'general', thread_kind: 'channel', task_id: null, space_id: 'atlas' },
-      { id: 43, thread_id: 9, author: 'claude', kind: 'escalation', body: '@luis yes or no?', created: now - 30, thread_title: 'Ship it now?', thread_kind: 'question', task_id: null, space_id: 'vulcan' },
+      { id: 43, thread_id: 9, author: 'claude', kind: 'escalation', body: '@example-user yes or no?', created: now - 30, thread_title: 'Ship it now?', thread_kind: 'question', task_id: null, space_id: 'vulcan' },
     ],
     reviews: [{ id: 1, title: 'not a notification', owner: 'x', thread_id: 1, space_id: 'atlas', submitted_at: now }],
   };
@@ -48,7 +48,7 @@ try {
   assert.equal(payloads[0].detail, 'Yes or no?', 'marks are not shown as noise');
   assert.equal(payloads[0].target, '/agora?space_id=vulcan&c=t%3A9');
   assert.equal(payloads[1].title, 'codex-docs mentions you in general');
-  assert.equal(payloads[1].detail, 'hey @luis, look at this');
+  assert.equal(payloads[1].detail, 'hey @example-user, look at this');
   assert.equal(payloads[2].title, 'cursor mentions you in #5 Import');
   assert.equal(payloads[2].target, '/agora?space_id=atlas%20x&c=t%3A12', 'the place is the server and the conversation');
 
@@ -83,7 +83,7 @@ try {
   assert.ok(tray.includes('await watchAgora();') && tray.includes('emitForAgora(inbox, seenAgora.current)'), 'the tray looks at the Agora');
   assert.ok(tray.includes("row.target.screen === 'agora' && row.target.run.startsWith('/agora')") && tray.includes('navigate(row.target.run)'), 'a row opens its conversation');
   assert.ok(tray.includes("row.type !== 'agora' || waiting.has(row.dedupe_key)") && tray.includes('markNotificationRead(row.id)'), 'what no longer waits is read');
-  assert.ok(read('studio/src/adapters/agora.ts').includes("agent: 'luis', all_spaces: 1, peek: 1, mine_only: 1"), 'looking does not mark anything as read');
+  assert.ok(read('studio/src/adapters/agora.ts').includes("fetch('/api/agora/person-inbox'"), 'the tray uses the shared personal inbox');
   assert.ok(/NOTIFICATION_TYPES = \([^)]*"agora"\)/.test(read('routes/notifications_routes.py')), 'the server stores the type');
   for (const key of ['{name} asks you: {title}', '{name} mentions you in {where}']) {
     assert.ok(read('docs/ui/i18n/es.tsv').split('\n').some((line) => line.startsWith(key + '\t')), 'Spanish for: ' + key);

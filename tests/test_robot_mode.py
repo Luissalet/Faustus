@@ -194,7 +194,7 @@ def dispatch_client(monkeypatch):
     from src import dispatch
 
     job = SimpleNamespace(id="abc123", status="partial", events=list(JOB_EVENTS))
-    monkeypatch.setattr(dr, "require_user", lambda request: "luis")
+    monkeypatch.setattr(dr, "require_user", lambda request: "example-user")
     monkeypatch.setattr(dr, "_is_admin", lambda owner: True)
     monkeypatch.setattr(dispatch, "get", lambda job_id: job if job_id == job.id else None)
     monkeypatch.setattr(dispatch, "visible_to", lambda j, owner: True)
@@ -281,7 +281,7 @@ def objectives_client(monkeypatch):
             return None
 
     monkeypatch.setattr(project_routes, "get_store", lambda: Store())
-    monkeypatch.setattr(project_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(project_routes, "effective_user", lambda request: "example-user")
     monkeypatch.setattr(objectives, "dashboard_payload",
                         lambda project, log_limit=50: DASHBOARD)
     app = FastAPI()
@@ -351,7 +351,7 @@ def memory_client(monkeypatch):
     from routes import memory_engine_routes
     from src import memory_engine as engine
 
-    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "example-user")
     monkeypatch.setattr(engine, "list_items",
                         lambda **kw: [{"id": "a" * 32}, {"id": "b" * 32}])
     monkeypatch.setattr(engine, "_utcnow", lambda: "now")
@@ -546,7 +546,7 @@ def usage_client(monkeypatch):
     async def collect():
         return USAGE
 
-    monkeypatch.setattr(sur, "require_user", lambda request: "luis")
+    monkeypatch.setattr(sur, "require_user", lambda request: "example-user")
     monkeypatch.setattr(sur, "collect_usage", collect)
     app = FastAPI()
     app.include_router(sur.setup_system_usage_routes())

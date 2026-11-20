@@ -26,7 +26,7 @@ def client(monkeypatch):
         if path == "/api/agora/down":
             return None, None, ""
         if path == "/api/agora/refused":
-            return 403, {"ok": False, "error": "only the hub's page may write as 'luis'"}, "application/json"
+            return 403, {"ok": False, "error": "only the hub's page may write as 'example-user'"}, "application/json"
         if path == "/api/agora/odd":
             return 200, None, "text/html"
         if raw:
@@ -51,10 +51,10 @@ def test_reads_and_writes_reach_the_hub_as_they_are(client):
     http.get("/api/agora/x/console/usage")
     assert calls[-1]["path"] == "/api/agora/console/usage"
 
-    sent = http.post("/api/agora/x/channel_post", json={"space_id": "atlas", "body": "hola", "_person": True, "agent": "luis"})
+    sent = http.post("/api/agora/x/channel_post", json={"space_id": "atlas", "body": "hola", "_person": True, "agent": "example-user"})
     assert sent.status_code == 200 and sent.json()["ok"]
     assert calls[-1]["method"] == "POST" and calls[-1]["path"] == "/api/agora/channel_post"
-    assert calls[-1]["body"] == {"space_id": "atlas", "body": "hola", "agent": "luis"}   # the page cannot set the hub's own flag
+    assert calls[-1]["body"] == {"space_id": "atlas", "body": "hola", "agent": "example-user"}   # the page cannot set the hub's own flag
 
 
 def test_a_hub_that_is_down_or_refuses_is_an_answer_not_an_error(client):
@@ -62,7 +62,7 @@ def test_a_hub_that_is_down_or_refuses_is_an_answer_not_an_error(client):
     down = http.get("/api/agora/x/down")
     assert down.status_code == 200 and down.json()["ok"] is False and down.json()["code"] == "hub_unreachable"
     refused = http.post("/api/agora/x/refused", json={})
-    assert refused.status_code == 200 and refused.json() == {"ok": False, "error": "only the hub's page may write as 'luis'", "status": 403}
+    assert refused.status_code == 200 and refused.json() == {"ok": False, "error": "only the hub's page may write as 'example-user'", "status": 403}
     odd = http.get("/api/agora/x/odd")
     assert odd.status_code == 200 and odd.json()["ok"] is False
 
@@ -205,3 +205,27 @@ def test_threads_pins_and_brain_links_go_through_with_their_arguments(client):
     assert calls[-1]["path"] == "/api/agora/thread_list" and calls[-1]["query"]["scope"] == "following"
     http.get("/api/agora/x/brain_backlinks", params={"page": "Hilos del Agora", "aliases": "Proyectos/Hilos del Agora"})
     assert calls[-1]["path"] == "/api/agora/brain_backlinks" and calls[-1]["query"]["aliases"] == "Proyectos/Hilos del Agora"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_personal_inbox_uses_the_hub_member_without_marking_reads(client, monkeypatch, legacy):
+    http, calls = client
+    person = {"id": "review-owner", "name": "Workspace Reviewer"}
+    ctype = "application/json"
+
+    def hub(method, path, *, query=None, **_):
+        calls.append(path)
+        assert method == "GET"
+        if path == "/api/agora/person":
+            return (404, {"ok": False}, ctype) if legacy else (200, {"person": person}, ctype)
+        if path == "/api/agora/guild":
+            return 200, {"members": [{"role": "codex", "id": "review-agent"}, {"role": "person", **person}]}, ctype
+        assert path == "/api/agora/inbox"
+        assert query == {"agent": person["id"], "all_spaces": "1", "peek": "1", "mine_only": "1",
+                         "limit": "40", "skip_muted": "1"}
+        return 200, {"ok": True, "pending": [{"id": 7}], "escalated": []}, ctype
+
+    monkeypatch.setattr(agora_routes, "hub_request", hub)
+    response = http.get("/api/agora/person-inbox", params={"heard": True, "agent": "review-agent"})
+    assert response.json()["pending"] == [{"id": 7}]
+    assert calls == ["/api/agora/person", *(["/api/agora/guild"] if legacy else []), "/api/agora/inbox"]

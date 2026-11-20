@@ -3172,7 +3172,7 @@ _REPOS_BLOCK_MAX_CHARS = 400
 
 
 def _project_repos_block(owner: Optional[str], project_id: str) -> str:
-    """Lote 90 — "Repositories in this project": Luis's own framing ("que no
+    """Lote 90 — "Repositories in this project": the user's own framing ("que no
     tenga que ser todo tan explicito ... un usuario no deberia saberse de
     memoria todas las tools de Faustus") extended to git — without this, the
     model has no way to know what "the repo" or "this project's repo" means

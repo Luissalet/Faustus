@@ -576,8 +576,8 @@ def test_remember_with_the_paraphrase_seen_live():
 
 def test_a_number_written_in_words_is_the_same_number_in_digits():
     text = "Recuerda que mi cumpleaños es el 14 de marzo y que no me gustan las llamadas antes de las diez."
-    assert allows("manage_memory", "add\nLuis no quiere llamadas antes de las 10:00.\npreference", text) is True
-    assert allows("manage_memory", "add\nLuis no quiere llamadas antes de las 11:00.\npreference", text) is False
+    assert allows("manage_memory", "add\nEl usuario no quiere llamadas antes de las 10:00.\npreference", text) is True
+    assert allows("manage_memory", "add\nEl usuario no quiere llamadas antes de las 11:00.\npreference", text) is False
 
 
 def test_remember_in_english_too():

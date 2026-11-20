@@ -35,7 +35,7 @@ from src.project_context.resolvers.filesystem import FilesystemResolver
 from src.project_context.service import ProjectContextService
 from src.tools import project_context as tool
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 SECRET_TITLE = "Q3 restructuring memo"
 PROJECT = {"id": "prj_1", "name": "Faustus", "owner": OWNER, "enabled": True}

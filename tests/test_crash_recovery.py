@@ -301,7 +301,7 @@ async def test_a_dispatch_mirror_carries_the_pid_that_wrote_it_but_the_payload_d
     monkeypatch.setattr(dispatch, "_data_dir", lambda: str(tmp_path / "dispatch"))
     dispatch.reset_for_tests()
     try:
-        job = dispatch.DispatchJob("luis", {"tasks": []}, str(tmp_path), "", "m", None, "Workers")
+        job = dispatch.DispatchJob("example-user", {"tasks": []}, str(tmp_path), "", "m", None, "Workers")
         job._persist()
         doc = json.loads((tmp_path / "dispatch" / f"{job.id}.json").read_text(encoding="utf-8"))
         assert doc["pid"] == os.getpid()

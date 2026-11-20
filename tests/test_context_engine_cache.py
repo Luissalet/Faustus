@@ -76,11 +76,11 @@ def test_a_crafted_key_cannot_reach_into_another_scope():
 
 def test_scope_of_is_the_executions_own_scope_key():
     request = ContextRequest(execution=ContextExecution(
-        owner="luis", project_id="p1", council_id="c1", branch_id="b1"))
+        owner="example-user", project_id="p1", council_id="c1", branch_id="b1"))
     assert cache.scope_of(request) == request.execution.scope_key()
     # Deliberately excludes run and turn: reuse across turns of one session is
     # the point; reuse across owners is the bug.
-    assert cache.scope_of(request) == "luis|p1|c1|b1"
+    assert cache.scope_of(request) == "example-user|p1|c1|b1"
 
 
 # ── bounds ─────────────────────────────────────────────────────────────────
@@ -197,28 +197,28 @@ def test_an_unknown_event_is_a_no_op_not_an_error(clean_singleton):
 def test_project_context_updated_forgets_the_whole_project_including_branches(
         clean_singleton):
     ws = cache.working_set()
-    ws.put("luis|p1||", cache.PREFIX_CANDIDATES + "docs", 1)
-    ws.put("luis|p1|council-3|", cache.PREFIX_PACKET + "x", 2)
-    ws.put("luis|p1||branch-7", cache.PREFIX_STATE + "s", 3)
-    ws.put("luis|other||", cache.PREFIX_CANDIDATES + "docs", 4)
+    ws.put("example-user|p1||", cache.PREFIX_CANDIDATES + "docs", 1)
+    ws.put("example-user|p1|council-3|", cache.PREFIX_PACKET + "x", 2)
+    ws.put("example-user|p1||branch-7", cache.PREFIX_STATE + "s", 3)
+    ws.put("example-user|other||", cache.PREFIX_CANDIDATES + "docs", 4)
     ws.put("someone_else|p1||", cache.PREFIX_CANDIDATES + "docs", 5)
 
     dropped = cache.on_event("project_context_updated",
-                             {"owner": "luis", "project_id": "p1"})
+                             {"owner": "example-user", "project_id": "p1"})
     assert dropped == 3
-    assert ws.get("luis|other||", cache.PREFIX_CANDIDATES + "docs") == 4
+    assert ws.get("example-user|other||", cache.PREFIX_CANDIDATES + "docs") == 4
     assert ws.get("someone_else|p1||", cache.PREFIX_CANDIDATES + "docs") == 5
 
 
 def test_a_state_projection_only_touches_the_operational_blocks(clean_singleton):
     ws = cache.working_set()
-    ws.put("luis|p1||", cache.PREFIX_STATE + "mirror", 1)
-    ws.put("luis|p1||", cache.PREFIX_BLOCKS + "ops", 2)
-    ws.put("luis|p1||", cache.PREFIX_CANDIDATES + "docs", 3)
+    ws.put("example-user|p1||", cache.PREFIX_STATE + "mirror", 1)
+    ws.put("example-user|p1||", cache.PREFIX_BLOCKS + "ops", 2)
+    ws.put("example-user|p1||", cache.PREFIX_CANDIDATES + "docs", 3)
 
     assert cache.on_event("state_projection_updated",
-                          {"owner": "luis", "project_id": "p1"}) == 2
-    assert ws.get("luis|p1||", cache.PREFIX_CANDIDATES + "docs") == 3
+                          {"owner": "example-user", "project_id": "p1"}) == 2
+    assert ws.get("example-user|p1||", cache.PREFIX_CANDIDATES + "docs") == 3
 
 
 def test_capability_health_is_global_and_only_drops_tool_guidance(clean_singleton):
@@ -248,9 +248,9 @@ def test_every_event_in_the_table_is_handled_and_none_raises(clean_singleton):
 
 def test_workspace_stands_in_for_project_id_in_a_payload(clean_singleton):
     ws = cache.working_set()
-    ws.put("luis|C:/repo||", cache.PREFIX_CANDIDATES + "docs", 1)
+    ws.put("example-user|C:/repo||", cache.PREFIX_CANDIDATES + "docs", 1)
     assert cache.on_event("project_context_detached",
-                          {"owner": "luis", "workspace": "C:/repo"}) == 1
+                          {"owner": "example-user", "workspace": "C:/repo"}) == 1
     assert ws.stats().entries == 0
 
 

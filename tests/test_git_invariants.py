@@ -179,10 +179,10 @@ def test_ssh_and_https_forms_of_one_remote_are_equal(repo):
 
 
 def test_an_ssh_alias_keeps_the_alias_as_the_host(repo):
-    # Luis's own setup uses a Host alias from ~/.ssh/config, not a real hostname.
-    git(repo, "remote", "add", "origin", "git@Luissalet:owner/repo.git")
-    assert canonical_git_remote(str(repo)) == "luissalet/owner/repo"
-    assert check_preconditions(str(repo), expect_remote="git@Luissalet:owner/repo.git").ok
+    # ExampleUser's own setup uses a Host alias from ~/.ssh/config, not a real hostname.
+    git(repo, "remote", "add", "origin", "git@sample-maintainer:owner/repo.git")
+    assert canonical_git_remote(str(repo)) == "sample-maintainer/owner/repo"
+    assert check_preconditions(str(repo), expect_remote="git@sample-maintainer:owner/repo.git").ok
 
 
 def test_a_different_remote_is_refused(repo):

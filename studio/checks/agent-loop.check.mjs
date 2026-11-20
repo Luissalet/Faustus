@@ -113,9 +113,10 @@ try {
   const code = app.loopOfTurn(turn([
     step('edit_file', '{"path":"src/x.py","old":"a","new":"b"}'),
     step('bash', 'python -m pytest -q'),
-    step('bash', 'git commit --author="Luissalet <l@x>" -m "Fix x"'),
-  ], 'Done.'), undefined, Date.now(), true, 'fix the bug in x');
+    step('bash', 'git commit --author="sample-maintainer <l@x>" -m "Fix x"'),
+  ], 'Done.'), undefined, Date.now(), true, 'fix the bug in x', 'sample-maintainer');
   assert.equal(code.kind, 'code');
+  assert.equal(code.practices.find((p) => p.id === 'commit').state, 'ok');
   assert.deepEqual(code.practices.map((p) => p.id), ['tests', 'browser', 'docs', 'commit', 'no_evidence', 'agora']);
   app.panel(code, 'en');
   assert.equal(q('agent-loop-kind').textContent, 'Code');

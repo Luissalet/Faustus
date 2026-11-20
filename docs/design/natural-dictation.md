@@ -325,7 +325,7 @@ POSIX-only integration test skipped on Windows.
 
 Clearing a slot through `/slots/0?action=erase` was unavailable (HTTP 501:
 requires `--slot-save-path`). A process restart was denied by Windows because
-the engine belongs to `luism`, while this session runs as `codexsandboxoffline`.
+the engine belongs to `example-user`, while this session runs as `codexsandboxoffline`.
 `D:/LocalAI/Restart-RamblerEngine.ps1` is prepared for the owning account: it
 validates the model/executable and idle slot, reloads the current configuration,
 and checks an actual answer after loading. The owning account subsequently ran

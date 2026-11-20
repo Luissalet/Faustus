@@ -27,7 +27,7 @@ def history():
         row("s1", "sigue igual, ahora 3.1 s"),
         row("s2", "¿cómo va?"),
         row("s2", "por qué paras? no pares hasta acabar"),
-        row("s3", "Haz el informe del mes con los gastos y mándamelo a luis@example.com"),
+        row("s3", "Haz el informe del mes con los gastos y mándamelo a user@example.com"),
         row("s3", "por qué paras? sigue"),
         row("s4", "por qué paras ahora"),
         row("s4", "status?"),
@@ -65,7 +65,7 @@ def test_scorecard_and_suggestions():
 
 
 def test_redaction():
-    out = pm.redact(r"mail luis@example.com at https://x.io/a C:\Users\luis\secret.txt token sk-abcdefghijklmnop Bruno", ["Bruno"])
+    out = pm.redact(r"mail user@example.com at https://x.io/a C:\Users\example-user\secret.txt token sk-abcdefghijklmnop Bruno", ["Bruno"])
     assert "@" not in out and "https" not in out and "Users" not in out and "sk-" not in out and "Bruno" not in out
 
 

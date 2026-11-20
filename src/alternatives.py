@@ -1,6 +1,6 @@
 """alternatives.py — CMP-13: isolated, comparable alternatives.
 
-Luis's brief (INFORME §3.12): today, trying two approaches to the same task
+the user's brief (INFORME §3.12): today, trying two approaches to the same task
 means either overwriting the one attempt with the next, or asking the agent
 to "remember" which lines came from which idea — both lose work and neither
 lets a person actually compare. This module gives an "experiment" a small,

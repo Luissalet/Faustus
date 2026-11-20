@@ -70,7 +70,7 @@ def test_versions_decisions_and_diff_with_the_why():
     assert history.record_version("c1", copy.deepcopy(BASE))["unchanged"] is True
     with pytest.raises(history.CanvasHistoryError):
         history.diff("c1")
-    v2 = history.record_version("c1", _v2(), author="luis", source="user", note="tightened")
+    v2 = history.record_version("c1", _v2(), author="example-user", source="user", note="tightened")
     assert v2["version"] == 2
     entry = history.add_decision("c1", "Drop the empty-version guard from safeguards", why="record_version enforces it")
     assert entry["version"] == 2 and entry["author"] == "user"
@@ -138,8 +138,8 @@ def test_rest_routes(monkeypatch):
     assert c.post("/api/design-canvas/c3/versions", json={"canvas": {"requirements": []}}).status_code == 400
     diff = c.get("/api/design-canvas/c3/diff?from=1&to=2").json()
     assert diff["counts"]["reordered"] == 1 and "v1 -> v2" in diff["text"]
-    assert c.post("/api/design-canvas/c3/decisions", json={"decision": "Ship it", "why": "tests pass", "author": "luis"}).json()["version"] == 2
-    assert c.get("/api/design-canvas/c3/decisions?version=2").json()["decisions"][0]["author"] == "luis"
+    assert c.post("/api/design-canvas/c3/decisions", json={"decision": "Ship it", "why": "tests pass", "author": "example-user"}).json()["version"] == 2
+    assert c.get("/api/design-canvas/c3/decisions?version=2").json()["decisions"][0]["author"] == "example-user"
     assert c.get("/api/design-canvas/c3").json()["versions"][1]["note"] == "edited"
     assert "## Requirements" in c.get("/api/design-canvas/c3/versions/1").json()["markdown"]
     assert c.get("/api/design-canvas/missing").status_code == 404

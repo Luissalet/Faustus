@@ -25,7 +25,7 @@ def test_foreground_server_launch_detection():
         "streamlit run app.py", "python manage.py runserver",
         "python app.py",
         "python app.py > server.log 2>&1",
-        'cd "C:\\\\Users\\\\luism\\\\Desktop\\\\Proyectos independientes\\\\Silhouettes" && python app.py',
+        'cd "C:\\\\Users\\\\example-user\\\\Desktop\\\\Proyectos independientes\\\\Silhouettes" && python app.py',
         "python -m flask run",
         r".venv\Scripts\python.exe app.py",
         "py -3 app.py",
@@ -177,7 +177,7 @@ def test_worker_timeout_is_reported_and_releases_the_busy_flag(monkeypatch):
     events = []
     async def cb(p): events.append(p["subagent"])
     agent_runs._EXTERNAL_BUSY.clear()
-    res = asyncio.run(sa.DelegateAgentsTool().execute('{"tasks": ["start the server"]}', {"session_id": "parent", "owner": "luis", "progress_cb": cb}))
+    res = asyncio.run(sa.DelegateAgentsTool().execute('{"tasks": ["start the server"]}', {"session_id": "parent", "owner": "example-user", "progress_cb": cb}))
     assert res["exit_code"] == 1
     kinds = [e["event"] for e in events]
     assert kinds[0] == "started" and "error" in kinds and kinds[-1] == "done"

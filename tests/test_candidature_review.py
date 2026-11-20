@@ -26,7 +26,7 @@ JOBS = [
 MAILS = {
     "1": {"subject": "Update on your application for the AI Engineer at Bluehaven!", "from_name": "Bluehaven Talent",
           "from_address": "jobs@bluehaven.com", "message_id": "<m1@bluehaven>", "date": "2026-09-16T09:05:00+00:00",
-          "body": "Hi Luis, thank you for your interest. Unfortunately we have decided not to move forward with your application at this time."},
+          "body": "Hi ExampleUser, thank you for your interest. Unfortunately we have decided not to move forward with your application at this time."},
     "2": {"subject": "Your virtual interview at Cordera for R00123456 AI Software Engineer", "from_name": "Cordera",
           "from_address": "noreply@cordera.com", "message_id": "<m2@acc>", "date": "2026-09-16T11:01:00+00:00",
           "body": "We would like to invite you to an interview on 22 September 2026 at 10:00 (CEST). Please confirm."},

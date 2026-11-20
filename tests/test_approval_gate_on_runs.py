@@ -74,7 +74,7 @@ def stage(tmp_path, monkeypatch):
 def _run(stage, man, **kw):
     return router.execute(man, ["echo", "hi"], workspace=stage["workspace"],
                           artifacts_root=stage["artifacts_root"],
-                          run_id=kw.pop("run_id", "r1"), owner="luis", **kw)
+                          run_id=kw.pop("run_id", "r1"), owner="example-user", **kw)
 
 
 def test_a_run_that_raises_a_card_does_not_start_without_it(stage):
@@ -87,7 +87,7 @@ def test_a_run_that_raises_a_card_does_not_start_without_it(stage):
 
 def test_the_refusal_hands_back_a_card_the_user_can_actually_grant(stage):
     _, result = _run(stage, manifest())
-    pending = approval_store.pending(owner="luis")
+    pending = approval_store.pending(owner="example-user")
     assert len(pending) == 1
     assert pending[0].plan.action == "publish"
     assert pending[0].plan.skill_id == "report.publish"
@@ -96,8 +96,8 @@ def test_the_refusal_hands_back_a_card_the_user_can_actually_grant(stage):
 
 def test_once_a_person_grants_it_the_run_goes_ahead(stage):
     _run(stage, manifest())
-    card = approval_store.pending(owner="luis")[0]
-    approval_store.decide(card.id, granted=True, by="luis")
+    card = approval_store.pending(owner="example-user")[0]
+    approval_store.decide(card.id, granted=True, by="example-user")
 
     decision, result = _run(stage, manifest(), run_id="r2")
     assert result.status == "completed"
@@ -108,20 +108,20 @@ def test_a_manifest_that_raises_nothing_is_untouched_by_the_gate(stage):
     quiet = manifest(outputs={"notes": "artifact:text"}, approval={"required_when": []})
     decision, result = _run(stage, quiet)
     assert result.status == "completed"
-    assert approval_store.pending(owner="luis") == []
+    assert approval_store.pending(owner="example-user") == []
 
 
 def test_one_more_secret_and_the_granted_card_no_longer_covers_it(stage):
     """The drift the whole approval design exists to catch, stopping a real run."""
     _run(stage, manifest())
-    card = approval_store.pending(owner="luis")[0]
-    approval_store.decide(card.id, granted=True, by="luis")
+    card = approval_store.pending(owner="example-user")[0]
+    approval_store.decide(card.id, granted=True, by="example-user")
     assert _run(stage, manifest(), run_id="r2")[1].status == "completed"
 
     # The first run spent its single use. Grant another unchanged plan so
     # this test still reaches drift detection rather than merely exhaustion.
-    next_card = approval_store.request(card.plan, owner="luis")
-    approval_store.decide(next_card.id, granted=True, by="luis")
+    next_card = approval_store.request(card.plan, owner="example-user")
+    approval_store.decide(next_card.id, granted=True, by="example-user")
 
     greedier = manifest(permissions={"backends": ["docker_workspace"], "max_seconds": 60,
                                      "secrets": ["youtube"]})
@@ -148,4 +148,4 @@ def test_an_undeclared_card_earned_by_the_permissions_is_enforced_too(stage):
 def test_the_gate_can_be_stood_down_explicitly_and_only_explicitly(stage):
     decision, result = _run(stage, manifest(), require_approval=False)
     assert result.status == "completed"
-    assert approval_store.pending(owner="luis") == []
+    assert approval_store.pending(owner="example-user") == []

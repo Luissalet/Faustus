@@ -19,17 +19,18 @@ readable after the turn ends, as a summary to review.
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 MAX_STEPS = 80
 MAX_SESSIONS = 64
 MAX_URLS = 400
-EXPECTED_AUTHOR = "Luissalet"
 
 KINDS = ("code", "research", "files", "ops", "chat")
 KIND_LABELS = {
@@ -288,6 +289,20 @@ def _domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def configured_git_author() -> str:
+    """The practice checks the local Git identity or an explicit deployment override."""
+    author = os.environ.get("FAUSTUS_GIT_AUTHOR", "").strip()
+    if author:
+        return author
+
+    from src.git_panel import GitNotFoundError, repo_user
+
+    try:
+        return repo_user(str(Path(__file__).resolve().parents[1]))["name"].strip()
+    except (GitNotFoundError, OSError):
+        return ""
+
+
 def _code_marks(calls: list[dict[str, Any]], author: str) -> dict[str, dict[str, Any]]:
     found: dict[str, dict[str, Any]] = {}
 
@@ -317,8 +332,10 @@ def _code_marks(calls: list[dict[str, Any]], author: str) -> dict[str, dict[str,
             who = next((g for m in _AUTHOR.finditer(command) for g in m.groups() if g), "").strip()
             if _TRAILER.search(command):
                 mark("commit", "fail", "trailer in the message: " + command)
+            elif who and author:
+                mark("commit", "ok" if who.casefold() == author.casefold() else "fail", "author " + who)
             elif who:
-                mark("commit", "ok" if who.lower().startswith(author.lower()) else "fail", "author " + who)
+                mark("commit", "unknown", "no Git author configured to compare with " + who)
             else:
                 mark("commit", "unknown", "commit without an explicit author (repository identity): " + command)
         if _DELIVERY.search(text) and ok is not False:
@@ -407,7 +424,7 @@ def _ops_marks(calls: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return found
 
 
-def judge_practices(calls: list[dict[str, Any]], *, author: str = EXPECTED_AUTHOR, answer: str = "",
+def judge_practices(calls: list[dict[str, Any]], *, author: Optional[str] = None, answer: str = "",
                     prompt: str = "", kind: Optional[str] = None, seen_urls: Optional[list[str]] = None,
                     final: bool = False) -> list[dict[str, Any]]:
     """Mark the practices of the turn's kind of work from what its calls ran and what it answered.
@@ -420,7 +437,7 @@ def judge_practices(calls: list[dict[str, Any]], *, author: str = EXPECTED_AUTHO
     kind = kind or classify(calls)
     skip: set[str] = set()
     if kind == "code":
-        found = _code_marks(calls, author)
+        found = _code_marks(calls, configured_git_author() if author is None else author)
     elif kind == "research":
         found = _research_marks(calls, answer, seen_urls or [])
     elif kind == "files":
@@ -453,6 +470,7 @@ class LoopState:
     """The loop of one run. Not thread-safe by itself; the registry below guards it."""
 
     def __init__(self, session_id: str, run_id: str, started_at: float, prompt: str = ""):
+        self.git_author: Optional[str] = None
         self.session_id = session_id
         self.run_id = run_id
         self.started_at = started_at
@@ -550,7 +568,9 @@ class LoopState:
         now = time.time() if now is None else now
         end = self.ended_at or now
         kind = classify(self.calls)
-        practices = judge_practices(self.calls, answer=self.answer, prompt=self.prompt, kind=kind,
+        if kind == "code" and self.git_author is None:
+            self.git_author = configured_git_author()
+        practices = judge_practices(self.calls, author=self.git_author, answer=self.answer, prompt=self.prompt, kind=kind,
                                     seen_urls=self.urls, final=self.ended_at is not None)
         return {
             "session_id": self.session_id, "run_id": self.run_id, "running": self.ended_at is None,

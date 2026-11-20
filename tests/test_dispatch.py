@@ -132,7 +132,7 @@ def box(tmp_path, monkeypatch):
 
 def test_start_runs_the_delegation_in_its_own_workers_chat_and_compacts(box):
     async def run():
-        job = await dispatch.start("luis", {"tasks": ["add apply_tax"], "workspace": box["ws"], "model": "qwen3.5:9b"})
+        job = await dispatch.start("example-user", {"tasks": ["add apply_tax"], "workspace": box["ws"], "model": "qwen3.5:9b"})
         assert job.status in ("queued", "running")
         assert await dispatch.wait(job, 5)
         return job
@@ -144,9 +144,9 @@ def test_start_runs_the_delegation_in_its_own_workers_chat_and_compacts(box):
     sent = box["executed"][0]
     assert sent["tasks"][0]["instruction"] == "add apply_tax" and sent["max_rounds"] == dispatch._DEFAULT_MAX_ROUNDS
     # it ran inside a Workers chat of the owner, on the resolved route, with the workspace bound
-    assert box["ctx"]["session_id"] == job.session_id and box["ctx"]["owner"] == "luis"
+    assert box["ctx"]["session_id"] == job.session_id and box["ctx"]["owner"] == "example-user"
     sess = box["sm"].sessions[job.session_id]
-    assert sess.model == "qwen3.5:9b" and sess.name.startswith("Workers · add apply_tax") and sess.owner == "luis"
+    assert sess.model == "qwen3.5:9b" and sess.name.startswith("Workers · add apply_tax") and sess.owner == "example-user"
     assert box["workspace_seen"] == box["ws"]
     # the chat opens with a note saying where the job came from…
     assert box["sm"].messages[0][0] == job.session_id and "Dispatched from outside" in box["sm"].messages[0][1].content
@@ -177,7 +177,7 @@ def test_progress_is_visible_while_running_and_wait_times_out_honestly(box):
     box["delay"] = 0.5
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": ["slow"], "workspace": box["ws"]})
+        job = await dispatch.start("example-user", {"tasks": ["slow"], "workspace": box["ws"]})
         # Wait for the CONDITION, not for a clock. A flat `sleep(0.1)` and a
         # hope that the worker has published by then fails on a machine that
         # is a little busier than the one the test was written on — which is
@@ -202,7 +202,7 @@ def test_cancel_stops_a_running_job(box):
     box["delay"] = 5
 
     async def run():
-        job = await dispatch.start("luis", {"tasks": ["slow"], "workspace": box["ws"]})
+        job = await dispatch.start("example-user", {"tasks": ["slow"], "workspace": box["ws"]})
         await asyncio.sleep(0.1)
         assert dispatch.cancel(job) is True
         assert job.status == "cancelling"           # until the workers have unwound
@@ -214,7 +214,7 @@ def test_cancel_stops_a_running_job(box):
 
 def test_a_bad_workspace_is_refused_before_anything_starts(box):
     with pytest.raises(ValueError):
-        asyncio.run(dispatch.start("luis", {"tasks": ["x"], "workspace": box["ws"] + "-missing"}))
+        asyncio.run(dispatch.start("example-user", {"tasks": ["x"], "workspace": box["ws"] + "-missing"}))
     assert not box["executed"]
 
 
@@ -224,13 +224,13 @@ def test_a_job_interrupted_by_a_restart_says_so(box, tmp_path):
     `done`, and never a job that looks alive."""
     async def run():
         box["delay"] = 5
-        job = await dispatch.start("luis", {"tasks": ["slow"], "workspace": box["ws"]})
+        job = await dispatch.start("example-user", {"tasks": ["slow"], "workspace": box["ws"]})
         await asyncio.sleep(0.1)
         job._persist()                   # what is on disk while it runs
         dispatch.reset_for_tests()       # "the server restarted": memory gone, file left
         again = dispatch.get(job.id)
         assert again is not None and again.status == "interrupted" and again.result is None
-        assert dispatch.list_jobs("luis")[0]["id"] == job.id
+        assert dispatch.list_jobs("example-user")[0]["id"] == job.id
         assert dispatch.compact(again)["status"] == "interrupted"
         job.task.cancel()
         await asyncio.sleep(0.05)
@@ -239,7 +239,7 @@ def test_a_job_interrupted_by_a_restart_says_so(box, tmp_path):
 
 # ── the route ───────────────────────────────────────────────────────────────
 
-def _client(monkeypatch, *, token_scopes=None, cookie_user="luis"):
+def _client(monkeypatch, *, token_scopes=None, cookie_user="example-user"):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     import routes.dispatch_routes as dr
@@ -251,7 +251,7 @@ def _client(monkeypatch, *, token_scopes=None, cookie_user="luis"):
         if token_scopes is not None:
             request.state.api_token = True
             request.state.api_token_scopes = list(token_scopes)
-            request.state.api_token_owner = "luis"
+            request.state.api_token_owner = "example-user"
         else:
             request.state.current_user = cookie_user
         return await call_next(request)
@@ -449,11 +449,11 @@ def test_resolve_route_prefers_the_configured_dispatch_model_over_the_default(mo
     from src import settings as settings_mod
     monkeypatch.setattr(er, "resolve_endpoint", lambda prefix, owner=None: ("http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0", None))
     monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: {"dispatch_model": "qwen3.5:9b"}.get(key, default))
-    assert dispatch.resolve_route("luis") == ("http://127.0.0.1:11434/v1", "qwen3.5:9b", None)
+    assert dispatch.resolve_route("example-user") == ("http://127.0.0.1:11434/v1", "qwen3.5:9b", None)
     # the request's own model still wins
-    assert dispatch.resolve_route("luis", "tiny:1b")[1] == "tiny:1b"
+    assert dispatch.resolve_route("example-user", "tiny:1b")[1] == "tiny:1b"
     monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: default)
-    assert dispatch.resolve_route("luis")[1] == "qwen3.8:27b-q8_0"
+    assert dispatch.resolve_route("example-user")[1] == "qwen3.8:27b-q8_0"
 
 
 def test_config_route_says_where_a_job_would_run(box, monkeypatch):
@@ -472,7 +472,7 @@ def test_config_route_says_where_a_job_would_run(box, monkeypatch):
 
 
 def test_the_workers_skill_ships_inside_the_claude_code_bundle(monkeypatch):
-    """Luis: "guárdala en una carpeta localizable" (dicho cuando el fork aún
+    """ExampleUser: "guárdala en una carpeta localizable" (dicho cuando el fork aún
     llevaba el nombre de upstream). The skill lives next to the `odysseus` one,
     so /api/claude/plugin.zip (Settings → Integrations → Add a Claude Agent)
     drops it into ~/.claude/skills/ too."""
@@ -506,10 +506,10 @@ def test_a_worker_model_runs_where_it_is_served(monkeypatch):
     monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: {"dispatch_model": "qwen3.5:9b"}.get(key, default))
     monkeypatch.setattr(er, "endpoint_id_serving", lambda model, owner=None: None)
     monkeypatch.setattr(er, "models_listed_at", lambda url, owner=None: ["qwen2.5-3b-helper"])
-    assert dispatch.resolve_route("luis") == ("http://127.0.0.1:8082/v1", "qwen2.5-3b-helper", None)
+    assert dispatch.resolve_route("example-user") == ("http://127.0.0.1:8082/v1", "qwen2.5-3b-helper", None)
     monkeypatch.setattr(er, "endpoint_id_serving", lambda model, owner=None: "ep-ollama")
     monkeypatch.setattr(er, "resolve_endpoint_by_id", lambda ep, model=None, owner=None, **k: ("http://127.0.0.1:11434/v1", model, None))
-    assert dispatch.resolve_route("luis") == ("http://127.0.0.1:11434/v1", "qwen3.5:9b", None)
+    assert dispatch.resolve_route("example-user") == ("http://127.0.0.1:11434/v1", "qwen3.5:9b", None)
 
 
 def test_workers_server_reads_a_chats_usage_and_turn_review(monkeypatch):

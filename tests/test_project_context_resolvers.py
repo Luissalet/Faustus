@@ -23,7 +23,7 @@ from src.project_context.resolvers.document import DocumentResolver, chunk_markd
 from src.project_context.resolvers.filesystem import FilesystemResolver, has_traversal
 from src.project_context.resolvers.gallery import GalleryImageResolver
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 PROJECT = {"id": "prj_1", "name": "Faustus", "owner": OWNER, "enabled": True}
 

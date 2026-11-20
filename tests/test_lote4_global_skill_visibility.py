@@ -79,16 +79,16 @@ def test_load_includes_global_skill_for_any_real_user(tmp_path):
     sm = SkillsManager(str(tmp_path))
 
     alice_skills = {s["name"] for s in sm.load(owner="alice")}
-    luis_skills = {s["name"] for s in sm.load(owner="luis")}
+    example_user_skills = {s["name"] for s in sm.load(owner="example-user")}
 
     assert "iterative-cursor-loop" in alice_skills, (
         "global skill (owner='*') must be visible to alice"
     )
-    assert "iterative-cursor-loop" in luis_skills, (
+    assert "iterative-cursor-loop" in example_user_skills, (
         "global skill (owner='*') must be visible to any other real user too"
     )
     assert "login-flow" in alice_skills
-    assert "login-flow" not in luis_skills, (
+    assert "login-flow" not in example_user_skills, (
         "a skill owned by a specific user must stay invisible to a different user"
     )
 
@@ -104,8 +104,8 @@ def test_load_still_hides_blank_owner_skill(tmp_path):
         owner="", description="no owner declared",
     )
     sm = SkillsManager(str(tmp_path))
-    luis_skills = {s["name"] for s in sm.load(owner="luis")}
-    assert "legacy-unstamped" not in luis_skills
+    example_user_skills = {s["name"] for s in sm.load(owner="example-user")}
+    assert "legacy-unstamped" not in example_user_skills
 
 
 def test_index_for_surfaces_global_published_skill(tmp_path):
@@ -118,7 +118,7 @@ def test_index_for_surfaces_global_published_skill(tmp_path):
         status="published",
     )
     sm = SkillsManager(str(tmp_path))
-    idx = sm.index_for(owner="luis")
+    idx = sm.index_for(owner="example-user")
     assert any(s["name"] == "iterative-cursor-loop" for s in idx)
 
 
@@ -135,7 +135,7 @@ def test_get_relevant_skills_matches_global_skill_for_repetitive_task(tmp_path):
     hits = sm.get_relevant_skills(
         "create one folder per pokemon evolution line, one unit at a time, "
         "this is a long repetitive task, persist an iterative cursor",
-        skills=sm.load(owner="luis"),
+        skills=sm.load(owner="example-user"),
         threshold=0.05,
         max_items=3,
         min_confidence=0.0,

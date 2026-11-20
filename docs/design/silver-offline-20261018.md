@@ -107,7 +107,7 @@ se conservaron exactamente: 51 entrenadores, 24 gimnasios, 3 ligas, 44 combates
 y 6 arenas. No se añadieron partidas QA a la biblioteca del usuario.
 
 Roca añade Poder Pasado (6 cuadros), Pedrada (7), Tumba Rocas (9) y Desenrollar
-(7), extraídos de la hoja local PMD Red Rescue Team facilitada por Luis. Se
+(7), extraídos de la hoja local PMD Red Rescue Team facilitada por el usuario. Se
 descartan extremos sin recuadro claro, separadores y rótulos. Los píxeles se
 conservan; una escala uniforme al dibujar (2,4 para los grupos de piedras y
 1,7 para el cerco) hace visibles los motivos junto al efecto procedural. Las

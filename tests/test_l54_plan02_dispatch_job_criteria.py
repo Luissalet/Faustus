@@ -31,7 +31,7 @@ def _job(criteria=None, tasks=None):
     args = {"tasks": tasks or [{"name": "w1", "instruction": "a"}], "parallel": True, "timeout_s": 60}
     if criteria is not None:
         args["criteria"] = criteria
-    job = dispatch.DispatchJob("luis", args, None, "", "m", None, "t")
+    job = dispatch.DispatchJob("example-user", args, None, "", "m", None, "t")
     job.status = "running"
     dispatch._jobs[job.id] = job
     return job

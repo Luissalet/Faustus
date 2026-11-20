@@ -45,7 +45,7 @@ removes a true fact from the prompt:
 
 * only a fact whose SUBJECT is the user ("User ...", "I ...", "El usuario ...",
   or no subject at all) can get a place or a job -- "User's sister lives in
-  Berlin", "Su hermana trabaja en Google" and "Luis's wife works at ..." are
+  Berlin", "Su hermana trabaja en Google" and "the user's wife works at ..." are
   someone else's and get no kind;
 * a place needs a proper noun after lives in / vive en ("lives in the moment"
   is not one) and a job needs an employer (a proper noun after works at /
@@ -249,9 +249,9 @@ _RELATIVE = re.compile(
     r"|\b(?:his|her|their|hers)\b|^\s*(?:she|he|they|ella)\b",
     _I,
 )
-#: "User's sister", "The user's brother", "Luis's wife": someone's relative.
+#: "User's sister", "The user's brother", "the user's wife": someone's relative.
 _POSSESSED = re.compile(r"\b[\w-]+[\'\u2019]s?\s+" + _REL + r"\b", _I)
-#: "El hermano del usuario", "the sister of the user", "La hermana de Luis".
+#: "El hermano del usuario", "the sister of the user", "La hermana del usuario".
 _OF_USER = re.compile(
     r"\b" + _REL + r"\s+(?:del\s+usuari[oa]|de\s+la\s+usuaria|of\s+the\s+user)\b", _I)
 _OF_NAME = re.compile(r"\b(?i:" + _REL + r")\s+de\s+[A-Z]")

@@ -38,9 +38,9 @@ try {
       return new Response(JSON.stringify({
         checked_at: '2026-09-10T00:00:00Z',
         active: [{
-          id: 'apr_1', plan: { action: 'send_email', skill_id: '', skill_version: '', backend: '', recipients: [], cost_units: null, secret_names: [], permissions: {}, output_kinds: [], detail: 'reply to Luis' },
-          plan_fingerprint: 'fp', status: 'granted', owner: 'luis', requested_at: '2026-09-01T00:00:00Z',
-          decided_at: '2026-09-01T00:01:00Z', decided_by: 'luis', expires_at: null, uses_left: 1, reason: '',
+          id: 'apr_1', plan: { action: 'send_email', skill_id: '', skill_version: '', backend: '', recipients: [], cost_units: null, secret_names: [], permissions: {}, output_kinds: [], detail: 'reply to ExampleUser' },
+          plan_fingerprint: 'fp', status: 'granted', owner: 'example-user', requested_at: '2026-09-01T00:00:00Z',
+          decided_at: '2026-09-01T00:01:00Z', decided_by: 'example-user', expires_at: null, uses_left: 1, reason: '',
         }],
         count: 1,
       }), { status: 200 });
@@ -76,7 +76,7 @@ try {
     let seenPath;
     globalThis.fetch = async (path) => {
       seenPath = path;
-      return new Response(JSON.stringify({ status: 'success', allow: [{ pattern: 'git status', kind: 'exact', reason: 'read-only', added_by: 'luis', created_at: '2026-09-01T00:00:00Z', expires_at: null }] }), { status: 200 });
+      return new Response(JSON.stringify({ status: 'success', allow: [{ pattern: 'git status', kind: 'exact', reason: 'read-only', added_by: 'example-user', created_at: '2026-09-01T00:00:00Z', expires_at: null }] }), { status: 200 });
     };
     const allow = await listCommandAllowlist();
     check(seenPath === '/api/command-guard/allowlist', 'listCommandAllowlist() reads GET /api/command-guard/allowlist');

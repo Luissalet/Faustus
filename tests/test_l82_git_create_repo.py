@@ -21,7 +21,7 @@ from src import git_identities, git_panel, settings as settings_mod  # noqa: E40
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 OTHER = "mallory"
 
 

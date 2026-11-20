@@ -263,9 +263,9 @@ def test_removing_a_link_never_removes_the_source(store, project, tmp_path):
 
 
 def test_another_owner_gets_nothing_and_learns_nothing(store, workspace, tmp_path):
-    mine = store.create("Faustus", folder="Faustus", workspace=workspace, owner="luis")
+    mine = store.create("Faustus", folder="Faustus", workspace=workspace, owner="example-user")
     link, _ = store.upsert_link(mine["id"], {"kind": "document", "ref_id": "doc-1",
-                                             "label": "Secreto"}, owner="luis")
+                                             "label": "Secreto"}, owner="example-user")
 
     assert store.list_links(mine["id"], owner="otro") == []
     assert store.get_link(mine["id"], link["id"], owner="otro") is None
@@ -275,7 +275,7 @@ def test_another_owner_gets_nothing_and_learns_nothing(store, workspace, tmp_pat
     assert store.remove_link(mine["id"], link["id"], owner="otro") is False
 
     # Nothing changed, and no exception carried the project's name out.
-    assert store.get_link(mine["id"], link["id"], owner="luis")["enabled"] is True
+    assert store.get_link(mine["id"], link["id"], owner="example-user")["enabled"] is True
 
 
 # ── revision ──────────────────────────────────────────────────────────

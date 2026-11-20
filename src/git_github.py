@@ -1,7 +1,7 @@
 """git_github.py -- OBJ-4 (Lote 84): create a GitHub remote via the `gh` CLI.
 
-Luis has `gh` installed and authenticated to two accounts (`gh auth status`
--> Luissalet active, Mlgpigeon not, both ssh). "Create a repo and push
+The user has `gh` installed and authenticated to two accounts (`gh auth status`
+-> sample-maintainer active, sample-secondary not, both ssh). "Create a repo and push
 something" needs the GitHub-side repo to exist before `git push` can target
 it; this module is the thin, testable wrapper around the three `gh`
 subcommands that do that: `gh auth status` (who is logged in), `gh auth
@@ -167,7 +167,7 @@ def _parse_gh_auth_status(text: str) -> List[Dict[str, Any]]:
     streams combined, so either way works):
 
         github.com
-          - Logged in to github.com account Luissalet (keyring)
+          - Logged in to github.com account sample-maintainer (keyring)
           - Active account: true
           - Git operations protocol: ssh
           - Token: gho_****

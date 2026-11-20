@@ -37,7 +37,7 @@ def memory_payload(n: int = 5) -> dict:
         ident = f"{i:02d}" * 16
         items.append({
             "id": ident,
-            "owner": "luis",
+            "owner": "example-user",
             "project": "/srv/covernet",
             "level": ["procedural", "semantic", "episodic"][i % 3],
             "text": "Always run the project test suite before reporting a task done, "
@@ -255,7 +255,7 @@ def dispatch_payload() -> dict:
             "supervisor": ["round 3: the worker re-read the file it had just written"],
         })
     return {
-        "id": "9f2c1b7ad4e0", "owner": "luis", "title": "Workers · add apply_tax",
+        "id": "9f2c1b7ad4e0", "owner": "example-user", "title": "Workers · add apply_tax",
         "status": "partial", "error": "",
         "verdict": "2/3 workers done (1 error) · 6 files changed on disk · verification failed",
         "workspace": "/srv/covernet", "model": "qwen3.5:9b",

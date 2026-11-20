@@ -38,6 +38,10 @@ def setup_thread_agent_routes() -> APIRouter:
     def list_agents():
         return {"agents": thread_agents.agents()}
 
+    @router.get("/agents/commit-author")
+    def get_commit_author():
+        return {"author": agent_loop_state.configured_git_author()}
+
     @router.get("/{sid}/agent")
     def get_agent(request: Request, sid: str):
         _owner(request, sid)

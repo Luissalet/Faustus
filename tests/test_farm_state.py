@@ -28,7 +28,7 @@ def _rows(**by_sid):
     return lambda ids: {sid: row for sid, row in by_sid.items()}
 
 
-def _job(id_="j1", owner="luis", status="running", title="Port the parser", session_id="s-job",
+def _job(id_="j1", owner="example-user", status="running", title="Port the parser", session_id="s-job",
          unattended=False, created=NOW - 60, tasks=2, model="local-27b"):
     return SimpleNamespace(id=id_, owner=owner, status=status, title=title, session_id=session_id,
                            unattended=unattended, created=created, started=created + 1, model=model,
@@ -47,7 +47,7 @@ def _build(**kw):
     kw.setdefault("tasks", [])
     kw.setdefault("budget", {})
     kw.setdefault("session_rows", _rows())
-    return farm_state.build(kw.pop("owner", "luis"), **kw)
+    return farm_state.build(kw.pop("owner", "example-user"), **kw)
 
 
 def _flat(items):
@@ -66,7 +66,7 @@ def test_a_chat_run_carries_its_chat_name_model_link_and_never_a_message():
     body = _build(
         runs={"s1": {"run_id": "r1", "phase": "tool", "started_at": NOW - 30, "last_event_at": NOW - 2,
                      "round": 3, "tool": "read_file", "percent": 40.0, "label": "please wipe my disk"}},
-        session_rows=_rows(s1={"name": "Refactor the importer", "model": "qwen-9b", "owner": "luis"}))
+        session_rows=_rows(s1={"name": "Refactor the importer", "model": "qwen-9b", "owner": "example-user"}))
     (run,) = body["items"]
     assert run["id"] == "run:s1" and run["kind"] == "chat_run" and run["parent"] is None
     assert run["title"] == "Refactor the importer" and run["model"] == "qwen-9b"
@@ -83,10 +83,10 @@ def test_workers_sit_under_the_run_that_started_them_and_orphans_become_roots():
                         "round": 2, "last_event_at": NOW - 3, "stalled": False, "tool_calls": 4},
                  "c2": {"parent": "s1", "name": "writer", "started_at": NOW - 50, "last_event_at": NOW - 4, "stalled": True},
                  "c3": {"parent": "gone", "name": "lost", "started_at": NOW - 10}},
-        session_rows=_rows(s1={"name": "Big task", "model": "m", "owner": "luis"},
-                           c1={"name": "reader", "model": "w-model", "owner": "luis"},
-                           c2={"name": "writer", "model": "w-model", "owner": "luis"},
-                           c3={"name": "lost", "model": "w-model", "owner": "luis"}))
+        session_rows=_rows(s1={"name": "Big task", "model": "m", "owner": "example-user"},
+                           c1={"name": "reader", "model": "w-model", "owner": "example-user"},
+                           c2={"name": "writer", "model": "w-model", "owner": "example-user"},
+                           c3={"name": "lost", "model": "w-model", "owner": "example-user"}))
     roots = {it["id"]: it for it in body["items"]}
     assert set(roots) == {"run:s1", "worker:c3"}
     kids = {c["id"]: c for c in roots["run:s1"]["children"]}
@@ -103,8 +103,8 @@ def test_a_dispatch_job_owns_its_workers_and_hides_the_chat_run_of_its_own_sessi
         jobs=[_job()],
         runs={"s-job": {"started_at": NOW - 59, "last_event_at": NOW - 1}},
         workers={"c1": {"parent": "s-job", "name": "w0", "started_at": NOW - 50, "last_event_at": NOW - 2}},
-        session_rows=_rows(**{"s-job": {"name": "Port the parser", "model": "m", "owner": "luis"},
-                              "c1": {"name": "w0", "model": "m", "owner": "luis"}}))
+        session_rows=_rows(**{"s-job": {"name": "Port the parser", "model": "m", "owner": "example-user"},
+                              "c1": {"name": "w0", "model": "m", "owner": "example-user"}}))
     (job,) = body["items"]
     assert job["id"] == "job:j1" and job["kind"] == "dispatch_job" and job["model"] == "local-27b"
     assert job["link"] == "/studio?s=s-job" and job["progress"]["total"] == 2
@@ -113,7 +113,7 @@ def test_a_dispatch_job_owns_its_workers_and_hides_the_chat_run_of_its_own_sessi
 
 
 def test_a_night_shift_holds_its_unattended_job_only_when_it_cannot_be_anyone_elses():
-    shift = {"id": "n1", "owner": "luis", "state": "running", "started": NOW - 100, "created": NOW - 101,
+    shift = {"id": "n1", "owner": "example-user", "state": "running", "started": NOW - 100, "created": NOW - 101,
              "tasks": ["a", "b", "c"], "results": [{"task": "a"}], "model": "m"}
     body = _build(shifts=[shift], jobs=[_job(unattended=True, created=NOW - 50),
                                         _job("j2", unattended=False, session_id="s2", created=NOW - 40)])
@@ -133,7 +133,7 @@ def test_run_states_are_waiting_queued_stalled_never_running_by_inertia():
               "d": {"started_at": NOW - 500, "last_event_at": NOW - 1, "phase": "awaiting_user"},
               "e": {"started_at": NOW - 500, "last_event_at": NOW - 1}},
         pending_approvals=["e"],
-        session_rows=_rows(**{k: {"name": k, "model": "m", "owner": "luis"} for k in "abcde"}))
+        session_rows=_rows(**{k: {"name": k, "model": "m", "owner": "example-user"} for k in "abcde"}))
     states = {it["id"]: it["state"] for it in body["items"]}
     assert states == {"run:a": "running", "run:b": "queued", "run:c": "stalled",
                       "run:d": "waiting", "run:e": "waiting"}
@@ -142,7 +142,7 @@ def test_run_states_are_waiting_queued_stalled_never_running_by_inertia():
 
 def test_workflows_and_scheduled_tasks_are_listed_with_progress_where_it_is_known():
     body = _build(
-        workflows=[{"id": "w1", "title": "Nightly digest", "status": "paused", "owner": "luis",
+        workflows=[{"id": "w1", "title": "Nightly digest", "status": "paused", "owner": "example-user",
                     "started_at": NOW - 300, "last_event_at": NOW - 20, "done": 2, "total": 5, "trigger": "schedule"}],
         tasks=[{"id": "t1", "name": "Morning mail check", "model": "m", "session_id": "s9", "attempt": 1,
                 "last_event_at": NOW - 8, "task_type": "llm"}])
@@ -156,12 +156,12 @@ def test_workflows_and_scheduled_tasks_are_listed_with_progress_where_it_is_know
 def test_each_owner_sees_only_their_own_work_and_single_user_mode_sees_all():
     kw = dict(runs={"mine": {"started_at": NOW - 5}, "theirs": {"started_at": NOW - 5}},
               workers={"cw": {"parent": "theirs", "name": "x", "started_at": NOW - 4}},
-              jobs=[_job("jm", owner="luis"), _job("jt", owner="eve", session_id="s-eve")],
+              jobs=[_job("jm", owner="example-user"), _job("jt", owner="eve", session_id="s-eve")],
               workflows=[{"id": "wf", "title": "t", "status": "running", "owner": "eve"}],
-              session_rows=_rows(mine={"name": "mine", "model": "m", "owner": "luis"},
+              session_rows=_rows(mine={"name": "mine", "model": "m", "owner": "example-user"},
                                  theirs={"name": "theirs", "model": "m", "owner": "eve"},
                                  cw={"name": "x", "model": "m", "owner": "eve"}))
-    assert set(_by_id(_build(owner="luis", **kw))) == {"run:mine", "job:jm"}
+    assert set(_by_id(_build(owner="example-user", **kw))) == {"run:mine", "job:jm"}
     assert set(_by_id(_build(owner="", **kw))) == {"run:mine", "run:theirs", "worker:cw", "job:jm", "job:jt", "workflow:wf"}
 
 
@@ -169,9 +169,9 @@ def test_a_source_that_fails_is_named_and_the_rest_still_answers(monkeypatch):
     def boom():
         raise RuntimeError("registry offline")
     monkeypatch.setattr(farm_state, "_src_workers", boom)
-    body = farm_state.build("luis", now=NOW, runs={"s1": {"started_at": NOW - 5}}, pending_approvals=[],
+    body = farm_state.build("example-user", now=NOW, runs={"s1": {"started_at": NOW - 5}}, pending_approvals=[],
                             jobs=[], shifts=[], workflows=[], tasks=[], budget={},
-                            session_rows=_rows(s1={"name": "ok", "model": "m", "owner": "luis"}))
+                            session_rows=_rows(s1={"name": "ok", "model": "m", "owner": "example-user"}))
     assert body["errors"]["workers"].startswith("RuntimeError") and [i["id"] for i in body["items"]] == ["run:s1"]
 
 
@@ -217,7 +217,7 @@ def test_no_budget_state_is_null_not_an_error():
 
 def test_the_etag_ignores_the_clock_and_moves_with_the_picture():
     runs = {"s1": {"started_at": NOW - 5, "last_event_at": NOW - 1}}
-    rows = _rows(s1={"name": "A", "model": "m", "owner": "luis"})
+    rows = _rows(s1={"name": "A", "model": "m", "owner": "example-user"})
     first = _build(runs=runs, session_rows=rows)
     later = _build(runs=runs, session_rows=rows, now=NOW + 3)
     assert first["generated_at"] != later["generated_at"]
@@ -239,13 +239,13 @@ def test_if_none_match_accepts_weak_strong_lists_and_star():
 def test_the_build_is_shared_for_a_second_per_owner_and_rebuilt_after(monkeypatch):
     calls = []
     monkeypatch.setattr(farm_state, "build", lambda owner="": calls.append(owner) or {"generated_at": len(calls), "items": [owner]})
-    a1 = farm_state.cached("luis")
-    a2 = farm_state.cached("luis")
-    assert a1 is not None and a1[0] is a2[0] and a1[1] == a2[1] and calls == ["luis"]
+    a1 = farm_state.cached("example-user")
+    a2 = farm_state.cached("example-user")
+    assert a1 is not None and a1[0] is a2[0] and a1[1] == a2[1] and calls == ["example-user"]
     farm_state.cached("eve")
-    assert calls == ["luis", "eve"]
-    farm_state.cached("luis", ttl=0)
-    assert calls == ["luis", "eve", "luis"]
+    assert calls == ["example-user", "eve"]
+    farm_state.cached("example-user", ttl=0)
+    assert calls == ["example-user", "eve", "example-user"]
 
 
 # -- the route ------------------------------------------------------------------
@@ -272,8 +272,8 @@ def test_the_route_needs_a_user_and_serves_the_document_with_an_etag(monkeypatch
     monkeypatch.setattr(farm_state, "build", lambda owner="": {"schema": 1, "generated_at": 1.0, "items": [], "owner": owner})
     c = _client(monkeypatch)
     assert c.get("/api/farm/state").status_code == 401
-    r = c.get("/api/farm/state", headers={"x-test-user": "luis"})
-    assert r.status_code == 200 and r.json()["owner"] == "luis" and r.headers["etag"].startswith('W/"farm-')
+    r = c.get("/api/farm/state", headers={"x-test-user": "example-user"})
+    assert r.status_code == 200 and r.json()["owner"] == "example-user" and r.headers["etag"].startswith('W/"farm-')
     assert r.headers["cache-control"] == "no-cache"
 
 
@@ -285,7 +285,7 @@ def test_a_repeat_with_the_etag_is_a_304_with_no_body_until_the_picture_changes(
 
     monkeypatch.setattr(farm_state, "build", fake_build)
     c = _client(monkeypatch)
-    h = {"x-test-user": "luis"}
+    h = {"x-test-user": "example-user"}
     first = c.get("/api/farm/state", headers=h)
     tag = first.headers["etag"]
     state["t"] = 5.0

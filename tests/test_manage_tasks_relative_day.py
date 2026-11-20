@@ -159,7 +159,7 @@ async def test_create_daily_task_for_tomorrow_never_lands_on_today(monkeypatch):
             "scheduled_time": "08:00",
             "timezone": "UTC",
         }),
-        owner="luis",
+        owner="example-user",
     )
     assert out["exit_code"] == 0
     stored = _get(out["task_id"])
@@ -183,7 +183,7 @@ async def test_create_daily_task_without_relative_wording_is_unaffected(monkeypa
             "scheduled_time": "08:00",
             "timezone": "UTC",
         }),
-        owner="luis",
+        owner="example-user",
     )
     assert out["exit_code"] == 0
     stored = _get(out["task_id"])
@@ -208,7 +208,7 @@ async def test_weather_watcher_when_param_is_not_reinterpreted(monkeypatch):
             "scheduled_time": "08:00",
             "timezone": "UTC",
         }),
-        owner="luis",
+        owner="example-user",
     )
     assert out["exit_code"] == 0
     stored = _get(out["task_id"])

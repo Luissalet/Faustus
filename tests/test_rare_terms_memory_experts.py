@@ -99,8 +99,8 @@ MEMORIES = {
     "commits": "Retry policy changes were reviewed last week and merged after the regression.",
     "version": "Release v0.35.1-rc2 fixed the sync worker and went to staging on Friday.",
     "versionfuzzy": "Release notes for the sync worker say the staging release fixed several bugs.",
-    "garden": "Luis plants tomatoes in the garden every spring and waters them at dawn.",
-    "coffee": "Luis prefers dark roast coffee in the morning and tea in the evening.",
+    "garden": "ExampleUser plants tomatoes in the garden every spring and waters them at dawn.",
+    "coffee": "ExampleUser prefers dark roast coffee in the morning and tea in the evening.",
     "deploy": "Deployments go through staging first and production only after the smoke tests pass.",
 }
 
@@ -158,7 +158,7 @@ def test_memory_exact_hit_outranks_fuzzy_semantic_matches(store):
 
 
 def test_memory_prose_queries_are_scored_exactly_as_before(store):
-    for query in ("how does the team handle deployments", "what does Luis drink in the morning",
+    for query in ("how does the team handle deployments", "what does ExampleUser drink in the morning",
                   "plants and garden routine", "retry policy and regression discussion"):
         labels, hits = _ranked(store, query)
         assert hits, query
@@ -248,7 +248,7 @@ class ExpertVectors:
 DOCS = {
     "errors.md": "# Network\n\nThe worker reports ERR_CONN_RESET when the proxy closes the socket.\n\n"
                  "Connection resets are usually a proxy closing idle sockets; retry with backoff.\n",
-    "files.md": "# Crash dumps\n\nCrash dumps are written to C:\\Users\\luis\\app.log by the installer.\n",
+    "files.md": "# Crash dumps\n\nCrash dumps are written to C:\\Users\\example-user\\app.log by the installer.\n",
     "decoy.md": "# Logging\n\nThe app log rotates daily. The application log viewer parses every log line.\n\n"
                 "Log level, log format, log rotation and app log retention are all configurable.\n",
     "release_a.md": "# Release\n\nRelease v0.35.1-rc2 fixed the sync worker and shipped to staging.\n",

@@ -256,7 +256,7 @@ class _Ep(SimpleNamespace):
     connection_revision = "fixture-revision"
 
 
-def _request(owner="luis"):
+def _request(owner="example-user"):
     return SimpleNamespace(
         state=SimpleNamespace(current_user=owner, api_token=False),
         app=SimpleNamespace(state=SimpleNamespace(auth_manager=None)),

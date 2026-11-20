@@ -177,12 +177,12 @@ def test_route_answers_by_its_budget_and_says_it_is_refreshing(tmp_path, monkeyp
     st = projects_mod.ProjectStore(str(tmp_path / "projects_data"))
     monkeypatch.setattr(projects_mod, "_store", st)
     monkeypatch.setattr(projects_mod, "get_store", lambda: st)
-    monkeypatch.setattr(git_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(git_routes, "effective_user", lambda request: "example-user")
     git_panel.invalidate_discovery_cache()
     ws = tmp_path / "ws"
     _repo(ws / "Proj" / "quick")
     _repo(ws / "Proj" / "big")
-    st.create(name="Proj", folder="Proj", workspace=str(ws), owner="luis", scaffold_memory=False)
+    st.create(name="Proj", folder="Proj", workspace=str(ws), owner="example-user", scaffold_memory=False)
     gate = threading.Event()
     real_status, real_extras = grl._read_status, grl._read_extras
     def slow(real):
@@ -237,13 +237,13 @@ def test_identity_list_is_read_once_per_full_list(tmp_path, monkeypatch):
     st = projects_mod.ProjectStore(str(tmp_path / "projects_data"))
     monkeypatch.setattr(projects_mod, "_store", st)
     monkeypatch.setattr(projects_mod, "get_store", lambda: st)
-    monkeypatch.setattr(git_routes, "effective_user", lambda request: "luis")
+    monkeypatch.setattr(git_routes, "effective_user", lambda request: "example-user")
     git_panel.invalidate_discovery_cache()
     ws = tmp_path / "ws"
     for name in ("r1", "r2", "r3"):
         repo = _repo(ws / "Proj" / name)
         _run(["remote", "add", "origin", "git@gh-work:me/x.git"], repo)
-    st.create(name="Proj", folder="Proj", workspace=str(ws), owner="luis", scaffold_memory=False)
+    st.create(name="Proj", folder="Proj", workspace=str(ws), owner="example-user", scaffold_memory=False)
     reads = []
     monkeypatch.setattr(git_identities, "list_identities",
                         lambda owner, **k: reads.append(owner) or {"identities": [
@@ -251,7 +251,7 @@ def test_identity_list_is_read_once_per_full_list(tmp_path, monkeypatch):
     app = FastAPI()
     app.include_router(git_routes.setup_git_routes())
     data = TestClient(app).get("/api/git/repos").json()
-    assert reads == ["luis"]
+    assert reads == ["example-user"]
     assert [r["identity"]["id"] for r in data["repos"]] == ["w", "w", "w"]
     assert set(data["timing_s"]) == {"discover", "statuses", "identity_policy"}
     git_panel.invalidate_discovery_cache()
@@ -266,22 +266,22 @@ def test_stale_ok_discovery_answers_from_the_last_walk_and_walks_behind(tmp_path
     git_panel.invalidate_discovery_cache()
     ws = tmp_path / "ws"
     _repo(ws / "Proj" / "one")
-    st.create(name="Proj", folder="Proj", workspace=str(ws), owner="luis", scaffold_memory=False)
-    first = git_panel.discover_repos_for_owner("luis")
+    st.create(name="Proj", folder="Proj", workspace=str(ws), owner="example-user", scaffold_memory=False)
+    first = git_panel.discover_repos_for_owner("example-user")
     assert [m["name"] for m in first] == ["one"]
     _repo(ws / "Proj" / "two")
     monkeypatch.setattr(git_panel, "_DISCOVERY_TTL", 0.0)
     walks = []
     real = git_panel._walk_owner
     monkeypatch.setattr(git_panel, "_walk_owner", lambda *a: walks.append(1) or real(*a))
-    stale = git_panel.discover_repos_for_owner("luis", stale_ok=True)
+    stale = git_panel.discover_repos_for_owner("example-user", stale_ok=True)
     assert [m["name"] for m in stale] == ["one"]  # at once, from the last walk
     for _ in range(50):
         if not git_panel._DISCOVERY_REFRESHING and walks:
             break
         time.sleep(0.1)
     monkeypatch.setattr(git_panel, "_DISCOVERY_TTL", 30.0)
-    assert sorted(m["name"] for m in git_panel.discover_repos_for_owner("luis")) == ["one", "two"]
+    assert sorted(m["name"] for m in git_panel.discover_repos_for_owner("example-user")) == ["one", "two"]
     assert walks == [1]
     git_panel.invalidate_discovery_cache()
 

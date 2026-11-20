@@ -23,7 +23,7 @@ from routes import project_routes  # noqa: E402
 from services import projects as projects_mod  # noqa: E402
 from services.projects import ProjectStore  # noqa: E402
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 @pytest.fixture()

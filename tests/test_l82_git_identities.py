@@ -23,7 +23,7 @@ from src import git_identities  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
-OWNER = "luis"
+OWNER = "example-user"
 
 
 def _run(args, cwd, check=True):
@@ -71,7 +71,7 @@ def ssh_home(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))  # Windows: expanduser ignores HOME
     monkeypatch.setattr(constants_mod, "DATA_DIR", str(tmp_path / "data"))
     git_identities._PROBE_CACHE.clear()
-    # A machine with a real `gh` logged in (Luis's Windows) would otherwise
+    # A machine with a real `gh` logged in (ExampleUser's Windows) would otherwise
     # merge its accounts -- with their logins -- into every listing here.
     from src import git_github
     monkeypatch.setattr(git_github, "gh_accounts",
@@ -198,17 +198,17 @@ def _fake_probe_failure():
 
 
 def test_probe_identity_parses_login_and_caches(ssh_home, monkeypatch):
-    monkeypatch.setattr(git_identities, "_probe_subprocess", _fake_github_probe("Luissalet"))
+    monkeypatch.setattr(git_identities, "_probe_subprocess", _fake_github_probe("sample-maintainer"))
     ident = git_identities.find_identity(OWNER, git_identities.list_identities(OWNER)["identities"][0]["id"])
     result = git_identities.probe_identity(ident)
-    assert result == {"github_login": "Luissalet", "ok": True,
-                       "detail": "Hi Luissalet! You've successfully authenticated, but GitHub does not provide shell access."}
+    assert result == {"github_login": "sample-maintainer", "ok": True,
+                       "detail": "Hi sample-maintainer! You've successfully authenticated, but GitHub does not provide shell access."}
 
     # Cached: a probe that would now raise is never called.
     monkeypatch.setattr(git_identities, "_probe_subprocess",
                         lambda *a, **kw: (_ for _ in ()).throw(AssertionError("must be cached")))
     again = git_identities.probe_identity(ident)
-    assert again["github_login"] == "Luissalet"
+    assert again["github_login"] == "sample-maintainer"
 
 
 def test_probe_identity_force_bypasses_cache(ssh_home, monkeypatch):
@@ -233,7 +233,7 @@ def test_probe_identity_failure_is_ok_false_not_a_raise(ssh_home, monkeypatch):
 # Remote URL rewriting
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("url,expected", [
-    ("git@Luissalet:Luissalet/Faustus.git", "git@acct2:Luissalet/Faustus.git"),
+    ("git@sample-maintainer:sample-maintainer/Faustus.git", "git@acct2:sample-maintainer/Faustus.git"),
     ("git@github.com:owner/repo", "git@acct2:owner/repo.git"),
     ("https://github.com/owner/repo.git", "git@acct2:owner/repo.git"),
     ("https://github.com/owner/repo", "git@acct2:owner/repo.git"),

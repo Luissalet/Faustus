@@ -72,7 +72,7 @@ Hecho y verificado (ida y vuelta completas, avisos por correo desde la Spark, es
 
 ## Ideas y ajustes que estaban en PENDIENTES — 04-11-2026
 
-No bloquean nada ni esperan una respuesta concreta de Luis; salieron de PENDIENTES en el repaso del 04-11.
+No bloquean nada ni esperan una respuesta concreta del usuario; salieron de PENDIENTES en el repaso del 04-11.
 
 - **Render de Mermaid en Studio** (11-09): hoy `MermaidView` enseña la fuente con copiar y descargar `.mmd`. Añadir el render con `mermaid` (MIT) cargado en diferido, para que el paquete inicial no crezca, manteniendo la fuente y la descarga.
 - **`grounding` y `memory_conflicts` como herramientas del agente** (FAUSTUS §145): exponerlas juntas, de sólo lectura.
@@ -87,7 +87,7 @@ No bloquean nada ni esperan una respuesta concreta de Luis; salieron de PENDIENT
 - **Receta GLM alternativa:** probar `max_num_seqs` 16 (hoy 8: 115 tok/s agregados con 8, 16 o 64 peticiones) y un `reasoning_effort` menor en rondas de control de pantalla (con max piensa 60-80 s), la próxima vez que se cargue.
 - **Modelo pequeño de tool-calling en el dispositivo** (19-09): descartado mientras implique DLL nativa, descarga de pesos y telemetría por defecto.
 - **OBJ-5, nodos remotos por grupos** (11-09): retomarlo ahora que las Sparks son nodos reales (antes esperaba a un segundo PC).
-- **QA en vivo que pueden hacer los agentes** (estaba entre las pruebas de Luis, pero no necesita micrófono ni cuentas):
+- **QA en vivo que pueden hacer los agentes** (estaba entre las pruebas del usuario, pero no necesita micrófono ni cuentas):
   - «Seguir a la app» en Conectores (§96): arrancar Jobhunter en otro puerto desde el Hub, parar el original, pulsar Check y ver «Followed the app from … to …».
   - Perfiles de lanzamiento y conectores de apps fusionadas (§101): el conector «Gepetto's Hoard» está desactivado y su `REST_MANIFEST` apunta a `D:\LocalAI\odysseus\bridges\rest_mcp`, que ya no existe (Gepetto y Plato's viven ahora en el 5186 de Vulcan); decidir con Vulcan si se migra a su preset o se retira, y probar los perfiles de Dorian's, Jobhunter's y Writer's con la app arriba.
   - Creator con el flag activado (§90-94): `/creator`, la biblioteca, un preflight real contra un motor instalado y el ciclo de vida de un plugin de principio a fin.
@@ -121,7 +121,7 @@ Integrado hoy en el grafo de código: expediente de recepción por revisión, `l
 
 El contexto AX y las acciones reales de Brave están comprobados. La entrega 1797 corrige el cierre a partir del progreso reciente, la localización de resultados y la composición de una sola respuesta final; 94 casos y una recuperación independiente pasan. Falta activar el código aprobado cuando el servidor normal quede libre y contrastar el mismo flujo con el modelo global antes de cerrar 1797. El turno ajeno activo se conserva; no se detienen modelos.
 
-Después, continuar la ayuda real para Writer 1796 y la paridad 1095. La migración de la extensión a su carpeta canónica sigue pendiente por el bloqueo de Computer Use sobre la URL interna de extensiones; el permiso de Luis ya existe y no se vuelve a pedir. El worktree cargado sigue necesario. Runtime portable y foco global del sistema no están acreditados.
+Después, continuar la ayuda real para Writer 1796 y la paridad 1095. La migración de la extensión a su carpeta canónica sigue pendiente por el bloqueo de Computer Use sobre la URL interna de extensiones; el permiso del usuario ya existe y no se vuelve a pedir. El worktree cargado sigue necesario. Runtime portable y foco global del sistema no están acreditados.
 
 ## Continuación tras la investigación de fuentes — 29-10-2026
 
@@ -187,7 +187,7 @@ RBY/DS, incursiones y demás motores requieren contraste propio. Continúan guí
 de aventura/jefes, seguimiento Nuzlocke y cobertura de formas/encuentros/evoluciones
 por edición. Verificar web y Android con el emulador visible/ADB, preservar partidas
 y no convertir ausencia en imposibilidad. No hay teléfono ARM64. Sin minijuegos
-ni nuevas decisiones pendientes de Luis por la entrega1318.
+ni nuevas decisiones pendientes del usuario por la entrega1318.
 
 ## HoardDex: continuar después de las calculadoras —23-10-2026, #1288/#1195
 
@@ -198,7 +198,7 @@ por edición, forma y lugar; resolver los parciales antes de declarar paridad.
 Probar web y Android con el emulador visible/ADB, preservar partidas y distinguir
 fuentes, datos ausentes e hipótesis. Las ABI y su ejecución se acreditan por
 separado; no hay teléfonoARM64. Sin minijuegos ni nuevas decisiones pendientes
-de Luis por esta entrega.
+del usuario por esta entrega.
 
 ## Silver: biblioteca PMD completada — 23-10-2026, #1180
 
@@ -208,30 +208,30 @@ corregidos y revisados; los HTML nuevos incluyen la colección sin depender de
 las descargas de prueba. Mantener esta cobertura al ampliar el inventario y
 conservar gameplay, funciones, originales y créditos. Las páginas antiguas se
 reexportan. La retención operativa del worktree tras el rechazo automático de
-su limpieza no supone un Pokémon pendiente ni una decisión de producto de Luis.
+su limpieza no supone un Pokémon pendiente ni una decisión de producto del usuario.
 
 ## HoardDex: continuar la paridad útil — 23-10-2026, #1216/#1195
 
 Calculadora de daño integrada en interfaz y MCP32, con verificación propia de
-main y recorridos web/Android. La entrega no termina el encargo de Luis: continuar
+main y recorridos web/Android. La entrega no termina el encargo del usuario: continuar
 cálculo de captura, guías de aventura/combates y cobertura histórica por edición,
 forma y localización. Mantener explícitos los motores o datos pendientes, probar
 web y emulador visible con ADB y preservar las partidas. No se incluyen minijuegos
 ni se declara paridad completa a partir de una muestra. Las ABI y su ejecución
 se acreditan por separado; no hay teléfono físico ARM64. Sin nuevas decisiones
-de Luis pendientes por este bloque.
+del usuario pendientes por este bloque.
 
 ## Hub: corrección de identidad y respuesta rápida — 23-10-2026, #1363
 
-La petición expresa de Luis fija el tema oscuro y el icono oficial de la familia: no volver a sustituirlos por una identidad clara. La estructura1301 se conserva. «Te esperan» permite responder la pregunta concreta y cerrar conversaciones no-task sin abrir hilos enormes; conserva borrador, ámbito y reintento. Se desacoplan preguntas/conversaciones del tablero y se evita preparar tareas finalizadas que se descartan. Pruebas y mediciones al integrar en FAUSTUS.md y guía del Hub; no hay nueva decisión de Luis pendiente.
+La petición expresa del usuario fija el tema oscuro y el icono oficial de la familia: no volver a sustituirlos por una identidad clara. La estructura1301 se conserva. «Te esperan» permite responder la pregunta concreta y cerrar conversaciones no-task sin abrir hilos enormes; conserva borrador, ámbito y reintento. Se desacoplan preguntas/conversaciones del tablero y se evita preparar tareas finalizadas que se descartan. Pruebas y mediciones al integrar en FAUSTUS.md y guía del Hub; no hay nueva decisión del usuario pendiente.
 
 ## Hub: replanteamiento aplicado al trabajo cotidiano — 23-10-2026, #1301
 
-Aplicado el diagnóstico1296 en HoardLink dca9cbe+b1b2225, revisión2 aprobada y avance directo hasta fdb4f34 con documentación. Inicio reúne atención y continuidad; cada proyecto tiene resumen y ágora propia; Aplicaciones se encuentra por propósito; Automatización parte de la tarea y los controles habituales evitan IDs/JSON. Navegación contextual visible, ayuda, estados explicados; la presentación inicial blanca/neutra verde queda sustituida por la paleta oscura oficial en1363. Revisión independiente SHIP acotado y flujos1280/390 correctos; evidencia y límites en docs/hub-navigation.md y FAUSTUS.md. Quedan como límites de producto el directorio de espacios frente al catálogo completo nativo Faustus, el vocabulario conocido/manifiestos frente a búsqueda semántica y la configuración técnica de herramientas/eventos personalizados. No hay una nueva decisión de Luis pendiente.
+Aplicado el diagnóstico1296 en HoardLink dca9cbe+b1b2225, revisión2 aprobada y avance directo hasta fdb4f34 con documentación. Inicio reúne atención y continuidad; cada proyecto tiene resumen y ágora propia; Aplicaciones se encuentra por propósito; Automatización parte de la tarea y los controles habituales evitan IDs/JSON. Navegación contextual visible, ayuda, estados explicados; la presentación inicial blanca/neutra verde queda sustituida por la paleta oscura oficial en1363. Revisión independiente SHIP acotado y flujos1280/390 correctos; evidencia y límites en docs/hub-navigation.md y FAUSTUS.md. Quedan como límites de producto el directorio de espacios frente al catálogo completo nativo Faustus, el vocabulario conocido/manifiestos frente a búsqueda semántica y la configuración técnica de herramientas/eventos personalizados. No hay una nueva decisión del usuario pendiente.
 
 ## Hub: rediseño de todas las pantallas — 23-10-2026, #1269
 
-Entrega HoardLink e3032f7: estructura de seis entradas con herramientas locales, aplicaciones y proyectos separados en Inicio, catálogo con una apertura principal, recursos en Sistema y formularios visuales de automatización. Las ágoras siguen siendo de proyecto; el Hub conserva las herramientas compartidas y sus APIs. El nuevo sistema azul marino/blanco/cobalto sustituye al anterior en todas las pantallas del Hub. Ver guía HoardLink/docs/hub-navigation.md y resultado final en la tarea1269. No hay una nueva decisión de Luis pendiente para esta entrega.
+Entrega HoardLink e3032f7: estructura de seis entradas con herramientas locales, aplicaciones y proyectos separados en Inicio, catálogo con una apertura principal, recursos en Sistema y formularios visuales de automatización. Las ágoras siguen siendo de proyecto; el Hub conserva las herramientas compartidas y sus APIs. El nuevo sistema azul marino/blanco/cobalto sustituye al anterior en todas las pantallas del Hub. Ver guía HoardLink/docs/hub-navigation.md y resultado final en la tarea1269. No hay una nueva decisión del usuario pendiente para esta entrega.
 
 ## Hub por proyectos e interiores legibles — 23-10-2026, #1261
 
@@ -266,13 +266,13 @@ y revisión antes de integrarlo. El transporte API/MCP/UI se probó con un fixtu
 CPU, sin atribuirle generación real. No se presenta como fusión un lote de
 generaciones independientes. Los puestos visuales por
 agente, otro cuerpo planetario y multijugador siguen condicionados a un caso
-de uso concreto. Biblioteca musical excluida por Luis, sin servicios de pago o
+de uso concreto. Biblioteca musical excluida por el usuario, sin servicios de pago o
 API de ejecución externa. Evidencia completa en
 `D:/LocalAI/research-inbox/refs-implementation-20261022/ESTADO-20261023.md`.
 
 ## Fiabilidad de Sparks y Faustus en trabajos grandes — #835
 
-**Decisión de Luis (22-10, 11:10):** el problema original (respuestas corruptas
+**Decisión del usuario (22-10, 11:10):** el problema original (respuestas corruptas
 o vacías, como si el modelo estuviera roto) se da por resuelto. Evidencia: desde
 que están activos los arreglos de generación fantasma y del guardia (#1117), los
 trabajos largos Vault (66 rondas), Ledger (136), Préstamos (54) y meter (121+)
@@ -333,7 +333,7 @@ datos realistas (bordes de DST, días locales), dentro de la auditoría de cierr
 
 Historial:
 
-Encargo de Luis: demostrar que Faustus con el servicio global de las Sparks
+Encargo del usuario: demostrar que Faustus con el servicio global de las Sparks
 completa trabajos grandes y ambiciosos con resultados correctos. Criterio:
 tres trabajos NUEVOS consecutivos, de tipos distintos, con contrato y oráculo
 externos congelados antes de generar, fuentes finales leídas antes de ejecutar
@@ -367,7 +367,7 @@ nuevo con otro proyecto (nunca el mismo con otro nombre).
 
 ## Fuentes incorporadas como capacidades locales — #779–#783
 
-Encargo de Luis: incorporar las funciones útiles de las fuentes investigadas,
+Encargo del usuario: incorporar las funciones útiles de las fuentes investigadas,
 excluyendo Jev, pagos y dependencias de API externas. La biblioteca recibe ocho
 procedimientos y conserva referencias al instalarlos (#781). El estudio de
 ingeniería inversa (#779) y los motores de composición, voz y cámara (#783) siguen siendo frentes
@@ -391,7 +391,7 @@ modelos disponibles. Recibos en research-inbox/fuentes-local-20261018.
 
 Campo a todo el ancho, cuatro líneas iniciales, crecimiento automático y altura
 ajustable; botones debajo. Verificado con mensajes largos a 390 px de ancho y
-480/844 px de alto, borradores y adjuntos conservados. No requiere decisión de Luis.
+480/844 px de alto, borradores y adjuntos conservados. No requiere decisión del usuario.
 
 ## Asistentes con instrucciones, skills y proactividad — #724
 
@@ -422,7 +422,7 @@ de tareas más largas y de grupos #443; esta prueba no certifica toda su calidad
 
 ## Continuidad de conversaciones de grupo
 
-Ágora #443, derivada de la investigación #434 y el encargo de Luis del 13-10-2026.
+Ágora #443, derivada de la investigación #434 y el encargo del usuario del 13-10-2026.
 Persistir grupo, miembros, mensajes y pasos en el servidor; completar el reparto
 de turnos aunque se cierre el navegador y recuperarlo desde otro cliente.
 Reusar sesiones, ejecución normal y modelos globales configurados de Sparks,
@@ -431,8 +431,8 @@ Conservar modos paralelo y round-robin y grupos existentes. La recuperación
 de una respuesta de participante está cubierta por #436; el coordinador
 persistente todavía no está implementado.
 
-Acordado con Luis; sólo lo que está por hacer. Al cerrar una entrada, se
-borra de aquí y su evidencia va a FAUSTUS.md. PENDIENTES.md conserva las decisiones y respuestas que necesita Luis.
+Acordado con el usuario; sólo lo que está por hacer. Al cerrar una entrada, se
+borra de aquí y su evidencia va a FAUSTUS.md. PENDIENTES.md conserva las decisiones y respuestas que necesita el usuario.
 
 ## OBJ-1 · Puerta de admisión de VRAM: preguntar antes de cargar
 
@@ -526,7 +526,7 @@ residentes a la vez.
 
 ## OBJ-2 · El agente pregunta con opciones cuando le hace falta decidir
 
-Luis, 10-09-2026: «comprobar que el modelo, cuando le pides implementar cosas
+El usuario, 10-09-2026: «comprobar que el modelo, cuando le pides implementar cosas
 y lo considera necesario, te pregunta entre opciones (como haces tú con
 AskUserQuestion): varias opciones para elegir y una para que escribas tú, o
 una checklist. Como lo haces tú, vaya.»
@@ -599,7 +599,7 @@ edición de una línea fue `read_file` → `write_file` sin pregunta.
 
 ### Estado final (11-09-2026, cierre lotes 60-70, master cfaa30d) — CERRADO
 
-Los 187 requisitos del paquete de Luis (100 P0 + 84 P1/P2/LAB) están
+Los 187 requisitos del paquete del usuario (100 P0 + 84 P1/P2/LAB) están
 auditados fila a fila contra el código real, con evidencia verificada por
 grep en este mismo commit:
 
@@ -631,9 +631,9 @@ las ocho olas de P1 (Lotes 45-55) y los lotes 60-70 completan el resto. Los
 dos huecos de código que quedan (PLAN-01/PLAN-03) y la única decisión de
 producto pendiente (HW-06) están documentados con su propia fila y no
 requieren un lote de cierre adicional para OBJ-3 — se seguirán como
-entradas sueltas en `PENDIENTES.md` si Luis decide abordarlas.
+entradas sueltas en `PENDIENTES.md` si el usuario decide abordarlas.
 
-Luis, 10-09-2026: entregó `Faustus_Paquete_Completo.zip` (187 requisitos, 192
+El usuario, 10-09-2026: entregó `Faustus_Paquete_Completo.zip` (187 requisitos, 192
 contratos de herramienta, 48 escenarios QA, 8 JSON Schemas) con tres reglas:
 **no se pierde ninguna capacidad, se extiende, reorganiza y mejora**; todo
 se verifica por MCP y por pantalla, no sólo con tests; commits graduales y
@@ -696,7 +696,7 @@ rama aparte sólo si algo puede dejar la app rota.
 
 M1 sigue abierto tal cual queda arriba (nada de esta lista se tocó en el
 Lote 55). Lo que sí cerró es la otra pata de OBJ-3: los 87 requisitos P1/P2/
-LAB que el paquete de Luis proponía además de los 100 P0, repartidos en ocho
+LAB que el paquete del usuario proponía además de los 100 P0, repartidos en ocho
 olas de lotes (`docs/spec/v2/MAPA_P1.md`, una tabla por lote) que fueron
 auditando y, donde hacía falta, construyendo cada área — contexto/memoria,
 planificación/herramientas, artefactos/edición, UX/ajustes/actividad,
@@ -732,11 +732,11 @@ más arriba y `docs/spec/v2/MAPA_P1.md` para el detalle fila a fila.)
 
 ## OBJ-4 · Panel de control de versiones en Studio — CERRADO (11-09-2026)
 
-Pedido por Luis, 2026-09-10 — estilo VS Code.
+Pedido por el usuario, 2026-09-10 — estilo VS Code.
 
 ### Estado final (11-09-2026) — CERRADO
 
-Todo lo de abajo existe y está verificado en vivo en el 7001 de Luis
+Todo lo de abajo existe y está verificado en vivo en el 7001 del usuario
 (commits 61cd184…ae76060 y b5f2707): descubrimiento de repos por carpeta
 enlazada (subrepos incluidos, una sola llamada `status --porcelain=v2`,
 caché 30 s, 0,5 s para 24 repos), rama/ramas/log/diff/cambios, identidad
@@ -795,12 +795,12 @@ un proyecto:
    ni como "cargando" para siempre — un estado vacío claro (reusar
    `EmptyState.tsx`, ACT-06).
 
-Sin fecha de lote asignada todavía; queda para que Luis lo priorice frente
+Sin fecha de lote asignada todavía; queda para que el usuario lo priorice frente
 al resto de PENDIENTES.md.
 
 ## OBJ-5 · Nodos remotos con emparejamiento por grupos (HW-06) — APLAZADO
 
-Pedido por Luis, 2026-09-11: «Si quiero. No tengo un segundo PC ahora
+Pedido por el usuario, 2026-09-11: «Si quiero. No tengo un segundo PC ahora
 mismo, pero sería útil. Lo más fácil para unirlos serían grupos de
 seguridad como en Brave». La primitiva (`src/remote_worker_registry.py`)
 existe y está probada; lo que falta es el emparejamiento tipo Brave Sync:
@@ -811,7 +811,7 @@ de verdad; sin hardware no se marca como hecho.
 
 ## OBJ-6 · Tablero tipo Jira por proyecto — CERRADO (11-09-2026)
 
-Pedido por Luis, 2026-09-11: «un tablero tipo Jira … que por proyecto
+Pedido por el usuario, 2026-09-11: «un tablero tipo Jira … que por proyecto
 pueda ser consultado y manipulado por los agentes o el usuario … bugs …
 ideas, features … identificadores como P1-noseque». Hecho en b5f2707:
 `src/project_board.py` (SQLite `DATA_DIR/board.sqlite3`; incidencias
@@ -827,7 +827,7 @@ y los `CLAVE-N` del transcript convertidos en enlaces. `docs/api/board.md`,
 
 ## OBJ-7 · Lenguaje natural para todas las tools — CERRADO (11-09-2026)
 
-Pedido por Luis, 2026-09-11: «que no tenga que ser todo tan explícito …
+Pedido por el usuario, 2026-09-11: «que no tenga que ser todo tan explícito …
 un usuario no debería saberse de memoria todas las tools de Faustus»,
 y «no me refiero solo para git, me refiero para todas las tools». Hecho
 en b5f2707: ejemplos en español e inglés por tool
@@ -840,7 +840,7 @@ correcta). Regla de oro: «dime X para el proyecto Y» tiene que bastar.
 
 ## OBJ-8 · Copiar lo que interesa de otros proyectos — EN CURSO
 
-Pedido por Luis, 2026-09-11: investigar aigraphstudio y OpenRouterTeam
+Pedido por el usuario, 2026-09-11: investigar aigraphstudio y OpenRouterTeam
 «e implementa todo lo que pueda ser interesante»; después amplió la lista
 (agent-desktop, open-knowledge, herdr-studio) y dijo que la investigación
 la hará él con ChatGPT y traerá los hallazgos. Tanda 1 hecha (0017b70 y
@@ -907,7 +907,7 @@ como pendientes de un lote posterior; no cierra OBJ-8 todavía.
 
 ## OBJ-9 · Inferencia local honesta: veracidad, evidencia, visibilidad y banco — EN CURSO
 
-Pedido por Luis, 2026-09-12, con `Faustus_Especificacion_Claude_Inferencia_
+Pedido por el usuario, 2026-09-12, con `Faustus_Especificacion_Claude_Inferencia_
 Local.md` como única fuente («aquí tienes tus siguientes pasos cuando acabes
 con el readme»). El principio: **soporte**, **aplicación efectiva** y
 **beneficio medido** son tres ejes distintos que nunca se colapsan en un
@@ -930,7 +930,7 @@ comparador con `inconclusive` honesto, perfiles con ascenso solo por
 `improvement`, pestaña «Optimize for my machine».
 
 **Queda.** Verificación en vivo en el 7001 y un primer benchmark real con un
-modelo pequeño (autorizado por Luis); INF-05 (topología, presupuesto de
+modelo pequeño (autorizado por el usuario); INF-05 (topología, presupuesto de
 memoria, admisión reconciliada — Cookbook serve aún no pasa por
 `vram_admission` —, candidatos con reinicio, `activate_profile`); INF-06/07
 laboratorio (especulación, reparto entre GPUs, comparación de motores) solo
@@ -940,7 +940,7 @@ según su propia secuencia).
 
 ## OBJ-10 · Conectores Hoard y memoria de candidaturas — EN CURSO (13-09-2026)
 
-Pedido por Luis con `PLAN_MAESTRO_CONECTORES_HOARD.md` (13-09) y ampliado
+Pedido por el usuario con `PLAN_MAESTRO_CONECTORES_HOARD.md` (13-09) y ampliado
 después a Jubhunter's Hoard («puedes mejorar Jobhunter y tocarlo como
 necesites»). Principios del plan que se respetan tal cual: reutilizar el
 MCP existente sin agregador propio; catálogo sin secretos; salud de la app
@@ -964,7 +964,7 @@ en el 7001; conectar Jobhunter real (arrancar su servidor con el código
 nuevo, preset con `JOBHUNT_DIR`, comprobar `available`) y probar con un
 Qwen local: listar contexto y ofertas, leer una respuesta, registrar una
 pregunta en un contexto de prueba; ejecutar «Recuperar de borradores» desde
-la UI de Jobhunter (backup automático + el manual que haga Luis) y revisar
+la UI de Jobhunter (backup automático + el manual que haga el usuario) y revisar
 pendientes/variantes; Writer's Hoard necesita otro puerto que el 8766 de
 Relief Studio (`WH_AIBRIDGE_PORT`); credenciales de correo/calendario en
 los formularios existentes antes de la receta real; prueba de navegador
@@ -972,7 +972,7 @@ aparte (el MCP de Jobhunter no navega).
 
 ## OBJ-11 · Paridad con el harness de referencia y ventaja medida — CERRADO en su alcance de aceptación (36/36) (13/16-09-2026)
 
-Pedido por Luis con el dictamen externo del 13-09-2026 (análisis de ChatGPT, 17 documentos, 36 recetas de aceptación propuestas). Objetivo del propietario: que no quede un motivo funcional ni práctico para elegir el harness de referencia; ventaja solo con evidencia. Reglas que se respetan: un solo núcleo (nada de segundo runtime ni segundo motor de memoria); ninguna fila se cierra por existir una clase; cada cierre enlaza un test que ejercita código real; lo no cerrado se declara abierto; la licencia (AGPL vs MIT) es decisión de Luis.
+Pedido por el usuario con el dictamen externo del 13-09-2026 (análisis de ChatGPT, 17 documentos, 36 recetas de aceptación propuestas). Objetivo del propietario: que no quede un motivo funcional ni práctico para elegir el harness de referencia; ventaja solo con evidencia. Reglas que se respetan: un solo núcleo (nada de segundo runtime ni segundo motor de memoria); ninguna fila se cierra por existir una clase; cada cierre enlaza un test que ejercita código real; lo no cerrado se declara abierto; la licencia (AGPL vs MIT) es decisión del usuario.
 
 **Cerrado (FAUSTUS.md §83, §84, §92).** Los 36 casos de aceptación A01-A36 están en verde — `docs/spec/paridad/ESTADO_ACEPTACION.md`: 36 verde, 0 `xfail`, 0 `pendiente`, cada fila enlazando el test real que la cierra. Dos olas de doce lotes (T4-T8/U1-U7, más la integración A16-A36) cerraron: descubrimiento de tools auditado y acotado (A08-A09); offload de resultados grandes con aislamiento por tenant (A12-A13); Code Mode con la misma puerta de política del turno (A10-A11); sandbox enchufable con rechazo explícito, nunca ejecución silenciosa en host (A16-A17); reautorización OAuth de MCP acotada + catálogo de esquemas versionado (A18-A19); SDK TS instalado desde tarball real contra un servidor con auth (A20); `<faustus-chat>` embebible con aislamiento de sesión/token probado en tres capas (A21); login OIDC con PKCE y `state`/`nonce` de un solo uso (A22); identidad de servicio con scope y revocación efectiva (A23); DST/misfire/dedup del scheduler (A24) y skills git-backed con rollback verificado por digest (A25); loop-breaker determinista (A29) y presupuesto padre+hijos reservado/reconciliado (A31); evolución candidata con rechazo por esquema/privilegio, evaluación reservada (held-out) y reversión automática por digest de dependencia (A26-A30); benchmark sin coste `0` falso y sin reducir el denominador por una celda ausente (A32-A33); migración sin escribir credenciales (A34); ciclo de vida de distribución con backup/restore bit a bit (A35); mapa de superficie de sesión (A36).
 
@@ -980,7 +980,7 @@ Pedido por Luis con el dictamen externo del 13-09-2026 (análisis de ChatGPT, 17
 
 ## OBJ-12 — Faustus corre donde corre el proyecto: Windows de primera clase — EN CURSO (14-09-2026)
 
-Abierto el 14-09-2026 después de que Luis usara la app sobre una carpeta
+Abierto el 14-09-2026 después de que el usuario usara la app sobre una carpeta
 Windows y recibiera, turno tras turno, «bash no disponible en entorno»,
 «arranca Docker», «/bin/sh: cmd: not found» y «the grep tool rejects absolute
 Windows paths». Diagnóstico completo y lo ya hecho en FAUSTUS.md §85; lo
@@ -1442,7 +1442,7 @@ llamar, Writer's Hoard 0.1.3 publicada con una sola biblioteca, Nightingale's
 Hoard publicado, y el Lab de Nightingale de punta a punta con el 27B sin
 tarjetas de aprobación.
 
-**Todo local (25-09, tarde; FAUSTUS.md §194).** Luis: «todo local, queremos
+**Todo local (25-09, tarde; FAUSTUS.md §194).** el usuario: «todo local, queremos
 que sea potente por sí mismo». Nada de modelos de suscripción para visión ni
 para nada. Hecho: el 27B carga su propio proyector (`--mmproj`) y lee las
 imágenes él mismo en la GPU; los motores lo encuentran y lo pasan solos.
@@ -1579,7 +1579,7 @@ Ninguna de las tres cambia lo que ve el usuario.
 
 ## OBJ-50 · Escenas 3D con Blender y Faustus desde Telegram — HECHO (01-10-2026)
 
-Del análisis de dos repos del 01-10 (`claude/radar-switch-blender-01-10.md`: sandbox-quantum/switch y blender-json-scene-pipeline; allí numerados #386 y #387, que no son las #386-#387 de `radar-ideas.md`), pedido por Luis para tener el ecosistema más completo:
+Del análisis de dos repos del 01-10 (`claude/radar-switch-blender-01-10.md`: sandbox-quantum/switch y blender-json-scene-pipeline; allí numerados #386 y #387, que no son las #386-#387 de `radar-ideas.md`), pedido por el usuario para tener el ecosistema más completo:
 
 - Escenas 3D descritas con tipos, validadas antes de arrancar Blender, renderizadas sin ventana y comprobadas con aserciones declarativas; herramienta, servidor MCP, rutas y ajustes (§244). Probado con Blender 3.6, 4.3, 4.5 y 5.0 y desde el chat con el 27B.
 - Puente opcional de Telegram: cada chat autorizado es una conversación de Faustus y cada mensaje un turno (§245).
@@ -1588,7 +1588,7 @@ Del análisis de dos repos del 01-10 (`claude/radar-switch-blender-01-10.md`: sa
 
 - Telegram: leer notas de voz (transcripción), fotos (visión) y ficheros que se manden al bot.
 - Escenas 3D: animación por fotogramas clave y render de vídeo corto; materiales con texturas de imagen de la carpeta de la escena.
-- Más canales de chat con el mismo puente, si Luis usa otros.
+- Más canales de chat con el mismo puente, si el usuario usa otros.
 
 ## OBJ-51 · Identificadores tal cual y ensayo de reglas: lo que falta (01-10-2026)
 
@@ -1615,7 +1615,7 @@ Hecho en §260 y §261. **Por hacer:**
 
 ## OBJ-54 · Medir los modelos locales y ajustarlos: Galton's Hoard y Pygmalion's Hoard — HECHO (02-10-2026)
 
-Acordado con Luis el 02-10: dos apps separadas de la familia (Galton, puerto 5201, banco de pruebas; Pygmalion, puerto 5202, LoRA/QLoRA, fusiones, cuantización propia con matriz de importancia y contexto largo con YaRN); el árbitro de VRAM del Hub decide; las GPU 0 y 1 nunca sin su permiso; nunca se descarga un modelo que haya cargado otro. Hecho y probado en el PC (FAUSTUS.md §264, §266 y §267): medida completa del 27B q8 con rutas publicadas, QLoRA real de Qwen3.5-0.8B y de Qwen3.5-9B con su evaluación, repositorios públicos `Luissalet/GaltonsHoard` y `Luissalet/PygmalionsHoard`, conectores en Faustus. Lo aprendido: con 160 preguntas y respuestas, un ajuste de dos o tres épocas apenas mete hechos nuevos en el modelo (el 9B gana 3 de 20 casos reservados, empata 17); para eso hace falta un dataset con varias preguntas parafraseadas por hecho o dejar los hechos a la búsqueda.
+Acordado con el usuario el 02-10: dos apps separadas de la familia (Galton, puerto 5201, banco de pruebas; Pygmalion, puerto 5202, LoRA/QLoRA, fusiones, cuantización propia con matriz de importancia y contexto largo con YaRN); el árbitro de VRAM del Hub decide; las GPU 0 y 1 nunca sin su permiso; nunca se descarga un modelo que haya cargado otro. Hecho y probado en el PC (FAUSTUS.md §264, §266 y §267): medida completa del 27B q8 con rutas publicadas, QLoRA real de Qwen3.5-0.8B y de Qwen3.5-9B con su evaluación, repositorios públicos `sample-maintainer/GaltonsHoard` y `sample-maintainer/PygmalionsHoard`, conectores en Faustus. Lo aprendido: con 160 preguntas y respuestas, un ajuste de dos o tres épocas apenas mete hechos nuevos en el modelo (el 9B gana 3 de 20 casos reservados, empata 17); para eso hace falta un dataset con varias preguntas parafraseadas por hecho o dejar los hechos a la búsqueda.
 
 ## OBJ-55 · Cierre de evidencias y próximas verificaciones (07-10-2026)
 
@@ -1646,7 +1646,7 @@ Acordado con Luis el 02-10: dos apps separadas de la familia (Galton, puerto 520
 - **QA53 y fixes54/55, candidatos en revisión.** Q4_K_M real27B, contexto efectivo131072, xhigh/budget16384/thinktrue en dump nativo, GPU físicas2/3;0/1 libres de esta inferencia. Un primer turno calculó46 y conservóCSV pero falló la política readonly (Python ejecutado).55 excluye mutadores del workspace floor; retest37/47/34/48s: cálculo46, corrección58.5 y doble inspección/SHA pasan sinPython ni cambios de CSV. Documentación de herramienta falla porque roster sincallables oculta esquema: seguimiento60,3/4objetivos y no pleno aprobado.54 conserva xhigh/minimal/max:142tests y wire real;55 cinco regresiones+16 relacionadas. MCP nativo40tools/usage y chat real en Chromium cotejados. App/modeloQA detenidos y leases liberados; sin mezcla de gradosQ8, examenSABER o datos reales. Activación/TFM autónomo siguen sin acreditar.
 - **Pase nocturno de skills (#49), corrección aprobada en revisión independiente.** Ronda2 `0b877f5` usa exclusión entre procesos, revalida día y actividad antes de cada propuesta y hace visible crash interrumpido sin repetirlo.84focales+4repros reales y API200/409 por revisión delegada; no se reetiquetan421delautor ni capturaUI nueva. Desactivado por defecto, nunca aplica propuestas automáticamente. Pendiente integración del autor.
 
-- Para futuras evaluaciones: usar Q4 y un contexto menor; tomar `lock model:principal` y leases de GPU 2/3; dejar GPU 0/1 disponibles para Luis; registrar configuración efectiva y efectos reales. No tratar un smoke test como evaluación de capacidad. SABER, sus procesos y sus chats siguen aparcados.
+- Para futuras evaluaciones: usar Q4 y un contexto menor; tomar `lock model:principal` y leases de GPU 2/3; dejar GPU 0/1 disponibles para el usuario; registrar configuración efectiva y efectos reales. No tratar un smoke test como evaluación de capacidad. SABER, sus procesos y sus chats siguen aparcados.
 
 - **Corte por deadline e22:** se observó una desconexión HTTP silenciosa y un checkpoint parcial; no hubo despacho de llamadas a herramientas que hubieran quedado en búfer. La recuperación y el despacho tras ese corte siguen siendo una puerta pendiente.
 - **Parada forzada 674:** el fixture sintético comprobó la identidad válida del proceso antes de finalizarlo; terminó el helper y la aplicación persistente permaneció viva. Es evidencia de ese fixture, no de una parada forzada sobre la aplicación real.
@@ -1666,12 +1666,12 @@ Lo que se podía ver sin modelo ya está visto (§247: tope de memoria, cuarente
 
 ### D. Verificaciones previas con el modelo local (inventario trasladado)
 
-Este inventario conserva la solicitud histórica de agrupar comprobaciones largas; «cuando digas» no es un requisito vigente. Las siguientes ejecuciones usarán los permisos ya dados y el criterio actual: `lock model:principal`, leases de GPU 2/3 y el 27B Q4 con contexto menor, dejando las GPU 0/1 disponibles para Luis. Las referencias históricas a exámenes —incluidos el examen 32 y Eldoria— no autorizan activar SABER: el examen, sus procesos y sus chats siguen aparcados.
+Este inventario conserva la solicitud histórica de agrupar comprobaciones largas; «cuando digas» no es un requisito vigente. Las siguientes ejecuciones usarán los permisos ya dados y el criterio actual: `lock model:principal`, leases de GPU 2/3 y el 27B Q4 con contexto menor, dejando las GPU 0/1 disponibles para el usuario. Las referencias históricas a exámenes —incluidos el examen 32 y Eldoria— no autorizan activar SABER: el examen, sus procesos y sus chats siguen aparcados.
 
 - **Hoards con su nivel de razonamiento** (26-09, §212): una guía de estudio de Hypatia (`max`) y un lote de subtítulos de Daguerre (`off`) contra el 8081; la guía debe pensar y responder entera y los subtítulos no deben quedarse vacíos.
 - **Compactación `extract` en una tarea larga** (26-09): poner `compaction_summary_mode=extract` en una ejecución larga (el examen o `daily_eval`), comprobar que la compactación ya no llama al Utility y comparar si el 27B conserva la tarea tan bien como con el resumen por modelo.
 - **Bloques `choices`/`decision` escritos por el 27B** (26-09): ver si el modelo local los usa cuando hay una elección real y no los mete donde no toca; el renderizado y el clic ya se comprobaron con una respuesta fijada.
-- **Un enlace `faustus://` real** (26-09): al abrir la app de escritorio registra el esquema en el registro de Windows del usuario; no se arrancó desde aquí para no cambiarlo sin Luis. Probar `faustus://studio?s=<id>` desde el navegador con la app abierta y cerrada.
+- **Un enlace `faustus://` real** (26-09): al abrir la app de escritorio registra el esquema en el registro de Windows del usuario; no se arrancó desde aquí para no cambiarlo sin el usuario. Probar `faustus://studio?s=<id>` desde el navegador con la app abierta y cerrada.
 
 - **Tope del juego de herramientas por chat** (26-09, §211): en el 7000, dos turnos seguidos del mismo chat pidieron herramientas distintas (correo y luego imagen) y, al pasar de 28, el segundo empezó juego nuevo: 19k tokens releídos, 57 s. Correr la batería con `scripts/daily_eval.py --set agent_sticky_toolset_max=N` (28 y 48, el nuevo valor por defecto) y comparar aciertos y el «caché del prompt» de la cabecera; fijar el valor por defecto con eso.
 - **A/B del razonamiento en rondas de continuación** (26-09, §210): tras el examen, correr `scripts/daily_eval.py --set agent_followup_reasoning_budget=N` con N = 0, 1536 y 2048 (el ajuste se restaura solo al acabar), comparar aciertos y tiempo por ronda, y fijar el valor por defecto con el resultado.
@@ -1773,7 +1773,7 @@ Coordinador `codex-relevo`; misma automatización, traspaso y checkpoints activo
 5. Cursor: siguiente turno oficial único para corregir #65changes; #66 espera rutas i18n. No lanzar segunda sesión ni fingir mensajes. Su rutina exige revisión real del envío.
 6. Conservar la revisión posterior67 y el cierre histórico sin revisión previa. Revisar la descomposición de cambios heredados1/2 y cerrar46 solo con recibos de equivalencia.
 7. Coase14: identidad nativa, evaluación integral Q4 y manual común;59/61 ya activadas por su coordinador. No repetir su integración ni reexportar datos reales.
-8. Watch/Book fuera, SABER aparcado, GPUs0/1 libres para Luis, commits preparados sin push.
+8. Watch/Book fuera, SABER aparcado, GPUs0/1 libres para el usuario, commits preparados sin push.
 
 
 ## Sparks: controles activados — 08-10-2026
@@ -1792,7 +1792,7 @@ Hecho:
 
 Abierto:
 
-- **Visión en las Sparks.** GLM-5.3-Flash solo procesa texto. Con las GPU del PC reservadas (#111) no hay servidor de visión. Hace falta una receta con un modelo de visión en una Spark. Cada una tiene unos 24–28 GB libres con TP3 cargado. Decisión de Luis en PENDIENTES A.
+- **Visión en las Sparks.** GLM-5.3-Flash solo procesa texto. Con las GPU del PC reservadas (#111) no hay servidor de visión. Hace falta una receta con un modelo de visión en una Spark. Cada una tiene unos 24–28 GB libres con TP3 cargado. Decisión del usuario en PENDIENTES A.
 - **Sondeos de contexto a servidores locales caídos.** `model_context` vuelve a consultar los endpoints locales en cada llamada, a propósito, porque pueden reiniciarse con otra ventana. En Windows, una conexión rechazada a localhost tarda unos 2 s, y un turno contra un Ollama apagado puede pagar 6–9 s antes de la primera herramienta (medido con cProfile en `test_resource_claims`). Mejora propuesta: recordar el resultado unos segundos dentro del mismo turno. **Hecho (#310, FAUSTUS §336):** respuesta local recordada 5 s y `/slots`/`/api/ps` dentro del enfriamiento de hosts caídos; cuatro consultas contra un servidor apagado pasan de 13,7 s a 4,7 s.
 
 ## Agente nativo del Ágora — estado comprobado 10-10-2026
@@ -1881,10 +1881,10 @@ No convierten resoluciones nativas en exactitud universal, presupuestos en cotiz
 de combates en rankings universales. Evidencia y activación final en la sección correspondiente de FAUSTUS.md.
 
 
-Luis autorizó las dos propuestas: guía de montaje por generación (Gulliver #608/#615), posiciones sugeridas
+El usuario autorizó las dos propuestas: guía de montaje por generación (Gulliver #608/#615), posiciones sugeridas
 desde repeticiones (Silver #609) y habilidades con avisos laterales en ambos modos (#611). Implementadas y
 verificadas por pruebas, MCP y navegador; estado final de revisión/activación en FAUSTUS.md. No requieren
-una nueva decisión de Luis.
+una nueva decisión del usuario.
 
 ## Daedalus622 — generación y refinado opcional, 15-10-2026
 
@@ -1897,10 +1897,10 @@ Hecho: UltraShape nativo con alineación de copia; segunda etapa TRELLIS512→10
 
 ## Daedalus636 — preparación opcional para impresión y juegos, 16-10-2026
 
-Hecho: pasadas CPU nativas de reparación de malla y optimización triangular con UV y horneado PBR, en la misma cola/API/MCP/interfaz. Reparación por volumen128/256/384 o superficie; tres salidas cerradas verificadas. La reconstrucción aproxima y puede suavizar/unir piezas. La mecánica reparada→juegos cumplió50k con49.647caras/7,7MB; búho99.949 ante50k, con aviso de presupuesto incumplido. Cada pasada conserva padre y originales; informa del cierre, piezas y presupuesto logrados y exporta GLB/STL/PLY con escala. Materiales descartados no reaparecen al encadenar pasadas.14 MCP, estilos e icono familiares. Publicación GitHub del código autorizada por Luis; pesos y trabajos locales. La preparación no certifica grosores/soportes y no añade rigging ni retopología de animación. Evidencia y pruebas reales en HoardStorage/daedalus-development636.
+Hecho: pasadas CPU nativas de reparación de malla y optimización triangular con UV y horneado PBR, en la misma cola/API/MCP/interfaz. Reparación por volumen128/256/384 o superficie; tres salidas cerradas verificadas. La reconstrucción aproxima y puede suavizar/unir piezas. La mecánica reparada→juegos cumplió50k con49.647caras/7,7MB; búho99.949 ante50k, con aviso de presupuesto incumplido. Cada pasada conserva padre y originales; informa del cierre, piezas y presupuesto logrados y exporta GLB/STL/PLY con escala. Materiales descartados no reaparecen al encadenar pasadas.14 MCP, estilos e icono familiares. Publicación GitHub del código autorizada por el usuario; pesos y trabajos locales. La preparación no certifica grosores/soportes y no añade rigging ni retopología de animación. Evidencia y pruebas reales en HoardStorage/daedalus-development636.
 ## OBJ-61 · Faustus, el mejor motor para GLM 5.3 flash en todos los benchmarks (15-10-2026)
 
-Encargo de Luis: que Faustus gane a cualquier otro harness con el GLM flash de las Sparks en todos los
+Encargo del usuario: que Faustus gane a cualquier otro harness con el GLM flash de las Sparks en todos los
 benchmarks de Galton (agentbench). Plan vivo con prueba y medida por punto: doc del proyecto
 `claude/faustus-glm-flash-mejoras-15-10.md`. Resumen:
 1. Verificar contra el contrato oculto (mensajes exactos, `None` frente a `False`), no contra pruebas
@@ -1931,7 +1931,7 @@ terminal tratado como éxito. IDs activos repetidos completos en el contexto;
 recuperación inicial vacía sin exigir workspace; error visible y borrador
 recuperado. Probado con modelo global, MCP y navegador en Silver aislado.
 No equivale a una garantía general de calidad; los fallos nuevos requieren
-sus reproducciones concretas. Sin decisión pendiente de Luis.
+sus reproducciones concretas. Sin decisión pendiente del usuario.
 
 
 ## Vistas actualizadas por el copilot — #792
@@ -1945,7 +1945,7 @@ comprobación no evalúa al modelo ni afirma paridad en todos los Hoards.
 ## HoardDex: continuar tras los equipos RF/VH —24-10-2026, #1361
 
 Entregados22equipos/44contextos RF/VH enGuía/MCP con fuentes fijadas y pruebas
-web/Android. Próximo1380 por petición deLuis: juegos únicos a toda la fila,
+web/Android. Próximo1380 por petición del usuario: juegos únicos a toda la fila,
 contrapartes juntas yDLC como pestañas dentro del juego, conservando53IDs.
 Después1375: líderes/Liga Hoenn con variantes y acceso contrastados por edición.
 Siguen otras guías, formas/localizaciones, evoluciones históricas, SafariRBY/DS,
@@ -2049,7 +2049,7 @@ Siguen abiertos formas y lugares por edición, evoluciones posteriores,
 apariencias, recursos todavía ausentes, presets y modo estricto Nuzlocke,
 tamaño del APK, motores especiales y huida/estrategia de captura. No hay
 teléfono físico ARM64 ni paridad global acreditada. PENDIENTES no añade
-decisiones nuevas de Luis; se conservan los frentes y documentos ajenos.
+decisiones nuevas del usuario; se conservan los frentes y documentos ajenos.
 
 
 ## HoardDex: seguir tras las elecciones compartibles — 24-10-2026, #1466
@@ -2064,7 +2064,7 @@ todavía fuera del banco de la app. Integrarlos con sus niveles, movimientos,
 variantes del rival y fuentes propias, sin objetos equipados de generaciones
 posteriores, y comprobar enlaces/regreso en web y Android visible.
 Permanecen las demás coberturas, guías y pendientes de producto. No se añade
-una decisión de Luis a PENDIENTES ni se atribuye paridad global o prueba ARM64.
+una decisión del usuario a PENDIENTES ni se atribuye paridad global o prueba ARM64.
 
 
 ## HoardDex: continuar tras los equipos RBY — 24-10-2026, #1468
@@ -2077,7 +2077,7 @@ figura como una capacidad pendiente. Continúan los bancos de otras ediciones,
 entrenadores de aventura, objetivos de historia y pendientes de cobertura,
 además de presets/reglas estrictas yresto deparidad. Conservar las elecciones
 personalizadas compartibles1466. No inferir progreso ni declarar completo lo
-no contrastado; no se añade una nueva decisión deLuis aPENDIENTES.
+no contrastado; no se añade una nueva decisión del usuario aPENDIENTES.
 
 
 ## HoardDex: continuar después de GSC original — 24-10-2026, #1472
@@ -2089,7 +2089,7 @@ ediciones yconserva los111equipos anteriores; las fuentes identifican su banco.
 Continúan otros bancos de edición, entrenadores de aventura, objetivos de historia,
 presets/reglas estrictas yresto de cobertura. Mantener las elecciones compartibles
 1466 ylas funciones entregadas, sin inferir progreso o declarar paridadcompleta.
-No aparece una nueva decisión de Luis que añadir a PENDIENTES.
+No aparece una nueva decisión del usuario que añadir a PENDIENTES.
 
 
 ## HoardDex: continuar tras Sinnoh US — 24-10-2026, #1475
@@ -2100,7 +2100,7 @@ con fuentespropias ysin inferirEU/JP. Total159/266/416fuentes en14ediciones,
 conservando133equipos anteriores. Continúan otrosbancos, entrenadoresdeaventura,
 revanchas, objetivosdehistoria, presets/reglas yrestodecobertura. Mantener las
 funcionesentregadas yeleccionescompartibles; no inferirprogreso ni declarar
-paridadcompleta. No nueva decisión deLuis que añadir aPENDIENTES.
+paridadcompleta. No nueva decisión del usuario que añadir aPENDIENTES.
 
 ## HoardDex tras la entrega1478 — 24-10-2026
 
@@ -2111,7 +2111,7 @@ Continuar datos propios de otras ediciones,revanchas,rivales/restoaventura yguí
 útiles;contrastar EU/JP yrequisitos completos deMontePlateado antes de afirmarlos.
 No sustituir ausencias porimposibilidad niprestar equipos/condiciones deGSC/Sinnoh.
 Conservar eleccionespersonalizadas compartibles1466 yselectorfilas/DLC1380 yaentregados.
-No hay una nueva decisión deLuis niun pendiente bloqueado que añadir.
+No hay una nueva decisión del usuario niun pendiente bloqueado que añadir.
 
 ## HoardDex tras la Liga mejorada HGSS — 24-10-2026
 
@@ -2121,7 +2121,7 @@ APKx86 probado yARM64compilado. No cierra la paridadglobal.
 Continuar fuentes propias por edición:revanchas de gimnasio,rivales/restoaventura,
 guías útiles yEUJP;acceso completoMontePlateado aúnsincontrastar. Conservar el
 avisoCelio sóloRFVH,eleccionescompartibles1466 yselectorfilas/DLC1380.
-No hay nueva decisión deLuis niun pendiente suyo que añadir.
+No hay nueva decisión del usuario niun pendiente suyo que añadir.
 
 ## HoardDex tras los pasos de Oak —25-10-2026
 
@@ -2130,7 +2130,7 @@ sin cerrar requisitos completos de cima ni prestar16medallasGSC. Global186/320/
 485fuentes16ediciones;web yAPKx86 probados/ARM64compilado. Continúan paridad,
 otras ediciones, revanchas/rivales/entrenadores, rutas completas ytextos sinfuente.
 1486 contrasta equipos originales de revanchaHGSS ysu teléfono/horario, sin
-implementación acreditada todavía. No hay nueva decisión pendiente de Luis.
+implementación acreditada todavía. No hay nueva decisión pendiente del usuario.
 
 ## HoardDex tras las revanchas HGSS —25-10-2026
 
@@ -2138,7 +2138,7 @@ implementación acreditada todavía. No hay nueva decisión pendiente de Luis.
 202equipos352contextos508fuentes16ediciones;web yAPKpublicadox86 probados,ARM64compilado.
 1490 investiga cómo obtener sus dieciséis números; aún no incluido en el producto.
 Continúan paridad global, otras ediciones, entrenadores, rutas completas ytextos sinfuente.
-No hay decisión nueva pendiente de Luis.
+No hay decisión nueva pendiente del usuario.
 
 ## HoardDex tras la adquisición de números HGSS —25-10-2026
 
@@ -2146,47 +2146,47 @@ No hay decisión nueva pendiente de Luis.
 202 equipos/352 contextos/565 fuentes en16 ediciones; web y APK publicado x86 probados, ARM64 compilado.
 La investigación1490 está cerrada e incorporada;1494 investiga la Liga mejorada de Platino, aún sin función de producto.
 Continúan la paridad global, otras ediciones, entrenadores, rutas completas y textos sin fuente.
-No hay decisión nueva pendiente de Luis.
+No hay decisión nueva pendiente del usuario.
 
 ## HoardDex tras la Liga mejorada de Platino —25-10-2026
 
 1497 entregadaMain291: cinco equipos propios y condición de Plutón en MontañaDura.
 207equipos/357contextos/582fuentes16ediciones;web yAPKpublicadox86probados,ARM64compilado.
 1494investigación cerrada e incorporada;1498 investiga las ocho revanchas propias de líderes de Platino, aún sin producto. Siguen otras ediciones, entrenadores, rutas completas y textos sin fuente.
-No hay decisión nueva pendiente de Luis.
+No hay decisión nueva pendiente del usuario.
 
 ## HoardDex tras las revanchas de Platino —25-10-2026
 
 1500 entregada en Main294: ocho revanchas de líderes, equipos y condición diarios propios.
 Global215 equipos/365 contextos/606 fuentes en16 ediciones. Web y APK publicado x86 probados, ARM64 compilado.
 1498 investigada e incorporada. Siguiente cobertura: los cinco acompañantes del Café Revancha. Continúan otras ediciones, entrenadores, rutas completas y textos sin fuente; sin paridad global atribuida.
-No hay decisión nueva pendiente de Luis.
+No hay decisión nueva pendiente del usuario.
 
 ## HoardDex tras los acompañantes de Platino —25-10-2026
 
 1509 entregada en Main296: cinco equipos opcionales y condiciones individuales/diarias originales.
 Global220 equipos/370 contextos/620 fuentes en16 ediciones; web y APK x86 probados, ARM64 compilado.
-1508 investigada e incorporada. Continúan otros entrenadores, rivales y ediciones, rutas completas y textos sin fuente; no se atribuye paridad global. No hay decisión nueva pendiente de Luis.
+1508 investigada e incorporada. Continúan otros entrenadores, rivales y ediciones, rutas completas y textos sin fuente; no se atribuye paridad global. No hay decisión nueva pendiente del usuario.
 
 ## HoardDex tras los equipos iniciales Normales de Teselia —25-10-2026
 
-1513 entregada en Main298: trece equipos propios de Negro2/Blanco2 US Normal con fase, niveles, huecos y objetos originales. Total233/396/698/18; web y APK x86 reales, ARM64 compilado.1515 investigó y revisó cinco equipos de Liga de revancha Normal; falta implementarlos en una entrega separada. Continúan otros modos, entrenadores y ediciones, rutas completas y textos sin fuente, sin atribuir paridad global. No hay decisión nueva pendiente de Luis.
+1513 entregada en Main298: trece equipos propios de Negro2/Blanco2 US Normal con fase, niveles, huecos y objetos originales. Total233/396/698/18; web y APK x86 reales, ARM64 compilado.1515 investigó y revisó cinco equipos de Liga de revancha Normal; falta implementarlos en una entrega separada. Continúan otros modos, entrenadores y ediciones, rutas completas y textos sin fuente, sin atribuir paridad global. No hay decisión nueva pendiente del usuario.
 
 ## HoardDex tras las revanchas de Liga Normales de Teselia —25-10-2026
 
-1516 entregada en Main301: cinco equipos propios de revancha Normal de Negro2/Blanco2 US tras el primer Hall. Total238/406/703/18; web y APK x86 reales, ARM64 sólo compilado.1517 investigación de tamaño terminada y revisada, aún sin ahorro instalado; optimizador estático assets/height pendiente de producto con RGBA/metadatos exactos y sólo menor tamaño. Continúan otros modos, entrenadores y ediciones, rutas completas y textos sin fuente, sin atribuir paridad global. No hay decisión nueva pendiente de Luis.
+1516 entregada en Main301: cinco equipos propios de revancha Normal de Negro2/Blanco2 US tras el primer Hall. Total238/406/703/18; web y APK x86 reales, ARM64 sólo compilado.1517 investigación de tamaño terminada y revisada, aún sin ahorro instalado; optimizador estático assets/height pendiente de producto con RGBA/metadatos exactos y sólo menor tamaño. Continúan otros modos, entrenadores y ediciones, rutas completas y textos sin fuente, sin atribuir paridad global. No hay decisión nueva pendiente del usuario.
 
 ## HoardDex tras comprimir ilustraciones —26-10-2026
 
-1520 entregada Main303:32.209.990B menos en derivados y32.208.060B menos en APKx86, sin pérdida deRGBA/dimensiones/metadatos ni retirar contenido. Web/publicadox86reales, ARM64 sólo compilado. Siguen pendientes modelos/otros medios y tamaño global.1524 corrige proximidad unidad/marca en eje con texto ampliado;1521Fácil/Desafío investigado/revisado aúnNOproducto, con nivelbase/ajustado separados y estadísticas sin inventar. Continúan entrenadores, ediciones, textos sin fuente y guías completas; sin paridad global ni nueva decisión pendiente deLuis.
+1520 entregada Main303:32.209.990B menos en derivados y32.208.060B menos en APKx86, sin pérdida deRGBA/dimensiones/metadatos ni retirar contenido. Web/publicadox86reales, ARM64 sólo compilado. Siguen pendientes modelos/otros medios y tamaño global.1524 corrige proximidad unidad/marca en eje con texto ampliado;1521Fácil/Desafío investigado/revisado aúnNOproducto, con nivelbase/ajustado separados y estadísticas sin inventar. Continúan entrenadores, ediciones, textos sin fuente y guías completas; sin paridad global ni nueva decisión pendiente del usuario.
 
 ## HoardDex tras entregar tres modos BW2 —26-10-2026
 
-1524/Main306: unidad del eje y marca superior ampliada resueltas sin cambiar medidas.1527/Main309:54equipos BW2US propios18pormodo,base/ajuste/statsunverified,generador reproducible,web/Androidvisible yMCP comprobados. Otrosentrenadores/ediciones/textosporfuente/iconos/guías completas/tamaño global siguen abiertos. ARM64sólobuild; sinROM/fullroute/statrecalc/keyunlock/EUJP/tableta/TalkBack/paridadglobal. Continuar fuentes propias deNegro/Blanco17/18, sin prestar secuelas ni convertir ausencia de datos en imposibilidad. Registrocomún1529 preservaManual/resto,MEMORY/STOP122yGraphStoreembedFalse. Sin nueva decision pendiente deLuis.
+1524/Main306: unidad del eje y marca superior ampliada resueltas sin cambiar medidas.1527/Main309:54equipos BW2US propios18pormodo,base/ajuste/statsunverified,generador reproducible,web/Androidvisible yMCP comprobados. Otrosentrenadores/ediciones/textosporfuente/iconos/guías completas/tamaño global siguen abiertos. ARM64sólobuild; sinROM/fullroute/statrecalc/keyunlock/EUJP/tableta/TalkBack/paridadglobal. Continuar fuentes propias deNegro/Blanco17/18, sin prestar secuelas ni convertir ausencia de datos en imposibilidad. Registrocomún1529 preservaManual/resto,MEMORY/STOP122yGraphStoreembedFalse. Sin nueva decision pendiente del usuario.
 
 ## HoardDex tras los gimnasios originales BW —26-10-2026
 
-Main311:11equipos propiosUS17/18, inicialdeljugador eIrisBlanco/LirioNegro, fuentes ycerosliterales declarados. Guía/MCP yweb/Androidvisible entregados. Global285/498/737/20ediciones. SiguenLiga,N/Ghechis/Mirto propios, otrosentrenadores/juegos/textosporfuente/mapas/iconos/tamaño global. No prestar condiciones HallBW2; sinROM/fullroute/EUJP/efectonativodeceros/ARMfisico/tableta/TalkBack/paridadglobal. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente deLuis.
+Main311:11equipos propiosUS17/18, inicialdeljugador eIrisBlanco/LirioNegro, fuentes ycerosliterales declarados. Guía/MCP yweb/Androidvisible entregados. Global285/498/737/20ediciones. SiguenLiga,N/Ghechis/Mirto propios, otrosentrenadores/juegos/textosporfuente/mapas/iconos/tamaño global. No prestar condiciones HallBW2; sinROM/fullroute/EUJP/efectonativodeceros/ARMfisico/tableta/TalkBack/paridadglobal. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente del usuario.
 
 
 ## Silver: completar retratos después de la entrega parcial58 —26-10-2026, #1372
@@ -2205,11 +2205,11 @@ Cada tanda requiere revisión independiente, biblioteca instalada/HTML con los
 mismos bytes y prueba real de UI/MCP; no certificar por recuento ni por flags.
 Conservar gameplay, originales, créditos y cobertura publicada. Los HTML antiguos
 se reexportan. La entrega parcial58 está aprobadaCAS2 y comprobada en Main; no
-cierra1372, no afirma todo el catálogo revisado y no necesita decisión de Luis.
+cierra1372, no afirma todo el catálogo revisado y no necesita decisión del usuario.
 
 ## HoardDex tras Liga y desenlace originales BW —26-10-2026
 
-Main313: doce tablas propiasUS17/18, AltoMando50/73,Npor edición52,Ghechis54,primerMirto77trasfinal/Elitefortalecida;21alternativas10Gym9Liga2historia. Global297/520/73920ediciones. Guía/MCP yweb/Androidvisible entregados;16fuentes nativas/doseditoriales distintas sinpuentenativoacreditado niHallBW2prestado. Seguir otrosentrenadores/juegos/textosporfuente/mapas/formas/iconos/tamaño. ARM64sólobuild/sinROM/fullroute/arbitrarysave/EUJP/tableta/TalkBack/paridadglobal. Una recuperación del Androidinvitado ocurrió,hostAVD/Studio visibles sinreiniciar/ocultar/wipe/snapshot. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente deLuis.
+Main313: doce tablas propiasUS17/18, AltoMando50/73,Npor edición52,Ghechis54,primerMirto77trasfinal/Elitefortalecida;21alternativas10Gym9Liga2historia. Global297/520/73920ediciones. Guía/MCP yweb/Androidvisible entregados;16fuentes nativas/doseditoriales distintas sinpuentenativoacreditado niHallBW2prestado. Seguir otrosentrenadores/juegos/textosporfuente/mapas/formas/iconos/tamaño. ARM64sólobuild/sinROM/fullroute/arbitrarysave/EUJP/tableta/TalkBack/paridadglobal. Una recuperación del Androidinvitado ocurrió,hostAVD/Studio visibles sinreiniciar/ocultar/wipe/snapshot. Registrocomún conservaManual/resto,MEMORY/STOP122 yGraphStoreembedFalse. Sin nueva decisión pendiente del usuario.
 
 
 ## Silver: continuación tras los retratos parciales60 —26-10-2026, #1372
@@ -2229,11 +2229,11 @@ por emoción no sustituyen el gesto. Gengar650/651 yMagneton652/653 tienen
 pilotos en preparación sóloOUT; no son atlas completos ni producto aprobado.
 Cada tanda necesita revisión independiente yparidad instalada/HTTP/HTML con
 combates UI/MCP reales. No certificar el catálogo por recuento.1372 permanece
-abierta yno requiere decisión de Luis; gameplay/funciones/créditos intactos.
+abierta yno requiere decisión del usuario; gameplay/funciones/créditos intactos.
 
 ## HoardDex tras mapa original BW — 26-10-2026
 
-Entregado Main316: mapa y puntos originales US17/18, Frigoríficos independiente, interiores con identidad propia y encuentros sin punto conservados. Viewport vuelve al origen al cambiar mapa/zoom, mantiene selección y enlaces. Web y Android visible probados, ambas ABI listas; ARM64 sólo build. Continúan otros mapas/entrenadores/juegos/textos/formas/iconos y tamaño sin pérdida. La investigación1542 contrasta Negro2/Blanco2 con fuentes propias; aún no es producto. Sin decisión pendiente de Luis ni paridad global. No iniciar otros Hoards, modelos o Hub.
+Entregado Main316: mapa y puntos originales US17/18, Frigoríficos independiente, interiores con identidad propia y encuentros sin punto conservados. Viewport vuelve al origen al cambiar mapa/zoom, mantiene selección y enlaces. Web y Android visible probados, ambas ABI listas; ARM64 sólo build. Continúan otros mapas/entrenadores/juegos/textos/formas/iconos y tamaño sin pérdida. La investigación1542 contrasta Negro2/Blanco2 con fuentes propias; aún no es producto. Sin decisión pendiente del usuario ni paridad global. No iniciar otros Hoards, modelos o Hub.
 
 
 ## Silver: continuación tras retratos parciales61 —26-10-2026, #1372
@@ -2250,15 +2250,15 @@ componentes individuales; regenerar cuando no baste. Próxima tandaMantyke y
 Boltund aún sóloOUT: Pain/AngryMantyke ySurprisedBoltund utilizables, otros
 pilotos siguen enreparación; no atlas completo ni instalación aprobada. No
 declarar cobertura por cifras ni levantarHOLD por procedencia/técnica.1372
-abierta sin decisión pendiente deLuis. Gameplay,funciones ycréditos conservados.
+abierta sin decisión pendiente del usuario. Gameplay,funciones ycréditos conservados.
 
 ## HoardDex tras mapa propio BW2 — 26-10-2026
 
-Entregado Main318: mapa de las secuelas reconstruido desde sus propios recursos públicos,61agrupaciones/137áreas,ReservaNatural sinpunto conservada. Interiores con identidad propia, selección/mapa completo tras zoom/pan/reducir y áreaexacta/Back. Web yAndroidvisible probados, dosABI listas; ARM64sólo build. Continúan otros mapas,entrenadores,juegos,textos,formas eiconos yoptimización sinpérdida.1545investiga combates dehistoriaBW2 por fuentes propias, todavía sinproducto. No hay decisión pendiente deLuis ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
+Entregado Main318: mapa de las secuelas reconstruido desde sus propios recursos públicos,61agrupaciones/137áreas,ReservaNatural sinpunto conservada. Interiores con identidad propia, selección/mapa completo tras zoom/pan/reducir y áreaexacta/Back. Web yAndroidvisible probados, dosABI listas; ARM64sólo build. Continúan otros mapas,entrenadores,juegos,textos,formas eiconos yoptimización sinpérdida.1545investiga combates dehistoriaBW2 por fuentes propias, todavía sinproducto. No hay decisión pendiente del usuario ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
 
 ## HoardDex tras combates de historia BW2 — 26-10-2026
 
-Entregado Main321: Acromo/Ghechis propios enNormal/Fácil/Desafío,52/48/56 ytabla/ajuste separados; guía/MCP con60variantesBW2 y303globales. Referencias/regreso yalcance incluso0, web yAndroidvisible probados;dosABI listas,ARM64sólo build. Continúan otrosentrenadores/juegos, formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida.1551contrasta opcionales/posterioresBW2(Mirto,Cintia,N,Acromo),aúnsinGO/producto. No haydecisiónpendientedeLuis niparidadglobal. No iniciarotrosHoards/modelos/Hub.
+Entregado Main321: Acromo/Ghechis propios enNormal/Fácil/Desafío,52/48/56 ytabla/ajuste separados; guía/MCP con60variantesBW2 y303globales. Referencias/regreso yalcance incluso0, web yAndroidvisible probados;dosABI listas,ARM64sólo build. Continúan otrosentrenadores/juegos, formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida.1551contrasta opcionales/posterioresBW2(Mirto,Cintia,N,Acromo),aúnsinGO/producto. No haydecisiónpendiente del usuario niparidadglobal. No iniciarotrosHoards/modelos/Hub.
 
 
 ## Silver: continuación tras retratos parciales62 —26-10-2026, #1372
@@ -2274,7 +2274,7 @@ RaticateN/S yMegaClefableN/S corregidos/revisados32cadauno sóloOUT aúnnoinstal
 GolemAlolaS separa componente lateral, LaprasGmax repara hocicos recortados y
 GarbodorGmax masas superiores; sólo pilotos concretos aceptados, otros pendientes.
 No levantarHOLD por técnica/procedencia ni afirmar cobertura artística global.
-No decisiónpendiente deLuis; conservar gameplay,funciones ycréditos.
+No decisiónpendiente del usuario; conservar gameplay,funciones ycréditos.
 
 
 ## Silver: revisión tras parcial 63 —26-10-2026, #1372
@@ -2291,11 +2291,11 @@ cuadros buenos y reparar componentes individuales; regenerar si no bastan.
 Golem de Alola shiny sigue con revisión de materiales y ojo Dizzy; Lapras
 Gigamax con hocicos, encuadres y paletas; Garbodor Gigamax con masas superiores
 por expresión y posterior revisión de materiales y actuación. Las propuestas
-parciales no equivalen a aprobar un atlas entero. No decisión pendiente de Luis.
+parciales no equivalen a aprobar un atlas entero. No decisión pendiente del usuario.
 
 ## HoardDex tras opcionales BW2 — 26-10-2026
 
-Entregado Main323: Mirto,Cintia yNcuatroestaciones enNormal/Fácil/Desafío,78variantesBW2 y321equiposglobales. Condiciones/niveles/fuentes propios,referencias/regreso yalcance incluso0;web/Androidvisible yambasABIlistos,ARM64sólobuild.1560researchDONE/GOindependiente paraAcromo813conRotomLavado yDOScontextos/ajustes distintos,6oráculosRED; producto siguiente aúnpendiente. Continúanotrascoberturasporjuego,formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida. No haydecisiónpendientedeLuis niparidadglobal. No iniciarotrosHoards/modelos/Hub.
+Entregado Main323: Mirto,Cintia yNcuatroestaciones enNormal/Fácil/Desafío,78variantesBW2 y321equiposglobales. Condiciones/niveles/fuentes propios,referencias/regreso yalcance incluso0;web/Androidvisible yambasABIlistos,ARM64sólobuild.1560researchDONE/GOindependiente paraAcromo813conRotomLavado yDOScontextos/ajustes distintos,6oráculosRED; producto siguiente aúnpendiente. Continúanotrascoberturasporjuego,formas,evoluciones,textos,iconos,mapas yoptimizaciónsinpérdida. No haydecisiónpendiente del usuario niparidadglobal. No iniciarotrosHoards/modelos/Hub.
 
 
 ## Silver: revisión tras parcial 64 —26-10-2026, #1372
@@ -2313,11 +2313,11 @@ pendientes depeer yPain/InspiredN/S aúnHOLD. EeveeGigamax:28caras noDizzyGO má
 dosNormal publicados; ojoslejanosDizzyHOLD traspilotos yuna salidaimagegen rechazada.
 GarbodorGigamax:30carasGO contando4anteriores, dosDizzy pendientes de curvaslegibles.
 Todo ello sóloOUT hasta selección yverificación completa; no aprobado porconteo.
-Ninguna decisión pendiente deLuis. No cerrar1372 ni afirmar catálogo completo.
+Ninguna decisión pendiente del usuario. No cerrar1372 ni afirmar catálogo completo.
 
 ## HoardDex tras las revanchas de Acromo — 26-10-2026
 
-Entregado Main325: primera revancha interior y diaria en cubierta, RotomLavado y tres modos propios.84 equipos BW2/327globales; condiciones, nivel/ajuste separados, fuentes, referencias conBack y alcance con0resultados. Web yAndroidStudio visible probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1568 siguiente: primerN legendario y sus movimientos automáticos al nivelbase70, aún sin candidato aprobado ni producto. Continúan coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otrosHoards/modelos/Hub.
+Entregado Main325: primera revancha interior y diaria en cubierta, RotomLavado y tres modos propios.84 equipos BW2/327globales; condiciones, nivel/ajuste separados, fuentes, referencias conBack y alcance con0resultados. Web yAndroidStudio visible probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1568 siguiente: primerN legendario y sus movimientos automáticos al nivelbase70, aún sin candidato aprobado ni producto. Continúan coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente del usuario ni paridad global. No iniciar otrosHoards/modelos/Hub.
 
 
 ## Silver: continuidad tras parcial 65 — 26-10-2026, #1372
@@ -2340,7 +2340,7 @@ La cobertura y las pruebas de una tanda no son aprobación artística global.
 
 ## HoardDex tras el primer combate legendario de N — 27-10-2026
 
-Entregado Main327: primer N con Zekrom o Reshiram propio por edición, tres modos y origen de los movimientos antes del ajuste.90 equipos BW2/333 globales. Web final y APK x86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1578 siguiente: Guayo, tablas propias, selección por lugar/edición y modos sin inferirlos de otros entrenadores. Siguen las coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/modelos/Hub.
+Entregado Main327: primer N con Zekrom o Reshiram propio por edición, tres modos y origen de los movimientos antes del ajuste.90 equipos BW2/333 globales. Web final y APK x86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1578 siguiente: Guayo, tablas propias, selección por lugar/edición y modos sin inferirlos de otros entrenadores. Siguen las coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente del usuario ni paridad global. No iniciar otros Hoards/modelos/Hub.
 
 
 ## Silver: continuidad tras parcial 66 — 27-10-2026, #1372
@@ -2358,11 +2358,11 @@ Ni esta cobertura parcial ni sus pruebas suponen aprobación artística global.
 
 ## HoardDex tras Guayo del Área 10 — 27-10-2026
 
-Entregado Main329: Guayo propio de Negro2 y Blanco2, tres modos, movimientos y objetos originales, con aviso del cambio de jefe por llave.96 variantes BW2/339equipos globales. Web y APKx86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1587 siguiente: primer Acromo en Ruta4, tabla358, constructor de movimientos y condiciones propias sin préstamo de la Fragata. Siguen coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/modelos/Hub.
+Entregado Main329: Guayo propio de Negro2 y Blanco2, tres modos, movimientos y objetos originales, con aviso del cambio de jefe por llave.96 variantes BW2/339equipos globales. Web y APKx86 publicado probados, ambasABI publicadas, ARM64 sólo compilada. Investigación1587 siguiente: primer Acromo en Ruta4, tabla358, constructor de movimientos y condiciones propias sin préstamo de la Fragata. Siguen coberturas por juego, formas, evoluciones, textos, iconos, mapas y reducción del tamaño sin pérdida. No hay decisión pendiente del usuario ni paridad global. No iniciar otros Hoards/modelos/Hub.
 
 ## HoardDex tras primer Acromo en Ruta4 — 27-10-2026
 
-Entregado Main332: primerAcromoRuta4 en ambas ediciones BW2US y tresmodos, movimientos generados antesdelajuste, fuentes y referencias con regreso contextual. WebMain y APKx86publicado probados, ambasABI publicadas; ARM64 sólo compilada. Continúan otrosentrenadores yjuegos, guías completas, formas/localizaciones, evoluciones por edición, textos sinfuente, iconos, mapas y reducción de tamaño sinpérdida. No hay decisión pendiente deLuis ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
+Entregado Main332: primerAcromoRuta4 en ambas ediciones BW2US y tresmodos, movimientos generados antesdelajuste, fuentes y referencias con regreso contextual. WebMain y APKx86publicado probados, ambasABI publicadas; ARM64 sólo compilada. Continúan otrosentrenadores yjuegos, guías completas, formas/localizaciones, evoluciones por edición, textos sinfuente, iconos, mapas y reducción de tamaño sinpérdida. No hay decisión pendiente del usuario ni paridadglobal. No iniciar otrosHoards/modelos/Hub.
 
 
 ## Silver: continuar después de parcial67 —27-10-2026, #1372
@@ -2381,7 +2381,7 @@ ayudan al gesto/anatomía, manteniendo DS40, orientación yprimerplanopropios.
 
 ## HoardDex tras los combates directos de Matís — 27-10-2026
 
-Entregado Main334: seis grupos de Matís en BW2 US, tres iniciales y tres modos, con fuentes, movimientos, niveles y fichas enlazadas con regreso contextual. Web y APK x86 publicado probados; ARM64 sólo compilado. Continúa1602: Matís como compañero y dos rivales de Plasma, con reglas propias de niveles y contexto por edición. También continúan otros entrenadores y juegos, guías completas, formas y localizaciones, evoluciones por edición, textos, iconos, mapas y reducción de tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards, modelos o Hub.
+Entregado Main334: seis grupos de Matís en BW2 US, tres iniciales y tres modos, con fuentes, movimientos, niveles y fichas enlazadas con regreso contextual. Web y APK x86 publicado probados; ARM64 sólo compilado. Continúa1602: Matís como compañero y dos rivales de Plasma, con reglas propias de niveles y contexto por edición. También continúan otros entrenadores y juegos, guías completas, formas y localizaciones, evoluciones por edición, textos, iconos, mapas y reducción de tamaño sin pérdida. No hay decisión pendiente del usuario ni paridad global. No iniciar otros Hoards, modelos o Hub.
 
 
 ## Silver: continuar después de parcial68 — 27-10-2026, #1372
@@ -2398,7 +2398,7 @@ Las tres propuestas de material TentacruelS requieren terminar ROOT/peer;
 otros11 materialesS siguen pendientes. CincoDizzy TentN/S, HariyamaN y ShelN/S
 permanecen HOLD, en reparación sin agrandar ojos ni borrar ceja/coraza.
 HariyamaS tiene sólo Normal: las15 expresiones faltantes son un frente distinto.
-Los mugshots DX/3DS de Luis apoyan gesto/anatomía manteniendo DS40, orientación
+Los mugshots DX/3DS del usuario apoyan gesto/anatomía manteniendo DS40, orientación
 y primer plano propios; no se importan ni se infieren licencias.
 
 
@@ -2422,7 +2422,7 @@ levantaron eseHOLD. HariyamaS sólo tiene Normal:faltan15expresiones.
 La guía builtin de Hariyama de ROOT fue rechazada sin imagen producida; sigue
 la edición de píxeles/paletas autorizada, sin activar modelos alternativos.
 Todos estos futuros están excluidos de69 y requieren sus revisiones antes de
-instalar. MugshotsDX/3DS de Luis como apoyo, respetando orientación/primerplano
+instalar. MugshotsDX/3DS del usuario como apoyo, respetando orientación/primerplano
 PMD40 propios; sin importación ni inferencia de licencias.1372 continúa abierta.
 
 
@@ -2438,22 +2438,22 @@ rechazadas siguen excluidas. TentacruelN/S, ShelgonN/S y HariyamaN requieren
 reparación de mareo: autores activos fuera de producto. HariyamaS sóloNormal,
 faltan15 expresiones. Una regeneración builtin deHariyama produjo imagen,
 pero se descartó por gesto cansado en vez de mareado; no se instaló. Los2195
-mugshotsDX/3DS deLuis apoyan anatomía/gesto manteniendo detalle40, orientación
+mugshotsDX/3DS del usuario apoyan anatomía/gesto manteniendo detalle40, orientación
 yprimer plano propios.1372 sigue abierta sin aprobación global.
 
 ## HoardDex tras los combates aliados — 27-10-2026
 
-Entregado Main340/892cace3: cinco encuentros con Matís compañero y dos rivales BW2 US por inicial y modo, fuentes y referencias; selector web largo corregido. Main y APK x86 publicado probados, ambas ABI generadas; ARM64 sin teléfono físico. Continúan Cheren como aliado y su contexto del PWT, demás entrenadores y juegos, guías completas, formas/localizaciones, evoluciones por edición, textos, iconos, mapas y reducción de tamaño sin pérdida. No hay decisión pendiente de Luis ni paridad global. No iniciar otros Hoards/Hub/modelos.
+Entregado Main340/892cace3: cinco encuentros con Matís compañero y dos rivales BW2 US por inicial y modo, fuentes y referencias; selector web largo corregido. Main y APK x86 publicado probados, ambas ABI generadas; ARM64 sin teléfono físico. Continúan Cheren como aliado y su contexto del PWT, demás entrenadores y juegos, guías completas, formas/localizaciones, evoluciones por edición, textos, iconos, mapas y reducción de tamaño sin pérdida. No hay decisión pendiente del usuario ni paridad global. No iniciar otros Hoards/Hub/modelos.
 
 
 ## Silver: continuar después de la parcial 71 — 27-10-2026, tarea 1372
 
-Quedan 802 conjuntos parciales y 45 ausentes, además de la revisión visual de todo el arte anterior. Conservar retratos publicados y caras válidas; corregir componentes individuales o regenerar los insuficientes. La cobertura no demuestra calidad. Tentacruel y Shelgon tienen nuevas propuestas Dizzy normal/shiny revisadas por ROOT; Shelgon tiene también peer independiente favorable y Tentacruel está en revisión independiente. Todavía están fuera del producto. Los 14 materiales shiny de Hariyama están fuera del producto: 12 gestos usables según ROOT; Happy/Inspired anteriores no se seleccionan. Hay cuatro reparaciones Happy/Inspired normal/shiny propuestas por otro autor y en revisión independiente. Dizzy de Hariyama normal/shiny sigue insuficiente y no se selecciona. Hariyama shiny sólo tiene Normal instalado. Las seis gorras regionales de Pikachu normal/shiny están en estudio de referencias, sin expresiones nuevas instaladas. Los 2195 mugshots de Luis apoyan anatomía y gesto, sin importar imágenes ni inferir licencias. Mantener orientación derecha, resolución y primer plano de la referencia. La tarea 1372 continúa abierta, sin aprobación global.
+Quedan 802 conjuntos parciales y 45 ausentes, además de la revisión visual de todo el arte anterior. Conservar retratos publicados y caras válidas; corregir componentes individuales o regenerar los insuficientes. La cobertura no demuestra calidad. Tentacruel y Shelgon tienen nuevas propuestas Dizzy normal/shiny revisadas por ROOT; Shelgon tiene también peer independiente favorable y Tentacruel está en revisión independiente. Todavía están fuera del producto. Los 14 materiales shiny de Hariyama están fuera del producto: 12 gestos usables según ROOT; Happy/Inspired anteriores no se seleccionan. Hay cuatro reparaciones Happy/Inspired normal/shiny propuestas por otro autor y en revisión independiente. Dizzy de Hariyama normal/shiny sigue insuficiente y no se selecciona. Hariyama shiny sólo tiene Normal instalado. Las seis gorras regionales de Pikachu normal/shiny están en estudio de referencias, sin expresiones nuevas instaladas. Los 2195 mugshots del usuario apoyan anatomía y gesto, sin importar imágenes ni inferir licencias. Mantener orientación derecha, resolución y primer plano de la referencia. La tarea 1372 continúa abierta, sin aprobación global.
 
 
 ## Silver: continuar hasta completar los retratos — 27-10-2026, tarea 1372
 
-Quedan 801 conjuntos parciales y 45 ausentes, además de la revisión visual de todo el arte anterior. Conservar retratos publicados y caras válidas; corregir celdas o componentes concretos y regenerar los insuficientes. La cobertura no demuestra calidad. Se mantienen orientación derecha, resolución y primer plano de cada referencia, con fondos y símbolos por emoción. Los 2195 mugshots de Luis apoyan anatomía y gesto; no se han importado ni se infieren licencias.
+Quedan 801 conjuntos parciales y 45 ausentes, además de la revisión visual de todo el arte anterior. Conservar retratos publicados y caras válidas; corregir celdas o componentes concretos y regenerar los insuficientes. La cobertura no demuestra calidad. Se mantienen orientación derecha, resolución y primer plano de cada referencia, con fondos y símbolos por emoción. Los 2195 mugshots del usuario apoyan anatomía y gesto; no se han importado ni se infieren licencias.
 
 Pikachu con gorra de Hoenn tiene 32 selecciones normal/shiny fuera del producto, revisadas independientemente por ROOT: 30 emociones nuevas y dos Normal publicados retenidos. El resto de gorras regionales continúa en preparación con su Normal y materiales propios, sin copiar una cara ajena con otra gorra. Las propuestas locales de cuatro reparaciones Inspired/Shouting de Mega Gyarados, Mega Heracross y Mega Pinsir se han visto completas por ROOT; su verificación técnica final sigue pendiente. Los tres Dizzy de esas megas siguen insuficientes y fuera del producto, también después de ensayar una pose distinta. Mega Gengar se revisó como control, sin nuevo defecto en esas 16 caras. No hay aprobación artística global.
 
@@ -2461,12 +2461,12 @@ Las 45 ausencias se han estudiado por forma y paleta con referencias fijadas; RO
 
 ## HoardDex después de Cheren aliado — 27-10-2026
 
-Cheren aliado ya está entregado en Main344/c2052e85 y ambos APK, con pruebas web y Android emulado. El PWT sigue en investigación: cerrar perfil37/levelMode, participantes y acceso antes de publicar sus equipos. Continúan otros entrenadores y ediciones, guías, formas y localizaciones, evoluciones por edición, textos sin fuente, iconos no identificados y reducción de tamaño sin pérdida. ARM64 físico no disponible; no hay decisión pendiente de Luis ni paridad global. Mantener las tareas padre864/WT864/app1195 y las paradas de otros Hoards, Hub y modelos.
+Cheren aliado ya está entregado en Main344/c2052e85 y ambos APK, con pruebas web y Android emulado. El PWT sigue en investigación: cerrar perfil37/levelMode, participantes y acceso antes de publicar sus equipos. Continúan otros entrenadores y ediciones, guías, formas y localizaciones, evoluciones por edición, textos sin fuente, iconos no identificados y reducción de tamaño sin pérdida. ARM64 físico no disponible; no hay decisión pendiente del usuario ni paridad global. Mantener las tareas padre864/WT864/app1195 y las paradas de otros Hoards, Hub y modelos.
 
 
 ## Silver: continuar hasta completar los retratos — 27-10-2026, tarea 1372
 
-Quedan 789 conjuntos parciales y 45 ausentes, además de la revisión visual del arte anterior. Conservar los retratos publicados y las caras válidas; corregir casillas/componentes o regenerar sólo lo insuficiente. La cobertura no demuestra calidad. Respetar orientación derecha, resolución y primer plano de su referencia, sin bordes vacíos y con fondos/símbolos por emoción. Los 2195 mugshots de Luis son apoyo, sin importación ni licencia inferida.
+Quedan 789 conjuntos parciales y 45 ausentes, además de la revisión visual del arte anterior. Conservar los retratos publicados y las caras válidas; corregir casillas/componentes o regenerar sólo lo insuficiente. La cobertura no demuestra calidad. Respetar orientación derecha, resolución y primer plano de su referencia, sin bordes vacíos y con fondos/símbolos por emoción. Los 2195 mugshots del usuario son apoyo, sin importación ni licencia inferida.
 
 Fuera del producto: Terapagos Terastal tiene 25 expresiones nuevas revisadas independientemente por ROOT y siete retenciones; se han corregido sus fondos, cuatro gestos Pain/Inspired y dos vapores Sigh, conservando 19 cuerpos. El Normal shiny Stellar actual de 132 píxeles reparados también tiene GO acotado. Otros cinco Normal shiny de formas ausentes ya tienen revisión independiente; ninguno se instala por pertenecer al lote73.
 
@@ -2477,35 +2477,35 @@ Las demás ausencias Furfrou, Cramorant con presa, Gmax y máscaras Tera necesit
 
 ## Silver: continuación tras parcial 74 — tarea 1372 abierta
 
-Completar y revisar los 787 conjuntos parciales y 41 ausentes, normales y shiny, además del arte generado anterior. Diamond, La Reine y Pharaoh tienen propuestas fuera del producto, sometidas a revisión por casilla; Estrella inicia su base propia. Mantener orientación derecha, anatomía, detalle nativo, primer plano y fondos/símbolos por emoción. Conservar originales publicados y caras buenas, corregir sólo componentes defectuosos y regenerar los insuficientes. Los 2.195 mugshots de Luis son apoyo, sin importaciones ni licencia inferida. El recuento de cobertura no equivale a aprobación de calidad del catálogo.
+Completar y revisar los 787 conjuntos parciales y 41 ausentes, normales y shiny, además del arte generado anterior. Diamond, La Reine y Pharaoh tienen propuestas fuera del producto, sometidas a revisión por casilla; Estrella inicia su base propia. Mantener orientación derecha, anatomía, detalle nativo, primer plano y fondos/símbolos por emoción. Conservar originales publicados y caras buenas, corregir sólo componentes defectuosos y regenerar los insuficientes. Los 2.195 mugshots del usuario son apoyo, sin importaciones ni licencia inferida. El recuento de cobertura no equivale a aprobación de calidad del catálogo.
 
 ## HoardDex después de las revanchas originales — 27-10-2026
 
-Entregadas las revanchas originales de Cheren y Bel en Main347 y ambos APK. Continúan los demás entrenadores y ediciones, guías y localizaciones enlazadas, formas y evoluciones por edición, textos sin fuente, iconos no identificados y tamaño sin pérdida. PWT requiere regulación, participantes y acceso contrastados antes de publicar sus equipos. ARM64 físico no disponible, sin decisión pendiente de Luis ni paridad global. Cuota1% al cierre: no reclamar nuevos frentes ni autores; conservar padre864/WT864/app1195 y paradas de otras apps/modelos.
+Entregadas las revanchas originales de Cheren y Bel en Main347 y ambos APK. Continúan los demás entrenadores y ediciones, guías y localizaciones enlazadas, formas y evoluciones por edición, textos sin fuente, iconos no identificados y tamaño sin pérdida. PWT requiere regulación, participantes y acceso contrastados antes de publicar sus equipos. ARM64 físico no disponible, sin decisión pendiente del usuario ni paridad global. Cuota1% al cierre: no reclamar nuevos frentes ni autores; conservar padre864/WT864/app1195 y paradas de otras apps/modelos.
 
 
 ## Silver: continuación tras parcial 75 — tarea 1372 abierta
 
-Completar y revisar los 787 conjuntos parciales y 35 ausentes, normales y shiny, y el arte generado anterior. Mantener orientación derecha, detalle nativo, encuadre cercano y fondos y símbolos por emoción. Conservar originales publicados y caras válidas; corregir casillas o componentes concretos y regenerar sólo lo insuficiente. Estrella y los demás pilotos fuera del producto necesitan sus revisiones independientes actuales antes de instalarse; ni autoría ni cobertura equivalen a aprobación artística. Los 2.195 mugshots de Luis son apoyo, sin importaciones ni licencia inferida. Seguir sin cambiar gameplay ni perder funciones.
+Completar y revisar los 787 conjuntos parciales y 35 ausentes, normales y shiny, y el arte generado anterior. Mantener orientación derecha, detalle nativo, encuadre cercano y fondos y símbolos por emoción. Conservar originales publicados y caras válidas; corregir casillas o componentes concretos y regenerar sólo lo insuficiente. Estrella y los demás pilotos fuera del producto necesitan sus revisiones independientes actuales antes de instalarse; ni autoría ni cobertura equivalen a aprobación artística. Los 2.195 mugshots del usuario son apoyo, sin importaciones ni licencia inferida. Seguir sin cambiar gameplay ni perder funciones.
 
 ## HoardDex después de los opcionales originales — 28-10-2026
 
-Cintia y Morimoto originales US entregados en Main349 y ambosAPK. Continúan entrenadores y ediciones, localizaciones enlazadas, formas/evoluciones por edición, textos sin fuente, iconos sin identificar y reducción de APK conservando todos los medios. Investigación1652 encuentra1748duplicados extra y potencial24.6MBcomprimidos, todavía sin modificación ni ahorro. No rebajar resolución, animación o transparencia. PWT requiere regulación/participantes/acceso contrastados. ARM64 físico no disponible, sin decisión pendiente de Luis ni paridad global. Mantener padre864/WT864/app1195 abiertos y paradas de otras apps/modelos.
+Cintia y Morimoto originales US entregados en Main349 y ambosAPK. Continúan entrenadores y ediciones, localizaciones enlazadas, formas/evoluciones por edición, textos sin fuente, iconos sin identificar y reducción de APK conservando todos los medios. Investigación1652 encuentra1748duplicados extra y potencial24.6MBcomprimidos, todavía sin modificación ni ahorro. No rebajar resolución, animación o transparencia. PWT requiere regulación/participantes/acceso contrastados. ARM64 físico no disponible, sin decisión pendiente del usuario ni paridad global. Mantener padre864/WT864/app1195 abiertos y paradas de otras apps/modelos.
 
 ## HoardDex después de reducir el APK sin pérdida — 28-10-2026
 
-Entregada en353 la deduplicación sin pérdida de746 recursos, con23991489bytes de ahorro por ABI y todos los contenidos distintos preservados. El tamaño global continúa abierto; no rebajar resolución, fotogramas, transparencia o uso sin conexión. Continuar con los36equipos automáticos previos de Cheren/Bel originales BW y su constructor propio; no rellenar huecos ni prestar movimientos de BW2. Siguen otros entrenadores/ediciones, PWT sin regulación/participantes/acceso contrastados, localizaciones enlazadas, formas y evoluciones por edición, textos sin fuente e iconos sin identificar. ARM64 físico no disponible; no hay decisión pendiente de Luis ni paridad global. Mantener864/WT864/app1195 abiertos y las paradas de otras apps/modelos.
+Entregada en353 la deduplicación sin pérdida de746 recursos, con23991489bytes de ahorro por ABI y todos los contenidos distintos preservados. El tamaño global continúa abierto; no rebajar resolución, fotogramas, transparencia o uso sin conexión. Continuar con los36equipos automáticos previos de Cheren/Bel originales BW y su constructor propio; no rellenar huecos ni prestar movimientos de BW2. Siguen otros entrenadores/ediciones, PWT sin regulación/participantes/acceso contrastados, localizaciones enlazadas, formas y evoluciones por edición, textos sin fuente e iconos sin identificar. ARM64 físico no disponible; no hay decisión pendiente del usuario ni paridad global. Mantener864/WT864/app1195 abiertos y las paradas de otras apps/modelos.
 
 
 ## Silver: continuación tras parcial 76 — tarea 1372 abierta
 
 Completar y revisar los 784 conjuntos parciales y 30 ausentes, normales y shiny, y la calidad del arte generado histórico. Mantener anatomía, orientación propia válida, detalle nativo, primer plano y fondos y símbolos por emoción. Conservar originales publicados y caras válidas; corregir componentes concretos y regenerar sólo lo insuficiente. Una cara frontal válida conserva su referencia, sin imponer un flip arbitrario.
 
-Las propuestas fuera del producto, incluidos Cramorant Gulping/Gorging, Toxtricity Gigamax y Centiskorch, requieren su recepción final por SHA antes de instalarse. Un peer parcial o la cobertura de dieciséis caras no autoriza un atlas entero ni una aprobación artística global. Los 2.195 mugshots de Luis son apoyo, sin importaciones ni licencia inferida. Seguir sin cambiar gameplay ni perder funciones. Mantener abierta 1372 y sus nueve bloqueos de ROOT; no borrar WT1180 ni históricos. Este cierre común documental no cierra el trabajo artístico ni autoriza nuevos agentes, modelos o push.
+Las propuestas fuera del producto, incluidos Cramorant Gulping/Gorging, Toxtricity Gigamax y Centiskorch, requieren su recepción final por SHA antes de instalarse. Un peer parcial o la cobertura de dieciséis caras no autoriza un atlas entero ni una aprobación artística global. Los 2.195 mugshots del usuario son apoyo, sin importaciones ni licencia inferida. Seguir sin cambiar gameplay ni perder funciones. Mantener abierta 1372 y sus nueve bloqueos de ROOT; no borrar WT1180 ni históricos. Este cierre común documental no cierra el trabajo artístico ni autoriza nuevos agentes, modelos o push.
 
 ## Silver: continuación tras parcial 77 — tarea 1372 abierta
 
-Completar y revisar los 784 conjuntos parciales y 26 ausentes, normales y shiny, y la calidad del arte generado histórico. Mantener anatomía, orientación válida de su referencia, detalle nativo, primer plano y fondos y símbolos por emoción. Conservar originales publicados y caras válidas; corregir componentes concretos y regenerar sólo lo insuficiente. Una referencia frontal válida no impone un flip arbitrario. Los 2.195 mugshots de Luis son apoyo, sin importaciones ni licencia inferida. La cobertura o un peer parcial no equivalen a aprobación artística global.
+Completar y revisar los 784 conjuntos parciales y 26 ausentes, normales y shiny, y la calidad del arte generado histórico. Mantener anatomía, orientación válida de su referencia, detalle nativo, primer plano y fondos y símbolos por emoción. Conservar originales publicados y caras válidas; corregir componentes concretos y regenerar sólo lo insuficiente. Una referencia frontal válida no impone un flip arbitrario. Los 2.195 mugshots del usuario son apoyo, sin importaciones ni licencia inferida. La cobertura o un peer parcial no equivalen a aprobación artística global.
 
 Cramorant Gulping/Gorging N/S ya están instalados en Main77; Toxtricity Gigamax y Centiskorch siguen fuera del producto. Tox tiene caras con peer acotado, pero todavía no dispone de selección N16/S15 completa: Determined e Inspired actuales son sólo propuestas autorales pendientes de peer ROOT. Centiskorch Shouting tiene tres HOLD y continúa la investigación de referencia vocal. No atribuir esas propuestas al catálogo instalado ni a cambios Main. Mantener gameplay y todas las funciones, revisar por SHA antes de instalar y reexportar HTML anteriores.
 
@@ -2517,7 +2517,7 @@ Tras Main355 quedan otros30 equipos automáticos originales de Cheren y Bel, PWT
 
 ## Silver: continuación tras parcial 78 — tarea 1372 abierta
 
-Completar y revisar los 784 conjuntos parciales y 22 ausentes, normales y shiny, y la calidad del arte generado histórico. Mantener anatomía, orientación válida de la referencia propia, detalle nativo, primer plano, materiales regionales y fondos/símbolos por emoción. Conservar originales publicados y caras válidas, corregir componentes concretos y regenerar sólo lo insuficiente. Una referencia frontal válida no impone un flip arbitrario. Los 2.195 mugshots de Luis son apoyo; no se importan ni se infiere su licencia. Cobertura y peers acotados no equivalen a aprobación artística global.
+Completar y revisar los 784 conjuntos parciales y 22 ausentes, normales y shiny, y la calidad del arte generado histórico. Mantener anatomía, orientación válida de la referencia propia, detalle nativo, primer plano, materiales regionales y fondos/símbolos por emoción. Conservar originales publicados y caras válidas, corregir componentes concretos y regenerar sólo lo insuficiente. Una referencia frontal válida no impone un flip arbitrario. Los 2.195 mugshots del usuario son apoyo; no se importan ni se infiere su licencia. Cobertura y peers acotados no equivalen a aprobación artística global.
 
 Toxtricity Gigamax N/S ya completa dieciséis caras y está instalada en Main78, con 32 PNG físicos y 64 mapeos que incluyen la equivalencia Low Key existente. Queda superada la nota histórica77 de Tox fuera del producto/sin selección completa. La recepción78 sólo acredita esos dos registros y cuatro coberturas. Otras propuestas OUT, incluido Hatterene Gigamax Dizzy closer con HOLD por gesto/hocico deformado y lectura ocular insuficiente, necesitan su selección y revisión independientes antes de instalar. No convertir propuestas o guías rechazadas en caras aceptadas ni atribuirlas a Main.
 

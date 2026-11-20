@@ -42,17 +42,17 @@ def _ops(store=None, **kw):
 
 def test_facts_create_edit_delete_are_journaled_and_bookkeeping_is_not(data):
     mgr = memmod.MemoryManager(str(data))
-    entry = mgr.add_entry("Luis vive en Madrid", owner=OWNER)
+    entry = mgr.add_entry("ExampleUser vive en Madrid", owner=OWNER)
     mgr.save([entry])
     entries = mgr.load_all_for_update()
     entries[0]["uses"] = 3                       # bookkeeping, not a change
     mgr.save(entries)
-    entries[0]["text"] = "Luis vive en Valencia"
+    entries[0]["text"] = "ExampleUser vive en Valencia"
     mgr.save(entries)
     mgr.save([])
     assert _ops("facts") == [("facts", "delete"), ("facts", "edit"), ("facts", "create")]
     edit = mj.list_changes(OWNER, store="facts")[1]
-    assert edit["label"] == "Luis vive en Valencia" and edit["before_label"] == "Luis vive en Madrid"
+    assert edit["label"] == "ExampleUser vive en Valencia" and edit["before_label"] == "ExampleUser vive en Madrid"
 
 
 def test_facts_undo_in_reverse_order_restores_the_original(data):

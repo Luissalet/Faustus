@@ -76,7 +76,7 @@ def resolver(monkeypatch):
 
 @pytest.fixture
 def session():
-    return CouncilSession.parse({"id": "council_test", "owner": "luis",
+    return CouncilSession.parse({"id": "council_test", "owner": "example-user",
                                  "policy": "collaborate", "project_id": "proj"})
 
 
@@ -107,7 +107,7 @@ def test_the_same_reduction_happens_through_resolve_participants(session, resolv
     spec = cp.ParticipantSpec(display_name="Claude", model="claude-4",
                               roles=("critic",), tool_profile="full_with_gates")
 
-    seated = cp.resolve_participants([spec], session=session, owner="luis")
+    seated = cp.resolve_participants([spec], session=session, owner="example-user")
 
     assert len(seated) == 1
     assert seated[0].participant.id == "p_claude"
@@ -180,7 +180,7 @@ def test_a_resolution_that_grants_nothing_leaves_the_seat_read_only(session, res
     spec = cp.ParticipantSpec(display_name="Codex", agent_slug="builder",
                               roles=("driver",), tool_profile="scoped_write")
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis")[0]
+    seat = cp.resolve_participants([spec], session=session, owner="example-user")[0]
 
     assert seat.participant.tool_profile == "read_only"
     assert cp.can_participant_write(seat) is False
@@ -197,7 +197,7 @@ def test_an_envelope_with_no_work_root_cannot_hold_a_writing_profile(session, re
     spec = cp.ParticipantSpec(display_name="Codex", agent_slug="builder",
                               roles=("driver",), tool_profile="scoped_write")
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis")[0]
+    seat = cp.resolve_participants([spec], session=session, owner="example-user")[0]
 
     assert seat.participant.tool_profile == "review"
     assert any("grants no work root" in line for line in seat.caveats)
@@ -214,7 +214,7 @@ def test_a_resolver_that_is_unavailable_degrades_and_does_not_raise(session, mon
     spec = cp.ParticipantSpec(display_name="Codex", agent_slug="builder", model="qwen3-coder",
                               roles=("driver",), tool_profile="scoped_write")
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis")[0]
+    seat = cp.resolve_participants([spec], session=session, owner="example-user")[0]
 
     assert seat.resolution is None
     # A profile was asked for and never arrived, so the seat is read-only and
@@ -236,7 +236,7 @@ def test_a_quarantined_model_is_not_seated_automatically(session, resolver):
         model_route=FakeRoute(model="glm-4.6"))
     spec = cp.ParticipantSpec(display_name="Glm", agent_slug="builder", roles=("driver",))
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis",
+    seat = cp.resolve_participants([spec], session=session, owner="example-user",
                                    quarantined=("glm-4.6",))[0]
 
     assert seat.participant.status == "quarantined"
@@ -250,7 +250,7 @@ def test_a_quarantined_model_the_user_named_is_seated_with_a_caveat(session, res
     choice from them is not safety."""
     spec = cp.ParticipantSpec(display_name="Glm", model="glm-4.6", roles=("critic",))
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis",
+    seat = cp.resolve_participants([spec], session=session, owner="example-user",
                                    quarantined=("glm-4.6",))[0]
 
     assert seat.participant.status == "available"
@@ -262,7 +262,7 @@ def test_a_quarantined_model_the_user_named_is_seated_with_a_caveat(session, res
 def test_an_unhealthy_model_is_marked_and_still_seated(session):
     spec = cp.ParticipantSpec(display_name="Codex", model="qwen3-coder", roles=("driver",))
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis",
+    seat = cp.resolve_participants([spec], session=session, owner="example-user",
                                    unhealthy=("qwen3-coder",))[0]
 
     assert seat.participant.status == "unhealthy"
@@ -272,7 +272,7 @@ def test_an_unhealthy_model_is_marked_and_still_seated(session):
 def test_a_model_the_caller_never_observed_is_named_in_a_caveat(session):
     spec = cp.ParticipantSpec(display_name="Codex", model="qwen3-coder", roles=("critic",))
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis",
+    seat = cp.resolve_participants([spec], session=session, owner="example-user",
                                    available_models=("claude-4", "gpt-5"))[0]
 
     assert any("was not among the 2 model(s)" in line for line in seat.caveats)
@@ -286,7 +286,7 @@ def test_without_an_agent_slug_a_participant_is_only_a_model(session):
     for a reader to interpret as a failure."""
     spec = cp.ParticipantSpec(display_name="Claude", model="claude-4", roles=("critic",))
 
-    seat = cp.resolve_participants([spec], session=session, owner="luis")[0]
+    seat = cp.resolve_participants([spec], session=session, owner="example-user")[0]
     row = cp.describe(seat)
 
     assert seat.resolution is None
@@ -338,7 +338,7 @@ def test_check_role_conflicts_reads_resolved_participants_too(session):
     seated = cp.resolve_participants(
         [cp.ParticipantSpec(display_name="Codex", model="m", roles=("driver", "judge")),
          cp.ParticipantSpec(display_name="Claude", model="m2", roles=("critic",))],
-        session=session, owner="luis")
+        session=session, owner="example-user")
 
     problems = cp.check_role_conflicts(seated)
 

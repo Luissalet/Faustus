@@ -45,6 +45,6 @@ look-ups, a separate Hoard.
 
 - `list_meetings` / `GET /api/commissions/meetings`: recent Faustus meetings of the owner.
 - `import_meeting {id, meeting_id | text, source?, date?}` / `POST /api/commissions/{id}/import_meeting`: each statement is sorted into `decision`, `promise`, `requirement`, `proposal` or `question`, with speaker, timestamp (`[hh:mm:ss] Name: text`) and line. Conditional wording (podríamos, se podría, quizá, could, maybe, what if) is always a proposal. Stored as `meetings[]` (R1, R2…); nothing enters the scope.
-- `promote_meeting_item {id, meeting, n, as: decision|requirement|milestone, force?}`: a decision keeps its speaker; a requirement becomes a change version (current text plus the statement, compared with the agreement); a promise can become a milestone. The origin (`R1#4 Luis 00:04:02 · source`) is kept. Proposals and questions answer `office.not_firm` unless `force`.
+- `promote_meeting_item {id, meeting, n, as: decision|requirement|milestone, force?}`: a decision keeps its speaker; a requirement becomes a change version (current text plus the statement, compared with the agreement); a promise can become a milestone. The origin (`R1#4 the user 00:04:02 · source`) is kept. Proposals and questions answer `office.not_firm` unless `force`.
 - Status adds `meeting_items_pending` and `meeting_open_questions`.
 - Studio: Delivery → Commissions → **Meetings**.
