@@ -5,7 +5,7 @@ version: 1.0.0
 category: writing
 tags: [studio, writer, report, docx, markdown, sources, citations, export, informe, documento, fuentes, exportar]
 apps: [writer]
-accepts: [research-dossier, production-brief]
+accepts: [research-dossier, production-brief, data-table]
 produces: [editable-report]
 status: published
 source: imported
@@ -28,6 +28,8 @@ The report station of a presentation order, after the brief (`studio-drucker-eng
 6. **Export.** `wh_document_export_bytes {sessionId, format:"docx", fileName}` and again with `format:"md"`; decode the base64 field of each reply to a file.
 7. **Close** with `wh_document_close {sessionId}` in a `finally`, even when a step failed.
 8. **Reopen** the DOCX headless (`soffice --headless --convert-to pdf`), render its pages to PNG and look at them; count table rows and hyperlinks in `word/document.xml`.
+
+A table from the data station (`studio-nightingale-data-handoff`) goes into a chapter without retyping it: `wh_import_evidence {projectId, nightingale:{chart_id}}` files it as a source with one quoted claim per row and the table kept on the source; `wh_edit_writing_editorial {id, operation:{kind:"insertDataTable", sourceId}}` inserts it with its citation (undo takes it out).
 
 ## Pitfalls
 
