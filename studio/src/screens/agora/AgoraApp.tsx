@@ -1,9 +1,9 @@
 import {
-  Activity, Archive, ArrowDown, ArrowUp, BookOpen, Check, ExternalLink, GitPullRequest, Hash, Inbox, Kanban, Lock, MessagesSquare, PackageCheck, PanelLeft,
+  Activity, Archive, ArrowDown, ArrowUp, BookOpen, Check, ExternalLink, GitPullRequest, Hash, Inbox, Kanban, ListChecks, Lock, MessagesSquare, PackageCheck, PanelLeft,
   Pencil, Pin, RefreshCw, Scale, Search, Settings2, SquarePen, Users, Volume2, X, type LucideIcon,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
   getGuild, getServers, markSpaceSeen, pulse, reorderChannels, setSpaceMeta, updateChannel,
   type AgoraGuild, type AgoraServer,
@@ -318,6 +318,9 @@ export function AgoraApp({ lockedSpace, project, embedded = false }: { lockedSpa
             <input name="q" placeholder={channel && searchScoped ? t('Search in this channel') : t('Search')} aria-label={t('Search the Agora')} data-testid="agora-search-box" />
           </form>
           <IconButton size="sm" icon={RefreshCw} label={t('Refresh')} onClick={refresh} />
+          <Link className="fs-chip" to={'/agora?space_id=' + encodeURIComponent(spaceId) + '&mode=development'}>
+            <ListChecks size={15} aria-hidden="true" /> {t('Development')}
+          </Link>
           <a className="fs-agx-main__hub" href={'/api/hoard/agora/open?space_id=' + encodeURIComponent(spaceId)} target="_blank" rel="noopener" title={t('Open this server in the hub console')}>
             <ExternalLink size={15} aria-hidden="true" /><span className="fs-sr-only">{t('Open in the hub')}</span></a>
           <IconButton size="sm" icon={Users} label={membersOpen ? t('Hide members') : t('Show members')}

@@ -30,6 +30,7 @@ _VERSION_GATE_EXEMPT_PATHS = frozenset({"/api/version", "/api/health"})
 # same value from this module. Never persisted or exposed externally.
 INTERNAL_TOOL_TOKEN = os.environ.get("ODYSSEUS_INTERNAL_TOKEN") or secrets.token_hex(32)
 INTERNAL_TOOL_HEADER = "X-Odysseus-Internal-Token"
+AGORA_DEVELOPMENT_PANEL = "/api/hoard/agora/panel/"
 
 
 def get_application_route_path(scope: Mapping[str, object]) -> str:
@@ -244,7 +245,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "frame-ancestors 'self'"
             )
         else:
-            response.headers["X-Frame-Options"] = "DENY"
+            same_origin_frame = route_path == AGORA_DEVELOPMENT_PANEL
+            response.headers["X-Frame-Options"] = "SAMEORIGIN" if same_origin_frame else "DENY"
+            frame_ancestors = "'self'" if same_origin_frame else "'none'"
             # App Dock: Studio frames the family's Hoards, which listen on loopback ports (the Hub says which;
             # a Hub on another host adds that host). Nothing else is framed.
             frame_sources = "'self' http://127.0.0.1:* http://localhost:*"
@@ -291,7 +294,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "media-src 'self' blob:; "
                 "connect-src 'self'; "
                 f"frame-src {frame_sources}; "
-                "frame-ancestors 'none'"
+                f"frame-ancestors {frame_ancestors}"
             )
         return await _with_error_class(response)
 

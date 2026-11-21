@@ -37,10 +37,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
-from core.middleware import is_agent_channel, require_admin
+from core.middleware import get_application_route_path, is_agent_channel, require_admin
 from src import hub_link
+from src.owner_identity import auth_disabled
 
 PERSON_SURFACE = "faustus-studio"
+_DEVELOPMENT_WRITE = "/api/agora/development/"
 _PERSON_DECISIONS = {"production_decide", "gate_decide", "draft_decide"}
 _DECISION_ASSETS = {"production_decisions_card.js": "text/javascript", "production_decisions_card.css": "text/css"}
 _PATH = re.compile(r"^[a-z0-9_][a-z0-9_/\-]{0,120}$")
@@ -58,6 +60,28 @@ _no_icon: set = set()
 
 def is_production_choice(operation: str) -> bool:
     return operation.rstrip("/") in _PERSON_DECISIONS
+
+
+def _is_studio_person_request(request: Request) -> bool:
+    if (is_agent_channel(request) or request.headers.get("Authorization")
+            or request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}):
+        return False
+    origin = request.headers.get("Origin")
+    return origin is None or origin == f"{request.url.scheme}://{request.url.netloc}"
+
+
+def studio_panel_can_write(request: Request) -> bool:
+    """Use the local person when sign-in is disabled, otherwise require a Studio admin session."""
+    if auth_disabled():
+        return True
+
+    from routes.auth_routes import SESSION_COOKIE
+
+    manager = getattr(request.app.state, "auth_manager", None)
+    if not manager or not manager.is_configured:
+        return False
+    user = manager.get_username_for_token(request.cookies.get(SESSION_COOKIE))
+    return bool(user and manager.is_admin(user))
 
 
 def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = None, body: Optional[dict] = None,
@@ -158,7 +182,7 @@ def _answer(status: Optional[int], payload: Any) -> JSONResponse:
     return JSONResponse(payload)
 
 
-def _browser_hub(request: Request) -> str | None:
+def browser_hub(request: Request) -> str | None:
     where = hub_link.location()
     try:
         target = urllib.parse.urlsplit(where["url"])
@@ -326,16 +350,19 @@ def setup_agora_routes() -> APIRouter:
         query = {k: v for k, v in request.query_params.items()}
         status, payload, _ = await asyncio.to_thread(hub_request, "GET", "/api/agora/" + path, query=query)
         if path == "pending_decisions" and isinstance(payload, dict) and payload.get("ok"):
-            payload = {**payload, "order_base": _browser_hub(request)}
+            payload = {**payload, "order_base": browser_hub(request)}
         return _answer(status, payload)
 
+    @router.post(_DEVELOPMENT_WRITE + "{path:path}")
     @router.post("/api/agora/x/{path:path}")
     async def write(path: str, request: Request):
         require_admin(request)
-        if is_production_choice(path) and (
-                is_agent_channel(request) or request.headers.get("Authorization")
-                or request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}):
-            return JSONResponse({"ok": False, "error": "Only the person decides a production gate"}, status_code=403)
+        development = get_application_route_path(request.scope).startswith(_DEVELOPMENT_WRITE)
+        if (development or is_production_choice(path)) and not _is_studio_person_request(request):
+            return JSONResponse({"ok": False, "code": "studio_person_required",
+                                 "error": "This action must come from the person's Studio page"}, status_code=403)
+        if development and not studio_panel_can_write(request):
+            return JSONResponse({"ok": False, "code": "studio_session_required"}, status_code=403)
         if not _PATH.match(path):
             return JSONResponse({"ok": False, "error": "unknown Agora operation"}, status_code=404)
         try:
