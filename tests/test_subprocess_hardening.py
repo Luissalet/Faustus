@@ -25,7 +25,7 @@ def test_foreground_server_launch_detection():
         "streamlit run app.py", "python manage.py runserver",
         "python app.py",
         "python app.py > server.log 2>&1",
-        'cd "C:\\\\Users\\\\example-user\\\\Desktop\\\\Proyectos independientes\\\\Silhouettes" && python app.py',
+        'cd "C:\\workspace\\\\Desktop\\\\Proyectos independientes\\\\Silhouettes" && python app.py',
         "python -m flask run",
         r".venv\Scripts\python.exe app.py",
         "py -3 app.py",

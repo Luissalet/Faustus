@@ -145,12 +145,12 @@ responde 404).
 ```jsonc
 {
   "repos": [{
-    "id": "a1b2c3d4e5f6", "path": "/home/example-user/code/faustus", "name": "faustus",
+    "id": "a1b2c3d4e5f6", "path": "/workspace/faustus", "name": "faustus",
     "project_id": "p1", "project_name": "Faustus",
     // uno por cada proyecto que enlaza esta misma ruta real -- normalmente
     // uno solo; project_id/project_name arriba son siempre projects[0].
     "projects": [{"id": "p1", "name": "Faustus"}],
-    "root_folder": "/home/example-user/code/faustus",
+    "root_folder": "/workspace/faustus",
     "parent_repo_id": null,
     "branch": "master", "detached": false, "head_sha": "abc123...",
     "upstream": "origin/master", "ahead": 0, "behind": 2,
@@ -158,7 +158,7 @@ responde 404).
     "conflicts": 0,          // entradas sin fusionar (subconjunto de dirty)
     "watched": false,        // true si sólo lo encontró una carpeta vigilada (radar)
     // Los 4 campos siguientes -- ausentes con `?light=1` (ver Rendimiento arriba):
-    "user": {"name": "the user", "email": "user@example.com"},
+    "user": {"name": "the user", "email": "<email>"},
     "remotes": [{"name": "origin", "fetch_url": "git@github.com:...", "push_url": "git@github.com:..."}],
     "identity": {"id": "sshcfg:...", "label": "sample-maintainer", "github_login": "sample-maintainer"},
     "policy": {"effective": {"...": "..."}, "overridden": false}
@@ -195,7 +195,7 @@ y el botón Rescan esperan.
   "attention_count": 1,
   "counts": {"conflicts": 0, "uncommitted": 1, "unpushed": 1, "no_upstream": 0, "local_only": 0, "behind": 0, "detached": 0},
   "total": 24,
-  "watch_roots": ["C:\\Users\\example-user\\Proyectos"],
+  "watch_roots": ["C:\\workspace\\projects"],
   "git_version": "2.43.0", "scanned_at": 1758701234.5, "stale": false,
   "summary": "1 of 24 repositories need attention: faustus (master): 4 uncommitted, 2 unpushed"
 }
@@ -271,7 +271,7 @@ actual, o `null` cuando no hay más. `ref=all` recorre `--all`; por defecto,
   "commits": [{
     "sha": "abc123...", "short": "abc123",
     "parents": ["def456..."],
-    "author": "el usuario", "email": "user@example.com", "date": "2026-09-10T12:00:00Z",
+    "author": "el usuario", "email": "<email>", "date": "2026-09-10T12:00:00Z",
     "message": "Fix the thing", "body": "Longer explanation.\n",
     "refs": ["HEAD -> master", "origin/master", "tag: v1"]
   }],
@@ -443,7 +443,7 @@ source: "ssh_config"|"manual"|"gh"}`.
 
 ```
 GET  /api/git/identities
-     → {"identities": [...], "ssh_config_path": "/home/example-user/.ssh/config", "ssh_dir": "/home/example-user/.ssh"}
+     → {"identities": [...], "ssh_config_path": "/workspace/profile/.ssh/config", "ssh_dir": "/workspace/profile/.ssh"}
 
 POST /api/git/identities
      {"label", "ssh_host"?, "hostname"="github.com", "identity_file",

@@ -12,11 +12,11 @@ from src import recipe_learning as rl
 from src import recipes
 
 OWNER = "alice"
-REQUEST = ('Convert "Q3 report.docx" and C:\\Users\\example-user\\docs\\q3.csv to PDF for customer ACME-42, '
+REQUEST = ('Convert "Q3 report.docx" and C:\\workspace\\docs\\q3.csv to PDF for customer ACME-42, '
            'keep the top 15 rows')
 STEPS = [
-    {"tool": "read_file", "args": {"path": "C:\\Users\\example-user\\docs\\q3.csv"}},
-    {"tool": "bash", "args": {"content": "head -n 15 C:\\Users\\example-user\\docs\\q3.csv > /tmp/out.csv; echo ACME-42"}},
+    {"tool": "read_file", "args": {"path": "C:\\workspace\\docs\\q3.csv"}},
+    {"tool": "bash", "args": {"content": "head -n 15 C:\\workspace\\docs\\q3.csv > /tmp/out.csv; echo ACME-42"}},
     {"tool": "write_file", "args": {"path": "/tmp/Q3 report.docx", "limit": 15, "mode": "w"}},
 ]
 CASE2 = {"file": "Annual plan.docx", "path": "D:\\data\\plan.csv", "id": "BETA-7", "number": 40}
@@ -97,7 +97,7 @@ def test_second_case_without_leaks_is_promotable_and_promotion_reaches_the_skill
 def test_a_leaked_literal_blocks_promotion():
     steps = [dict(s) for s in STEPS]
     # the customer id appears inside a value the request never spelled that way, so it stays literal
-    steps[1] = {"tool": "bash", "args": {"content": "head -n 15 C:\\Users\\example-user\\docs\\q3.csv > /tmp/out.csv; echo ACME-42"}}
+    steps[1] = {"tool": "bash", "args": {"content": "head -n 15 C:\\workspace\\docs\\q3.csv > /tmp/out.csv; echo ACME-42"}}
     steps.append({"tool": "write_file", "args": {"path": "/tmp/notes.txt", "content": "for acme-42 / Q3 report.docx"}})
     r = rl.propose(OWNER, request=REQUEST, steps=steps)
     # force a leak: a hand-edited template that kept the first case's file name
@@ -114,7 +114,7 @@ def test_a_leaked_literal_blocks_promotion():
 
 
 def test_missing_parameter_and_unknown_tool_leave_steps_unresolved():
-    steps = [{"tool": "no_such_tool_anywhere", "args": {"path": "C:\\Users\\example-user\\docs\\q3.csv"}}]
+    steps = [{"tool": "no_such_tool_anywhere", "args": {"path": "C:\\workspace\\docs\\q3.csv"}}]
     r = rl.propose(OWNER, request=REQUEST, steps=steps)
     out = rl.try_recipe(r.id, OWNER, {})
     assert out["promotable"] is False and out["problems"] == ["missing parameter `path`"]

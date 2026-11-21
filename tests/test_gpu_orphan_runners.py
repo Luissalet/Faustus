@@ -18,8 +18,8 @@ from src import gpu_shared_memory as gsm
 
 GIB = 1024 ** 3
 UUID1 = "GPU-15d17fee-8c0c-4be3-be46-35fb3e32f2aa"
-RUNNER = r"C:\Users\example-user\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe"
-BLOB = r"D:\LocalAI\ollama-models\blobs\sha256-dec52a6a7a3fdd3e5e8b4c9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b"
+RUNNER = r"C:\workspace\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe"
+BLOB = r"D:\workspace\ollama-models\blobs\sha256-dec52a6a7a3fdd3e5e8b4c9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b"
 GPUS = [
     {"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti", "uuid": "GPU-5ab72dd9-1a45-c3af-5e12-ac7796b1def7",
      "bus_id": "00000000:01:00.0", "mem_used": 1386},
