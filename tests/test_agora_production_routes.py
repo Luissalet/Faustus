@@ -44,20 +44,26 @@ def test_only_piece_images_are_proxied(studio, monkeypatch):
 
 
 @pytest.mark.parametrize("operation", ["gate_decide", "draft_decide", "draft_decide/", "production_decide"])
-def test_studio_refuses_agent_channel_before_contacting_hub(studio, monkeypatch, operation):
+def test_studio_refuses_non_person_decisions_before_contacting_hub(studio, monkeypatch, operation):
     def unexpected(*args, **kwargs):
         pytest.fail("The decision must be refused before reaching the Hub")
 
     monkeypatch.setattr(agora_routes, "hub_request", unexpected)
-    result = studio.post("/api/agora/x/" + operation, headers={INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN}, json={})
-    assert result.status_code == 403
-    result = studio.post("/api/agora/x/" + operation, headers={"Authorization": "Bearer fixture"}, json={})
-    assert result.status_code == 403
+    for headers in (
+        {INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN},
+        {"Authorization": "Bearer fixture"},
+        {"Origin": "http://another.example"},
+        {"Sec-Fetch-Site": "same-site"},
+        {"Sec-Fetch-Site": "cross-site"},
+    ):
+        result = studio.post("/api/agora/x/" + operation, headers=headers, json={})
+        assert result.status_code == 403
+        assert result.json()["code"] == "studio_person_required"
 
 
 @pytest.mark.parametrize(("auth_enabled", "signed_in", "state", "url", "remote", "order_base"), [
-    ("false", False, "disabled", "http://127.0.0.1:8958", True, ""),
-    ("false", False, "disabled", "http://127.0.0.1:8958", False, ""),
+    ("false", False, "yes", "http://127.0.0.1:8958", True, ""),
+    ("false", False, "yes", "http://127.0.0.1:8958", False, ""),
     ("true", False, "no", "http://testserver:8958", False, "http://testserver:8958"),
     ("true", True, "yes", "http://testserver:8958", False, "http://testserver:8958"),
 ])
@@ -120,7 +126,8 @@ def test_development_panel_can_explain_a_hub_outage(studio, monkeypatch, lang, m
 
 
 @pytest.mark.parametrize("operation", ["console/message", "production_decide"])
-def test_development_writes_require_a_current_studio_admin_session(studio, monkeypatch, operation):
+@pytest.mark.parametrize("auth_enabled", ["false", "true"])
+def test_development_writes_use_the_person_and_respect_sign_in(studio, monkeypatch, operation, auth_enabled):
     forwarded = []
 
     def post(method, path, **options):
@@ -140,22 +147,27 @@ def test_development_writes_require_a_current_studio_admin_session(studio, monke
         request.state.current_user = "fixture-admin"
         return await call_next(request)
 
-    assert studio.post(path, json={}).status_code == 403
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-    assert studio.post(path, json={}).status_code == 403
-    studio.cookies.set(SESSION_COOKIE, "expired")
-    assert studio.post(path, json={}).status_code == 403
-    studio.cookies.set(SESSION_COOKIE, "valid-session")
+    monkeypatch.setenv("AUTH_ENABLED", auth_enabled)
+    if auth_enabled == "true":
+        result = studio.post(path, json={})
+        assert result.status_code == 403 and result.json()["code"] == "studio_session_required"
+        studio.cookies.set(SESSION_COOKIE, "expired")
+        result = studio.post(path, json={})
+        assert result.status_code == 403 and result.json()["code"] == "studio_session_required"
+        studio.cookies.set(SESSION_COOKIE, "valid-session")
     for headers in (
         {"Origin": "http://another.example"},
+        {"Origin": "null"},
         {"Sec-Fetch-Site": "same-site"},
+        {"Sec-Fetch-Site": "cross-site"},
         {"Authorization": "Bearer fixture"},
         {INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN},
     ):
-        assert studio.post(path, headers=headers, json={}).status_code == 403
+        result = studio.post(path, headers=headers, json={})
+        assert result.status_code == 403 and result.json()["code"] == "studio_person_required"
     assert not forwarded
     body = {"space_id": "test-room"}
-    assert studio.post(path, headers={"Origin": "http://testserver"},
+    assert studio.post(path, headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
                        json={**body, "_person": True}).json() == {"ok": True}
     assert forwarded == [("POST", "/api/agora/" + operation, body)]
 

@@ -62,12 +62,21 @@ def is_production_choice(operation: str) -> bool:
     return operation.rstrip("/") in _PERSON_DECISIONS
 
 
+def _is_studio_person_request(request: Request) -> bool:
+    if (is_agent_channel(request) or request.headers.get("Authorization")
+            or request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}):
+        return False
+    origin = request.headers.get("Origin")
+    return origin is None or origin == f"{request.url.scheme}://{request.url.netloc}"
+
+
 def studio_panel_can_write(request: Request) -> bool:
-    """An actual Studio admin session is required, including on private networks."""
+    """Use the local person when sign-in is disabled, otherwise require a Studio admin session."""
+    if auth_disabled():
+        return True
+
     from routes.auth_routes import SESSION_COOKIE
 
-    if auth_disabled() or is_agent_channel(request) or request.headers.get("Authorization"):
-        return False
     manager = getattr(request.app.state, "auth_manager", None)
     if not manager or not manager.is_configured:
         return False
@@ -348,17 +357,12 @@ def setup_agora_routes() -> APIRouter:
     @router.post("/api/agora/x/{path:path}")
     async def write(path: str, request: Request):
         require_admin(request)
-        if get_application_route_path(request.scope).startswith(_DEVELOPMENT_WRITE):
-            if not studio_panel_can_write(request):
-                return JSONResponse({"ok": False, "code": "studio_session_required"}, status_code=403)
-            origin = request.headers.get("Origin")
-            if (request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}
-                    or (origin and origin != f"{request.url.scheme}://{request.url.netloc}")):
-                return JSONResponse({"ok": False, "code": "studio_session_required"}, status_code=403)
-        if is_production_choice(path) and (
-                is_agent_channel(request) or request.headers.get("Authorization")
-                or request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}):
-            return JSONResponse({"ok": False, "error": "Only the person decides a production gate"}, status_code=403)
+        development = get_application_route_path(request.scope).startswith(_DEVELOPMENT_WRITE)
+        if (development or is_production_choice(path)) and not _is_studio_person_request(request):
+            return JSONResponse({"ok": False, "code": "studio_person_required",
+                                 "error": "This action must come from the person's Studio page"}, status_code=403)
+        if development and not studio_panel_can_write(request):
+            return JSONResponse({"ok": False, "code": "studio_session_required"}, status_code=403)
         if not _PATH.match(path):
             return JSONResponse({"ok": False, "error": "unknown Agora operation"}, status_code=404)
         try:

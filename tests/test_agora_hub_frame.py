@@ -4,7 +4,22 @@ from core.middleware import SecurityHeadersMiddleware
 import pytest
 
 
-def test_agora_can_embed_the_configured_hub_only(monkeypatch):
+DOCK_FRAME_SOURCES = {"'self'", "http://127.0.0.1:*", "http://localhost:*"}
+
+
+@pytest.fixture(autouse=True)
+def no_external_dock_origins(monkeypatch):
+    from src import app_dock
+
+    monkeypatch.setattr(app_dock, "framable_origins", lambda: ())
+
+
+def frame_sources(csp):
+    directive = next(part for part in csp.split(";") if part.strip().startswith("frame-src "))
+    return set(directive.split()[1:])
+
+
+def test_agora_includes_the_configured_hub_origin(monkeypatch):
     from src import hoard_hub
     monkeypatch.setattr(hoard_hub, 'hub_location', lambda: {'url': 'http://127.0.0.1:8810/prefix?x=y'})
     app = FastAPI()
@@ -17,12 +32,12 @@ def test_agora_can_embed_the_configured_hub_only(monkeypatch):
     client = TestClient(app)
     for path in ('/agora', '/agora/'):
         csp = client.get(path).headers['content-security-policy']
-        assert "frame-src 'self' http://127.0.0.1:8810;" in csp
+        assert frame_sources(csp) == DOCK_FRAME_SOURCES | {"http://127.0.0.1:8810"}
         assert "connect-src 'self';" in csp
         assert "frame-ancestors 'none'" in csp
         assert 'prefix' not in csp and 'x=y' not in csp
-    assert "frame-src 'self';" in client.get('/studio').headers['content-security-policy']
-    assert "frame-src 'self';" in client.get('/api/health').headers['content-security-policy']
+    for path in ("/studio", "/api/health"):
+        assert frame_sources(client.get(path).headers["content-security-policy"]) == DOCK_FRAME_SOURCES
 
 
 def test_agora_frame_follows_configured_https_origin(monkeypatch):
@@ -36,7 +51,7 @@ def test_agora_frame_follows_configured_https_origin(monkeypatch):
         return {'ok': True}
 
     csp = TestClient(app).get('/agora').headers['content-security-policy']
-    assert "frame-src 'self' https://hub.internal:9443;" in csp
+    assert frame_sources(csp) == DOCK_FRAME_SOURCES | {"https://hub.internal:*", "https://hub.internal:9443"}
     assert "script-src 'self' 'nonce-" in csp
 
 
@@ -53,4 +68,4 @@ def test_bad_hub_location_keeps_agora_available(monkeypatch, url):
 
     response = TestClient(app, raise_server_exceptions=False).get('/agora')
     assert response.status_code == 200
-    assert "frame-src 'self';" in response.headers['content-security-policy']
+    assert frame_sources(response.headers["content-security-policy"]) == DOCK_FRAME_SOURCES
