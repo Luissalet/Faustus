@@ -9,6 +9,7 @@ nothing else in Faustus depends on the hub being there.
 from __future__ import annotations
 
 import asyncio
+from html import escape
 import re
 from typing import Any, Dict, Literal
 
@@ -18,8 +19,9 @@ from urllib.parse import urlencode
 from pydantic import BaseModel, Field, ConfigDict, StrictInt
 
 from core.middleware import AGORA_DEVELOPMENT_PANEL, require_admin
-from routes.agora_routes import hub_request, studio_panel_can_write
+from routes.agora_routes import browser_hub, hub_request, studio_panel_can_write
 from src import hoard_hub
+from src.owner_identity import auth_disabled
 
 
 class ActiveSphere(BaseModel):
@@ -238,8 +240,9 @@ def setup_hoard_hub_routes() -> APIRouter:
         # mount. Keep those assets on Studio and use its sign-in for writes.
         html = content.decode("utf-8").replace('="/agora/', '="' + AGORA_DEVELOPMENT_PANEL)
         html = html.replace('<script src="/ui/browser-session.js"></script>', '')
-        writable = 'yes' if studio_panel_can_write(request) else 'no'
-        html = html.replace('<html ', f'<html data-studio-write="{writable}" ', 1)
+        writable = 'disabled' if auth_disabled() else 'yes' if studio_panel_can_write(request) else 'no'
+        order_base = escape(browser_hub(request) or '')
+        html = html.replace('<html ', f'<html data-studio-write="{writable}" data-studio-order-base="{order_base}" ', 1)
         return HTMLResponse(html, headers=headers)
 
     @router.get(AGORA_DEVELOPMENT_PANEL + 'assets/{name}')

@@ -55,7 +55,14 @@ def test_studio_refuses_agent_channel_before_contacting_hub(studio, monkeypatch,
     assert result.status_code == 403
 
 
-def test_development_panel_keeps_assets_on_studio_and_frames_only_here(studio, monkeypatch):
+@pytest.mark.parametrize(("auth_enabled", "signed_in", "state", "url", "remote", "order_base"), [
+    ("false", False, "disabled", "http://127.0.0.1:8958", True, ""),
+    ("false", False, "disabled", "http://127.0.0.1:8958", False, ""),
+    ("true", False, "no", "http://testserver:8958", False, "http://testserver:8958"),
+    ("true", True, "yes", "http://testserver:8958", False, "http://testserver:8958"),
+])
+def test_development_panel_keeps_assets_on_studio_and_frames_only_here(
+        studio, monkeypatch, auth_enabled, signed_in, state, url, remote, order_base):
     html = (b'<html lang="es"><head><base href="/agora/">'
             b'<script src="/ui/browser-session.js"></script>'
             b'<script type="module" src="/agora/assets/index-QA.js"></script></head></html>')
@@ -68,6 +75,21 @@ def test_development_panel_keeps_assets_on_studio_and_frames_only_here(studio, m
         return 200, b"export {};", "text/javascript"
 
     monkeypatch.setattr(hoard_hub_routes, "hub_request", get)
+    monkeypatch.setenv("AUTH_ENABLED", auth_enabled)
+    monkeypatch.setattr(agora_routes.hub_link, "location", lambda: {"url": url, "remote": remote})
+    from routes.auth_routes import SESSION_COOKIE
+    studio.app.state.auth_manager = SimpleNamespace(
+        is_configured=True, is_admin=lambda user: user == "fixture-admin",
+        get_username_for_token=lambda token: "fixture-admin" if token == "valid-session" else None,
+    )
+
+    @studio.app.middleware("http")
+    async def admin_state(request, call_next):
+        request.state.current_user = "fixture-admin"
+        return await call_next(request)
+
+    if signed_in:
+        studio.cookies.set(SESSION_COOKIE, "valid-session")
     studio.app.add_middleware(SecurityHeadersMiddleware)
     panel = "/api/hoard/agora/panel/"
     response = studio.get(panel + "?space_id=test-room&embedded=1")
@@ -75,7 +97,8 @@ def test_development_panel_keeps_assets_on_studio_and_frames_only_here(studio, m
     assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
     assert "frame-ancestors 'self'" in response.headers["Content-Security-Policy"]
     assert response.headers["Cache-Control"] == "no-store"
-    assert 'data-studio-write="no"' in response.text
+    assert f'data-studio-write="{state}"' in response.text
+    assert f'data-studio-order-base="{order_base}"' in response.text
     assert f'<base href="{panel}">' in response.text
     assert f'src="{panel}assets/index-QA.js"' in response.text
     assert "browser-session.js" not in response.text

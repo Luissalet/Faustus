@@ -173,7 +173,7 @@ def _answer(status: Optional[int], payload: Any) -> JSONResponse:
     return JSONResponse(payload)
 
 
-def _browser_hub(request: Request) -> str | None:
+def browser_hub(request: Request) -> str | None:
     where = hub_link.location()
     try:
         target = urllib.parse.urlsplit(where["url"])
@@ -341,7 +341,7 @@ def setup_agora_routes() -> APIRouter:
         query = {k: v for k, v in request.query_params.items()}
         status, payload, _ = await asyncio.to_thread(hub_request, "GET", "/api/agora/" + path, query=query)
         if path == "pending_decisions" and isinstance(payload, dict) and payload.get("ok"):
-            payload = {**payload, "order_base": _browser_hub(request)}
+            payload = {**payload, "order_base": browser_hub(request)}
         return _answer(status, payload)
 
     @router.post(_DEVELOPMENT_WRITE + "{path:path}")
