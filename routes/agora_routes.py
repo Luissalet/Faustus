@@ -37,10 +37,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
-from core.middleware import is_agent_channel, require_admin
+from core.middleware import get_application_route_path, is_agent_channel, require_admin
 from src import hub_link
+from src.owner_identity import auth_disabled
 
 PERSON_SURFACE = "faustus-studio"
+_DEVELOPMENT_WRITE = "/api/agora/development/"
 _PERSON_DECISIONS = {"production_decide", "gate_decide", "draft_decide"}
 _DECISION_ASSETS = {"production_decisions_card.js": "text/javascript", "production_decisions_card.css": "text/css"}
 _PATH = re.compile(r"^[a-z0-9_][a-z0-9_/\-]{0,120}$")
@@ -58,6 +60,19 @@ _no_icon: set = set()
 
 def is_production_choice(operation: str) -> bool:
     return operation.rstrip("/") in _PERSON_DECISIONS
+
+
+def studio_panel_can_write(request: Request) -> bool:
+    """An actual Studio admin session is required, including on private networks."""
+    from routes.auth_routes import SESSION_COOKIE
+
+    if auth_disabled() or is_agent_channel(request) or request.headers.get("Authorization"):
+        return False
+    manager = getattr(request.app.state, "auth_manager", None)
+    if not manager or not manager.is_configured:
+        return False
+    user = manager.get_username_for_token(request.cookies.get(SESSION_COOKIE))
+    return bool(user and manager.is_admin(user))
 
 
 def hub_request(method: str, path: str, *, query: Optional[Dict[str, str]] = None, body: Optional[dict] = None,
@@ -329,9 +344,17 @@ def setup_agora_routes() -> APIRouter:
             payload = {**payload, "order_base": _browser_hub(request)}
         return _answer(status, payload)
 
+    @router.post(_DEVELOPMENT_WRITE + "{path:path}")
     @router.post("/api/agora/x/{path:path}")
     async def write(path: str, request: Request):
         require_admin(request)
+        if get_application_route_path(request.scope).startswith(_DEVELOPMENT_WRITE):
+            if not studio_panel_can_write(request):
+                return JSONResponse({"ok": False, "code": "studio_session_required"}, status_code=403)
+            origin = request.headers.get("Origin")
+            if (request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}
+                    or (origin and origin != f"{request.url.scheme}://{request.url.netloc}")):
+                return JSONResponse({"ok": False, "code": "studio_session_required"}, status_code=403)
         if is_production_choice(path) and (
                 is_agent_channel(request) or request.headers.get("Authorization")
                 or request.headers.get("Sec-Fetch-Site") in {"cross-site", "same-site"}):

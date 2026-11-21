@@ -13,12 +13,12 @@ import re
 from typing import Any, Dict, Literal
 
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from urllib.parse import urlencode
 from pydantic import BaseModel, Field, ConfigDict, StrictInt
 
-from core.middleware import require_admin
+from core.middleware import AGORA_DEVELOPMENT_PANEL, require_admin
+from routes.agora_routes import hub_request, studio_panel_can_write
 from src import hoard_hub
 
 
@@ -64,6 +64,7 @@ BOARD_COLUMNS = {
 }
 _TASK_FIELDS = ('id', 'title', 'status', 'owner', 'reviewer', 'kind', 'priority', 'repo', 'created', 'updated',
                 'claimed_at', 'submitted_at', 'closed_at', 'review_state', 'thread_id', 'created_by')
+_CONSOLE_ASSET = re.compile(r"[a-zA-Z0-9_.-]+\.(?:js|css|woff2?)")
 
 
 def compact_board(board, *, done_limit=40):
@@ -215,6 +216,42 @@ def setup_hoard_hub_routes() -> APIRouter:
             return RedirectResponse(where['url'].rstrip('/') + '/?' + urlencode({'space_id': space_id, 'decision': decision}) + '#hub/orders')
         args = {'space_id': space_id, **({'embedded': '1'} if embedded else {}), **({'view': 'live'} if live else {})}
         return RedirectResponse(where['url'].rstrip('/') + '/agora/?' + urlencode(args))
+
+    @router.get(AGORA_DEVELOPMENT_PANEL)
+    def development_panel(request: Request, lang: Literal['es', 'en'] = 'en'):
+        require_admin(request)
+        status, content, content_type = hub_request("GET", "/agora/", raw=True, timeout=5.0)
+        headers = {"Cache-Control": "no-store"}
+        if status != 200 or not content_type.startswith("text/html"):
+            title, retry = (
+                ('No se puede abrir Desarrollo. Inténtalo de nuevo.', 'Volver a intentar') if lang == 'es'
+                else ('Development is unavailable. Try again.', 'Try again')
+            )
+            return HTMLResponse(
+                f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                '<style>html{color-scheme:light dark}body{font:1rem system-ui;padding:1rem}</style>'
+                f'<title>{title}</title></head><body><main><p role="alert">{title}</p>'
+                f'<p><a href="">{retry}</a></p></main></body></html>',
+                status_code=503, headers=headers)
+        # The Hub rewrites the built console's relative assets to its /agora/
+        # mount. Keep those assets on Studio and use its sign-in for writes.
+        html = content.decode("utf-8").replace('="/agora/', '="' + AGORA_DEVELOPMENT_PANEL)
+        html = html.replace('<script src="/ui/browser-session.js"></script>', '')
+        writable = 'yes' if studio_panel_can_write(request) else 'no'
+        html = html.replace('<html ', f'<html data-studio-write="{writable}" ', 1)
+        return HTMLResponse(html, headers=headers)
+
+    @router.get(AGORA_DEVELOPMENT_PANEL + 'assets/{name}')
+    def development_asset(name: str, request: Request):
+        require_admin(request)
+        if not _CONSOLE_ASSET.fullmatch(name):
+            return Response(status_code=404)
+        status, content, content_type = hub_request("GET", "/agora/assets/" + name, raw=True, timeout=10.0)
+        if status != 200 or not content:
+            return Response(status_code=404)
+        return Response(content, media_type=content_type.split(';', 1)[0],
+                        headers={"Cache-Control": "private, max-age=86400"})
 
     @router.get("/api/hoard/spheres")
     async def get_spheres() -> Dict[str, Any]:

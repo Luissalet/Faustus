@@ -4,7 +4,7 @@ import {FolderKanban, MessageSquare, Plus, Search, Users, ListChecks} from 'luci
 import {Button} from '../components';
 import {CoordinationSpaces} from '../components/CoordinationSpaces';
 import {rooms, spaces, type CoordinationRoom, type CoordinationSpace} from '../adapters/coordination';
-import {t} from '../i18n';
+import {getLang, t} from '../i18n';
 import {CouncilScreen} from './Council';
 import {GroupScreen} from './group/Group';
 import {AgoraApp} from './agora/AgoraApp';
@@ -70,6 +70,7 @@ function ClassicAgora() {
     return () => {controller.abort(); clearInterval(timer);};
   }, [spaceId, selected, mode]);
   const scope = 'space_id=' + encodeURIComponent(spaceId);
+  const developmentUrl = '/api/hoard/agora/panel/?' + scope + '&lang=' + getLang();
   function choose(next: string, id?: string) {
     const room = id === undefined ? lastRoom(spaceId, next) : id;
     if (id !== undefined) remember(spaceId, next, id);
@@ -109,6 +110,9 @@ function ClassicAgora() {
         <CouncilScreen key={spaceId} embedded />
       </section>
     </div></div>}
-    {(mode === 'development' || mode === 'live') && <section className="fs-agora__body fs-agora__development"><a className="fs-chip" href={'/api/hoard/agora/open?' + scope + (mode === 'live' ? '&live=1' : '')} target="_blank" rel="noopener">{t('Open in a separate window')}</a>{mode === 'live' ? <AgoraLive spaceId={spaceId} /> : <iframe title={t('Tasks and decisions')} src={'/api/hoard/agora/open?' + scope + '&embedded=1'} />}</section>}
+    {(mode === 'development' || mode === 'live') && <section className="fs-agora__body fs-agora__development">
+      <a className="fs-chip" href={mode === 'live' ? '/api/hoard/agora/open?' + scope + '&live=1' : developmentUrl} target="_blank" rel="noopener">{t('Open in a separate window')}</a>
+      {mode === 'live' ? <AgoraLive spaceId={spaceId} /> : <iframe title={t('Tasks and decisions')} src={developmentUrl + '&embedded=1'} />}
+    </section>}
   </div>;
 }
