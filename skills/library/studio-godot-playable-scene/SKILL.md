@@ -19,7 +19,7 @@ The game station of a visual order, one of the three siblings that start from th
 
 ## Procedure
 
-1. **Godot.** `E:\Development\Tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe` (the console build prints to stdout). Set `APPDATA` for the process to a folder inside the order, so editor settings stay out of the person's profile.
+1. **Godot.** Run the installed Godot console executable using its absolute path. On Windows the console build, for example `Godot_v4.7.2-stable_win64_console.exe`, prints to stdout. Set `APPDATA` for the process to a folder inside the order, so editor settings stay out of the person's profile.
 2. **Project.** Copy the GLBs next to `project.godot`. The script preloads them, instances the set and calls `create_trimesh_collision()` on every `MeshInstance3D` of the set, adds a ground body, instances the character under a node that moves, and puts the prop under its own pivot node (position and starting rotation stated).
 3. **Actions.** Map keys to actions (up/W and down/S to climb, E/Space to turn the map). Movement uses the collision: cast a ray down to find the step height.
 4. **Verify mode.** When `"--verify" in OS.get_cmdline_user_args()`, the script first checks that the named parts arrived (`find_child("Tubo_planos_L")`, `find_child("Mapa_esquina_cortada")`: name the parts that carry details to keep), then injects the same input a player would (an `InputEventKey` through `Input.parse_input_event`), waits for each move to finish, prints one line per measured fact (`STEP 1 y=0.18`, `MAP 3.14159 -> 0.0 rad`) and ends with a fixed marker (`GODOT_OK`) and `get_tree().quit(0)`; any failed check prints why and quits with 1.

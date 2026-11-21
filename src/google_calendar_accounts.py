@@ -4,7 +4,7 @@ Mirrors ``src/caldav_sync.py``'s ``_load_caldav_accounts`` persistence
 pattern: accounts live in the owner's prefs (``routes.prefs_routes``) under
 the ``google_calendar_accounts`` key, as a list of dicts:
 
-    {"id": "<uuid>", "label": "Google · user@example.com", "email": "user@example.com",
+    {"id": "<uuid>", "label": "Google · <email>", "email": "<email>",
      "access_token": "<enc>", "refresh_token": "<enc>", "token_expiry": "<unix>",
      "status": "ok" | "needs_reauth", "sync_tokens": {"<calendar_id>": "<syncToken>"},
      "selected_calendars": null | ["<google calendar id>", ...],
