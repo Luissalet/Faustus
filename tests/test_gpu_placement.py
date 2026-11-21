@@ -20,8 +20,8 @@ UUID0 = "GPU-5ab72dd9-1a45-c3af-5e12-ac7796b1def7"
 UUID1 = "GPU-15d17fee-8c0c-4be3-be46-35fb3e32f2aa"
 LUID0 = "0x00000000_0x01aec8b1"
 LUID1 = "0x00000000_0x01b3ff4f"
-RUNNER = r"C:\Users\example-user\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe"
-BLOB = r"D:\LocalAI\ollama-models\blobs\sha256-dec52a6a7a3fdd3e5e8b4c9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b"
+RUNNER = r"C:\workspace\AppData\Local\Programs\Ollama\lib\ollama\llama-server.exe"
+BLOB = r"D:\workspace\ollama-models\blobs\sha256-dec52a6a7a3fdd3e5e8b4c9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b"
 
 # The usage route's rows (MiB), as nvidia-smi reported them with qwen3.5:9b
 # resident on GPU 1.
@@ -158,7 +158,7 @@ def test_map_luids_survives_cards_without_a_reading():
 
 def test_models_match_their_runner_by_blob():
     models = [{"name": "qwen3.5:9b", "size_vram": 8 * GIB}, {"name": "gemma3:4b", "size_vram": 3 * GIB}]
-    pid_blobs = {15948: BLOB, 16001: r"D:\LocalAI\ollama-models\blobs\sha256-aaaa"}
+    pid_blobs = {15948: BLOB, 16001: r"D:\workspace\ollama-models\blobs\sha256-aaaa"}
     model_blobs = {"qwen3.5:9b": BLOB, "gemma3:4b": "/x/blobs/sha256-aaaa"}
     assert gp.match_models_to_pids(models, pid_blobs, model_blobs, [15948, 16001], {}) == \
         {"qwen3.5:9b": 15948, "gemma3:4b": 16001}

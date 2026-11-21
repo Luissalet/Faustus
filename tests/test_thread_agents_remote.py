@@ -156,11 +156,11 @@ def test_handoff_to_a_pc_runner_runs_there_with_the_task_and_returns_the_answer(
 
 
 def test_turns_with_a_pc_runner_start_it_again_each_time_and_do_not_check_the_folder_here(pc):
-    state = ta.set_agent("t2", "claude", workspace="C:/Users/example-user/proyecto")
-    assert state["workspace"] == "C:/Users/example-user/proyecto"
+    state = ta.set_agent("t2", "claude", workspace="C:/workspace/proyecto")
+    assert state["workspace"] == "C:/workspace/proyecto"
     job = wait("t2", ta.start_turn("t2", "hola")["id"])
     assert job["status"] == "done" and job["resumed"] is False
-    assert pc.hub.started[0]["cwd"] == "C:/Users/example-user/proyecto"
+    assert pc.hub.started[0]["cwd"] == "C:/workspace/proyecto"
     wait("t2", ta.start_turn("t2", "otra vez")["id"])
     assert len(pc.hub.started) == 2 and "resume" not in " ".join(pc.hub.started[1]["argv"])
 

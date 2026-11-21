@@ -369,12 +369,12 @@ def test_plan_done_requires_evidence():
 # ---------------------------------------------------------------------------
 
 def test_scope_for_prefers_project_id_over_workspace():
-    assert pt.scope_for("proj-42", r"C:\Users\example-user\project") == "proj-42"
+    assert pt.scope_for("proj-42", r"C:\workspace\project") == "proj-42"
 
 
 def test_scope_for_hashes_normalized_windows_workspace_consistently():
-    a = pt.scope_for(None, r"C:\Users\example-user\Silhouettes")
-    b = pt.scope_for(None, "C:/Users/example-user/Silhouettes/")
+    a = pt.scope_for(None, r"C:\workspace\Silhouettes")
+    b = pt.scope_for(None, "C:/workspace/Silhouettes/")
     assert a == b
     assert len(a) == 12
 

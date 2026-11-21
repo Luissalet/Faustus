@@ -42,7 +42,7 @@ def test_agora_includes_the_configured_hub_origin(monkeypatch):
 
 def test_agora_frame_follows_configured_https_origin(monkeypatch):
     from src import hoard_hub
-    monkeypatch.setattr(hoard_hub, 'hub_location', lambda: {'url': 'https://hub.internal:9443/hub/'})
+    monkeypatch.setattr(hoard_hub, 'hub_location', lambda: {'url': 'https://hub.example.test:9443/hub/'})
     app = FastAPI()
     app.add_middleware(SecurityHeadersMiddleware)
 
@@ -51,7 +51,7 @@ def test_agora_frame_follows_configured_https_origin(monkeypatch):
         return {'ok': True}
 
     csp = TestClient(app).get('/agora').headers['content-security-policy']
-    assert frame_sources(csp) == DOCK_FRAME_SOURCES | {"https://hub.internal:*", "https://hub.internal:9443"}
+    assert frame_sources(csp) == DOCK_FRAME_SOURCES | {"https://hub.example.test:*", "https://hub.example.test:9443"}
     assert "script-src 'self' 'nonce-" in csp
 
 

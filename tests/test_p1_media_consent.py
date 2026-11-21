@@ -93,7 +93,7 @@ def test_shipped_templates_do_not_require_consent():
 def test_register_then_has_consent(tmp_path):
     path = str(tmp_path / "consent.json")
     assert media_consent.has_consent("example_user-voice", registry_path=path) is False
-    out = media_consent.register("example_user-voice", granted_by="user@example.com", registry_path=path)
+    out = media_consent.register("example_user-voice", granted_by="sample-reviewer", registry_path=path)
     assert out["ok"] is True
     assert media_consent.has_consent("example_user-voice", registry_path=path) is True
 
@@ -107,7 +107,7 @@ def test_register_requires_a_grantor(tmp_path):
 
 def test_revoke_stops_a_subject_from_having_consent(tmp_path):
     path = str(tmp_path / "consent.json")
-    out = media_consent.register("example_user-voice", granted_by="user@example.com", registry_path=path)
+    out = media_consent.register("example_user-voice", granted_by="sample-reviewer", registry_path=path)
     assert media_consent.has_consent("example_user-voice", registry_path=path) is True
     revoked = media_consent.revoke(out["consent"]["id"], registry_path=path)
     assert revoked["ok"] is True
@@ -167,7 +167,7 @@ def test_plan_allows_a_clone_once_consent_is_on_file(world, library, monkeypatch
     _prepare(library, monkeypatch)
     consent_path = str(tmp_path / "consent.json")
     monkeypatch.setattr(media_consent, "CONSENT_FILE", consent_path)
-    media_consent.register("example_user-voice", granted_by="user@example.com", registry_path=consent_path)
+    media_consent.register("example_user-voice", granted_by="sample-reviewer", registry_path=consent_path)
     out = media_runs.plan("test.p1.media06.clone", {"prompt": "x", "reference": "example_user-voice"},
                           check_engine=False)
     assert out["ok"] is True
@@ -185,7 +185,7 @@ def test_a_revoked_consent_refuses_again(world, library, monkeypatch, tmp_path):
     _prepare(library, monkeypatch)
     consent_path = str(tmp_path / "consent.json")
     monkeypatch.setattr(media_consent, "CONSENT_FILE", consent_path)
-    granted = media_consent.register("example_user-voice", granted_by="user@example.com", registry_path=consent_path)
+    granted = media_consent.register("example_user-voice", granted_by="sample-reviewer", registry_path=consent_path)
     assert media_runs.plan("test.p1.media06.clone", {"prompt": "x", "reference": "example_user-voice"},
                            check_engine=False)["ok"] is True
     media_consent.revoke(granted["consent"]["id"], registry_path=consent_path)

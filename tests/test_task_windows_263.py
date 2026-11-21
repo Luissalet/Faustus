@@ -142,7 +142,7 @@ def test_guard_anchor_prefers_the_first_due_instant():
     ("success", "done", "one step failed", "partial"),
     ("partial", "half", None, "partial"),
     ("error", None, "ConnectionError: boom", "failed"),
-    ("error", None, "IMAP authentication failed for user@example.com", "blocked-login"),
+    ("error", None, "IMAP authentication failed for sample-mailbox", "blocked-login"),
     ("error", None, "HTTP 401 Unauthorized", "blocked-login"),
     ("aborted", None, "Server restarted while task was running", "failed"),
     ("skipped", "nothing new", None, "ok"),
