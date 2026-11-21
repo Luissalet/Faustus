@@ -69,4 +69,3 @@ def test_installation_reference_detection(sample, finding):
 def test_installation_reference_detection_accepts_portable_examples():
     text = "http://127.0.0.1:8810 https://model-host.example %USERPROFILE%/project ./docs /api/users/list"
     assert _installation_references(text, "example-user") == []
-
